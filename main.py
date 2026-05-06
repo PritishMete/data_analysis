@@ -5,39 +5,48 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Allow your Flutter app to communicate with the server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, replace with your specific domain
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    return {"message": "Server is running 24/7"}
-
 @app.post("/analyze")
 async def analyze_dataset(file: UploadFile = File(...)):
     try:
-        # Read the uploaded CSV
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
-        
-        # Perform analysis
+
+        # Capture df.info()
+        buffer = io.StringIO()
+        df.info(buf=buffer)
+        info_str = buffer.getvalue()
+
         analysis = {
-            "summary": {
-                "rows": len(df),
-                "columns": len(df.columns),
-                "column_names": df.columns.tolist()
-            },
+            "head": df.head(5).to_dict(),
+            "shape": df.shape,
+            "columns": df.columns.tolist(),
+
+            "info": info_str,
+
+            "describe": df.describe(include='all').fillna("").to_dict(),
+
             "missing_values": df.isnull().sum().to_dict(),
-            "patterns": {
-                # Get mode of the first 5 string columns
-                col: str(df[col].mode()[0]) if not df[col].mode().empty else "N/A" 
-                for col in df.select_dtypes(include=['object']).columns[:5]
-            }
+
+            "dtypes": df.dtypes.astype(str).to_dict(),
+
+            "n_unique": df.nunique().to_dict(),
+
+            "top_values": {
+                col: df[col].value_counts().head(3).to_dict()
+                for col in df.columns
+            },
+
+            "correlation": df.select_dtypes(include='number').corr().fillna(0).to_dict()
         }
+
         return analysis
+
     except Exception as e:
         return {"error": str(e)}
