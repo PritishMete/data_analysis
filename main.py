@@ -1,43 +1,132 @@
-import pandas as pd
-import io
+# app.py
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
+import pandas as pd
+import io
+import json
+
 app = FastAPI()
 
-# Allow your Flutter app to communicate with the server
+# Allow Flutter/Web requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, replace with your specific domain
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    return {"message": "Server is running 24/7"}
+# ---------------------------------------------------------
+# Helper Function
+# ---------------------------------------------------------
+
+def analyze_dataframe(df: pd.DataFrame):
+    try:
+        describe_data = (
+            df.describe(include='all')
+            .fillna("")
+            .reset_index()
+            .to_dict(orient="records")
+        )
+    except Exception:
+        describe_data = []
+
+    preview = df.head(15).fillna("").to_dict(orient="records")
+
+    sample = (
+        df.sample(min(10, len(df)))
+        .fillna("")
+        .to_dict(orient="records")
+        if len(df) > 0 else []
+    )
+
+    missing_values = {
+        col: int(df[col].isnull().sum())
+        for col in df.columns
+    }
+
+    unique_values = {
+        col: int(df[col].nunique())
+        for col in df.columns
+    }
+
+    duplicate_count = int(df.duplicated().sum())
+
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    info_text = buffer.getvalue()
+
+    return {
+        "rows": int(df.shape[0]),
+        "columns": int(df.shape[1]),
+        "column_names": list(df.columns),
+
+        "duplicates": duplicate_count,
+
+        "missing_values": missing_values,
+        "unique_values": unique_values,
+
+        "preview": preview,
+        "sample": sample,
+
+        "describe": describe_data,
+
+        "info": info_text
+    }
+
+# ---------------------------------------------------------
+# API Route
+# ---------------------------------------------------------
 
 @app.post("/analyze")
-async def analyze_dataset(file: UploadFile = File(...)):
+async def analyze(file: UploadFile = File(...)):
+
+    contents = await file.read()
+
+    filename = file.filename.lower()
+
     try:
-        # Read the uploaded CSV
-        contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-        
-        # Perform analysis
-        analysis = {
-            "summary": {
-                "rows": len(df),
-                "columns": len(df.columns),
-                "column_names": df.columns.tolist()
-            },
-            "missing_values": df.isnull().sum().to_dict(),
-            "patterns": {
-                # Get mode of the first 5 string columns
-                col: str(df[col].mode()[0]) if not df[col].mode().empty else "N/A" 
-                for col in df.select_dtypes(include=['object']).columns[:5]
+
+        # CSV
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+
+        # Excel
+        elif filename.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents))
+
+        # JSON
+        elif filename.endswith(".json"):
+            data = json.loads(contents.decode("utf-8"))
+            df = pd.DataFrame(data)
+
+        else:
+            return {
+                "error": "Unsupported file format"
             }
-        }
-        return analysis
+
+        # Clean NaN
+        df = df.fillna("")
+
+        # Analyze
+        result = analyze_dataframe(df)
+
+        return result
+
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "error": str(e)
+        }
+
+# ---------------------------------------------------------
+# Root Route
+# ---------------------------------------------------------
+
+@app.get("/")
+def root():
+    return {
+        "status": "ONLINE",
+        "engine": "NEURAL DATA ANALYSIS CORE"
+    }
