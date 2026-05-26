@@ -3,6 +3,10 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai_routes import ai_router
+app.include_router(ai_router)
+
+
 import pandas as pd
 import io
 import json
