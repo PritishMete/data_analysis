@@ -1,6 +1,9 @@
+pip-requirements
 fastapi
 uvicorn
 pandas
 python-multipart
 openpyxl
 pyarrow
+scikit-learn
+pydantic
