@@ -1,74 +1,136 @@
+# app.py
+
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+
+from ai_routes import ai_router
+app.include_router(ai_router)
+
+
 import pandas as pd
-from pathlib import Path
+import io
+import json
 
-def analyze_file(file_path):
-    file_path = Path(file_path)
+app = FastAPI()
 
-    # Detect file type
-    file_type = file_path.suffix.lower()
+# Allow Flutter/Web requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    print(f"Detected file type: {file_type}")
+# ---------------------------------------------------------
+# Helper Function
+# ---------------------------------------------------------
 
-    # Load file based on type
-    if file_type == ".csv":
-        df = pd.read_csv(file_path) 
+def analyze_dataframe(df: pd.DataFrame):
+    try:
+        describe_data = (
+            df.describe(include='all')
+            .fillna("")
+            .reset_index()
+            .to_dict(orient="records")
+        )
+    except Exception:
+        describe_data = []
 
-    elif file_type in [".xlsx", ".xls"]:
-        df = pd.read_excel(file_path)
+    preview = df.head(15).fillna("").to_dict(orient="records")
 
-    elif file_type == ".json":
-        df = pd.read_json(file_path)
+    sample = (
+        df.sample(min(10, len(df)))
+        .fillna("")
+        .to_dict(orient="records")
+        if len(df) > 0 else []
+    )
 
-    elif file_type == ".parquet":
-        df = pd.read_parquet(file_path)
+    missing_values = {
+        col: int(df[col].isnull().sum())
+        for col in df.columns
+    }
 
-    else:
-        print("Unsupported file type")
-        return
+    unique_values = {
+        col: int(df[col].nunique())
+        for col in df.columns
+    }
 
-    # Show dataset information
-    print("\n===== DATA INFO =====")
-    print(f"Rows: {df.shape[0]}")
-    print(f"Columns: {df.shape[1]}")
+    duplicate_count = int(df.duplicated().sum())
 
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    info_text = buffer.getvalue()
 
-# column names and preview
-    print("\nColumn Names:")
-    for col in df.columns:
-        print(f"- {col}")
+    return {
+        "rows": int(df.shape[0]),
+        "columns": int(df.shape[1]),
+        "column_names": list(df.columns),
 
-# top 5 rows
-    print("\nPreview:")
-    print(df.head())
+        "duplicates": duplicate_count,
 
-# sample data
-    print("\n===== SAMPLE DATA =====")
-    print(df.sample())
+        "missing_values": missing_values,
+        "unique_values": unique_values,
 
-# info about dataset
-    print("\n===== DATASET INFO =====")
-    print(df.info())
+        "preview": preview,
+        "sample": sample,
 
-# descriptive statistics
-    print("\n===== DESCRIPTIVE STATISTICS =====")   
-    print(df.describe())
+        "describe": describe_data,
 
-# duplicate rows
-    print(df.duplicated().sum())
+        "info": info_text
+    }
 
-# missing values
-    print("\n===== MISSING VALUES =====")
-    print(df.isnull().sum())
+# ---------------------------------------------------------
+# API Route
+# ---------------------------------------------------------
 
-# not a number values
-    print("\n===== NOT A NUMBER (NaN) VALUES =====")
-    print(df.isna().sum())
-# unique values
-    print("\n===== UNIQUE VALUES =====")
-    for col in df.columns:
-        unique_count = df[col].nunique()
-        print(f"{col}: {unique_count} unique values")
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
 
+    contents = await file.read()
 
-# Example
-analyze_file("apps.csv")
+    filename = file.filename.lower()
+
+    try:
+
+        # CSV
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+
+        # Excel
+        elif filename.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents))
+
+        # JSON
+        elif filename.endswith(".json"):
+            data = json.loads(contents.decode("utf-8"))
+            df = pd.DataFrame(data)
+
+        else:
+            return {
+                "error": "Unsupported file format"
+            }
+
+        # Clean NaN
+        df = df.fillna("")
+
+        # Analyze
+        result = analyze_dataframe(df)
+
+        return result
+
+    except Exception as e:
+        return {
+            "error": str(e)
+        }
+
+# ---------------------------------------------------------
+# Root Route
+# ---------------------------------------------------------
+
+@app.get("/")
+def root():
+    return {
+        "status": "ONLINE",
+        "engine": "NEURAL DATA ANALYSIS CORE"
+    }
