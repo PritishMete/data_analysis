@@ -1,12 +1,5 @@
-# app.py
-
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-
-from ai_routes import ai_router
-app.include_router(ai_router)
-
-
 import pandas as pd
 import io
 import json
@@ -66,17 +59,12 @@ def analyze_dataframe(df: pd.DataFrame):
         "rows": int(df.shape[0]),
         "columns": int(df.shape[1]),
         "column_names": list(df.columns),
-
         "duplicates": duplicate_count,
-
         "missing_values": missing_values,
         "unique_values": unique_values,
-
         "preview": preview,
         "sample": sample,
-
         "describe": describe_data,
-
         "info": info_text
     }
 
@@ -86,43 +74,23 @@ def analyze_dataframe(df: pd.DataFrame):
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-
     contents = await file.read()
-
     filename = file.filename.lower()
-
     try:
-
-        # CSV
         if filename.endswith(".csv"):
             df = pd.read_csv(io.BytesIO(contents))
-
-        # Excel
         elif filename.endswith(".xlsx"):
             df = pd.read_excel(io.BytesIO(contents))
-
-        # JSON
         elif filename.endswith(".json"):
             data = json.loads(contents.decode("utf-8"))
             df = pd.DataFrame(data)
-
         else:
-            return {
-                "error": "Unsupported file format"
-            }
-
-        # Clean NaN
+            return {"error": "Unsupported file format"}
         df = df.fillna("")
-
-        # Analyze
         result = analyze_dataframe(df)
-
         return result
-
     except Exception as e:
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 # ---------------------------------------------------------
 # Root Route
@@ -134,3 +102,10 @@ def root():
         "status": "ONLINE",
         "engine": "NEURAL DATA ANALYSIS CORE"
     }
+
+# ---------------------------------------------------------
+# AI Routes — must be AFTER app is created
+# ---------------------------------------------------------
+
+from ai_routes import ai_router
+app.include_router(ai_router)
