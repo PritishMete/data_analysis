@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/data_analysis/">
+  <meta charset="UTF-8">
+  <title>electric_ai_app</title>
+
+  <!-- Office.js MUST come first -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+  <!-- Our helper — defines window.getSelectedExcelData and readiness flags -->
+  <script src="excel_helper.js"></script>
+  <script src="excel_data_processor.js"></script>
+</head>
+<body>
+<script>
+  // ── History patch ────────────────────────────────────────────────────────────
+  // Office.js hijacks window.history; Flutter also tries to use it.
+  // Replace the whole object with a no-op stub so neither side crashes.
+  function patchHistory() {
+    var noop = function () {};
+    var fakeHistory = {
+      replaceState: noop,
+      pushState: noop,
+      go: noop,
+      back: noop,
+      forward: noop,
+      length: 0,
+      state: null,
+      scrollRestoration: "auto",
+    };
+    try {
+      History.prototype.replaceState = noop;
+      History.prototype.pushState = noop;
+    } catch (e) {}
+    try {
+      Object.defineProperty(window, "history", {
+        get: function () { return fakeHistory; },
+        configurable: true,
+      });
+    } catch (e) {}
+  }
+
+  // Patch before Office.js runs
+  patchHistory();
+
+  // ── Office bootstrap ─────────────────────────────────────────────────────────
+  Office.onReady(function (info) {
+    // Patch again — Office.js may restore history during init
+    patchHistory();
+
+    // Signal excel_helper.js that Office APIs are now safe to call
+    if (typeof window._onOfficeReady === "function") {
+      window._onOfficeReady();
+    }
+
+    console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
+
+    // ── Load Flutter only AFTER Office is ready ──────────────────────────────
+    var script = document.createElement("script");
+    script.src = "flutter_bootstrap.js";
+    script.onload = function () {
+      _flutter.buildConfig = {
+        builds: [
+          {
+            compileTarget: "dart2js",
+            renderer: "canvaskit",
+            mainJsPath: "main.dart.js",
+          },
+        ],
+      };
+    };
+    document.head.appendChild(script);
+  });
+</script>
+</body>
+</html>
