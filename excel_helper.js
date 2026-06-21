@@ -205,11 +205,10 @@ async function jsBuildWrapRowsTable(optionsJson) {
             await context.sync();
 
             const values = sourceRange.values;
-            // Flatten 2D values array to a single list of elements
             const flatList = [];
             for (let r = 0; r < values.length; r++) {
                 for (let c = 0; c < values[r].length; c++) {
-                    if (values[r][c] !== undefined) flatList.push(values[r][c]);
+                    if (values[r][c] !== undefined && values[r][c] !== "") flatList.push(values[r][c]);
                 }
             }
 
@@ -218,7 +217,6 @@ async function jsBuildWrapRowsTable(optionsJson) {
             const colCount = parseInt(opts.columnCount, 10) || 1;
             const rowCount = Math.ceil(flatList.length / colCount);
 
-            // Reconstruct a clean 2D matrix structure
             const outputMatrix = [];
             for (let i = 0; i < rowCount; i++) {
                 const newRow = [];
@@ -285,9 +283,8 @@ async function jsApplyColorScale(optionsJson) {
 
                 const headers = usedRange.values[0];
                 colIdx = headers.findIndex(h => String(h).trim() === String(opts.column).trim());
-                startRow = 1; // skip header row from coloring structure
+                startRow = 1;
             } else {
-                // Convert pure column alphabet letters to raw index matching bounds
                 let base = 0;
                 const letterStr = String(opts.column).toUpperCase().trim();
                 for (let p = 0; p < letterStr.length; p++) {
@@ -306,11 +303,10 @@ async function jsApplyColorScale(optionsJson) {
             const endRow = completeRange.rowCount;
             if (endRow <= startRow) return { success: true, processedRows: 0, error: null };
 
-            // Bind conditional format range selection targets
             const formatRange = sheet.getRangeByIndexes(startRow, colIdx, (endRow - startRow), 1);
 
-            // Wipe out pre-existing conditional formatting scales on this target segment to avoid clutter
-            formatRange.conditionalFormats.clear();
+            // FIX: Changed from .clear() to .clearAll() to match Office JS API specification
+            formatRange.conditionalFormats.clearAll();
 
             const condFormat = formatRange.conditionalFormats.add(Excel.ConditionalFormatType.colorScale);
             const colorScale = condFormat.colorScale;
@@ -336,7 +332,6 @@ async function jsApplyColorScale(optionsJson) {
     }
 }
 
-// Global binding registration so Dart's compiler handles references properly
 window.jsBuildWrapRowsTable = jsBuildWrapRowsTable;
 window.jsApplyColorScale = jsApplyColorScale;
 
@@ -456,7 +451,6 @@ async function processExcelPipeline(optionsJson) {
             }
         }
 
-        // ── LOOKUP INJECTION PIPELINE LAYER ──
         if (opts.lookupConfig) {
             const lc = opts.lookupConfig;
             try {
@@ -499,7 +493,6 @@ async function processExcelPipeline(optionsJson) {
         }
 
         if (opts.targetSheetName === null && opts.pivotConfig) {
-            // Buffer configuration mapping
         } else {
             const sheetsList = workbook.worksheets;
             sheetsList.load("items/name");
@@ -531,7 +524,6 @@ async function processExcelPipeline(optionsJson) {
         }
         targetSheet.getUsedRange().format.autofitColumns();
 
-        // ── PIVOT ARCHITECTURE RENDERING LAYER ──
         if (opts.pivotConfig) {
             const pc = opts.pivotConfig;
             const pivotSheetName = (pc.sheetName || ("Pivot_" + (sheetName || "Data"))).substring(0, 31);
