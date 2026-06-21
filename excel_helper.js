@@ -182,6 +182,164 @@ async function jsSplitColumnPipeline(sheetName, columnName, delimiter) {
     });
 }
 
+// ── L2 Layout Transformations (WRAPROWS Builder) ──────────────────────────
+
+async function jsBuildWrapRowsTable(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+
+    try {
+        const opts = JSON.parse(optionsJson);
+        return await Excel.run(async function (context) {
+            const workbook = context.workbook;
+            let sourceSheet = opts.sourceSheetName ? workbook.worksheets.getItem(opts.sourceSheetName) : workbook.worksheets.getActiveWorksheet();
+
+            let sourceRange;
+            if (opts.sourceRange) {
+                sourceRange = sourceSheet.getRange(opts.sourceRange);
+            } else {
+                sourceRange = sourceSheet.getUsedRange();
+            }
+
+            sourceRange.load(["address", "values"]);
+            await context.sync();
+
+            const values = sourceRange.values;
+            // Flatten 2D values array to a single list of elements
+            const flatList = [];
+            for (let r = 0; r < values.length; r++) {
+                for (let c = 0; c < values[r].length; c++) {
+                    if (values[r][c] !== undefined) flatList.push(values[r][c]);
+                }
+            }
+
+            if (flatList.length === 0) return { success: false, processedRows: 0, error: "No data discovered in the target range." };
+
+            const colCount = parseInt(opts.columnCount, 10) || 1;
+            const rowCount = Math.ceil(flatList.length / colCount);
+
+            // Reconstruct a clean 2D matrix structure
+            const outputMatrix = [];
+            for (let i = 0; i < rowCount; i++) {
+                const newRow = [];
+                for (let j = 0; j < colCount; j++) {
+                    const idx = i * colCount + j;
+                    newRow.push(idx < flatList.length ? flatList[idx] : "");
+                }
+                outputMatrix.push(newRow);
+            }
+
+            const targetName = (opts.targetSheetName || "Wrapped_Table").substring(0, 31);
+            const sheets = workbook.worksheets;
+            sheets.load("items/name");
+            await context.sync();
+
+            for (let i = 0; i < sheets.items.length; i++) {
+                if (sheets.items[i].name === targetName) {
+                    sheets.items[i].delete();
+                    break;
+                }
+            }
+            await context.sync();
+
+            const targetSheet = workbook.worksheets.add(targetName);
+            const finalRange = targetSheet.getRangeByIndexes(0, 0, outputMatrix.length, outputMatrix[0].length);
+            finalRange.values = outputMatrix;
+
+            if (opts.hasHeaderRow) {
+                const headerRange = targetSheet.getRangeByIndexes(0, 0, 1, colCount);
+                headerRange.format.font.bold = true;
+                targetSheet.freezePanes.freezeRows(1);
+            }
+
+            targetSheet.getUsedRange().format.autofitColumns();
+            targetSheet.activate();
+            await context.sync();
+
+            return { success: true, processedRows: outputMatrix.length, error: null };
+        });
+    } catch (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    }
+}
+
+// ── Conditional Formatting Layer (Color Scales Alt+H,L,S,M Equivalent) ──────
+
+async function jsApplyColorScale(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+
+    try {
+        const opts = JSON.parse(optionsJson);
+        return await Excel.run(async function (context) {
+            const workbook = context.workbook;
+            const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
+
+            let colIdx = -1;
+            let startRow = 0;
+
+            if (opts.hasHeaders) {
+                const usedRange = sheet.getUsedRange();
+                usedRange.load("values");
+                await context.sync();
+
+                const headers = usedRange.values[0];
+                colIdx = headers.findIndex(h => String(h).trim() === String(opts.column).trim());
+                startRow = 1; // skip header row from coloring structure
+            } else {
+                // Convert pure column alphabet letters to raw index matching bounds
+                let base = 0;
+                const letterStr = String(opts.column).toUpperCase().trim();
+                for (let p = 0; p < letterStr.length; p++) {
+                    base = base * 26 + (letterStr.charCodeAt(p) - 64);
+                }
+                colIdx = base - 1;
+                startRow = 0;
+            }
+
+            if (colIdx === -1) return { success: false, processedRows: 0, error: "Target formatting column reference is invalid." };
+
+            const completeRange = sheet.getUsedRange();
+            completeRange.load("rowCount");
+            await context.sync();
+
+            const endRow = completeRange.rowCount;
+            if (endRow <= startRow) return { success: true, processedRows: 0, error: null };
+
+            // Bind conditional format range selection targets
+            const formatRange = sheet.getRangeByIndexes(startRow, colIdx, (endRow - startRow), 1);
+
+            // Wipe out pre-existing conditional formatting scales on this target segment to avoid clutter
+            formatRange.conditionalFormats.clear();
+
+            const condFormat = formatRange.conditionalFormats.add(Excel.ConditionalFormatType.colorScale);
+            const colorScale = condFormat.colorScale;
+
+            if (opts.scaleType === "3-color") {
+                colorScale.threeColorScaleCriteria = {
+                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + opts.minColor },
+                    midpoint: { type: Excel.ConditionalFormatColorCriterionType.percentile, value: "50", color: "#" + opts.midColor },
+                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + opts.maxColor }
+                };
+            } else {
+                colorScale.twoColorScaleCriteria = {
+                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + opts.minColor },
+                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + opts.maxColor }
+                };
+            }
+
+            await context.sync();
+            return { success: true, processedRows: (endRow - startRow), error: null };
+        });
+    } catch (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    }
+}
+
+// Global binding registration so Dart's compiler handles references properly
+window.jsBuildWrapRowsTable = jsBuildWrapRowsTable;
+window.jsApplyColorScale = jsApplyColorScale;
+
 // ── Orchestrator Pipeline ───────────────────────────────────────────────────
 
 function _getColumnLabel(colIndex) {
