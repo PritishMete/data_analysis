@@ -305,22 +305,27 @@ async function jsApplyColorScale(optionsJson) {
 
             const formatRange = sheet.getRangeByIndexes(startRow, colIdx, (endRow - startRow), 1);
 
-            // FIX: Changed from .clear() to .clearAll() to match Office JS API specification
+            // Clean out old conditions securely via clearAll()
             formatRange.conditionalFormats.clearAll();
 
             const condFormat = formatRange.conditionalFormats.add(Excel.ConditionalFormatType.colorScale);
             const colorScale = condFormat.colorScale;
 
+            // ── OVERRIDE INTERFACE TO PURE SPECTRAL CODES ──
+            let minHex = (opts.minColor === "F8696B") ? "FF0000" : opts.minColor; // Pure Red
+            let midHex = (opts.midColor === "FFEB84") ? "FFFF00" : opts.midColor; // Pure Yellow
+            let maxHex = (opts.maxColor === "63BE7B") ? "00FF00" : opts.maxColor; // Pure Green
+
             if (opts.scaleType === "3-color") {
                 colorScale.threeColorScaleCriteria = {
-                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + opts.minColor },
-                    midpoint: { type: Excel.ConditionalFormatColorCriterionType.percentile, value: "50", color: "#" + opts.midColor },
-                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + opts.maxColor }
+                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + minHex },
+                    midpoint: { type: Excel.ConditionalFormatColorCriterionType.percentile, value: "50", color: "#" + midHex },
+                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + maxHex }
                 };
             } else {
                 colorScale.twoColorScaleCriteria = {
-                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + opts.minColor },
-                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + opts.maxColor }
+                    minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#" + minHex },
+                    maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#" + maxHex }
                 };
             }
 
