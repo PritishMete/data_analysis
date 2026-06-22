@@ -47331,12 +47331,12 @@ $1(a){var s=J.b1(this.a,a)
 return s==null?"":s},
 $S:109}
 A.aCY.prototype={
-$1(a){var s
+$1(a){var s,r
 if(a==null)return""
 s=a.b
 if(s==null)return""
-if(s instanceof A.k7)return s.a
-if(s instanceof A.jP)return s.a
+if(s instanceof A.k7){r=s.a.k(0)
+return r}if(s instanceof A.jP)return s.a
 if(s instanceof A.kG)return s.a
 if(s instanceof A.kx)return s.a
 if(s instanceof A.jD)return A.uI(s.a,s.b,s.c,0,0,0,0,0).CO()
