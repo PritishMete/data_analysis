@@ -335,6 +335,68 @@ async function jsApplyColorScale(optionsJson) {
 window.jsBuildWrapRowsTable = jsBuildWrapRowsTable;
 window.jsApplyColorScale = jsApplyColorScale;
 
+// ── Row Classification Layer (Add Computed Column) ──────────────────────────
+
+async function jsAddComputedColumn(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+
+    try {
+        const opts = JSON.parse(optionsJson);
+        const config = opts.addColumnConfig || {};
+
+        if (typeof evaluateAddColumnMutation !== "function") {
+            return {
+                success: false,
+                processedRows: 0,
+                error: "Add-column engine not loaded — ensure excel_data_processor.js is included before excel_helper.js in index.html."
+            };
+        }
+
+        return await Excel.run(async function (context) {
+            const workbook = context.workbook;
+            const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
+
+            const usedRange = sheet.getUsedRange();
+            usedRange.load(["values", "rowIndex", "columnIndex"]);
+            await context.sync();
+
+            const matrix = usedRange.values;
+            if (!matrix || matrix.length === 0) {
+                return { success: false, processedRows: 0, error: "Sheet has no data." };
+            }
+
+            const newMatrix = evaluateAddColumnMutation(matrix, config);
+            if (newMatrix === matrix) {
+                // evaluateAddColumnMutation returns the SAME reference back
+                // when partitionBy/sourceColumn couldn't be resolved against
+                // this sheet's headers — treat that as a failure, not a no-op.
+                return {
+                    success: false,
+                    processedRows: 0,
+                    error: "Could not resolve the partitionBy/sourceColumn fields against this sheet's headers."
+                };
+            }
+
+            const outRange = sheet.getRangeByIndexes(
+                usedRange.rowIndex,
+                usedRange.columnIndex,
+                newMatrix.length,
+                newMatrix[0].length
+            );
+            outRange.values = newMatrix;
+            sheet.getUsedRange().format.autofitColumns();
+            await context.sync();
+
+            return { success: true, processedRows: newMatrix.length - 1, error: null };
+        });
+    } catch (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    }
+}
+
+window.jsAddComputedColumn = jsAddComputedColumn;
+
 // ── Orchestrator Pipeline ───────────────────────────────────────────────────
 
 function _getColumnLabel(colIndex) {

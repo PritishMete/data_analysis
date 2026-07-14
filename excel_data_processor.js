@@ -140,6 +140,112 @@ function evaluateCondition(val, config) {
 }
 
 /**
+ * Adds a new column to a 2D matrix (header row + data rows), labeling each
+ * row based on a per-partition aggregate (count/sum/avg/min/max) compared
+ * against a threshold — e.g. classifying customers as "Returning" if their
+ * name appears more than once in the sheet, else "New".
+ *
+ * Config fields (mirrors command_agent.py's add_column action shape):
+ *  - newColumnName:  header for the new column
+ *  - windowFunction: "count" | "sum" | "avg" | "min" | "max" (default "count")
+ *  - sourceColumn:   column being aggregated — for a plain repeat-count
+ *                    check this is usually the SAME column as the single
+ *                    partitionBy entry
+ *  - partitionBy:    array of column names defining the group to aggregate
+ *                    within (e.g. ["CustomerName"])
+ *  - operator:       equals | not_equals | greater_than | less_than |
+ *                    greater_than_equal | less_than_equal
+ *  - value:          threshold to compare the aggregate against
+ *  - thenLabel / elseLabel: values written when the condition is true/false
+ *
+ * Returns a NEW matrix (header row + data rows) with the label column
+ * appended as the last column of every row. Returns the SAME `matrix`
+ * reference unchanged if the config can't be resolved against these headers
+ * (caller should treat that as "no-op / failed" rather than a silent no-op).
+ */
+function evaluateAddColumnMutation(matrix, config) {
+    if (!matrix || matrix.length === 0) return matrix;
+
+    const headers = matrix[0];
+    const newColumnName = config.newColumnName || "New_Column";
+    const windowFunction = (config.windowFunction || "count").toLowerCase();
+    const sourceColumn = config.sourceColumn;
+    const partitionBy = Array.isArray(config.partitionBy) ? config.partitionBy : [];
+    const operator = config.operator || "greater_than";
+    const threshold = config.value;
+    const thenLabel = config.thenLabel !== undefined ? config.thenLabel : "Yes";
+    const elseLabel = config.elseLabel !== undefined ? config.elseLabel : "No";
+
+    if (partitionBy.length === 0 || !sourceColumn) {
+        console.error("add_column: missing partitionBy or sourceColumn in config", config);
+        return matrix;
+    }
+
+    function findColIdx(name) {
+        return headers.findIndex(h => String(h).trim() === String(name).trim());
+    }
+
+    const partitionIdx = partitionBy.map(findColIdx);
+    const sourceIdx = findColIdx(sourceColumn);
+
+    if (partitionIdx.some(i => i === -1) || sourceIdx === -1) {
+        console.error("add_column: could not resolve partitionBy/sourceColumn against headers", { partitionBy, sourceColumn, headers });
+        return matrix;
+    }
+
+    // Pass 1 — aggregate per partition key across ALL data rows.
+    const groupAgg = {};
+    for (let i = 1; i < matrix.length; i++) {
+        const row = matrix[i];
+        const key = partitionIdx.map(idx => row[idx]).join("❖");
+        if (!groupAgg[key]) groupAgg[key] = { count: 0, sum: 0, values: [] };
+        groupAgg[key].count += 1;
+        const num = Number(row[sourceIdx]);
+        if (!isNaN(num)) {
+            groupAgg[key].sum += num;
+            groupAgg[key].values.push(num);
+        }
+    }
+
+    function aggregateFor(key) {
+        const g = groupAgg[key];
+        switch (windowFunction) {
+            case "sum":  return g.sum;
+            case "avg":  return g.values.length ? g.sum / g.values.length : 0;
+            case "min":  return g.values.length ? Math.min(...g.values) : 0;
+            case "max":  return g.values.length ? Math.max(...g.values) : 0;
+            case "count":
+            default:     return g.count;
+        }
+    }
+
+    function meetsCondition(aggVal, op, thresholdRaw) {
+        const t = Number(thresholdRaw);
+        switch (op) {
+            case "equals":             return aggVal === t;
+            case "not_equals":         return aggVal !== t;
+            case "greater_than":       return aggVal > t;
+            case "less_than":          return aggVal < t;
+            case "greater_than_equal": return aggVal >= t;
+            case "less_than_equal":    return aggVal <= t;
+            default: return false;
+        }
+    }
+
+    // Pass 2 — build the new matrix with the label column appended.
+    const newMatrix = [[...headers, newColumnName]];
+    for (let i = 1; i < matrix.length; i++) {
+        const row = matrix[i];
+        const key = partitionIdx.map(idx => row[idx]).join("❖");
+        const aggVal = aggregateFor(key);
+        const label = meetsCondition(aggVal, operator, threshold) ? thenLabel : elseLabel;
+        newMatrix.push([...row, label]);
+    }
+
+    return newMatrix;
+}
+
+/**
  * Advanced Cross-Sheet Lookup Engine (VLOOKUP / HLOOKUP / XLOOKUP)
  *
  * Mirrors the real Excel formula arguments end-to-end:
