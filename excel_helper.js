@@ -717,3 +717,73 @@ async function processExcelPipeline(optionsJson) {
         return { success: false, processedRows: 0, error: err.toString() };
     });
 }
+
+// ── Write arbitrary SQL/query result rows to a sheet ──────────────────────
+// Used by the /smart_query "sql" route: the backend returns
+// { columns: [...], rows: [{...}, ...] } (a list of records), and this
+// writes that straight into a new sheet as a plain table (headers + data),
+// bolding the header row and autofitting columns — same visual treatment
+// as the other "write results to a new sheet" paths above, but for
+// arbitrary externally-computed rows rather than a transform of existing
+// sheet data.
+async function jsWriteQueryResultToSheet(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") {
+        return { success: false, processedRows: 0, error: "Excel context unallocated" };
+    }
+
+    let opts;
+    try {
+        opts = JSON.parse(optionsJson);
+    } catch (err) {
+        return { success: false, processedRows: 0, error: "Invalid options JSON: " + err.toString() };
+    }
+
+    const columns = Array.isArray(opts.columns) ? opts.columns : [];
+    const rows = Array.isArray(opts.rows) ? opts.rows : [];
+    if (columns.length === 0) {
+        return { success: false, processedRows: 0, error: "No columns to write." };
+    }
+
+    const matrix = [columns];
+    for (const row of rows) {
+        matrix.push(columns.map(function (c) {
+            const v = row ? row[c] : undefined;
+            return (v === null || v === undefined) ? "" : v;
+        }));
+    }
+
+    return await Excel.run(async function (context) {
+        const workbook = context.workbook;
+        const sheetName = String(opts.targetSheetName || "Query_Result").substring(0, 31);
+
+        const sheets = workbook.worksheets;
+        sheets.load("items/name");
+        await context.sync();
+
+        for (let i = 0; i < sheets.items.length; i++) {
+            if (sheets.items[i].name === sheetName) {
+                sheets.items[i].delete();
+                break;
+            }
+        }
+        await context.sync();
+
+        const outSheet = workbook.worksheets.add(sheetName);
+        const outRange = outSheet.getRangeByIndexes(0, 0, matrix.length, matrix[0].length);
+        outRange.values = matrix;
+
+        const headerRange = outSheet.getRangeByIndexes(0, 0, 1, matrix[0].length);
+        headerRange.format.font.bold = true;
+
+        outSheet.getUsedRange().format.autofitColumns();
+        outSheet.activate();
+        await context.sync();
+
+        return { success: true, processedRows: matrix.length - 1, error: null };
+    }).catch(function (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    });
+}
+
+window.jsWriteQueryResultToSheet = jsWriteQueryResultToSheet;
