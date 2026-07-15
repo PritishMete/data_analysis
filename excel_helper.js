@@ -757,6 +757,25 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         const workbook = context.workbook;
         const sheetName = String(opts.targetSheetName || "Query_Result").substring(0, 31);
 
+        // ── Capture the user's current sheet + selection BEFORE touching
+        // anything, so we can restore it afterward. Without this, activating
+        // the new results sheet below would silently change what "Active
+        // Selection" mode reads on the NEXT query — effectively making it
+        // look like the selection was "forgotten".
+        const previousSheet = workbook.worksheets.getActiveWorksheet();
+        previousSheet.load("name");
+        let previousSelection = null;
+        try {
+            previousSelection = context.workbook.getSelectedRange();
+            previousSelection.load("address");
+        } catch (_) {
+            previousSelection = null;
+        }
+        await context.sync();
+
+        const previousSheetName = previousSheet.name;
+        const previousSelectionAddress = previousSelection ? previousSelection.address : null;
+
         const sheets = workbook.worksheets;
         sheets.load("items/name");
         await context.sync();
@@ -777,8 +796,25 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         headerRange.format.font.bold = true;
 
         outSheet.getUsedRange().format.autofitColumns();
-        outSheet.activate();
         await context.sync();
+
+        // ── Restore focus to wherever the user actually was, so their
+        // active-selection workflow continues uninterrupted. The new sheet
+        // still exists and can be opened manually — it's just not forced
+        // into view, and (more importantly) it's not left as the active
+        // sheet for the next query to accidentally read from.
+        try {
+            const sheetToRestore = workbook.worksheets.getItem(previousSheetName);
+            sheetToRestore.activate();
+            if (previousSelectionAddress) {
+                sheetToRestore.getRange(previousSelectionAddress).select();
+            }
+            await context.sync();
+        } catch (_) {
+            // If restoring fails for any reason (e.g. the address was on a
+            // sheet that no longer exists), don't fail the whole write —
+            // the results sheet was already created successfully.
+        }
 
         return { success: true, processedRows: matrix.length - 1, error: null };
     }).catch(function (err) {

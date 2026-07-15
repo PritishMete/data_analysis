@@ -90667,7 +90667,7 @@ return A.B(A.aGD(B.V.eH(A.V(["targetSheetName",a1,"columns",b,"rows",a],t.N,t.K)
 case 16:a2=b7
 s=J.d(J.al(a2,"success"),!0)?17:19
 break
-case 17:a8.a="\n\n\ud83d\udcc4 Also written to sheet '"+A.n(a1)+"'."
+case 17:a8.a="\n\n\ud83d\udcc4 Also written to sheet '"+A.n(a1)+"' (your current selection is unchanged)."
 s=20
 return A.B(n.iW(),$async$kJ)
 case 20:s=21
