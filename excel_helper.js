@@ -46,6 +46,7 @@ async function getSheetData(sheetName) {
             const range = sheet.getUsedRange();
             range.load("values");
             await context.sync();
+            console.log("[DEBUG getSheetData] values:", JSON.stringify(range.values));
             return JSON.stringify(range.values);
         });
     } catch (err) {
@@ -68,8 +69,10 @@ async function getSelectedExcelData() {
                 const usedRange = sheet.getUsedRange();
                 usedRange.load("values");
                 await context.sync();
+                console.log("[DEBUG getSelectedExcelData] usedRange.values:", JSON.stringify(usedRange.values));
                 return JSON.stringify(usedRange.values);
             }
+            console.log("[DEBUG getSelectedExcelData] range.values:", JSON.stringify(range.values));
             return JSON.stringify(range.values);
         });
     } catch (err) {
