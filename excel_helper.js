@@ -748,12 +748,22 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         return { success: false, processedRows: 0, error: "No columns to write." };
     }
 
-    const matrix = [columns];
-    for (const row of rows) {
-        matrix.push(columns.map(function (c) {
+    // Writing every row in a single Range.values assignment works fine for
+    // small results, but large datasets (tens of thousands of rows — e.g. a
+    // full customer_shopping_behavior.csv with 70k+ rows) build a JSON
+    // payload big enough to exceed Excel's per-request size limit
+    // (particularly on Excel Online / Excel for the web), or simply take
+    // long enough that the request stalls. Either way the write can fail
+    // with nothing visible happening in the UI. Writing in bounded-size
+    // chunks and syncing after each one keeps every individual request
+    // small, regardless of total row count.
+    const CHUNK_ROWS = 2000;
+
+    function rowToArray(row) {
+        return columns.map(function (c) {
             const v = row ? row[c] : undefined;
             return (v === null || v === undefined) ? "" : v;
-        }));
+        });
     }
 
     return await Excel.run(async function (context) {
@@ -792,11 +802,25 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         await context.sync();
 
         const outSheet = workbook.worksheets.add(sheetName);
-        const outRange = outSheet.getRangeByIndexes(0, 0, matrix.length, matrix[0].length);
-        outRange.values = matrix;
 
-        const headerRange = outSheet.getRangeByIndexes(0, 0, 1, matrix[0].length);
+        // Header row on its own — always small, always safe to write in one go.
+        const headerRange = outSheet.getRangeByIndexes(0, 0, 1, columns.length);
+        headerRange.values = [columns];
         headerRange.format.font.bold = true;
+        await context.sync();
+
+        // Data rows in bounded chunks, syncing after each one so no single
+        // request has to carry the whole dataset at once. Row 0 is the
+        // header, so chunk i's data starts at sheet row (1 + start).
+        let written = 0;
+        for (let start = 0; start < rows.length; start += CHUNK_ROWS) {
+            const chunk = rows.slice(start, start + CHUNK_ROWS);
+            const matrix = chunk.map(rowToArray);
+            const dataRange = outSheet.getRangeByIndexes(1 + start, 0, matrix.length, columns.length);
+            dataRange.values = matrix;
+            written += matrix.length;
+            await context.sync();
+        }
 
         outSheet.getUsedRange().format.autofitColumns();
         await context.sync();
@@ -819,7 +843,7 @@ async function jsWriteQueryResultToSheet(optionsJson) {
             // the results sheet was already created successfully.
         }
 
-        return { success: true, processedRows: matrix.length - 1, error: null };
+        return { success: true, processedRows: written, error: null };
     }).catch(function (err) {
         return { success: false, processedRows: 0, error: err.toString() };
     });
