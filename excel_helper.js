@@ -850,3 +850,132 @@ async function jsWriteQueryResultToSheet(optionsJson) {
 }
 
 window.jsWriteQueryResultToSheet = jsWriteQueryResultToSheet;
+
+// ── Quality Report Aggregator ────────────────────────────────────────────────
+//
+// Every time a tab/upload is analyzed, this appends one summary row
+// (Table | Rows | Missing | Duplicates) into a running "Quality_Report"
+// sheet. If the same table was already scanned before, its row is
+// overwritten in place rather than duplicated — so the sheet stays a clean
+// one-row-per-table rollup no matter how many times a given tab is
+// re-scanned, giving an overall view as each tab gets analyzed one by one.
+async function jsAppendQualityReportRow(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") {
+        return { success: false, processedRows: 0, error: "Excel context unallocated" };
+    }
+
+    let opts;
+    try {
+        opts = JSON.parse(optionsJson);
+    } catch (err) {
+        return { success: false, processedRows: 0, error: "Invalid options JSON: " + err.toString() };
+    }
+
+    const targetSheetName = String(opts.targetSheetName || "Quality_Report").substring(0, 31);
+    const HEADERS = ["Table", "Rows", "Missing", "Duplicates"];
+
+    return await Excel.run(async function (context) {
+        const workbook = context.workbook;
+
+        // ── Capture the user's current sheet + selection BEFORE touching
+        // anything, so we can restore it afterward — same pattern as
+        // jsWriteQueryResultToSheet, so this rollup never "steals" focus.
+        const previousSheet = workbook.worksheets.getActiveWorksheet();
+        previousSheet.load("name");
+        let previousSelection = null;
+        try {
+            previousSelection = workbook.getSelectedRange();
+            previousSelection.load("address");
+        } catch (_) {
+            previousSelection = null;
+        }
+
+        // ── Resolve the label for this row: either an explicit tableName
+        // (used for uploaded files, which have no worksheet of their own),
+        // or the sheet that was actually analyzed (named source, else
+        // whatever is currently active).
+        let tableLabel = opts.tableName || null;
+        let resolvedSheet = null;
+        if (!tableLabel) {
+            resolvedSheet = opts.sourceSheetName
+                ? workbook.worksheets.getItem(opts.sourceSheetName)
+                : workbook.worksheets.getActiveWorksheet();
+            resolvedSheet.load("name");
+        }
+        await context.sync();
+        if (!tableLabel) tableLabel = resolvedSheet.name;
+
+        const previousSheetName = previousSheet.name;
+        const previousSelectionAddress = previousSelection ? previousSelection.address : null;
+
+        // ── Find or create the Quality_Report sheet.
+        const sheets = workbook.worksheets;
+        sheets.load("items/name");
+        await context.sync();
+
+        let reportSheet = null;
+        for (let i = 0; i < sheets.items.length; i++) {
+            if (sheets.items[i].name === targetSheetName) {
+                reportSheet = sheets.items[i];
+                break;
+            }
+        }
+
+        let existingRows = [];
+        if (!reportSheet) {
+            reportSheet = workbook.worksheets.add(targetSheetName);
+            const headerRange = reportSheet.getRangeByIndexes(0, 0, 1, HEADERS.length);
+            headerRange.values = [HEADERS];
+            headerRange.format.font.bold = true;
+            await context.sync();
+        } else {
+            const usedRange = reportSheet.getUsedRange();
+            usedRange.load("values");
+            await context.sync();
+            existingRows = usedRange.values || [];
+        }
+
+        // ── Overwrite this table's existing row if it was scanned before,
+        // otherwise append a new one at the end.
+        let rowIndex = -1;
+        for (let i = 1; i < existingRows.length; i++) {
+            if (String(existingRows[i][0]) === String(tableLabel)) {
+                rowIndex = i;
+                break;
+            }
+        }
+        if (rowIndex === -1) rowIndex = Math.max(existingRows.length, 1);
+
+        const rowValues = [[
+            tableLabel,
+            Number(opts.rows) || 0,
+            Number(opts.missing) || 0,
+            Number(opts.duplicates) || 0,
+        ]];
+        const dataRange = reportSheet.getRangeByIndexes(rowIndex, 0, 1, HEADERS.length);
+        dataRange.values = rowValues;
+        await context.sync();
+
+        reportSheet.getUsedRange().format.autofitColumns();
+        await context.sync();
+
+        // ── Restore focus to wherever the user actually was.
+        try {
+            const sheetToRestore = workbook.worksheets.getItem(previousSheetName);
+            sheetToRestore.activate();
+            if (previousSelectionAddress) {
+                sheetToRestore.getRange(previousSelectionAddress).select();
+            }
+            await context.sync();
+        } catch (_) {
+            // Non-fatal — the report row was already written successfully.
+        }
+
+        return { success: true, processedRows: 1, error: null };
+    }).catch(function (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    });
+}
+
+window.jsAppendQualityReportRow = jsAppendQualityReportRow;
