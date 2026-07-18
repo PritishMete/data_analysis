@@ -321,12 +321,12 @@ function _parseNumericCell(v) {
 }
 
 /**
- * Compiles an arithmetic expression string into a function(rowMap) => number|null.
- * `rowMap` is a plain object of { columnName: cellValue } for one data row.
- * Throws if the expression doesn't parse — callers should treat that as a
- * hard failure, not fall back to guessing.
+ * Parses an arithmetic expression string into an AST (shared by both the
+ * JS-value evaluator below and the live-Excel-formula renderer further
+ * down, so the two stay in lockstep — same grammar, two different
+ * "backends").
  */
-function compileArithmeticExpression(expr) {
+function parseArithmeticExpression(expr) {
     const tokens = _tokenizeArithmetic(expr);
     let pos = 0;
     const peek = () => tokens[pos];
@@ -369,11 +369,25 @@ function compileArithmeticExpression(expr) {
 
     const ast = parseExpression();
     if (pos < tokens.length) throw new Error("Unexpected trailing characters in expression: " + expr);
+    return ast;
+}
+
+/**
+ * Compiles an arithmetic expression string into a function(rowMap) => number|null.
+ * `rowMap` must be keyed by NORMALIZED (trimmed, lowercased) column name —
+ * see evaluateFormulaColumnMutation, which builds it that way — so a
+ * column reference like "UnitPrice" still resolves against a header
+ * literally spelled "Unit Price" or "unitprice".
+ * Throws if the expression doesn't parse — callers should treat that as a
+ * hard failure, not fall back to guessing.
+ */
+function compileArithmeticExpression(expr) {
+    const ast = parseArithmeticExpression(expr);
 
     function evalNode(node, rowMap) {
         switch (node.type) {
             case "number": return node.value;
-            case "column": return _parseNumericCell(rowMap[node.name]);
+            case "column": return _parseNumericCell(rowMap[String(node.name).trim().toLowerCase()]);
             case "unary": {
                 const v = evalNode(node.operand, rowMap);
                 return v === null ? null : -v;
@@ -394,6 +408,83 @@ function compileArithmeticExpression(expr) {
     }
 
     return (rowMap) => evalNode(ast, rowMap);
+}
+
+// ── Live Excel-formula renderer ──────────────────────────────────────────────
+//
+// Renders the SAME parsed AST as an actual Excel formula string referencing
+// real cell addresses (e.g. "(B2*C2)") instead of a one-time JS-computed
+// value — so the written cell recalculates automatically whenever the
+// source cells change, the same way a manually-typed =B2*C2 formula would.
+
+function columnIndexToExcelLetter(idx) {
+    let letter = "";
+    idx = idx + 1; // to 1-based
+    while (idx > 0) {
+        const rem = (idx - 1) % 26;
+        letter = String.fromCharCode(65 + rem) + letter;
+        idx = Math.floor((idx - 1) / 26);
+    }
+    return letter;
+}
+
+function _astToExcelFormula(node, colLetterMap, excelRow) {
+    switch (node.type) {
+        case "number": return String(node.value);
+        case "column": {
+            const key = String(node.name).trim().toLowerCase();
+            const letter = colLetterMap[key];
+            if (!letter) throw new Error("Column '" + node.name + "' not found on this sheet.");
+            return letter + excelRow;
+        }
+        case "unary":
+            return "(-" + _astToExcelFormula(node.operand, colLetterMap, excelRow) + ")";
+        case "binary": {
+            const l = _astToExcelFormula(node.left, colLetterMap, excelRow);
+            const r = _astToExcelFormula(node.right, colLetterMap, excelRow);
+            return "(" + l + node.op + r + ")";
+        }
+        default: throw new Error("Unsupported expression node: " + node.type);
+    }
+}
+
+function _escapeExcelStringLiteral(s) {
+    return String(s).replace(/"/g, '""');
+}
+
+/**
+ * Builds one row's live Excel formula string (with the leading "=") for a
+ * formula-mode add_column config — e.g. "=(B2*C2)" for compute mode, or
+ * '=IF(ABS(D2-(B2*C2))<=0.01,"Match","Mismatch")' for compare mode.
+ * `colLetterMap` must be keyed by normalized (trimmed, lowercased) header
+ * name -> Excel column letter (see jsAddComputedColumn).
+ */
+function buildExcelFormulaForRow(config, colLetterMap, excelRow) {
+    const mode = (config.mode || "compare").toLowerCase();
+    const rightAst = parseArithmeticExpression(config.rightExpression);
+    const rightF = _astToExcelFormula(rightAst, colLetterMap, excelRow);
+
+    if (mode === "compute") {
+        return "=" + rightF;
+    }
+
+    const leftAst = parseArithmeticExpression(config.leftExpression);
+    const leftF = _astToExcelFormula(leftAst, colLetterMap, excelRow);
+    const tolerance = typeof config.tolerance === "number" ? config.tolerance : 0.01;
+    const thenLabel = _escapeExcelStringLiteral(config.thenLabel !== undefined ? config.thenLabel : "Match");
+    const elseLabel = _escapeExcelStringLiteral(config.elseLabel !== undefined ? config.elseLabel : "Mismatch");
+
+    let comparisonExpr;
+    switch (config.operator || "equals") {
+        case "equals":             comparisonExpr = `ABS(${leftF}-${rightF})<=${tolerance}`; break;
+        case "not_equals":         comparisonExpr = `ABS(${leftF}-${rightF})>${tolerance}`; break;
+        case "greater_than":       comparisonExpr = `${leftF}>${rightF}`; break;
+        case "less_than":          comparisonExpr = `${leftF}<${rightF}`; break;
+        case "greater_than_equal": comparisonExpr = `${leftF}>=${rightF}`; break;
+        case "less_than_equal":    comparisonExpr = `${leftF}<=${rightF}`; break;
+        default:                   comparisonExpr = `ABS(${leftF}-${rightF})<=${tolerance}`;
+    }
+    return `=IF(${comparisonExpr},"${thenLabel}","${elseLabel}")`;
 }
 
 /**
@@ -451,7 +542,7 @@ function evaluateFormulaColumnMutation(matrix, config) {
     for (let i = 1; i < matrix.length; i++) {
         const row = matrix[i];
         const rowMap = {};
-        headers.forEach((h, idx) => { rowMap[h] = row[idx]; });
+        headers.forEach((h, idx) => { rowMap[String(h).trim().toLowerCase()] = row[idx]; });
 
         const rightVal = evalRight(rowMap);
 

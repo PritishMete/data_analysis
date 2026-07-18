@@ -407,6 +407,51 @@ async function jsAddComputedColumn(optionsJson) {
                 newMatrix[0].length
             );
             outRange.values = newMatrix;
+            await context.sync();
+
+            // Upgrade the new column's data cells from static computed
+            // values to LIVE Excel formulas (e.g. "=(B2*C2)" or
+            // '=IF(D2=B2*C2,"Match","Mismatch")') referencing the actual
+            // source cells, so edits elsewhere in the sheet keep this
+            // column correct instead of it going stale. Only applies to
+            // formula mode — aggregate/window-function columns still write
+            // a one-time computed label, same as before.
+            if (isFormulaMode) {
+                try {
+                    const headers = matrix[0];
+                    const headerToLetter = {};
+                    headers.forEach(function (h, idx) {
+                        headerToLetter[String(h).trim().toLowerCase()] =
+                            columnIndexToExcelLetter(usedRange.columnIndex + idx);
+                    });
+
+                    const dataRowCount = newMatrix.length - 1;
+                    if (dataRowCount > 0) {
+                        const formulaRows = [];
+                        for (let r = 1; r < newMatrix.length; r++) {
+                            // 1-based Excel row number for this data row.
+                            const excelRow = usedRange.rowIndex + r + 1;
+                            formulaRows.push([buildExcelFormulaForRow(config, headerToLetter, excelRow)]);
+                        }
+                        const newColOffset = headers.length; // 0-based index of the new column
+                        const formulaRange = sheet.getRangeByIndexes(
+                            usedRange.rowIndex + 1,     // first DATA row (skip header)
+                            usedRange.columnIndex + newColOffset,
+                            dataRowCount,
+                            1
+                        );
+                        formulaRange.formulas = formulaRows;
+                        await context.sync();
+                    }
+                } catch (err) {
+                    // Non-fatal: the static computed values above are already
+                    // written and correct as of right now — a failure here
+                    // just means the column won't auto-recalculate on future
+                    // edits, not that the operation itself failed.
+                    console.error("formula_column: failed to write live Excel formulas —", err.message);
+                }
+            }
+
             sheet.getUsedRange().format.autofitColumns();
             await context.sync();
 
