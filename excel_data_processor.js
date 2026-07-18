@@ -268,6 +268,220 @@ function evaluateAddColumnMutation(matrix, config) {
     return newMatrix;
 }
 
+// ── Arithmetic Expression Engine (for formula-based computed columns) ───────
+//
+// Tiny, safe recursive-descent parser/evaluator for expressions built from
+// column names, numbers, +  -  *  /  and parentheses — e.g. "UnitPrice *
+// Quantity". Deliberately does NOT use eval()/new Function(): expressions
+// here can originate from LLM output, so they're parsed against an explicit
+// grammar instead of executed as JS.
+
+function _tokenizeArithmetic(expr) {
+    const tokens = [];
+    const s = String(expr);
+    let i = 0;
+    while (i < s.length) {
+        const ch = s[i];
+        if (/\s/.test(ch)) { i++; continue; }
+        if (ch === "(") { tokens.push({ type: "lparen" }); i++; continue; }
+        if (ch === ")") { tokens.push({ type: "rparen" }); i++; continue; }
+        if (ch === "+" || ch === "-" || ch === "*" || ch === "/") {
+            tokens.push({ type: "op", value: ch });
+            i++;
+            continue;
+        }
+        if (/[0-9.]/.test(ch)) {
+            let j = i;
+            while (j < s.length && /[0-9.]/.test(s[j])) j++;
+            tokens.push({ type: "number", value: parseFloat(s.slice(i, j)) });
+            i = j;
+            continue;
+        }
+        if (/[A-Za-z_]/.test(ch)) {
+            // Column names may contain spaces (e.g. "Unit Price"), so consume
+            // greedily and trim — operators/parens still terminate the run.
+            let j = i;
+            while (j < s.length && /[A-Za-z0-9_ ]/.test(s[j])) j++;
+            tokens.push({ type: "ident", value: s.slice(i, j).trim() });
+            i = j;
+            continue;
+        }
+        throw new Error("Unexpected character '" + ch + "' in expression: " + expr);
+    }
+    return tokens;
+}
+
+function _parseNumericCell(v) {
+    if (typeof v === "number") return isNaN(v) ? null : v;
+    if (v === null || v === undefined) return null;
+    const cleaned = String(v).replace(/[₹$€£,\s]/g, "").trim();
+    if (cleaned === "") return null;
+    const n = Number(cleaned);
+    return isNaN(n) ? null : n;
+}
+
+/**
+ * Compiles an arithmetic expression string into a function(rowMap) => number|null.
+ * `rowMap` is a plain object of { columnName: cellValue } for one data row.
+ * Throws if the expression doesn't parse — callers should treat that as a
+ * hard failure, not fall back to guessing.
+ */
+function compileArithmeticExpression(expr) {
+    const tokens = _tokenizeArithmetic(expr);
+    let pos = 0;
+    const peek = () => tokens[pos];
+    const next = () => tokens[pos++];
+
+    function parseExpression() {
+        let node = parseTerm();
+        while (peek() && peek().type === "op" && (peek().value === "+" || peek().value === "-")) {
+            const op = next().value;
+            node = { type: "binary", op, left: node, right: parseTerm() };
+        }
+        return node;
+    }
+    function parseTerm() {
+        let node = parseFactor();
+        while (peek() && peek().type === "op" && (peek().value === "*" || peek().value === "/")) {
+            const op = next().value;
+            node = { type: "binary", op, left: node, right: parseFactor() };
+        }
+        return node;
+    }
+    function parseFactor() {
+        const tok = peek();
+        if (!tok) throw new Error("Unexpected end of expression: " + expr);
+        if (tok.type === "op" && tok.value === "-") {
+            next();
+            return { type: "unary", operand: parseFactor() };
+        }
+        if (tok.type === "lparen") {
+            next();
+            const node = parseExpression();
+            const closing = next();
+            if (!closing || closing.type !== "rparen") throw new Error("Missing closing parenthesis in: " + expr);
+            return node;
+        }
+        if (tok.type === "number") { next(); return { type: "number", value: tok.value }; }
+        if (tok.type === "ident")  { next(); return { type: "column", name: tok.value }; }
+        throw new Error("Unexpected token in expression: " + expr);
+    }
+
+    const ast = parseExpression();
+    if (pos < tokens.length) throw new Error("Unexpected trailing characters in expression: " + expr);
+
+    function evalNode(node, rowMap) {
+        switch (node.type) {
+            case "number": return node.value;
+            case "column": return _parseNumericCell(rowMap[node.name]);
+            case "unary": {
+                const v = evalNode(node.operand, rowMap);
+                return v === null ? null : -v;
+            }
+            case "binary": {
+                const l = evalNode(node.left, rowMap);
+                const r = evalNode(node.right, rowMap);
+                if (l === null || r === null) return null;
+                switch (node.op) {
+                    case "+": return l + r;
+                    case "-": return l - r;
+                    case "*": return l * r;
+                    case "/": return r === 0 ? null : l / r;
+                }
+            }
+        }
+        return null;
+    }
+
+    return (rowMap) => evalNode(ast, rowMap);
+}
+
+/**
+ * Adds a new column driven by arithmetic expressions over existing columns
+ * — e.g. checking whether TotalPrice = UnitPrice * Quantity, or computing a
+ * derived value like UnitPrice * (1 - DiscountPct).
+ *
+ * Config fields (sibling to evaluateAddColumnMutation's group-aggregate
+ * config — this is the row-wise/arithmetic counterpart):
+ *  - newColumnName:   header for the new column
+ *  - mode:            "compare" (default) writes thenLabel/elseLabel based
+ *                      on comparing leftExpression against rightExpression;
+ *                      "compute" writes the raw evaluated rightExpression
+ *                      value instead (no comparison, no leftExpression needed)
+ *  - leftExpression:  e.g. "TotalPrice"                (compare mode only)
+ *  - rightExpression: e.g. "UnitPrice * Quantity"
+ *  - operator:        equals | not_equals | greater_than | less_than |
+ *                      greater_than_equal | less_than_equal (default "equals")
+ *  - tolerance:        allowed absolute difference for equals/not_equals,
+ *                      to absorb float rounding (default 0.01)
+ *  - thenLabel/elseLabel: values written when the comparison is true/false
+ *                      (default "Match"/"Mismatch")
+ *
+ * Returns a NEW matrix, or the SAME `matrix` reference unchanged if an
+ * expression fails to parse (caller should treat that as failed, not a
+ * silent no-op) — same contract as evaluateAddColumnMutation.
+ */
+function evaluateFormulaColumnMutation(matrix, config) {
+    if (!matrix || matrix.length === 0) return matrix;
+
+    const headers = matrix[0];
+    const newColumnName = config.newColumnName || "Formula_Check";
+    const mode = (config.mode || "compare").toLowerCase();
+    const operator = config.operator || "equals";
+    const tolerance = typeof config.tolerance === "number" ? config.tolerance : 0.01;
+    const thenLabel = config.thenLabel !== undefined ? config.thenLabel : "Match";
+    const elseLabel = config.elseLabel !== undefined ? config.elseLabel : "Mismatch";
+
+    if (!config.rightExpression || (mode === "compare" && !config.leftExpression)) {
+        console.error("formula_column: missing leftExpression/rightExpression in config", config);
+        return matrix;
+    }
+
+    let evalLeft = null;
+    let evalRight;
+    try {
+        evalRight = compileArithmeticExpression(config.rightExpression);
+        if (mode === "compare") evalLeft = compileArithmeticExpression(config.leftExpression);
+    } catch (err) {
+        console.error("formula_column: failed to parse expression —", err.message);
+        return matrix;
+    }
+
+    const newMatrix = [[...headers, newColumnName]];
+    for (let i = 1; i < matrix.length; i++) {
+        const row = matrix[i];
+        const rowMap = {};
+        headers.forEach((h, idx) => { rowMap[h] = row[idx]; });
+
+        const rightVal = evalRight(rowMap);
+
+        if (mode === "compute") {
+            newMatrix.push([...row, rightVal === null ? "" : rightVal]);
+            continue;
+        }
+
+        const leftVal = evalLeft(rowMap);
+        let result;
+        if (leftVal === null || rightVal === null) {
+            result = false; // can't evaluate for this row — treat as non-match, don't throw off the rest
+        } else {
+            const diff = leftVal - rightVal;
+            switch (operator) {
+                case "equals":             result = Math.abs(diff) <= tolerance; break;
+                case "not_equals":         result = Math.abs(diff) > tolerance; break;
+                case "greater_than":       result = leftVal > rightVal; break;
+                case "less_than":          result = leftVal < rightVal; break;
+                case "greater_than_equal": result = leftVal >= rightVal; break;
+                case "less_than_equal":    result = leftVal <= rightVal; break;
+                default:                   result = Math.abs(diff) <= tolerance;
+            }
+        }
+        newMatrix.push([...row, result ? thenLabel : elseLabel]);
+    }
+
+    return newMatrix;
+}
+
 /**
  * Advanced Cross-Sheet Lookup Engine (VLOOKUP / HLOOKUP / XLOOKUP)
  *

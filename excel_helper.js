@@ -348,7 +348,22 @@ async function jsAddComputedColumn(optionsJson) {
         const opts = JSON.parse(optionsJson);
         const config = opts.addColumnConfig || {};
 
-        if (typeof evaluateAddColumnMutation !== "function") {
+        // Two flavors share this one action: the original group-aggregate
+        // classification (partitionBy + windowFunction), and a row-wise
+        // arithmetic comparison/computation (rightExpression present) — e.g.
+        // checking TotalPrice against UnitPrice * Quantity. Auto-detected so
+        // no separate action/interop entry is needed for the arithmetic case.
+        const isFormulaMode = !!config.rightExpression;
+
+        if (isFormulaMode) {
+            if (typeof evaluateFormulaColumnMutation !== "function") {
+                return {
+                    success: false,
+                    processedRows: 0,
+                    error: "Formula-column engine not loaded — ensure excel_data_processor.js is included before excel_helper.js in index.html."
+                };
+            }
+        } else if (typeof evaluateAddColumnMutation !== "function") {
             return {
                 success: false,
                 processedRows: 0,
@@ -369,15 +384,19 @@ async function jsAddComputedColumn(optionsJson) {
                 return { success: false, processedRows: 0, error: "Sheet has no data." };
             }
 
-            const newMatrix = evaluateAddColumnMutation(matrix, config);
+            const newMatrix = isFormulaMode
+                ? evaluateFormulaColumnMutation(matrix, config)
+                : evaluateAddColumnMutation(matrix, config);
             if (newMatrix === matrix) {
-                // evaluateAddColumnMutation returns the SAME reference back
-                // when partitionBy/sourceColumn couldn't be resolved against
-                // this sheet's headers — treat that as a failure, not a no-op.
+                // Both mutation functions return the SAME reference back when
+                // their config couldn't be resolved against this sheet's
+                // headers — treat that as a failure, not a no-op.
                 return {
                     success: false,
                     processedRows: 0,
-                    error: "Could not resolve the partitionBy/sourceColumn fields against this sheet's headers."
+                    error: isFormulaMode
+                        ? "Could not parse leftExpression/rightExpression against this sheet's headers."
+                        : "Could not resolve the partitionBy/sourceColumn fields against this sheet's headers."
                 };
             }
 
