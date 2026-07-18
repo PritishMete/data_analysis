@@ -104,19 +104,22 @@ function calculateAggregations(matrix, selectedOps, selectedCols) {
 
 function evaluateCondition(val, config) {
     // Blank Excel cells arrive as "" (or occasionally null/undefined), never
-    // a literal "null" string — so null/empty checks must be handled as
-    // their own condition types, resolved BEFORE the generic string/number
-    // comparisons below (which have no concept of "blank").
-    const isBlank = val === null || val === undefined || String(val).trim() === "";
+    // a literal "null" string — so null/empty checks need to be resolved
+    // BEFORE the generic string/number comparisons below, which have no
+    // concept of "blank" on their own.
+    const isBlank       = val === null || val === undefined || String(val).trim() === "";
+    const targetIsBlank = config.value === null || config.value === undefined || String(config.value).trim() === "";
 
-    switch (config.type) {
-        case "is_null":
-        case "is_empty":
-            return isBlank;
-        case "is_not_null":
-        case "is_not_empty":
-            return !isBlank;
-    }
+    // Explicit null/empty condition types.
+    if (config.type === "is_null" || config.type === "is_empty") return isBlank;
+    if (config.type === "is_not_null" || config.type === "is_not_empty") return !isBlank;
+
+    // Some callers express "is null" as `{ type: "equals", value: "" }` (or
+    // value: null) rather than a dedicated is_null type — treat that the
+    // same way instead of falling through to a plain string comparison,
+    // which would incorrectly exclude every blank row.
+    if (config.type === "equals" && targetIsBlank) return isBlank;
+    if (config.type === "not_equals" && targetIsBlank) return !isBlank;
 
     // Every other condition type requires an actual value to compare against.
     if (isBlank) return false;
@@ -153,7 +156,7 @@ function evaluateCondition(val, config) {
         case "bottom_n":
             return true;
         // Unknown condition type — exclude rather than silently pass
-        // everything through (the previous "default: return true" is what
+        // everything through (the old "default: return true" is what
         // turned an unrecognized "is_null" into a no-op filter).
         default: return false;
     }
