@@ -103,7 +103,24 @@ function calculateAggregations(matrix, selectedOps, selectedCols) {
 }
 
 function evaluateCondition(val, config) {
-    if (val === null || val === undefined) return false;
+    // Blank Excel cells arrive as "" (or occasionally null/undefined), never
+    // a literal "null" string — so null/empty checks must be handled as
+    // their own condition types, resolved BEFORE the generic string/number
+    // comparisons below (which have no concept of "blank").
+    const isBlank = val === null || val === undefined || String(val).trim() === "";
+
+    switch (config.type) {
+        case "is_null":
+        case "is_empty":
+            return isBlank;
+        case "is_not_null":
+        case "is_not_empty":
+            return !isBlank;
+    }
+
+    // Every other condition type requires an actual value to compare against.
+    if (isBlank) return false;
+
     const strVal    = String(val).trim().toLowerCase();
     const targetStr = String(config.value).trim().toLowerCase();
 
@@ -135,7 +152,10 @@ function evaluateCondition(val, config) {
         case "top_n":
         case "bottom_n":
             return true;
-        default: return true;
+        // Unknown condition type — exclude rather than silently pass
+        // everything through (the previous "default: return true" is what
+        // turned an unrecognized "is_null" into a no-op filter).
+        default: return false;
     }
 }
 
