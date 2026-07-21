@@ -440,6 +440,17 @@ async function jsAddComputedColumn(optionsJson) {
                             dataRowCount,
                             1
                         );
+                        // Force General number format BEFORE writing the
+                        // formula strings. If this column (or the cells
+                        // Excel copied formatting from) was ever set to
+                        // Text format — common when a column sits next to
+                        // text data, or from an earlier write — Excel will
+                        // store a formula string as literal TEXT instead of
+                        // evaluating it, showing "=IF(ABS(H3-..." in the
+                        // cell rather than "Match"/"Mismatch". Resetting
+                        // the format first guarantees the formula actually
+                        // computes.
+                        formulaRange.numberFormat = formulaRows.map(() => ["General"]);
                         formulaRange.formulas = formulaRows;
                         await context.sync();
                     }
