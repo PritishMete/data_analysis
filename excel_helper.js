@@ -464,6 +464,75 @@ async function jsAddComputedColumn(optionsJson) {
 
 window.jsAddComputedColumn = jsAddComputedColumn;
 
+// ── Repair an existing column in place for flagged rows ────────────────────
+// Handles the "fill/fix/correct <col> where <flagCol> is Mismatch" family of
+// commands. Deliberately mirrors jsAddComputedColumn's write pattern (read
+// used range -> mutate matrix -> write the SAME range back on the SAME
+// sheet) instead of processExcelPipeline's pattern, because this operation
+// must NEVER create, delete, or switch to a different sheet — it only
+// overwrites cells that already exist.
+async function jsRepairColumn(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+
+    if (typeof evaluateRepairColumnMutation !== "function") {
+        return {
+            success: false,
+            processedRows: 0,
+            error: "Repair-column engine not loaded — ensure excel_data_processor.js is included before excel_helper.js in index.html."
+        };
+    }
+
+    try {
+        const opts = JSON.parse(optionsJson);
+        const config = opts.repairColumnConfig || {};
+
+        return await Excel.run(async function (context) {
+            const workbook = context.workbook;
+            // No sheetName override honored beyond the current/active sheet by
+            // default — this action operates on whatever sheet the user is
+            // already looking at, exactly like jsAddComputedColumn.
+            const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
+
+            const usedRange = sheet.getUsedRange();
+            usedRange.load(["values", "rowIndex", "columnIndex"]);
+            await context.sync();
+
+            const matrix = usedRange.values;
+            if (!matrix || matrix.length === 0) {
+                return { success: false, processedRows: 0, error: "Sheet has no data." };
+            }
+
+            const newMatrix = evaluateRepairColumnMutation(matrix, config);
+            if (newMatrix === matrix) {
+                return {
+                    success: false,
+                    processedRows: 0,
+                    error: "Could not resolve targetColumn/conditionColumn/formula against this sheet's headers."
+                };
+            }
+
+            const outRange = sheet.getRangeByIndexes(
+                usedRange.rowIndex,
+                usedRange.columnIndex,
+                newMatrix.length,
+                newMatrix[0].length
+            );
+            outRange.values = newMatrix;
+            await context.sync();
+
+            sheet.getUsedRange().format.autofitColumns();
+            await context.sync();
+
+            return { success: true, processedRows: newMatrix._repairedCount || 0, error: null };
+        });
+    } catch (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    }
+}
+
+window.jsRepairColumn = jsRepairColumn;
+
 // ── Orchestrator Pipeline ───────────────────────────────────────────────────
 
 function _getColumnLabel(colIndex) {

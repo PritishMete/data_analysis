@@ -575,6 +575,79 @@ function evaluateFormulaColumnMutation(matrix, config) {
 }
 
 /**
+ * Recomputes/corrects the values of an EXISTING column, but only for rows
+ * flagged by another EXISTING column (typically a "check"/validation column
+ * built earlier by evaluateFormulaColumnMutation). Every other row's
+ * targetColumn value is left completely untouched.
+ *
+ * This is deliberately separate from evaluateFormulaColumnMutation (which
+ * only ever APPENDS a new column) and from any blank-fill/imputation logic
+ * (which only ever touches genuinely empty cells) — "fill/fix/correct <col>
+ * where <flagCol> is Mismatch" is neither of those: it targets an existing
+ * column, conditionally, using a formula built from the row's OTHER values.
+ *
+ * Config fields:
+ *  - targetColumn:    existing column whose values get overwritten
+ *  - conditionColumn: existing column that flags which rows to touch
+ *  - conditionValue:  value in conditionColumn that marks a row for repair
+ *                      (default "Mismatch")
+ *  - formula:         arithmetic expression (other columns only) that
+ *                      computes the corrected value for targetColumn
+ *
+ * Returns a NEW matrix (same shape, same headers, same sheet) with only the
+ * flagged rows' targetColumn cells changed — or the SAME `matrix` reference
+ * unchanged if the config can't be resolved against this sheet's headers,
+ * which the caller should treat as a failure, not a silent no-op.
+ */
+function evaluateRepairColumnMutation(matrix, config) {
+    if (!matrix || matrix.length === 0) return matrix;
+
+    const headers = matrix[0];
+    const norm = h => String(h).trim().toLowerCase();
+
+    const targetColIdx = headers.findIndex(h => norm(h) === norm(config.targetColumn));
+    const conditionColIdx = headers.findIndex(h => norm(h) === norm(config.conditionColumn));
+    const conditionValue = config.conditionValue !== undefined ? String(config.conditionValue) : "Mismatch";
+
+    if (targetColIdx === -1 || conditionColIdx === -1 || !config.formula) {
+        console.error("repair_column: could not resolve targetColumn/conditionColumn/formula against headers", config);
+        return matrix;
+    }
+
+    let evalFormula;
+    try {
+        evalFormula = compileArithmeticExpression(config.formula);
+    } catch (err) {
+        console.error("repair_column: failed to parse formula —", err.message);
+        return matrix;
+    }
+
+    const newMatrix = [headers];
+    let repaired = 0;
+
+    for (let i = 1; i < matrix.length; i++) {
+        const row = [...matrix[i]];
+        const flagVal = row[conditionColIdx];
+
+        if (String(flagVal).trim().toLowerCase() === conditionValue.trim().toLowerCase()) {
+            const rowMap = {};
+            headers.forEach((h, idx) => { rowMap[norm(h)] = row[idx]; });
+
+            const computed = evalFormula(rowMap);
+            if (computed !== null) {
+                row[targetColIdx] = computed;
+                repaired++;
+            }
+        }
+
+        newMatrix.push(row);
+    }
+
+    newMatrix._repairedCount = repaired; // informational only, ignored by Excel range writes
+    return newMatrix;
+}
+
+/**
  * Advanced Cross-Sheet Lookup Engine (VLOOKUP / HLOOKUP / XLOOKUP)
  *
  * Mirrors the real Excel formula arguments end-to-end:
