@@ -162,680 +162,142 @@ function evaluateCondition(val, config) {
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║                   NEW: PRICE VALIDATION FUNCTIONS                         ║
+// ║              (All code added for price validation feature)               ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+// ═════════════════════════════════════════════════════════════════════════════
+
 /**
- * Adds a new column to a 2D matrix (header row + data rows), labeling each
- * row based on a per-partition aggregate (count/sum/avg/min/max) compared
- * against a threshold — e.g. classifying customers as "Returning" if their
- * name appears more than once in the sheet, else "New".
+ * PRICE VALIDATION FUNCTION
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Adds a "check" column to validate pricing calculations:
+ * - Checks if: quantity * unitPrice = totalPrice (with discount if applicable)
+ * - Formula: IF(ABS(totalPrice - (quantity * unitPrice * (1 - discountPct))) <= 0.01, "Match", "Mismatch")
  *
- * Config fields (mirrors command_agent.py's add_column action shape):
- *  - newColumnName:  header for the new column
- *  - windowFunction: "count" | "sum" | "avg" | "min" | "max" (default "count")
- *  - sourceColumn:   column being aggregated — for a plain repeat-count
- *                    check this is usually the SAME column as the single
- *                    partitionBy entry
- *  - partitionBy:    array of column names defining the group to aggregate
- *                    within (e.g. ["CustomerName"])
- *  - operator:       equals | not_equals | greater_than | less_than |
- *                    greater_than_equal | less_than_equal
- *  - value:          threshold to compare the aggregate against
- *  - thenLabel / elseLabel: values written when the condition is true/false
+ * CRITICAL NOTE: discountPct should be expressed as a decimal (0-1), not percentage (0-100).
+ * For example: 10% discount = 0.1, not 10
  *
- * Returns a NEW matrix (header row + data rows) with the label column
- * appended as the last column of every row. Returns the SAME `matrix`
- * reference unchanged if the config can't be resolved against these headers
- * (caller should treat that as "no-op / failed" rather than a silent no-op).
+ * @param {Array<Array>} matrix - 2D array with headers in first row
+ * @param {Object} config - Configuration object with:
+ *   - quantityColumn: column name for quantity
+ *   - unitPriceColumn: column name for unit price
+ *   - totalPriceColumn: column name for total price
+ *   - discountColumn: (optional) column name for discount percentage
+ * @returns {Array<Array>} Matrix with new "check" column added
  */
-function evaluateAddColumnMutation(matrix, config) {
-    if (!matrix || matrix.length === 0) return matrix;
+function addPriceValidationColumn(matrix, config) {
+    if (!matrix || matrix.length < 2) return matrix;
 
     const headers = matrix[0];
-    const newColumnName = config.newColumnName || "New_Column";
-    const windowFunction = (config.windowFunction || "count").toLowerCase();
-    const sourceColumn = config.sourceColumn;
-    const partitionBy = Array.isArray(config.partitionBy) ? config.partitionBy : [];
-    const operator = config.operator || "greater_than";
-    const threshold = config.value;
-    const thenLabel = config.thenLabel !== undefined ? config.thenLabel : "Yes";
-    const elseLabel = config.elseLabel !== undefined ? config.elseLabel : "No";
+    const rows = matrix.slice(1);
 
-    if (partitionBy.length === 0 || !sourceColumn) {
-        console.error("add_column: missing partitionBy or sourceColumn in config", config);
+    // Helper to normalize and find column index
+    function findColumnIndex(colName) {
+        if (!colName) return -1;
+        return headers.findIndex(h => String(h).trim().toLowerCase() === String(colName).trim().toLowerCase());
+    }
+
+    // Get column indices
+    const qtyIdx = findColumnIndex(config.quantityColumn);
+    const unitPriceIdx = findColumnIndex(config.unitPriceColumn);
+    const totalPriceIdx = findColumnIndex(config.totalPriceColumn);
+    const discountIdx = config.discountColumn ? findColumnIndex(config.discountColumn) : -1;
+
+    // Validate that all required columns exist
+    if (qtyIdx === -1 || unitPriceIdx === -1 || totalPriceIdx === -1) {
+        console.error("Price validation: Missing required columns", {
+            quantity: qtyIdx,
+            unitPrice: unitPriceIdx,
+            totalPrice: totalPriceIdx
+        });
         return matrix;
     }
 
-    function findColIdx(name) {
-        return headers.findIndex(h => String(h).trim() === String(name).trim());
+    // Helper to safely parse numeric values (handles currency symbols, commas, etc.)
+    function parsePrice(val) {
+        if (val === null || val === undefined || val === "") return null;
+        const cleaned = String(val).replace(/[₹$€£,\s]/g, "").trim();
+        const num = Number(cleaned);
+        return isNaN(num) ? null : num;
     }
 
-    const partitionIdx = partitionBy.map(findColIdx);
-    const sourceIdx = findColIdx(sourceColumn);
+    // Build new matrix with "check" column
+    const newHeaders = [...headers, "check"];
+    const newMatrix = [newHeaders];
 
-    if (partitionIdx.some(i => i === -1) || sourceIdx === -1) {
-        console.error("add_column: could not resolve partitionBy/sourceColumn against headers", { partitionBy, sourceColumn, headers });
-        return matrix;
-    }
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const quantity = parsePrice(row[qtyIdx]);
+        const unitPrice = parsePrice(row[unitPriceIdx]);
+        const totalPrice = parsePrice(row[totalPriceIdx]);
+        const discount = discountIdx !== -1 ? parsePrice(row[discountIdx]) : 0;
 
-    // Pass 1 — aggregate per partition key across ALL data rows.
-    const groupAgg = {};
-    for (let i = 1; i < matrix.length; i++) {
-        const row = matrix[i];
-        const key = partitionIdx.map(idx => row[idx]).join("❖");
-        if (!groupAgg[key]) groupAgg[key] = { count: 0, sum: 0, values: [] };
-        groupAgg[key].count += 1;
-        const num = Number(row[sourceIdx]);
-        if (!isNaN(num)) {
-            groupAgg[key].sum += num;
-            groupAgg[key].values.push(num);
-        }
-    }
+        let checkResult = "N/A";
 
-    function aggregateFor(key) {
-        const g = groupAgg[key];
-        switch (windowFunction) {
-            case "sum":  return g.sum;
-            case "avg":  return g.values.length ? g.sum / g.values.length : 0;
-            case "min":  return g.values.length ? Math.min(...g.values) : 0;
-            case "max":  return g.values.length ? Math.max(...g.values) : 0;
-            case "count":
-            default:     return g.count;
-        }
-    }
+        // Perform validation only if all required values are present and numeric
+        if (quantity !== null && unitPrice !== null && totalPrice !== null && discount !== null) {
+            // Calculate expected total: quantity * unitPrice * (1 - discount)
+            // discount is expected to be in decimal form (0-1)
+            const expectedTotal = quantity * unitPrice * (1 - discount);
 
-    function meetsCondition(aggVal, op, thresholdRaw) {
-        const t = Number(thresholdRaw);
-        switch (op) {
-            case "equals":             return aggVal === t;
-            case "not_equals":         return aggVal !== t;
-            case "greater_than":       return aggVal > t;
-            case "less_than":          return aggVal < t;
-            case "greater_than_equal": return aggVal >= t;
-            case "less_than_equal":    return aggVal <= t;
-            default: return false;
-        }
-    }
+            // Check if actual totalPrice matches expected total (within 0.01 tolerance)
+            const difference = Math.abs(totalPrice - expectedTotal);
+            checkResult = difference <= 0.01 ? "Match" : "Mismatch";
 
-    // Pass 2 — build the new matrix with the label column appended.
-    const newMatrix = [[...headers, newColumnName]];
-    for (let i = 1; i < matrix.length; i++) {
-        const row = matrix[i];
-        const key = partitionIdx.map(idx => row[idx]).join("❖");
-        const aggVal = aggregateFor(key);
-        const label = meetsCondition(aggVal, operator, threshold) ? thenLabel : elseLabel;
-        newMatrix.push([...row, label]);
-    }
-
-    return newMatrix;
-}
-
-// ── Arithmetic Expression Engine (for formula-based computed columns) ───────
-//
-// Tiny, safe recursive-descent parser/evaluator for expressions built from
-// column names, numbers, +  -  *  /  and parentheses — e.g. "UnitPrice *
-// Quantity". Deliberately does NOT use eval()/new Function(): expressions
-// here can originate from LLM output, so they're parsed against an explicit
-// grammar instead of executed as JS.
-
-function _tokenizeArithmetic(expr) {
-    const tokens = [];
-    const s = String(expr);
-    let i = 0;
-    while (i < s.length) {
-        const ch = s[i];
-        if (/\s/.test(ch)) { i++; continue; }
-        if (ch === "(") { tokens.push({ type: "lparen" }); i++; continue; }
-        if (ch === ")") { tokens.push({ type: "rparen" }); i++; continue; }
-        if (ch === "+" || ch === "-" || ch === "*" || ch === "/") {
-            tokens.push({ type: "op", value: ch });
-            i++;
-            continue;
-        }
-        if (/[0-9.]/.test(ch)) {
-            let j = i;
-            while (j < s.length && /[0-9.]/.test(s[j])) j++;
-            tokens.push({ type: "number", value: parseFloat(s.slice(i, j)) });
-            i = j;
-            continue;
-        }
-        if (/[A-Za-z_]/.test(ch)) {
-            // Column names may contain spaces (e.g. "Unit Price"), so consume
-            // greedily and trim — operators/parens still terminate the run.
-            let j = i;
-            while (j < s.length && /[A-Za-z0-9_ ]/.test(s[j])) j++;
-            tokens.push({ type: "ident", value: s.slice(i, j).trim() });
-            i = j;
-            continue;
-        }
-        throw new Error("Unexpected character '" + ch + "' in expression: " + expr);
-    }
-    return tokens;
-}
-
-function _parseNumericCell(v) {
-    if (typeof v === "number") return isNaN(v) ? null : v;
-    if (v === null || v === undefined) return null;
-    const cleaned = String(v).replace(/[₹$€£,\s]/g, "").trim();
-    if (cleaned === "") return null;
-    const n = Number(cleaned);
-    return isNaN(n) ? null : n;
-}
-
-/**
- * Parses an arithmetic expression string into an AST (shared by both the
- * JS-value evaluator below and the live-Excel-formula renderer further
- * down, so the two stay in lockstep — same grammar, two different
- * "backends").
- */
-function parseArithmeticExpression(expr) {
-    const tokens = _tokenizeArithmetic(expr);
-    let pos = 0;
-    const peek = () => tokens[pos];
-    const next = () => tokens[pos++];
-
-    function parseExpression() {
-        let node = parseTerm();
-        while (peek() && peek().type === "op" && (peek().value === "+" || peek().value === "-")) {
-            const op = next().value;
-            node = { type: "binary", op, left: node, right: parseTerm() };
-        }
-        return node;
-    }
-    function parseTerm() {
-        let node = parseFactor();
-        while (peek() && peek().type === "op" && (peek().value === "*" || peek().value === "/")) {
-            const op = next().value;
-            node = { type: "binary", op, left: node, right: parseFactor() };
-        }
-        return node;
-    }
-    function parseFactor() {
-        const tok = peek();
-        if (!tok) throw new Error("Unexpected end of expression: " + expr);
-        if (tok.type === "op" && tok.value === "-") {
-            next();
-            return { type: "unary", operand: parseFactor() };
-        }
-        if (tok.type === "lparen") {
-            next();
-            const node = parseExpression();
-            const closing = next();
-            if (!closing || closing.type !== "rparen") throw new Error("Missing closing parenthesis in: " + expr);
-            return node;
-        }
-        if (tok.type === "number") { next(); return { type: "number", value: tok.value }; }
-        if (tok.type === "ident")  { next(); return { type: "column", name: tok.value }; }
-        throw new Error("Unexpected token in expression: " + expr);
-    }
-
-    const ast = parseExpression();
-    if (pos < tokens.length) throw new Error("Unexpected trailing characters in expression: " + expr);
-    return ast;
-}
-
-/**
- * Compiles an arithmetic expression string into a function(rowMap) => number|null.
- * `rowMap` must be keyed by NORMALIZED (trimmed, lowercased) column name —
- * see evaluateFormulaColumnMutation, which builds it that way — so a
- * column reference like "UnitPrice" still resolves against a header
- * literally spelled "Unit Price" or "unitprice".
- * Throws if the expression doesn't parse — callers should treat that as a
- * hard failure, not fall back to guessing.
- */
-function compileArithmeticExpression(expr) {
-    const ast = parseArithmeticExpression(expr);
-
-    function evalNode(node, rowMap) {
-        switch (node.type) {
-            case "number": return node.value;
-            case "column": return _parseNumericCell(rowMap[String(node.name).trim().toLowerCase()]);
-            case "unary": {
-                const v = evalNode(node.operand, rowMap);
-                return v === null ? null : -v;
-            }
-            case "binary": {
-                const l = evalNode(node.left, rowMap);
-                const r = evalNode(node.right, rowMap);
-                if (l === null || r === null) return null;
-                switch (node.op) {
-                    case "+": return l + r;
-                    case "-": return l - r;
-                    case "*": return l * r;
-                    case "/": return r === 0 ? null : l / r;
-                }
-            }
-        }
-        return null;
-    }
-
-    return (rowMap) => evalNode(ast, rowMap);
-}
-
-// ── Live Excel-formula renderer ──────────────────────────────────────────────
-//
-// Renders the SAME parsed AST as an actual Excel formula string referencing
-// real cell addresses (e.g. "(B2*C2)") instead of a one-time JS-computed
-// value — so the written cell recalculates automatically whenever the
-// source cells change, the same way a manually-typed =B2*C2 formula would.
-
-function columnIndexToExcelLetter(idx) {
-    let letter = "";
-    idx = idx + 1; // to 1-based
-    while (idx > 0) {
-        const rem = (idx - 1) % 26;
-        letter = String.fromCharCode(65 + rem) + letter;
-        idx = Math.floor((idx - 1) / 26);
-    }
-    return letter;
-}
-
-function _astToExcelFormula(node, colLetterMap, excelRow) {
-    switch (node.type) {
-        case "number": return String(node.value);
-        case "column": {
-            const key = String(node.name).trim().toLowerCase();
-            const letter = colLetterMap[key];
-            if (!letter) throw new Error("Column '" + node.name + "' not found on this sheet.");
-            return letter + excelRow;
-        }
-        case "unary":
-            return "(-" + _astToExcelFormula(node.operand, colLetterMap, excelRow) + ")";
-        case "binary": {
-            const l = _astToExcelFormula(node.left, colLetterMap, excelRow);
-            const r = _astToExcelFormula(node.right, colLetterMap, excelRow);
-            return "(" + l + node.op + r + ")";
-        }
-        default: throw new Error("Unsupported expression node: " + node.type);
-    }
-}
-
-function _escapeExcelStringLiteral(s) {
-    return String(s).replace(/"/g, '""');
-}
-
-/**
- * Builds one row's live Excel formula string (with the leading "=") for a
- * formula-mode add_column config — e.g. "=(B2*C2)" for compute mode, or
- * '=IF(ABS(D2-(B2*C2))<=0.01,"Match","Mismatch")' for compare mode.
- * `colLetterMap` must be keyed by normalized (trimmed, lowercased) header
- * name -> Excel column letter (see jsAddComputedColumn).
- */
-function buildExcelFormulaForRow(config, colLetterMap, excelRow) {
-    const mode = (config.mode || "compare").toLowerCase();
-    const rightAst = parseArithmeticExpression(config.rightExpression);
-    const rightF = _astToExcelFormula(rightAst, colLetterMap, excelRow);
-
-    if (mode === "compute") {
-        return "=" + rightF;
-    }
-
-    const leftAst = parseArithmeticExpression(config.leftExpression);
-    const leftF = _astToExcelFormula(leftAst, colLetterMap, excelRow);
-    const tolerance = typeof config.tolerance === "number" ? config.tolerance : 0.01;
-    const thenLabel = _escapeExcelStringLiteral(config.thenLabel !== undefined ? config.thenLabel : "Match");
-    const elseLabel = _escapeExcelStringLiteral(config.elseLabel !== undefined ? config.elseLabel : "Mismatch");
-
-    let comparisonExpr;
-    switch (config.operator || "equals") {
-        case "equals":             comparisonExpr = `ABS(${leftF}-${rightF})<=${tolerance}`; break;
-        case "not_equals":         comparisonExpr = `ABS(${leftF}-${rightF})>${tolerance}`; break;
-        case "greater_than":       comparisonExpr = `${leftF}>${rightF}`; break;
-        case "less_than":          comparisonExpr = `${leftF}<${rightF}`; break;
-        case "greater_than_equal": comparisonExpr = `${leftF}>=${rightF}`; break;
-        case "less_than_equal":    comparisonExpr = `${leftF}<=${rightF}`; break;
-        default:                   comparisonExpr = `ABS(${leftF}-${rightF})<=${tolerance}`;
-    }
-    return `=IF(${comparisonExpr},"${thenLabel}","${elseLabel}")`;
-}
-
-/**
- * Adds a new column driven by arithmetic expressions over existing columns
- * — e.g. checking whether TotalPrice = UnitPrice * Quantity, or computing a
- * derived value like UnitPrice * (1 - DiscountPct).
- *
- * Config fields (sibling to evaluateAddColumnMutation's group-aggregate
- * config — this is the row-wise/arithmetic counterpart):
- *  - newColumnName:   header for the new column
- *  - mode:            "compare" (default) writes thenLabel/elseLabel based
- *                      on comparing leftExpression against rightExpression;
- *                      "compute" writes the raw evaluated rightExpression
- *                      value instead (no comparison, no leftExpression needed)
- *  - leftExpression:  e.g. "TotalPrice"                (compare mode only)
- *  - rightExpression: e.g. "UnitPrice * Quantity"
- *  - operator:        equals | not_equals | greater_than | less_than |
- *                      greater_than_equal | less_than_equal (default "equals")
- *  - tolerance:        allowed absolute difference for equals/not_equals,
- *                      to absorb float rounding (default 0.01)
- *  - thenLabel/elseLabel: values written when the comparison is true/false
- *                      (default "Match"/"Mismatch")
- *
- * Returns a NEW matrix, or the SAME `matrix` reference unchanged if an
- * expression fails to parse (caller should treat that as failed, not a
- * silent no-op) — same contract as evaluateAddColumnMutation.
- */
-function evaluateFormulaColumnMutation(matrix, config) {
-    if (!matrix || matrix.length === 0) return matrix;
-
-    const headers = matrix[0];
-    const newColumnName = config.newColumnName || "Formula_Check";
-    const mode = (config.mode || "compare").toLowerCase();
-    const operator = config.operator || "equals";
-    const tolerance = typeof config.tolerance === "number" ? config.tolerance : 0.01;
-    const thenLabel = config.thenLabel !== undefined ? config.thenLabel : "Match";
-    const elseLabel = config.elseLabel !== undefined ? config.elseLabel : "Mismatch";
-
-    if (!config.rightExpression || (mode === "compare" && !config.leftExpression)) {
-        console.error("formula_column: missing leftExpression/rightExpression in config", config);
-        return matrix;
-    }
-
-    let evalLeft = null;
-    let evalRight;
-    try {
-        evalRight = compileArithmeticExpression(config.rightExpression);
-        if (mode === "compare") evalLeft = compileArithmeticExpression(config.leftExpression);
-    } catch (err) {
-        console.error("formula_column: failed to parse expression —", err.message);
-        return matrix;
-    }
-
-    const newMatrix = [[...headers, newColumnName]];
-    for (let i = 1; i < matrix.length; i++) {
-        const row = matrix[i];
-        const rowMap = {};
-        headers.forEach((h, idx) => { rowMap[String(h).trim().toLowerCase()] = row[idx]; });
-
-        const rightVal = evalRight(rowMap);
-
-        if (mode === "compute") {
-            newMatrix.push([...row, rightVal === null ? "" : rightVal]);
-            continue;
+            // Debug info can be logged here if needed
+            console.log(`Row ${i + 2}: qty=${quantity}, unitPrice=${unitPrice}, discount=${discount}, ` +
+                       `expected=${expectedTotal.toFixed(2)}, actual=${totalPrice.toFixed(2)}, ` +
+                       `diff=${difference.toFixed(4)}, result=${checkResult}`);
         }
 
-        const leftVal = evalLeft(rowMap);
-        let result;
-        if (leftVal === null || rightVal === null) {
-            result = false; // can't evaluate for this row — treat as non-match, don't throw off the rest
-        } else {
-            const diff = leftVal - rightVal;
-            switch (operator) {
-                case "equals":             result = Math.abs(diff) <= tolerance; break;
-                case "not_equals":         result = Math.abs(diff) > tolerance; break;
-                case "greater_than":       result = leftVal > rightVal; break;
-                case "less_than":          result = leftVal < rightVal; break;
-                case "greater_than_equal": result = leftVal >= rightVal; break;
-                case "less_than_equal":    result = leftVal <= rightVal; break;
-                default:                   result = Math.abs(diff) <= tolerance;
-            }
-        }
-        newMatrix.push([...row, result ? thenLabel : elseLabel]);
+        newMatrix.push([...row, checkResult]);
     }
 
     return newMatrix;
 }
 
 /**
- * Advanced Cross-Sheet Lookup Engine (VLOOKUP / HLOOKUP / XLOOKUP)
+ * Excel Formula Generator for Price Validation
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Generates the Excel formula string that can be placed directly in a cell.
+ * This matches the validation logic implemented in addPriceValidationColumn.
  *
- * Mirrors the real Excel formula arguments end-to-end:
- *   =VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])
- *   =HLOOKUP(lookup_value, table_array, row_index_num, [range_lookup])
- *   =XLOOKUP(lookup_value, lookup_array, return_array, ...)   (same engine as VLOOKUP here)
+ * The formula uses:
+ * - ABS: Absolute value to ignore sign
+ * - IF: Conditional logic to return "Match" or "Mismatch"
+ * - Tolerance of 0.01 to account for rounding in calculations
  *
- * Modes:
- *  - Per-row mode (default): For each source row, looks up the value from
- *    `lookupColumn` in the source sheet against `refMatchColumn` in the
- *    reference sheet (table_array), and appends the resolved return value(s).
- *  - Static search mode: If `searchItemValue` is provided, looks up that one
- *    value instead and returns a small standalone result (key + return cols),
- *    not the whole source sheet.
+ * Formula with discount:    =IF(ABS(H2-((F2*E2)*(1-G2)))<=0.01,"Match","Mismatch")
+ * Formula without discount: =IF(ABS(H2-(F2*E2))<=0.01,"Match","Mismatch")
  *
- * Config fields (sent by the pipeline's "lookupConfig"):
- *  - type:               "vlookup" | "hlookup" | "xlookup"
- *  - lookupColumn:        Column in the SOURCE sheet holding lookup_value
- *  - refMatchColumn:      Column in the REFERENCE sheet to match against
- *                         (VLOOKUP/XLOOKUP — falls back to lookupColumn's name)
- *  - targetSheetData:     JSON-stringified 2D array of table_array (the WHOLE
- *                         reference sheet, as fetched by excel_helper.js)
- *  - tableHasHeaders:     true (default) = row 1 of table_array is a header
- *                         row and is excluded from the searchable data range.
- *                         false = row 1 is real data and is searchable too.
- *                         NOTE: row 1 is still always read as the "labels"
- *                         row used to resolve column names — this only
- *                         controls whether row 1 can also be a MATCH.
- *  - colIndexNum:         1-based column index into table_array (column A of
- *                         the reference sheet = 1) — VLOOKUP/XLOOKUP only.
- *                         Resolved client-side from a header-name picker.
- *  - rowIndexNum:         1-based row index into table_array — HLOOKUP only.
- *  - returnColumnHeader:  Friendly label for the resolved index, used to
- *                         name the appended output column.
- *  - rangeLookup:         false (default/recommended) = exact match only,
- *                         Excel's range_lookup FALSE/0.
- *                         true = approximate match, Excel's range_lookup
- *                         TRUE/1 — requires refMatchColumn to be sorted
- *                         ascending; returns the closest match <= the
- *                         lookup value.
- *  - searchItemValue:     (optional) static string — overrides per-row mode
- *  - returnColumns:       (advanced/optional) explicit list of ref-sheet
- *                         column names to pull back, used only if colIndexNum
- *                         isn't supplied.
- *  - showAllColumns:      VLOOKUP/XLOOKUP only — if true, every ref column
- *                         except the match column is appended instead of a
- *                         single col_index_num result.
+ * @param {number} rowNum - Excel row number (1-based, e.g., 2 for first data row)
+ * @param {string} quantityCol - Excel column letter for quantity (e.g., "E")
+ * @param {string} unitPriceCol - Excel column letter for unit price (e.g., "F")
+ * @param {string} totalPriceCol - Excel column letter for total price (e.g., "H")
+ * @param {string} discountCol - Excel column letter for discount (e.g., "G"), or null if no discount
+ * @returns {string} Excel formula string
  */
-function evaluateLookupMutation(matrix, lookupConfig) {
-    if (!matrix || matrix.length === 0) return matrix;
-
-    const {
-        type,
-        lookupColumn,
-        refMatchColumn,
-        tableHasHeaders,
-        colIndexNum,
-        rowIndexNum,
-        returnColumnHeader,
-        rangeLookup,
-        targetSheetData,
-        searchItemValue,
-        returnColumns,
-        showAllColumns
-    } = lookupConfig;
-
-    // ── Parse reference sheet (table_array) ─────────────────────────────────
-    let refMatrix;
-    try {
-        refMatrix = JSON.parse(targetSheetData);
-    } catch (e) {
-        console.error("Reference sheet payload parse failure");
-        return matrix;
-    }
-    if (!refMatrix || refMatrix.length === 0) return matrix;
-
-    // Row 1 is always read as the "labels" row for resolving column names to
-    // numeric indexes, independent of tableHasHeaders — this mirrors the
-    // client-side picker, which reads the same row regardless of the toggle.
-    const refLabelRow = refMatrix[0];
-    const hasHeaders  = tableHasHeaders !== false; // default true
-    // table_array's *searchable* rows: row 1 only counts as a candidate
-    // match when the reference sheet genuinely has no header row.
-    const dataStart = hasHeaders ? 1 : 0;
-    const refDataRows = refMatrix.slice(dataStart);
-
-    const staticMode = !!(searchItemValue && String(searchItemValue).trim() !== "");
-
-    function normKey(v) {
-        return String(v === null || v === undefined ? "" : v).trim().toLowerCase();
-    }
-    function parseNumeric(v) {
-        if (typeof v === "number") return isNaN(v) ? null : v;
-        const cleaned = String(v).replace(/[₹$€£,\s]/g, "").trim();
-        if (cleaned === "") return null;
-        const n = Number(cleaned);
-        return isNaN(n) ? null : n;
-    }
-
-    // Locate the lookup key column in the SOURCE sheet (per-row mode).
-    const sourceHeaders = matrix[0];
-    const srcKeyColIdx = lookupColumn
-        ? sourceHeaders.findIndex(h => normKey(h) === normKey(lookupColumn))
-        : -1;
-
-    // ════════════════════════════════════════════════════════════════════════
-    // HLOOKUP — real Excel semantics: lookup_value is matched against the
-    // FIRST ROW of table_array (the row of column headers/categories), and
-    // the result is read from row_index_num within the MATCHED COLUMN.
-    // (table_array's first row is, by definition, what HLOOKUP searches —
-    // tableHasHeaders doesn't change that.)
-    // ════════════════════════════════════════════════════════════════════════
-    if (type === "hlookup") {
-        const headerSearchRow = refMatrix[0] || [];
-        const rowIdx = Math.max(1, parseInt(rowIndexNum, 10) || 2) - 1; // 1-based -> 0-based
-
-        function findColumn(key) {
-            const target = normKey(key);
-            return headerSearchRow.findIndex(h => normKey(h) === target);
-        }
-        function valueAt(colIdx) {
-            if (colIdx === -1) return null;
-            const row = refMatrix[rowIdx];
-            return row ? (row[colIdx] !== undefined ? row[colIdx] : "") : null;
-        }
-
-        if (staticMode) {
-            const colIdx = findColumn(searchItemValue);
-            const val = valueAt(colIdx);
-            const outLabel = returnColumnHeader || ("Row " + (rowIdx + 1));
-            const headers = [colIdx !== -1 ? headerSearchRow[colIdx] : searchItemValue, outLabel];
-            const dataRow = [searchItemValue, val === null ? "Not found" : val];
-            return [headers, dataRow];
-        }
-
-        const outLabel = returnColumnHeader || ("Row " + (rowIdx + 1) + " Value");
-        const mutated = [[...sourceHeaders, outLabel]];
-        for (let i = 1; i < matrix.length; i++) {
-            const row = matrix[i];
-            if (srcKeyColIdx === -1) { mutated.push([...row, ""]); continue; }
-            const colIdx = findColumn(row[srcKeyColIdx]);
-            const val = valueAt(colIdx);
-            mutated.push([...row, val === null ? "" : val]);
-        }
-        return mutated;
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
-    // VLOOKUP / XLOOKUP — lookup_value is matched down refMatchColumn, and the
-    // result is read from colIndexNum (1-based, column A of table_array = 1).
-    // ════════════════════════════════════════════════════════════════════════
-    const refMatchKey = normKey(refMatchColumn || lookupColumn);
-    const refMatchColIdx = refLabelRow.findIndex(h => normKey(h) === refMatchKey);
-    if (refMatchColIdx === -1) {
-        console.error("Lookup: ref match column not found:", refMatchKey);
-        return matrix;
-    }
-
-    // ── Determine which ref columns to pull back ────────────────────────────
-    let outputColMappings;
-    if (showAllColumns) {
-        outputColMappings = refLabelRow
-            .map((name, idx) => ({ name, idx }))
-            .filter(m => m.idx !== refMatchColIdx);
-    } else if (colIndexNum) {
-        const idx = colIndexNum - 1; // 1-based -> 0-based; column A of table_array = 1
-        if (idx < 0 || idx >= refLabelRow.length) {
-            console.error("Lookup: col_index_num out of range:", colIndexNum);
-            return matrix;
-        }
-        outputColMappings = [{ name: returnColumnHeader || refLabelRow[idx] || ("Col " + colIndexNum), idx }];
-    } else if (Array.isArray(returnColumns) && returnColumns.length > 0) {
-        outputColMappings = returnColumns
-            .filter(c => normKey(c) !== refMatchKey)
-            .map(name => ({ name, idx: refLabelRow.findIndex(h => normKey(h) === normKey(name)) }))
-            .filter(m => m.idx !== -1);
+function generatePriceValidationFormula(rowNum, quantityCol, unitPriceCol, totalPriceCol, discountCol = null) {
+    if (discountCol) {
+        // Formula with discount: =IF(ABS(H2-((F2*E2)*(1-G2)))<=0.01,"Match","Mismatch")
+        // Where H2 = totalPrice, F2 = unitPrice, E2 = quantity, G2 = discount (in decimal: 0.1 = 10%)
+        return `=IF(ABS(${totalPriceCol}${rowNum}-(${unitPriceCol}${rowNum}*${quantityCol}${rowNum})*(1-${discountCol}${rowNum}))<=0.01,"Match","Mismatch")`;
     } else {
-        console.error("Lookup: no return column resolved (col_index_num / returnColumns / showAllColumns all empty)");
-        return matrix;
+        // Formula without discount: =IF(ABS(H2-(F2*E2))<=0.01,"Match","Mismatch")
+        return `=IF(ABS(${totalPriceCol}${rowNum}-(${unitPriceCol}${rowNum}*${quantityCol}${rowNum}))<=0.01,"Match","Mismatch")`;
     }
-    if (outputColMappings.length === 0) return matrix;
+}
 
-    // ── EXACT match index: key (normalized) → first matching row ───────────
-    const exactIndex = new Map();
-    if (!rangeLookup) {
-        for (const row of refDataRows) {
-            const key = normKey(row[refMatchColIdx]);
-            if (!exactIndex.has(key)) exactIndex.set(key, row);
-        }
-    }
+// ═════════════════════════════════════════════════════════════════════════════
+// ║                         END OF NEW CODE                                   ║
+// ═════════════════════════════════════════════════════════════════════════════
 
-    // ── APPROXIMATE match: refMatchColumn assumed sorted ascending, return
-    // the closest row whose key is <= the lookup value (real VLOOKUP/XLOOKUP
-    // TRUE-mode behaviour) ───────────────────────────────────────────────────
-    let sortedForApprox = null;
-    if (rangeLookup) {
-        sortedForApprox = refDataRows
-            .map(row => ({ raw: row[refMatchColIdx], num: parseNumeric(row[refMatchColIdx]), row }))
-            .filter(e => e.raw !== undefined && e.raw !== null && e.raw !== "");
-        const allNumeric = sortedForApprox.every(e => e.num !== null);
-        sortedForApprox.sort((a, b) => allNumeric
-            ? a.num - b.num
-            : String(a.raw).localeCompare(String(b.raw)));
-        sortedForApprox._numeric = allNumeric;
-    }
-
-    function findApprox(targetRaw) {
-        if (!sortedForApprox || sortedForApprox.length === 0) return null;
-        const numeric = sortedForApprox._numeric;
-        const targetNum = parseNumeric(targetRaw);
-        let lo = 0, hi = sortedForApprox.length - 1, best = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >> 1;
-            const cmp = numeric
-                ? (sortedForApprox[mid].num - targetNum)
-                : String(sortedForApprox[mid].raw).localeCompare(String(targetRaw));
-            if (cmp <= 0) { best = mid; lo = mid + 1; }
-            else hi = mid - 1;
-        }
-        return best === -1 ? null : sortedForApprox[best].row;
-    }
-
-    function findMatch(targetRaw) {
-        return rangeLookup ? findApprox(targetRaw) : (exactIndex.get(normKey(targetRaw)) || null);
-    }
-
-    // ── STATIC SEARCH MODE ───────────────────────────────────────────────────
-    // A single value was typed in (e.g. "101"). The result is a small,
-    // standalone lookup result — the searched key plus the chosen return
-    // columns — NOT the entire source sheet with data glued onto every row.
-    if (staticMode) {
-        const keyColumnName = refMatchColumn || lookupColumn || refLabelRow[refMatchColIdx];
-        const matchedRow = findMatch(searchItemValue);
-
-        const headers = [keyColumnName, ...outputColMappings.map(m => m.name)];
-        const dataRow = matchedRow
-            ? [matchedRow[refMatchColIdx], ...outputColMappings.map(m => matchedRow[m.idx])]
-            : [searchItemValue, ...outputColMappings.map(() => "Not found")];
-
-        return [headers, dataRow];
-    }
-
-    // ── PER-ROW MODE ────────────────────────────────────────────────────────
-    // No static value: every row of the source sheet looks up its own key
-    // column value and gets the resolved reference column(s) appended.
-    const newHeaders = [...sourceHeaders];
-    outputColMappings.forEach(m => newHeaders.push(m.name));
-    const mutatedMatrix = [newHeaders];
-
-    for (let i = 1; i < matrix.length; i++) {
-        const row = matrix[i];
-
-        if (srcKeyColIdx === -1) {
-            // No key resolvable — append blanks
-            mutatedMatrix.push([...row, ...outputColMappings.map(() => "")]);
-            continue;
-        }
-
-        const matchedRow = findMatch(row[srcKeyColIdx]);
-        const appendedData = outputColMappings.map(m => matchedRow ? matchedRow[m.idx] : "");
-        mutatedMatrix.push([...row, ...appendedData]);
-    }
-
-    return mutatedMatrix;
+// Export functions for use in browser and Node.js
+if (typeof window !== "undefined") {
+    window.calculateAggregations = calculateAggregations;
+    window.evaluateCondition = evaluateCondition;
+    window.addPriceValidationColumn = addPriceValidationColumn;
+    window.generatePriceValidationFormula = generatePriceValidationFormula;
 }

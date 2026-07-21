@@ -1054,3 +1054,188 @@ async function jsAppendQualityReportRow(optionsJson) {
 }
 
 window.jsAppendQualityReportRow = jsAppendQualityReportRow;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║                  NEW: PRICE VALIDATION FUNCTION                           ║
+// ║              (Added for price validation feature)                         ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Adds a price validation check column to an Excel sheet
+ * Validates: quantity * unitPrice * (1 - discount%) = totalPrice
+ *
+ * FORMULA USED:
+ * With discount:    =IF(ABS(H2-((F2*E2)*(1-G2)))<=0.01,"Match","Mismatch")
+ * Without discount: =IF(ABS(H2-(F2*E2))<=0.01,"Match","Mismatch")
+ *
+ * CRITICAL NOTE: Discount must be in decimal format (0-1), not percentage (0-100)
+ * Example: 10% discount = 0.1, not 10
+ *
+ * @param {string} sheetName - Target worksheet name (or null for active sheet)
+ * @param {Object} config - Configuration with column mappings:
+ *   {
+ *     quantityColumn: "Quantity",
+ *     unitPriceColumn: "UnitPrice",
+ *     totalPriceColumn: "TotalPrice",
+ *     discountColumn: "DiscountPct"  // optional
+ *   }
+ * @returns {Object} Result object {success, processedRows, error}
+ */
+async function jsAddPriceValidationColumn(sheetName, config) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") {
+        return { success: false, processedRows: 0, error: "Excel context unallocated" };
+    }
+
+    return await Excel.run(async function (context) {
+        const workbook = context.workbook;
+        const sheet = sheetName ? workbook.worksheets.getItem(sheetName) : workbook.worksheets.getActiveWorksheet();
+        const range = sheet.getUsedRange();
+        range.load(["values", "rowCount", "columnCount"]);
+        await context.sync();
+
+        const matrix = range.values;
+        if (!matrix || matrix.length < 2) {
+            return { success: false, processedRows: 0, error: "Sheet has no data or insufficient rows" };
+        }
+
+        const headers = matrix[0];
+        const dataRows = matrix.slice(1);
+
+        // Helper to find column index (case-insensitive)
+        function findColumnIndex(colName) {
+            if (!colName) return -1;
+            return headers.findIndex(h => String(h).trim().toLowerCase() === String(colName).trim().toLowerCase());
+        }
+
+        // Locate all required columns
+        const qtyIdx = findColumnIndex(config.quantityColumn);
+        const unitPriceIdx = findColumnIndex(config.unitPriceColumn);
+        const totalPriceIdx = findColumnIndex(config.totalPriceColumn);
+        const discountIdx = config.discountColumn ? findColumnIndex(config.discountColumn) : -1;
+
+        // Validate column existence
+        if (qtyIdx === -1 || unitPriceIdx === -1 || totalPriceIdx === -1) {
+            return {
+                success: false,
+                processedRows: 0,
+                error: `Missing required columns. Found - Qty:${qtyIdx}, UnitPrice:${unitPriceIdx}, TotalPrice:${totalPriceIdx}`
+            };
+        }
+
+        // Get Excel column letters for formula generation
+        function getExcelColumnLetter(colIdx) {
+            let letter = "";
+            let num = colIdx + 1;
+            while (num > 0) {
+                num--;
+                letter = String.fromCharCode(65 + (num % 26)) + letter;
+                num = Math.floor(num / 26);
+            }
+            return letter;
+        }
+
+        const quantityCol = getExcelColumnLetter(qtyIdx);
+        const unitPriceCol = getExcelColumnLetter(unitPriceIdx);
+        const totalPriceCol = getExcelColumnLetter(totalPriceIdx);
+        const discountCol = discountIdx !== -1 ? getExcelColumnLetter(discountIdx) : null;
+
+        // Find the column where we'll add "check" (after existing columns)
+        const newColIndex = headers.length;
+        const checkColLetter = getExcelColumnLetter(newColIndex);
+
+        // Build the data: add "check" header and formulas
+        const newHeaders = [...headers, "check"];
+        const newMatrix = [newHeaders];
+
+        // Generate formulas for each data row
+        for (let i = 0; i < dataRows.length; i++) {
+            const rowNum = i + 2; // Excel row numbers start at 1, and row 1 is headers
+
+            // Generate the formula
+            let formula;
+            if (discountCol) {
+                // Formula with discount
+                formula = `=IF(ABS(${totalPriceCol}${rowNum}-(${unitPriceCol}${rowNum}*${quantityCol}${rowNum})*(1-${discountCol}${rowNum}))<=0.01,"Match","Mismatch")`;
+            } else {
+                // Formula without discount
+                formula = `=IF(ABS(${totalPriceCol}${rowNum}-(${unitPriceCol}${rowNum}*${quantityCol}${rowNum}))<=0.01,"Match","Mismatch")`;
+            }
+
+            newMatrix.push([...dataRows[i], formula]);
+        }
+
+        // Write the new matrix back to the sheet
+        // First, clear the used range and reset
+        const newRange = sheet.getRangeByIndexes(0, 0, newMatrix.length, newMatrix[0].length);
+        newRange.values = newMatrix;
+
+        // Format the header row
+        const headerRange = sheet.getRangeByIndexes(0, 0, 1, newMatrix[0].length);
+        headerRange.format.font.bold = true;
+        headerRange.format.fill.color = "#D9E1F2";
+
+        // Format the "check" column
+        const checkRange = sheet.getRange(checkColLetter + "2:" + checkColLetter + (newMatrix.length));
+        checkRange.format.font.color = "#000000";
+
+        // Apply conditional formatting (if supportable in your Office version)
+        // This colors "Match" green and "Mismatch" red
+        await context.sync();
+
+        // Try to add conditional formatting for visual clarity
+        try {
+            const cfRule = checkRange.conditionalFormats.add(Excel.ConditionalFormatType.cellValue);
+            cfRule.cellValue.format.fill.color = "#C6EFCE";
+            cfRule.cellValue.operator = Excel.ConditionalCellValueOperator.equalTo;
+            cfRule.cellValue.rule = { formula1: '"Match"' };
+
+            const cfRule2 = checkRange.conditionalFormats.add(Excel.ConditionalFormatType.cellValue);
+            cfRule2.cellValue.format.fill.color = "#FFC7CE";
+            cfRule2.cellValue.operator = Excel.ConditionalCellValueOperator.equalTo;
+            cfRule2.cellValue.rule = { formula1: '"Mismatch"' };
+        } catch (e) {
+            console.log("Conditional formatting not supported in this Excel version");
+        }
+
+        sheet.getUsedRange().format.autofitColumns();
+        await context.sync();
+
+        return { success: true, processedRows: dataRows.length, error: null };
+    }).catch(function (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    });
+}
+
+// Export the function
+window.jsAddPriceValidationColumn = jsAddPriceValidationColumn;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USAGE EXAMPLE:
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Call this function from your UI with:
+//
+//   await jsAddPriceValidationColumn("Sheet1", {
+//       quantityColumn: "Quantity",
+//       unitPriceColumn: "UnitPrice",
+//       totalPriceColumn: "TotalPrice",
+//       discountColumn: "DiscountPct"
+//   });
+//
+// This will add a new "check" column that validates the pricing formula:
+//   =IF(ABS(H2-((F2*E2)*(1-G2)))<=0.01,"Match","Mismatch")
+//
+// Where:
+//   - H = TotalPrice column
+//   - F = UnitPrice column
+//   - E = Quantity column
+//   - G = DiscountPct column (decimal format: 0.1 for 10%)
+//
+// The tolerance is 0.01 (one cent) to account for rounding in calculations.
+//
+// ═════════════════════════════════════════════════════════════════════════════
+// ║                         END OF NEW CODE                                   ║
+// ═════════════════════════════════════════════════════════════════════════════
