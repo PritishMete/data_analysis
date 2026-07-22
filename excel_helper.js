@@ -440,6 +440,17 @@ async function jsAddComputedColumn(optionsJson) {
                             dataRowCount,
                             1
                         );
+                        // Force General number format BEFORE writing the
+                        // formula strings. If this column (or the cells
+                        // Excel copied formatting from) was ever set to
+                        // Text format — common when a column sits next to
+                        // text data, or from an earlier write — Excel will
+                        // store a formula string as literal TEXT instead of
+                        // evaluating it, showing "=IF(ABS(H3-..." in the
+                        // cell rather than "Match"/"Mismatch". Resetting
+                        // the format first guarantees the formula actually
+                        // computes.
+                        formulaRange.numberFormat = formulaRows.map(() => ["General"]);
                         formulaRange.formulas = formulaRows;
                         await context.sync();
                     }
@@ -463,6 +474,219 @@ async function jsAddComputedColumn(optionsJson) {
 }
 
 window.jsAddComputedColumn = jsAddComputedColumn;
+
+// ── Algebraic Backtracking Fill ──────────────────────────────────────────────
+//
+// "Fill the missing Quantity from the check column" — reads the ACTUAL
+// formula already stored in a formula column (e.g. "check", built by
+// jsAddComputedColumn's formula mode), parses the equation it encodes back
+// out via extractEquationFromGeneratedFormula, and solves that SAME
+// equation for whichever target column is missing on each blank row — e.g.
+// deriving Quantity from TotalPrice/UnitPrice/DiscountPct. Writes the
+// result as a LIVE recalculating formula (via solveForVariableAsFormula),
+// not a one-time value, consistent with how forward formula columns
+// already behave.
+async function jsBacktrackFillMissing(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") {
+        return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+    }
+
+    if (typeof extractEquationFromGeneratedFormula !== "function" || typeof solveForVariableAsFormula !== "function") {
+        return {
+            success: false,
+            processedRows: 0,
+            error: "Backtracking engine not loaded — ensure excel_data_processor.js is included before excel_helper.js in index.html."
+        };
+    }
+
+    let opts;
+    try {
+        opts = JSON.parse(optionsJson);
+    } catch (err) {
+        return { success: false, processedRows: 0, error: "Invalid options JSON: " + err.toString() };
+    }
+
+    const targetColumn = opts.targetColumn;
+    if (!targetColumn) {
+        return { success: false, processedRows: 0, error: "No target column specified to fill." };
+    }
+
+    try {
+        return await Excel.run(async function (context) {
+            const workbook = context.workbook;
+            const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
+
+            const usedRange = sheet.getUsedRange();
+            usedRange.load(["values", "formulas", "rowIndex", "columnIndex"]);
+            await context.sync();
+
+            const matrix = usedRange.values;
+            const formulasMatrix = usedRange.formulas;
+            if (!matrix || matrix.length < 2) {
+                return { success: false, processedRows: 0, error: "Sheet has no data rows." };
+            }
+
+            const headers = matrix[0];
+            const normalizedHeaders = headers.map(h => String(h).trim().toLowerCase());
+            const targetColIdx = normalizedHeaders.indexOf(String(targetColumn).trim().toLowerCase());
+            if (targetColIdx === -1) {
+                return { success: false, processedRows: 0, error: "Target column '" + targetColumn + "' not found on this sheet." };
+            }
+
+            // ── Resolve the source formula column: explicit if given, else
+            // auto-detect — but only when exactly ONE column on the sheet
+            // actually contains formulas, since ambiguity here would mean
+            // silently guessing which equation to invert.
+            let sourceColIdx = -1;
+            if (opts.sourceFormulaColumn) {
+                sourceColIdx = normalizedHeaders.indexOf(String(opts.sourceFormulaColumn).trim().toLowerCase());
+                if (sourceColIdx === -1) {
+                    return { success: false, processedRows: 0, error: "Source formula column '" + opts.sourceFormulaColumn + "' not found on this sheet." };
+                }
+            } else {
+                const formulaColumns = [];
+                for (let c = 0; c < headers.length; c++) {
+                    for (let r = 1; r < formulasMatrix.length; r++) {
+                        const f = formulasMatrix[r][c];
+                        if (typeof f === "string" && f.startsWith("=")) { formulaColumns.push(c); break; }
+                    }
+                }
+                if (formulaColumns.length === 0) {
+                    return { success: false, processedRows: 0, error: "No formula column found on this sheet to backtrack from. Specify which column holds the equation." };
+                }
+                if (formulaColumns.length > 1) {
+                    const names = formulaColumns.map(c => headers[c]).join(", ");
+                    return { success: false, processedRows: 0, error: "Multiple formula columns found (" + names + ") — specify which one to backtrack from." };
+                }
+                sourceColIdx = formulaColumns[0];
+            }
+
+            // A representative formula string — every row's formula is the
+            // SAME template, just with a different row number, so one is enough.
+            let templateFormula = null;
+            for (let r = 1; r < formulasMatrix.length; r++) {
+                const f = formulasMatrix[r][sourceColIdx];
+                if (typeof f === "string" && f.startsWith("=")) { templateFormula = f; break; }
+            }
+            if (!templateFormula) {
+                return { success: false, processedRows: 0, error: "Column '" + headers[sourceColIdx] + "' has no formula to backtrack from." };
+            }
+
+            const colLetterToHeader = {};
+            const headerToColLetter = {};
+            headers.forEach(function (h, idx) {
+                const letter = columnIndexToExcelLetter(usedRange.columnIndex + idx);
+                colLetterToHeader[letter] = String(h).trim();
+                headerToColLetter[String(h).trim().toLowerCase()] = letter;
+            });
+
+            let equation;
+            try {
+                equation = extractEquationFromGeneratedFormula(templateFormula, colLetterToHeader);
+            } catch (err) {
+                return { success: false, processedRows: 0, error: "Could not parse the stored formula in '" + headers[sourceColIdx] + "': " + err.message };
+            }
+
+            // Determine which side of the equation the target variable is
+            // on (or refuse if it's on both sides, neither side, or
+            // appears more than once anywhere — same safeguards as the
+            // pure-JS solver, checked once here against the template
+            // rather than repeatedly per row).
+            const normalizedTarget = String(targetColumn).trim().toLowerCase();
+            let targetSide;
+            if (equation.mode === "compute") {
+                const count = _countVariableOccurrences(equation.rightAst, normalizedTarget);
+                if (count === 0) {
+                    return { success: false, processedRows: 0, error: "'" + targetColumn + "' does not appear in the equation stored in '" + headers[sourceColIdx] + "'." };
+                }
+                if (count > 1) {
+                    return { success: false, processedRows: 0, error: "'" + targetColumn + "' appears more than once in that equation — no single well-defined way to isolate it." };
+                }
+                targetSide = "right";
+            } else {
+                const inLeft = _countVariableOccurrences(equation.leftAst, normalizedTarget);
+                const inRight = _countVariableOccurrences(equation.rightAst, normalizedTarget);
+                if (inLeft > 0 && inRight > 0) {
+                    return { success: false, processedRows: 0, error: "'" + targetColumn + "' appears on both sides of the equation — cannot backtrack." };
+                }
+                if (inLeft === 0 && inRight === 0) {
+                    return { success: false, processedRows: 0, error: "'" + targetColumn + "' does not appear in the equation stored in '" + headers[sourceColIdx] + "'." };
+                }
+                if (inLeft > 1 || inRight > 1) {
+                    return { success: false, processedRows: 0, error: "'" + targetColumn + "' appears more than once in that equation — no single well-defined way to isolate it." };
+                }
+                targetSide = inRight > 0 ? "right" : "left";
+            }
+            const targetAst = targetSide === "right" ? equation.rightAst : equation.leftAst;
+
+            const blankRowIndices = [];
+            for (let r = 1; r < matrix.length; r++) {
+                const cellVal = matrix[r][targetColIdx];
+                const isBlank = cellVal === null || cellVal === undefined || String(cellVal).trim() === "";
+                if (isBlank) blankRowIndices.push(r);
+            }
+            if (blankRowIndices.length === 0) {
+                return { success: true, processedRows: 0, error: null };
+            }
+
+            const sourceColLetter = columnIndexToExcelLetter(usedRange.columnIndex + sourceColIdx);
+            let filledCount = 0;
+            const failedRows = [];
+
+            for (const r of blankRowIndices) {
+                const excelRow = usedRange.rowIndex + r + 1; // 1-based Excel row for this data row
+
+                let knownValueFormula;
+                if (equation.mode === "compute") {
+                    // The "known" side is whatever the source column's OWN
+                    // cell computes to — no separate leftExpression exists.
+                    knownValueFormula = sourceColLetter + excelRow;
+                } else {
+                    const otherAst = targetSide === "right" ? equation.leftAst : equation.rightAst;
+                    knownValueFormula = _astToExcelFormula(otherAst, headerToColLetter, excelRow);
+                }
+
+                let solvedFormulaBody;
+                try {
+                    solvedFormulaBody = solveForVariableAsFormula(targetAst, targetColumn, knownValueFormula, headerToColLetter, excelRow);
+                } catch (err) {
+                    failedRows.push(excelRow);
+                    continue;
+                }
+
+                const cellRange = sheet.getRangeByIndexes(
+                    usedRange.rowIndex + r,
+                    usedRange.columnIndex + targetColIdx,
+                    1,
+                    1
+                );
+                // Same Text-format guard as jsAddComputedColumn's formula
+                // write — without this, a Text-formatted target cell would
+                // display the formula string literally instead of computing it.
+                cellRange.numberFormat = [["General"]];
+                cellRange.formulas = [["=" + solvedFormulaBody]];
+                filledCount++;
+            }
+
+            await context.sync();
+            sheet.getUsedRange().format.autofitColumns();
+            await context.sync();
+
+            let errorMsg = null;
+            if (failedRows.length > 0) {
+                errorMsg = "Filled " + filledCount + " row(s); could not backtrack " + failedRows.length +
+                    " row(s) (Excel row(s): " + failedRows.join(", ") + ") — likely missing supporting data there too.";
+            }
+
+            return { success: filledCount > 0 || blankRowIndices.length === 0, processedRows: filledCount, error: errorMsg };
+        });
+    } catch (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    }
+}
+
+window.jsBacktrackFillMissing = jsBacktrackFillMissing;
 
 // ── Orchestrator Pipeline ───────────────────────────────────────────────────
 

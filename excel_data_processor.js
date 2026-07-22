@@ -381,33 +381,39 @@ function parseArithmeticExpression(expr) {
  * Throws if the expression doesn't parse — callers should treat that as a
  * hard failure, not fall back to guessing.
  */
-function compileArithmeticExpression(expr) {
-    const ast = parseArithmeticExpression(expr);
-
-    function evalNode(node, rowMap) {
-        switch (node.type) {
-            case "number": return node.value;
-            case "column": return _parseNumericCell(rowMap[String(node.name).trim().toLowerCase()]);
-            case "unary": {
-                const v = evalNode(node.operand, rowMap);
-                return v === null ? null : -v;
-            }
-            case "binary": {
-                const l = evalNode(node.left, rowMap);
-                const r = evalNode(node.right, rowMap);
-                if (l === null || r === null) return null;
-                switch (node.op) {
-                    case "+": return l + r;
-                    case "-": return l - r;
-                    case "*": return l * r;
-                    case "/": return r === 0 ? null : l / r;
-                }
+/**
+ * Evaluates a parsed arithmetic AST against one row's data. Standalone (not
+ * nested inside compileArithmeticExpression) so both the forward evaluator
+ * below AND the backtracking solver further down share exactly one
+ * implementation of "what does this node mean numerically" — no duplicated
+ * eval logic between the two directions.
+ */
+function _evalAstNode(node, rowMap) {
+    switch (node.type) {
+        case "number": return node.value;
+        case "column": return _parseNumericCell(rowMap[String(node.name).trim().toLowerCase()]);
+        case "unary": {
+            const v = _evalAstNode(node.operand, rowMap);
+            return v === null ? null : -v;
+        }
+        case "binary": {
+            const l = _evalAstNode(node.left, rowMap);
+            const r = _evalAstNode(node.right, rowMap);
+            if (l === null || r === null) return null;
+            switch (node.op) {
+                case "+": return l + r;
+                case "-": return l - r;
+                case "*": return l * r;
+                case "/": return r === 0 ? null : l / r;
             }
         }
-        return null;
     }
+    return null;
+}
 
-    return (rowMap) => evalNode(ast, rowMap);
+function compileArithmeticExpression(expr) {
+    const ast = parseArithmeticExpression(expr);
+    return (rowMap) => _evalAstNode(ast, rowMap);
 }
 
 // ── Live Excel-formula renderer ──────────────────────────────────────────────
@@ -487,11 +493,289 @@ function buildExcelFormulaForRow(config, colLetterMap, excelRow) {
     return `=IF(${comparisonExpr},"${thenLabel}","${elseLabel}")`;
 }
 
+// ── Algebraic Backtracking Engine ────────────────────────────────────────────
+//
+// Given an equation (leftAst = rightAst, or "this compute-mode column's
+// stored value = rightAst") that's already been APPLIED forward (e.g. the
+// "check" column verifying TotalPrice = Quantity*UnitPrice*(1-DiscountPct/100)),
+// this solves the SAME equation backward for whichever ONE variable is
+// missing — e.g. deriving Quantity from TotalPrice, UnitPrice, and
+// DiscountPct when Quantity itself is blank.
+//
+// Deliberately restricted to equations where the target variable appears
+// EXACTLY ONCE — see _countVariableOccurrences below. An equation like
+// "Quantity*UnitPrice - Quantity*Discount = Total" has two valid ways to
+// isolate Quantity that don't reduce to one clean expression without full
+// polynomial solving, which this engine does not attempt; it refuses
+// rather than silently producing a wrong answer for that shape.
+
+/**
+ * Returns the path of nodes from `node` (inclusive) down to the leaf
+ * "column" node matching `normalizedVarName`, or null if that variable
+ * doesn't appear anywhere in this subtree. The path is what
+ * solveForVariable/solveForVariableAsFormula walk to "peel off" each
+ * operation in reverse.
+ */
+function _findVariablePath(node, normalizedVarName) {
+    if (node.type === "column") {
+        return String(node.name).trim().toLowerCase() === normalizedVarName ? [node] : null;
+    }
+    if (node.type === "unary") {
+        const sub = _findVariablePath(node.operand, normalizedVarName);
+        return sub ? [node, ...sub] : null;
+    }
+    if (node.type === "binary") {
+        const leftPath = _findVariablePath(node.left, normalizedVarName);
+        if (leftPath) return [node, ...leftPath];
+        const rightPath = _findVariablePath(node.right, normalizedVarName);
+        if (rightPath) return [node, ...rightPath];
+        return null;
+    }
+    return null; // number node — never contains a variable
+}
+
+function _countVariableOccurrences(node, normalizedVarName) {
+    if (node.type === "column") {
+        return String(node.name).trim().toLowerCase() === normalizedVarName ? 1 : 0;
+    }
+    if (node.type === "unary") return _countVariableOccurrences(node.operand, normalizedVarName);
+    if (node.type === "binary") {
+        return _countVariableOccurrences(node.left, normalizedVarName)
+            + _countVariableOccurrences(node.right, normalizedVarName);
+    }
+    return 0;
+}
+
+/**
+ * Solves `ast` = `knownValue` for `varName`, given the other variables'
+ * actual values for this row via `rowMap` (same normalized-lowercase-header
+ * keying as _evalAstNode). Returns the solved NUMBER, or null if it can't be
+ * solved for this row (e.g. a sibling value needed to invert is itself
+ * missing). Throws if `varName` appears zero or more-than-once in `ast` —
+ * both are caller errors (checked before calling this), not per-row data
+ * issues, so they're exceptions rather than null.
+ */
+function solveForVariable(ast, varName, knownValue, rowMap) {
+    const normalizedVar = String(varName).trim().toLowerCase();
+    const occurrences = _countVariableOccurrences(ast, normalizedVar);
+    if (occurrences === 0) {
+        throw new Error("Variable '" + varName + "' does not appear in this equation.");
+    }
+    if (occurrences > 1) {
+        throw new Error(
+            "Cannot backtrack: '" + varName + "' appears more than once in the equation, " +
+            "so there's no single well-defined way to isolate it."
+        );
+    }
+
+    const path = _findVariablePath(ast, normalizedVar);
+    let currentValue = knownValue;
+
+    for (let i = 0; i < path.length - 1; i++) {
+        const node = path[i];
+        const nextNode = path[i + 1];
+
+        if (node.type === "unary") {
+            // node represents -operand; operand = -currentValue
+            currentValue = -currentValue;
+            continue;
+        }
+
+        // node.type === "binary"
+        const isLeft = node.left === nextNode;
+        const otherNode = isLeft ? node.right : node.left;
+        const otherValue = _evalAstNode(otherNode, rowMap);
+        if (otherValue === null) return null; // the "known" sibling is itself unresolvable for this row
+
+        switch (node.op) {
+            case "+":
+                currentValue = currentValue - otherValue;
+                break;
+            case "-":
+                currentValue = isLeft ? currentValue + otherValue : otherValue - currentValue;
+                break;
+            case "*":
+                if (otherValue === 0) return null; // can't divide by zero to isolate this factor
+                currentValue = currentValue / otherValue;
+                break;
+            case "/":
+                if (isLeft) {
+                    currentValue = currentValue * otherValue;
+                } else {
+                    if (currentValue === 0) return null;
+                    currentValue = otherValue / currentValue;
+                }
+                break;
+        }
+    }
+
+    return currentValue;
+}
+
+/**
+ * Same algebra as solveForVariable, but builds a live EXCEL FORMULA STRING
+ * (referencing real cell addresses via colLetterMap/excelRow, same as
+ * _astToExcelFormula) instead of computing a one-time number — so the
+ * backtracked cell recalculates automatically if the other cells it
+ * depends on change later, consistent with how forward formula columns
+ * already behave. `knownValueFormula` is the ALREADY-RENDERED formula
+ * string for the known side of the equation (e.g. "H5" for a plain column
+ * reference, or a fuller rendered expression).
+ */
+function solveForVariableAsFormula(ast, varName, knownValueFormula, colLetterMap, excelRow) {
+    const normalizedVar = String(varName).trim().toLowerCase();
+    const occurrences = _countVariableOccurrences(ast, normalizedVar);
+    if (occurrences === 0) {
+        throw new Error("Variable '" + varName + "' does not appear in this equation.");
+    }
+    if (occurrences > 1) {
+        throw new Error(
+            "Cannot backtrack: '" + varName + "' appears more than once in the equation, " +
+            "so there's no single well-defined way to isolate it."
+        );
+    }
+
+    const path = _findVariablePath(ast, normalizedVar);
+    let currentFormula = knownValueFormula;
+
+    for (let i = 0; i < path.length - 1; i++) {
+        const node = path[i];
+        const nextNode = path[i + 1];
+
+        if (node.type === "unary") {
+            currentFormula = "(-(" + currentFormula + "))";
+            continue;
+        }
+
+        const isLeft = node.left === nextNode;
+        const otherNode = isLeft ? node.right : node.left;
+        const otherFormula = _astToExcelFormula(otherNode, colLetterMap, excelRow);
+
+        switch (node.op) {
+            case "+":
+                currentFormula = "(" + currentFormula + "-" + otherFormula + ")";
+                break;
+            case "-":
+                currentFormula = isLeft
+                    ? "(" + currentFormula + "+" + otherFormula + ")"
+                    : "(" + otherFormula + "-" + currentFormula + ")";
+                break;
+            case "*":
+                currentFormula = "(" + currentFormula + "/" + otherFormula + ")";
+                break;
+            case "/":
+                currentFormula = isLeft
+                    ? "(" + currentFormula + "*" + otherFormula + ")"
+                    : "(" + otherFormula + "/" + currentFormula + ")";
+                break;
+        }
+    }
+
+    return currentFormula;
+}
+
+// ── Reading an equation back OFF the sheet ──────────────────────────────────
+//
+// Parses a formula string THIS SYSTEM previously wrote via
+// buildExcelFormulaForRow back into {mode, operator, leftAst, rightAst} —
+// deliberately scoped to invert exactly that function's output shape
+// (IF(ABS(X-Y)<=tol,...) / IF(ABS(X-Y)>tol,...) / IF(X<op>Y,...) / bare
+// compute expression), not to parse arbitrary hand-written Excel formulas.
+
+function _findTopLevelChar(str, chars) {
+    let depth = 0;
+    for (let i = 0; i < str.length; i++) {
+        const ch = str[i];
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+        else if (depth === 0 && chars.includes(ch)) return i;
+    }
+    return -1;
+}
+
+function _cellRefsToColumnNames(exprStr, colLetterToHeader) {
+    return exprStr.replace(/\b([A-Za-z]+)(\d+)\b/g, function (match, colLetters) {
+        const header = colLetterToHeader[colLetters.toUpperCase()];
+        if (!header) {
+            throw new Error("Stored formula references column letter '" + colLetters + "', which no longer maps to a header on this sheet.");
+        }
+        return header;
+    });
+}
+
+function extractEquationFromGeneratedFormula(formulaString, colLetterToHeader) {
+    let s = String(formulaString).trim();
+    if (s.startsWith("=")) s = s.slice(1);
+
+    // ── compute mode: no IF( wrapper at all — the whole string is rightExpression.
+    if (!s.startsWith("IF(")) {
+        const rightText = _cellRefsToColumnNames(s, colLetterToHeader);
+        return { mode: "compute", operator: null, leftAst: null, rightAst: parseArithmeticExpression(rightText) };
+    }
+
+    let rest = s.slice(3); // strip "IF("
+
+    if (rest.startsWith("ABS(")) {
+        rest = rest.slice(4); // strip "ABS("
+        let depth = 1, i = 0;
+        for (; i < rest.length; i++) {
+            if (rest[i] === "(") depth++;
+            else if (rest[i] === ")") { depth--; if (depth === 0) break; }
+        }
+        if (i >= rest.length) throw new Error("Unbalanced parentheses inside ABS(...) in stored formula.");
+        const innerContent = rest.slice(0, i);
+        const afterAbs = rest.slice(i + 1); // "<=NUM,..." or ">NUM,..."
+
+        const splitIdx = _findTopLevelChar(innerContent, "-");
+        if (splitIdx === -1) throw new Error("Could not locate the top-level '-' inside ABS(...) in stored formula.");
+        const xText = innerContent.slice(0, splitIdx);
+        const yText = innerContent.slice(splitIdx + 1);
+
+        const operator = afterAbs.startsWith("<=") ? "equals" : (afterAbs.startsWith(">") ? "not_equals" : null);
+        if (!operator) throw new Error("Unrecognized comparison shape after ABS(...) in stored formula.");
+
+        return {
+            mode: "compare",
+            operator,
+            leftAst: parseArithmeticExpression(_cellRefsToColumnNames(xText, colLetterToHeader)),
+            rightAst: parseArithmeticExpression(_cellRefsToColumnNames(yText, colLetterToHeader)),
+        };
+    }
+
+    // Plain comparison: IF(X<op>Y,...) for greater_than/less_than/etc.
+    let depth = 0, opFound = null, opIdx = -1;
+    for (let i = 0; i < rest.length; i++) {
+        const ch = rest[i];
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+        else if (depth === 0) {
+            const two = rest.slice(i, i + 2);
+            if (two === "<=" || two === ">=") { opFound = two; opIdx = i; break; }
+            if (ch === "<" || ch === ">") { opFound = ch; opIdx = i; break; }
+        }
+    }
+    if (!opFound) throw new Error("Could not locate a comparison operator in stored formula.");
+
+    const xText = rest.slice(0, opIdx);
+    const afterOp = rest.slice(opIdx + opFound.length);
+    const commaIdx = _findTopLevelChar(afterOp, ",");
+    if (commaIdx === -1) throw new Error("Could not locate the closing comma in stored formula.");
+    const yText = afterOp.slice(0, commaIdx);
+
+    const operatorMap = { ">": "greater_than", "<": "less_than", ">=": "greater_than_equal", "<=": "less_than_equal" };
+
+    return {
+        mode: "compare",
+        operator: operatorMap[opFound],
+        leftAst: parseArithmeticExpression(_cellRefsToColumnNames(xText, colLetterToHeader)),
+        rightAst: parseArithmeticExpression(_cellRefsToColumnNames(yText, colLetterToHeader)),
+    };
+}
+
 /**
  * Adds a new column driven by arithmetic expressions over existing columns
  * — e.g. checking whether TotalPrice = UnitPrice * Quantity, or computing a
- * derived value like UnitPrice * (1 - DiscountPct/100) when DiscountPct is a
- * whole-number percentage column.
+ * derived value like UnitPrice * (1 - DiscountPct).
  *
  * Config fields (sibling to evaluateAddColumnMutation's group-aggregate
  * config — this is the row-wise/arithmetic counterpart):
