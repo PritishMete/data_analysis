@@ -1,0 +1,730 @@
+[
+  {
+    "text": "create a new sheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "make a new sheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "add a new worksheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "create sheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "new sheet please",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "I need a new sheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "create a new tab",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "add another worksheet",
+    "intent": "create_sheet",
+    "slots": {}
+  },
+  {
+    "text": "create a new sheet called Summary",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Summary"
+    }
+  },
+  {
+    "text": "make a sheet named Results",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Results"
+    }
+  },
+  {
+    "text": "create a tab called Output",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Output"
+    }
+  },
+  {
+    "text": "add a new sheet named Dashboard",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Dashboard"
+    }
+  },
+  {
+    "text": "create a worksheet called Report",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Report"
+    }
+  },
+  {
+    "text": "make a new tab named Analysis",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Analysis"
+    }
+  },
+  {
+    "text": "create a sheet called Cleaned Data",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Cleaned Data"
+    }
+  },
+  {
+    "text": "new worksheet called Final",
+    "intent": "create_sheet",
+    "slots": {
+      "sheet_name": "Final"
+    }
+  },
+  {
+    "text": "create a new sheet and get the average of rating column",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "rating",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "make a new sheet and calculate the sum of sales",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "sales",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "create a sheet and show me the total of revenue",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "revenue",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "new sheet with average of price column",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "price",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "create a new tab and compute average of score",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "score",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "add a sheet and find the max of profit",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "profit",
+      "operation": "max"
+    }
+  },
+  {
+    "text": "create a sheet called Stats and get the min of temperature",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "sheet_name": "Stats",
+      "column": "temperature",
+      "operation": "min"
+    }
+  },
+  {
+    "text": "make a new sheet and count the rows in status column",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "status",
+      "operation": "count"
+    }
+  },
+  {
+    "text": "create a sheet and get the sum of amount",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "amount",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "new worksheet and calculate average of marks",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "marks",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "create a summary sheet with total of expenses",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "sheet_name": "summary",
+      "column": "expenses",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "make a new tab and show max of quantity",
+    "intent": "create_sheet_with_aggregation",
+    "slots": {
+      "column": "quantity",
+      "operation": "max"
+    }
+  },
+  {
+    "text": "get the average of the rating column",
+    "intent": "aggregate",
+    "slots": {
+      "column": "rating",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "calculate the sum of sales",
+    "intent": "aggregate",
+    "slots": {
+      "column": "sales",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "what is the average of price",
+    "intent": "aggregate",
+    "slots": {
+      "column": "price",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "find the total of revenue",
+    "intent": "aggregate",
+    "slots": {
+      "column": "revenue",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "show me the max of profit",
+    "intent": "aggregate",
+    "slots": {
+      "column": "profit",
+      "operation": "max"
+    }
+  },
+  {
+    "text": "get the min of temperature",
+    "intent": "aggregate",
+    "slots": {
+      "column": "temperature",
+      "operation": "min"
+    }
+  },
+  {
+    "text": "count distinct values in status",
+    "intent": "aggregate",
+    "slots": {
+      "column": "status",
+      "operation": "count"
+    }
+  },
+  {
+    "text": "average of score column",
+    "intent": "aggregate",
+    "slots": {
+      "column": "score",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "sum of amount",
+    "intent": "aggregate",
+    "slots": {
+      "column": "amount",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "calculate mean of marks",
+    "intent": "aggregate",
+    "slots": {
+      "column": "marks",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "what is the total of expenses",
+    "intent": "aggregate",
+    "slots": {
+      "column": "expenses",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "give me the maximum value of quantity",
+    "intent": "aggregate",
+    "slots": {
+      "column": "quantity",
+      "operation": "max"
+    }
+  },
+  {
+    "text": "find minimum of age",
+    "intent": "aggregate",
+    "slots": {
+      "column": "age",
+      "operation": "min"
+    }
+  },
+  {
+    "text": "how many rows in the category column",
+    "intent": "aggregate",
+    "slots": {
+      "column": "category",
+      "operation": "count"
+    }
+  },
+  {
+    "text": "average rating",
+    "intent": "aggregate",
+    "slots": {
+      "column": "rating",
+      "operation": "average"
+    }
+  },
+  {
+    "text": "total sales",
+    "intent": "aggregate",
+    "slots": {
+      "column": "sales",
+      "operation": "sum"
+    }
+  },
+  {
+    "text": "max profit",
+    "intent": "aggregate",
+    "slots": {
+      "column": "profit",
+      "operation": "max"
+    }
+  },
+  {
+    "text": "remove duplicate rows",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "delete duplicates",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "remove duplicates",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "clean duplicate entries",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "eliminate duplicate rows",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "get rid of duplicate rows",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "deduplicate the data",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "remove all duplicates from the sheet",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "strip out duplicate entries",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "de-duplicate rows",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "find and remove duplicate rows",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "clear duplicates",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "drop duplicate records",
+    "intent": "deduplicate",
+    "slots": {}
+  },
+  {
+    "text": "filter where status equals active",
+    "intent": "filter",
+    "slots": {
+      "column": "status",
+      "filter_type": "equals",
+      "value": "active"
+    }
+  },
+  {
+    "text": "show rows where rating is greater than 4",
+    "intent": "filter",
+    "slots": {
+      "column": "rating",
+      "filter_type": "greater_than",
+      "value": "4"
+    }
+  },
+  {
+    "text": "filter rows where price is less than 100",
+    "intent": "filter",
+    "slots": {
+      "column": "price",
+      "filter_type": "less_than",
+      "value": "100"
+    }
+  },
+  {
+    "text": "show me top 10 rows by sales",
+    "intent": "filter",
+    "slots": {
+      "column": "sales",
+      "filter_type": "top_n",
+      "value": "10"
+    }
+  },
+  {
+    "text": "filter where name contains John",
+    "intent": "filter",
+    "slots": {
+      "column": "name",
+      "filter_type": "contains",
+      "value": "John"
+    }
+  },
+  {
+    "text": "rows where score is above average",
+    "intent": "filter",
+    "slots": {
+      "column": "score",
+      "filter_type": "above_average"
+    }
+  },
+  {
+    "text": "filter where quantity is between 10 and 50",
+    "intent": "filter",
+    "slots": {
+      "column": "quantity",
+      "filter_type": "between",
+      "value": "10",
+      "value2": "50"
+    }
+  },
+  {
+    "text": "show records where category equals Electronics",
+    "intent": "filter",
+    "slots": {
+      "column": "category",
+      "filter_type": "equals",
+      "value": "Electronics"
+    }
+  },
+  {
+    "text": "filter age greater than 30",
+    "intent": "filter",
+    "slots": {
+      "column": "age",
+      "filter_type": "greater_than",
+      "value": "30"
+    }
+  },
+  {
+    "text": "top 5 by revenue",
+    "intent": "filter",
+    "slots": {
+      "column": "revenue",
+      "filter_type": "top_n",
+      "value": "5"
+    }
+  },
+  {
+    "text": "filter where profit is below average",
+    "intent": "filter",
+    "slots": {
+      "column": "profit",
+      "filter_type": "below_average"
+    }
+  },
+  {
+    "text": "show rows where amount is less than or equal to 500",
+    "intent": "filter",
+    "slots": {
+      "column": "amount",
+      "filter_type": "less_than_equal",
+      "value": "500"
+    }
+  },
+  {
+    "text": "filter where department does not equal HR",
+    "intent": "filter",
+    "slots": {
+      "column": "department",
+      "filter_type": "not_equals",
+      "value": "HR"
+    }
+  },
+  {
+    "text": "get top 20 rows by score",
+    "intent": "filter",
+    "slots": {
+      "column": "score",
+      "filter_type": "top_n",
+      "value": "20"
+    }
+  },
+  {
+    "text": "filter salary greater than or equal to 50000",
+    "intent": "filter",
+    "slots": {
+      "column": "salary",
+      "filter_type": "greater_than_equal",
+      "value": "50000"
+    }
+  },
+  {
+    "text": "generate a metrics summary sheet",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "create a metrics analysis",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "show me data statistics",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "generate stats for all columns",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "create a summary of all column stats",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "give me a metrics report",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "analyze all columns",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "show column statistics",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "generate analysis sheet",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "create a data summary",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "metrics for all columns",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "summarize the data",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "show me a full column breakdown",
+    "intent": "generate_metrics",
+    "slots": {}
+  },
+  {
+    "text": "clean the data",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "clean and remove duplicates",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "process and clean the data",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "run a full data clean",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "clean data and create new sheet",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "sanitize the data",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "fix and clean the spreadsheet",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "prepare the data for analysis",
+    "intent": "clean_data",
+    "slots": {}
+  },
+  {
+    "text": "copy this sheet to a new one",
+    "intent": "copy_sheet",
+    "slots": {}
+  },
+  {
+    "text": "duplicate the current sheet",
+    "intent": "copy_sheet",
+    "slots": {}
+  },
+  {
+    "text": "make a copy of this worksheet",
+    "intent": "copy_sheet",
+    "slots": {}
+  },
+  {
+    "text": "copy sheet to a new tab called Backup",
+    "intent": "copy_sheet",
+    "slots": {
+      "sheet_name": "Backup"
+    }
+  },
+  {
+    "text": "duplicate this data into a new sheet",
+    "intent": "copy_sheet",
+    "slots": {}
+  },
+  {
+    "text": "show me a preview of the data",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "display the first few rows",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "let me see the data",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "show top rows",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "preview the sheet",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "show me what's in this sheet",
+    "intent": "show_preview",
+    "slots": {}
+  },
+  {
+    "text": "display first 10 rows",
+    "intent": "show_preview",
+    "slots": {
+      "value": "10"
+    }
+  },
+  {
+    "text": "show me all sheets",
+    "intent": "list_sheets",
+    "slots": {}
+  },
+  {
+    "text": "list all worksheets",
+    "intent": "list_sheets",
+    "slots": {}
+  },
+  {
+    "text": "what sheets are available",
+    "intent": "list_sheets",
+    "slots": {}
+  },
+  {
+    "text": "show all tabs",
+    "intent": "list_sheets",
+    "slots": {}
+  },
+  {
+    "text": "list all tabs in this workbook",
+    "intent": "list_sheets",
+    "slots": {}
+  },
+  {
+    "text": "what worksheets do I have",
+    "intent": "list_sheets",
+    "slots": {}
+  }
+]
