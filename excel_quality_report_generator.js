@@ -1,6 +1,6 @@
 // web/excel_quality_report_generator.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Exports a full, professional, multi-section "Quality Report" worksheet built
+// Exports a full, professional, multi-section "Quality_Report" worksheet built
 // directly from the SAME analysis result already shown inside the AI Report
 // tab's "DATA QUALITY" card (AiReport.dataQuality), plus the sibling fields
 // on that same backend response (statistics, outliers, recommendations,
@@ -69,21 +69,61 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     }
 
     const dataQuality = (opts.dataQuality && typeof opts.dataQuality === "object") ? opts.dataQuality : {};
-    if (Object.keys(dataQuality).length === 0) {
-        return { success: false, sheet: null, rowsWritten: 0, error: "No data quality result available — generate the AI report's Data Quality section first." };
-    }
-
     const statistics = (opts.statistics && typeof opts.statistics === "object") ? opts.statistics : {};
     const executiveSummary = (opts.executiveSummary && typeof opts.executiveSummary === "object") ? opts.executiveSummary : {};
     const recommendations = Array.isArray(opts.recommendations) ? opts.recommendations : [];
     const outliers = Array.isArray(opts.outliers) ? opts.outliers : [];
     const chartRecommendation = (opts.chartRecommendation && typeof opts.chartRecommendation === "object") ? opts.chartRecommendation : {};
 
-    const sheetName = String(opts.sheetName || "Quality Report").substring(0, 31);
+    // This is the single worksheet-writing implementation for both the
+    // automatic per-scan sync (analyzeData() → _syncQualityReport(), which
+    // only ever has overview-level numbers — rows/missing/duplicates — since
+    // it fires before any AI report exists) and the explicit "Export Full
+    // Quality Report" button (which has the complete AiReport). We only
+    // refuse to write when there is truly nothing to show at all — the
+    // overview-only case from the automatic sync is expected and valid.
+    const hasAnything =
+        Object.keys(dataQuality).length > 0 ||
+        Object.keys(statistics).length > 0 ||
+        Object.keys(executiveSummary).length > 0 ||
+        recommendations.length > 0 ||
+        outliers.length > 0 ||
+        Object.keys(chartRecommendation).length > 0 ||
+        opts.rows !== undefined || opts.columns !== undefined ||
+        opts.missingValues !== undefined || opts.duplicateRows !== undefined;
+    if (!hasAnything) {
+        return { success: false, sheet: null, rowsWritten: 0, error: "No analysis data available yet." };
+    }
+
+    const sheetName = String(opts.sheetName || "Quality_Report").substring(0, 31);
+    // Explicit export button leaves this unset (defaults true) so the user
+    // sees the sheet they just asked for. The automatic background sync
+    // passes activate:false so a routine scan never yanks the user's view
+    // away from whatever sheet they're currently looking at.
+    const shouldActivate = opts.activate !== false;
 
     try {
         return await Excel.run(async function (context) {
             const workbook = context.workbook;
+
+            // Only needed when we must restore the view afterwards.
+            let previousSheetName = null;
+            let previousSelectionAddress = null;
+            if (!shouldActivate) {
+                const previousSheet = workbook.worksheets.getActiveWorksheet();
+                previousSheet.load("name");
+                let previousSelection = null;
+                try {
+                    previousSelection = workbook.getSelectedRange();
+                    previousSelection.load("address");
+                } catch (_) {
+                    previousSelection = null;
+                }
+                await context.sync();
+                previousSheetName = previousSheet.name;
+                previousSelectionAddress = previousSelection ? previousSelection.address : null;
+            }
+
             const sheets = workbook.worksheets;
             sheets.load("items/name");
             await context.sync();
@@ -163,6 +203,18 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             // ── Any dataQuality keys nothing above consumed ──────────────────
             row = _writeLeftovers(sheet, row, dataQuality, consumedKeys, NUM_COLS);
 
+            // ── Statistics (surfaced in full — this is the same `r.statistics`
+            //    map rendered generically by the STATISTICS card in the Report
+            //    tab; only a subset of it is consumed above as a column-quality
+            //    fallback, so the rest must be written explicitly or it would
+            //    silently disappear from the export while still being visible
+            //    on screen) ────────────────────────────────────────────────────
+            if (Object.keys(statistics).length > 0) {
+                row = _writeSectionHeader(sheet, row, "STATISTICS (from AI report)", NUM_COLS);
+                row = _writeKeyValueTable(sheet, row, statistics);
+                row += 1;
+            }
+
             // ── Chart recommendation (surfaced as-is, never redrawn) ─────────
             if (Object.keys(chartRecommendation).length > 0) {
                 row = _writeSectionHeader(sheet, row, "CHART RECOMMENDATION (from AI report — not regenerated)", NUM_COLS);
@@ -183,7 +235,22 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             } catch (_) {
                 // AutoFilter is a nice-to-have; never fail the export over it.
             }
-            sheet.activate();
+
+            if (shouldActivate) {
+                sheet.activate();
+            } else if (previousSheetName) {
+                // Background/automatic sync — restore whatever the user was
+                // looking at instead of yanking them onto the report sheet.
+                try {
+                    const sheetToRestore = workbook.worksheets.getItem(previousSheetName);
+                    sheetToRestore.activate();
+                    if (previousSelectionAddress) {
+                        sheetToRestore.getRange(previousSelectionAddress).select();
+                    }
+                } catch (_) {
+                    // Previous sheet may have been removed/renamed — non-fatal.
+                }
+            }
             await context.sync();
 
             return { success: true, sheet: sheetName, rowsWritten: row, error: null };
@@ -195,8 +262,6 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
 }
 
 window.jsWriteQualityReportWorksheet = jsWriteQualityReportWorksheet;
-// Back-compat alias — earlier builds of this file exposed this name.
-window.generateDataQualityReportWorksheet = jsWriteQualityReportWorksheet;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic payload helpers — no analysis, just careful reading of what's there.
@@ -442,8 +507,8 @@ function _writeOverview(sheet, row, opts, dq, consumedKeys) {
     const rowsCount = opts.rows ?? _pick(dq, ["rows", "total_rows", "row_count", "n_rows"], consumedKeys);
     const colsCount = opts.columns ?? _pick(dq, ["columns", "total_columns", "column_count", "n_columns"], consumedKeys);
     const qualityScore = _pick(dq, ["quality_score", "score", "overall_score", "overall_quality_score"], consumedKeys);
-    const missingValues = _pickCount(dq, ["missing_cells", "missing_count", "total_missing", "missing_values"], consumedKeys);
-    const duplicateRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys);
+    const missingValues = _pickCount(dq, ["missing_cells", "missing_count", "total_missing", "missing_values"], consumedKeys) ?? opts.missingValues;
+    const duplicateRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys) ?? opts.duplicateRows;
     const memoryUsage = _pick(dq, ["memory_usage", "memory", "memory_mb", "memory_usage_mb"], consumedKeys);
 
     const pairs = [
