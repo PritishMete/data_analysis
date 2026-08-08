@@ -74,6 +74,11 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     const recommendations = Array.isArray(opts.recommendations) ? opts.recommendations : [];
     const outliers = Array.isArray(opts.outliers) ? opts.outliers : [];
     const chartRecommendation = (opts.chartRecommendation && typeof opts.chartRecommendation === "object") ? opts.chartRecommendation : {};
+    // Raw per-column missing-value counts straight from the backend's own
+    // `missing_values` map (e.g. {"City": 12, "Rating": 25}). Handles
+    // missing/null/non-object input the same way as the fields above.
+    const missingValuesByColumn = (opts.missingValuesByColumn && typeof opts.missingValuesByColumn === "object")
+        ? opts.missingValuesByColumn : {};
 
     // This is the single worksheet-writing implementation for both the
     // automatic per-scan sync (analyzeData() → _syncQualityReport(), which
@@ -89,6 +94,7 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
         recommendations.length > 0 ||
         outliers.length > 0 ||
         Object.keys(chartRecommendation).length > 0 ||
+        Object.keys(missingValuesByColumn).length > 0 ||
         opts.rows !== undefined || opts.columns !== undefined ||
         opts.missingValues !== undefined || opts.duplicateRows !== undefined;
     if (!hasAnything) {
@@ -153,16 +159,16 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
 
             // ── Section 1: Quality Overview ──────────────────────────────────
             row = _writeSectionHeader(sheet, row, "1. QUALITY OVERVIEW", NUM_COLS);
-            row = _writeOverview(sheet, row, opts, dataQuality, consumedKeys);
+            row = _writeOverview(sheet, row, opts, dataQuality, statistics, consumedKeys);
             row += 1;
 
             // ── Section 2: Data Quality Summary ──────────────────────────────
             row = _writeSectionHeader(sheet, row, "2. DATA QUALITY SUMMARY", NUM_COLS);
-            row = _writeQualitySummary(sheet, row, dataQuality, consumedKeys);
+            row = _writeQualitySummary(sheet, row, dataQuality, statistics, consumedKeys);
             row += 1;
 
             // ── Column-level source shared by Sections 3/4/7 ─────────────────
-            const columnEntries = _extractColumnEntries(dataQuality, statistics, consumedKeys);
+            const columnEntries = _extractColumnEntries(dataQuality, statistics, consumedKeys, missingValuesByColumn);
 
             // ── Section 3: Column Quality ─────────────────────────────────────
             row = _writeSectionHeader(sheet, row, "3. COLUMN QUALITY", NUM_COLS);
@@ -172,7 +178,7 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
 
             // ── Section 4: Missing Value Analysis ────────────────────────────
             row = _writeSectionHeader(sheet, row, "4. MISSING VALUE ANALYSIS", NUM_COLS);
-            row = _writeMissingValueAnalysis(sheet, row, columnEntries);
+            row = _writeMissingValueAnalysis(sheet, row, columnEntries, opts.rows);
             row += 1;
 
             // ── Section 5: Duplicate Analysis ────────────────────────────────
@@ -503,10 +509,17 @@ function _writeTable(sheet, row, columns, rows) {
 // Section builders
 // ─────────────────────────────────────────────────────────────────────────────
 
-function _writeOverview(sheet, row, opts, dq, consumedKeys) {
+function _writeOverview(sheet, row, opts, dq, statistics, consumedKeys) {
     const rowsCount = opts.rows ?? _pick(dq, ["rows", "total_rows", "row_count", "n_rows"], consumedKeys);
     const colsCount = opts.columns ?? _pick(dq, ["columns", "total_columns", "column_count", "n_columns"], consumedKeys);
-    const qualityScore = _pick(dq, ["quality_score", "score", "overall_score", "overall_quality_score"], consumedKeys);
+    // Quality Score isn't guaranteed to live inside dataQuality — some
+    // backend responses put it alongside the numeric stats instead. Check
+    // dataQuality first (semantically the more likely home), then fall back
+    // to statistics, so the value that's already shown on screen (wherever
+    // the generic Report tab card happens to render it from) is the one
+    // that ends up in the worksheet, rather than N/A.
+    const qualityScore = _pick(dq, ["quality_score", "score", "overall_score", "overall_quality_score"], consumedKeys)
+        ?? _pick(statistics, ["quality_score", "score", "overall_score", "overall_quality_score"], null);
     const missingValues = _pickCount(dq, ["missing_cells", "missing_count", "total_missing", "missing_values"], consumedKeys) ?? opts.missingValues;
     const duplicateRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys) ?? opts.duplicateRows;
     const memoryUsage = _pick(dq, ["memory_usage", "memory", "memory_mb", "memory_usage_mb"], consumedKeys);
@@ -545,7 +558,7 @@ const _QUALITY_SUMMARY_METRICS = [
     { label: "Invalid Values", keys: ["invalid_values", "invalid_value_count"], pct: false },
 ];
 
-function _writeQualitySummary(sheet, row, dq, consumedKeys) {
+function _writeQualitySummary(sheet, row, dq, statistics, consumedKeys) {
     const pairs = [];
     const severities = [];
     for (const metric of _QUALITY_SUMMARY_METRICS) {
@@ -556,7 +569,9 @@ function _writeQualitySummary(sheet, row, dq, consumedKeys) {
     }
     // Also fold in a free-text quality_summary/quality_grade, if present,
     // matching the fields the earlier minimal exporter already surfaced.
-    const grade = _pick(dq, ["quality_grade"], consumedKeys);
+    // Quality Grade can live alongside Quality Score wherever the backend
+    // put it — check dataQuality first, then statistics as a fallback.
+    const grade = _pick(dq, ["quality_grade"], consumedKeys) ?? _pick(statistics, ["quality_grade"], null);
     if (grade !== undefined) { pairs.push(["Quality Grade", _fmtAny(grade)]); severities.push(null); }
     const summaryText = _pick(dq, ["quality_summary", "summary"], consumedKeys);
     if (summaryText !== undefined) { pairs.push(["Summary", _fmtAny(summaryText)]); severities.push(null); }
@@ -570,28 +585,56 @@ function _writeQualitySummary(sheet, row, dq, consumedKeys) {
 
 // Finds the per-column detail structure the backend already computed
 // (whatever it's called), normalising it to a flat array of
-// { name, ...rest } objects without altering any values.
-function _extractColumnEntries(dq, statistics, consumedKeys) {
+// { name, ...rest } objects without altering any values. Then merges in
+// raw per-column missing-value counts (from the backend's own
+// `missing_values` map) as a FALLBACK ONLY — an existing missing_count
+// already present on a column entry is never overwritten, and a column
+// that has missing values but no column_quality entry at all still gets
+// surfaced (with its real name, never a placeholder like "Column 3") so
+// that information is never silently dropped.
+function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn) {
     const raw = _pick(dq, ["column_quality", "columns_quality", "per_column_quality", "column_details", "columns"], consumedKeys)
         ?? _pick(statistics, ["column_quality", "columns", "per_column"], null);
-    if (!raw) return [];
 
-    if (Array.isArray(raw)) {
-        return raw.map((entry, i) => {
+    let entries;
+    if (!raw) {
+        entries = [];
+    } else if (Array.isArray(raw)) {
+        entries = raw.map((entry, i) => {
             if (entry && typeof entry === "object") {
                 const name = entry.column ?? entry.name ?? entry.field ?? ("Column " + (i + 1));
                 return Object.assign({}, entry, { name });
             }
             return { name: String(entry) };
         });
-    }
-    if (typeof raw === "object") {
-        return Object.entries(raw).map(([name, entry]) => {
+    } else if (typeof raw === "object") {
+        entries = Object.entries(raw).map(([name, entry]) => {
             if (entry && typeof entry === "object") return Object.assign({}, entry, { name });
             return { name, value: entry };
         });
+    } else {
+        entries = [];
     }
-    return [];
+
+    if (missingValuesByColumn && typeof missingValuesByColumn === "object" && Object.keys(missingValuesByColumn).length > 0) {
+        const byName = new Map(entries.map((e) => [String(e.name), e]));
+        for (const [columnName, missingCount] of Object.entries(missingValuesByColumn)) {
+            const existing = byName.get(columnName);
+            if (existing) {
+                // Existing column-level data takes priority — only fill the
+                // gap when this entry has no missing-count field of its own.
+                if (existing.missing_count === undefined && existing.missing === undefined && existing.null_count === undefined) {
+                    existing.missing_count = missingCount;
+                }
+            } else {
+                const newEntry = { name: columnName, missing_count: missingCount };
+                entries.push(newEntry);
+                byName.set(columnName, newEntry);
+            }
+        }
+    }
+
+    return entries;
 }
 
 function _writeColumnQuality(sheet, row, columnEntries) {
@@ -630,15 +673,35 @@ function _writeColumnQuality(sheet, row, columnEntries) {
     return _writeTable(sheet, row, columns, rows);
 }
 
-function _writeMissingValueAnalysis(sheet, row, columnEntries) {
+function _writeMissingValueAnalysis(sheet, row, columnEntries, totalRows) {
     const withMissing = columnEntries
-        .map((c) => ({
-            column: _fmtAny(c.name),
-            missing_count: _pickCount(c, ["missing_count", "missing", "null_count"]),
-            missing_pct: _pick(c, ["missing_percentage", "missing_pct", "null_pct", "null_percentage"]),
-            suggested: _pick(c, ["suggested_treatment", "treatment", "missing_treatment"]),
-        }))
+        .map((c) => {
+            const missingCount = _pickCount(c, ["missing_count", "missing", "null_count"]);
+            let missingPct = _pick(c, ["missing_percentage", "missing_pct", "null_pct", "null_percentage"]);
+            // Only derive a percentage ourselves when the backend genuinely
+            // didn't supply one for this column AND we know the dataset's
+            // total row count — never overwrite an authoritative backend
+            // value, and never fabricate a percentage out of nothing.
+            if (missingPct === undefined && missingCount !== undefined && totalRows !== undefined && totalRows !== null) {
+                const totalN = _num(totalRows);
+                const countN = _num(missingCount);
+                if (totalN !== null && totalN > 0 && countN !== null) {
+                    missingPct = (countN / totalN) * 100;
+                }
+            }
+            return {
+                column: _fmtAny(c.name),
+                missing_count: missingCount,
+                missing_pct: missingPct,
+                suggested: _pick(c, ["suggested_treatment", "treatment", "missing_treatment"]),
+            };
+        })
         .filter((c) => (_num(c.missing_count) ?? 0) > 0 || (_num(c.missing_pct) ?? 0) > 0);
+
+    if (withMissing.length === 0) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No columns contain missing values."]];
+        return row + 1;
+    }
 
     const rows = withMissing.map((c) => {
         let suggestion = c.suggested !== undefined ? _fmtAny(c.suggested) : null;
