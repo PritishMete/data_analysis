@@ -17,4 +17,3 @@ git add . --force
 git commit -m "Deploy production web assets to gh-pages"
 git branch -M gh-pages
 git push -f origin gh-pages
-

@@ -68,33 +68,43 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
         return { success: false, sheet: null, rowsWritten: 0, error: "Invalid options JSON: " + err.toString() };
     }
 
+    // ── Unpack every field from the payload. ─────────────────────────────
+    // These are the EXACT fields the Quality Tab widgets display, passed
+    // through verbatim from _buildQualityReportPayload() in data_screen.dart.
+    // No analysis is repeated here; these are reads of existing values only.
+
+    // AI Report fields (only populated after /analyze-report is called)
     const dataQuality = (opts.dataQuality && typeof opts.dataQuality === "object") ? opts.dataQuality : {};
     const statistics = (opts.statistics && typeof opts.statistics === "object") ? opts.statistics : {};
     const executiveSummary = (opts.executiveSummary && typeof opts.executiveSummary === "object") ? opts.executiveSummary : {};
     const recommendations = Array.isArray(opts.recommendations) ? opts.recommendations : [];
     const outliers = Array.isArray(opts.outliers) ? opts.outliers : [];
     const chartRecommendation = (opts.chartRecommendation && typeof opts.chartRecommendation === "object") ? opts.chartRecommendation : {};
-    // Raw per-column missing-value counts straight from the backend's own
-    // `missing_values` map (e.g. {"City": 12, "Rating": 25}). Handles
-    // missing/null/non-object input the same way as the fields above.
+
+    // /analyze fields — these ARE available after every scan (Quality Tab source)
+    // missing_values: {"ColName": count} — client-side computed, exact Quality Tab source
     const missingValuesByColumn = (opts.missingValuesByColumn && typeof opts.missingValuesByColumn === "object")
         ? opts.missingValuesByColumn : {};
+    // unique_values: {"ColName": count} — client-side computed, exact Quality Tab source
+    const uniqueValuesByColumn = (opts.uniqueValuesByColumn && typeof opts.uniqueValuesByColumn === "object")
+        ? opts.uniqueValuesByColumn : {};
+    // columnNames: ordered list from summary.column_names — same as Quality Tab column list
+    const columnNames = Array.isArray(opts.columnNames) ? opts.columnNames : [];
+    // describe: list of statistic row-maps (the Statistics matrix in Analysis tab)
+    const describe = Array.isArray(opts.describe) ? opts.describe : [];
+    // duplicatesRaw: full duplicates map from backend (may contain more than just count)
+    const duplicatesRaw = (opts.duplicatesRaw && typeof opts.duplicatesRaw === "object") ? opts.duplicatesRaw : {};
 
-    // This is the single worksheet-writing implementation for both the
-    // automatic per-scan sync (analyzeData() → _syncQualityReport(), which
-    // only ever has overview-level numbers — rows/missing/duplicates — since
-    // it fires before any AI report exists) and the explicit "Export Full
-    // Quality Report" button (which has the complete AiReport). We only
-    // refuse to write when there is truly nothing to show at all — the
-    // overview-only case from the automatic sync is expected and valid.
     const hasAnything =
         Object.keys(dataQuality).length > 0 ||
         Object.keys(statistics).length > 0 ||
         Object.keys(executiveSummary).length > 0 ||
         recommendations.length > 0 ||
         outliers.length > 0 ||
-        Object.keys(chartRecommendation).length > 0 ||
         Object.keys(missingValuesByColumn).length > 0 ||
+        Object.keys(uniqueValuesByColumn).length > 0 ||
+        columnNames.length > 0 ||
+        describe.length > 0 ||
         opts.rows !== undefined || opts.columns !== undefined ||
         opts.missingValues !== undefined || opts.duplicateRows !== undefined;
     if (!hasAnything) {
@@ -149,7 +159,7 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
                 }
             }
 
-            const NUM_COLS = 10; // widest section (Column Quality) — used for merges/banding
+            const NUM_COLS = 8; // adjusted to actual max useful columns
             let row = 0;
             const consumedKeys = new Set();
 
@@ -157,75 +167,115 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             row = _writeTitle(sheet, row, "Data Quality Report", NUM_COLS);
             row += 1;
 
-            // ── Section 1: Quality Overview ──────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "1. QUALITY OVERVIEW", NUM_COLS);
+            // ══════════════════════════════════════════════════════════════
+            // PIPELINE A — SCAN ANALYSIS (/analyze)
+            // Source: analysisData (DataScreenState.analysisData)
+            // Available after every "Analyze" action.
+            // Fields: rows, columns, missing_values, unique_values,
+            //         duplicates.count, summary.column_names, describe
+            // These are the exact values the Quality tab displays.
+            // ══════════════════════════════════════════════════════════════
+
+            // ── Section 1: Quality Overview (Scan Pipeline) ───────────────
+            row = _writeSectionHeader(sheet, row, "1. QUALITY OVERVIEW  ·  Source: Dataset Scan", NUM_COLS);
             row = _writeOverview(sheet, row, opts, dataQuality, statistics, consumedKeys);
             row += 1;
 
-            // ── Section 2: Data Quality Summary ──────────────────────────────
-            row = _writeSectionHeader(sheet, row, "2. DATA QUALITY SUMMARY", NUM_COLS);
-            row = _writeQualitySummary(sheet, row, dataQuality, statistics, consumedKeys);
-            row += 1;
+            // ── Section 2: Column Quality (Scan + AI merged) ──────────────
+            // Column entries are built from:
+            //  • missingValuesByColumn  — client-side computed, exact Quality tab source
+            //  • uniqueValuesByColumn   — client-side computed, exact Quality tab source
+            //  • columnNames            — ordered list from scan
+            //  • dataQuality / statistics column_quality — from AI report, if available
+            const columnEntries = _extractColumnEntries(
+                dataQuality, statistics, consumedKeys,
+                missingValuesByColumn, uniqueValuesByColumn, columnNames);
 
-            // ── Column-level source shared by Sections 3/4/7 ─────────────────
-            const columnEntries = _extractColumnEntries(dataQuality, statistics, consumedKeys, missingValuesByColumn);
-
-            // ── Section 3: Column Quality ─────────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "3. COLUMN QUALITY", NUM_COLS);
+            row = _writeSectionHeader(sheet, row, "2. COLUMN QUALITY  ·  Source: Dataset Scan (+ AI report if available)", NUM_COLS);
             const colQualityResult = _writeColumnQuality(sheet, row, columnEntries);
             row = colQualityResult.nextRow;
             row += 1;
 
-            // ── Section 4: Missing Value Analysis ────────────────────────────
-            row = _writeSectionHeader(sheet, row, "4. MISSING VALUE ANALYSIS", NUM_COLS);
+            // ── Section 3: Missing Value Analysis (Scan Pipeline) ─────────
+            row = _writeSectionHeader(sheet, row, "3. MISSING VALUE ANALYSIS  ·  Source: Dataset Scan", NUM_COLS);
             row = _writeMissingValueAnalysis(sheet, row, columnEntries, opts.rows);
             row += 1;
 
-            // ── Section 5: Duplicate Analysis ────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "5. DUPLICATE ANALYSIS", NUM_COLS);
-            row = _writeDuplicateAnalysis(sheet, row, dataQuality, consumedKeys);
+            // ── Section 4: Duplicate Analysis (Scan Pipeline) ─────────────
+            row = _writeSectionHeader(sheet, row, "4. DUPLICATE ANALYSIS  ·  Source: Dataset Scan", NUM_COLS);
+            row = _writeDuplicateAnalysis(sheet, row, dataQuality, opts, consumedKeys);
             row += 1;
 
-            // ── Section 6: Outlier Analysis ──────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "6. OUTLIER ANALYSIS", NUM_COLS);
-            row = _writeOutlierAnalysis(sheet, row, outliers, dataQuality, consumedKeys);
-            row += 1;
-
-            // ── Section 7: Data Type Analysis ────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "7. DATA TYPE ANALYSIS", NUM_COLS);
-            row = _writeDataTypeAnalysis(sheet, row, columnEntries);
-            row += 1;
-
-            // ── Section 8: AI Recommendations ────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "8. AI RECOMMENDATIONS", NUM_COLS);
-            row = _writeRecommendations(sheet, row, recommendations);
-            row += 1;
-
-            // ── Section 9: Executive Summary ─────────────────────────────────
-            row = _writeSectionHeader(sheet, row, "9. EXECUTIVE SUMMARY", NUM_COLS);
-            row = _writeExecutiveSummary(sheet, row, executiveSummary);
-            row += 1;
-
-            // ── Any dataQuality keys nothing above consumed ──────────────────
-            row = _writeLeftovers(sheet, row, dataQuality, consumedKeys, NUM_COLS);
-
-            // ── Statistics (surfaced in full — this is the same `r.statistics`
-            //    map rendered generically by the STATISTICS card in the Report
-            //    tab; only a subset of it is consumed above as a column-quality
-            //    fallback, so the rest must be written explicitly or it would
-            //    silently disappear from the export while still being visible
-            //    on screen) ────────────────────────────────────────────────────
-            if (Object.keys(statistics).length > 0) {
-                row = _writeSectionHeader(sheet, row, "STATISTICS (from AI report)", NUM_COLS);
-                row = _writeKeyValueTable(sheet, row, statistics);
+            // ── Section 5: Statistics Matrix (Scan Pipeline) ──────────────
+            if (describe.length > 0) {
+                row = _writeSectionHeader(sheet, row, "5. STATISTICS MATRIX  ·  Source: Dataset Scan", NUM_COLS);
+                row = _writeDescribeMatrix(sheet, row, describe);
                 row += 1;
             }
 
-            // ── Chart recommendation (surfaced as-is, never redrawn) ─────────
-            if (Object.keys(chartRecommendation).length > 0) {
-                row = _writeSectionHeader(sheet, row, "CHART RECOMMENDATION (from AI report — not regenerated)", NUM_COLS);
-                row = _writeKeyValueTable(sheet, row, chartRecommendation);
+            // ══════════════════════════════════════════════════════════════
+            // PIPELINE B — AI REPORT (/analyze-report)
+            // Source: AiReport (DataScreenState.aiReport)
+            // Only available after "Generate Report" is explicitly run.
+            // Fields: dataQuality (generic map), statistics (generic map),
+            //         outliers, recommendations, executiveSummary,
+            //         chartRecommendation
+            // These are the values the Report Tab's AI cards display.
+            // ══════════════════════════════════════════════════════════════
+
+            const hasAiReport = Object.keys(dataQuality).length > 0 ||
+                Object.keys(statistics).length > 0 ||
+                Object.keys(executiveSummary).length > 0 ||
+                recommendations.length > 0 ||
+                outliers.length > 0 ||
+                opts.outlierAnalysisPresent === true;
+
+            if (hasAiReport) {
+                row = _writeSectionHeader(sheet, row, "AI QUALITY REPORT  ·  Source: AI Analysis (/analyze-report)", NUM_COLS);
                 row += 1;
+
+                // ── AI Data Quality (generic key-value from dataQuality map) ──
+                if (Object.keys(dataQuality).length > 0) {
+                    row = _writeSectionHeader(sheet, row, "AI DATA QUALITY", NUM_COLS);
+                    row = _writeAiDataQuality(sheet, row, dataQuality, statistics, opts, consumedKeys);
+                    row += 1;
+                }
+
+                // ── AI Outlier Analysis ────────────────────────────────────────
+                row = _writeSectionHeader(sheet, row, "AI OUTLIER ANALYSIS", NUM_COLS);
+                row = _writeOutlierAnalysis(sheet, row, outliers, dataQuality, opts.outlierAnalysisPresent === true, consumedKeys);
+                row += 1;
+
+                // ── AI Recommendations ────────────────────────────────────────
+                if (recommendations.length > 0) {
+                    row = _writeSectionHeader(sheet, row, "AI RECOMMENDATIONS", NUM_COLS);
+                    row = _writeRecommendations(sheet, row, recommendations);
+                    row += 1;
+                }
+
+                // ── AI Executive Summary ──────────────────────────────────────
+                if (Object.keys(executiveSummary).length > 0 || (opts.reportText && opts.reportText.trim())) {
+                    row = _writeSectionHeader(sheet, row, "EXECUTIVE SUMMARY", NUM_COLS);
+                    row = _writeExecutiveSummary(sheet, row, executiveSummary, opts.reportText);
+                    row += 1;
+                }
+
+                // ── AI Statistics ──────────────────────────────────────────────
+                if (Object.keys(statistics).length > 0) {
+                    row = _writeSectionHeader(sheet, row, "AI STATISTICS", NUM_COLS);
+                    row = _writeKeyValueTable(sheet, row, statistics);
+                    row += 1;
+                }
+
+                // ── Chart Recommendation ───────────────────────────────────────
+                if (Object.keys(chartRecommendation).length > 0) {
+                    row = _writeSectionHeader(sheet, row, "AI CHART RECOMMENDATION", NUM_COLS);
+                    row = _writeKeyValueTable(sheet, row, chartRecommendation);
+                    row += 1;
+                }
+
+                // ── Any remaining unconsumed dataQuality keys ──────────────────
+                row = _writeLeftovers(sheet, row, dataQuality, consumedKeys, NUM_COLS);
             }
 
             // ── Sheet-wide formatting ─────────────────────────────────────────
@@ -341,6 +391,42 @@ function _titleCase(key) {
     return String(key)
         .replace(/_/g, " ")
         .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Quality Score/Grade aren't guaranteed to live in one fixed place — this
+// project's backend has put related fields directly in `data_quality`, but
+// nothing rules out `statistics`, or one level of nesting under a wrapper
+// key some backends use (e.g. an "overview"/"summary" sub-object). This is
+// the SINGLE lookup used by every section that needs Quality Score/Grade
+// (Section 1 Overview and Section 2 Data Quality Summary both call this
+// rather than each re-implementing their own search), so there is exactly
+// one place that defines "where the score comes from".
+const _SCORE_KEYS = ["quality_score", "score", "overall_score", "overall_quality_score"];
+const _GRADE_KEYS = ["quality_grade", "grade"];
+const _WRAPPER_KEYS = ["overview", "summary", "overall", "quality_overview"];
+
+function _pickQualityScoreAndGrade(dq, statistics, consumedKeys) {
+    const sources = [
+        { obj: dq, consumed: consumedKeys },
+        { obj: statistics, consumed: null },
+    ];
+    const lookup = (keys) => {
+        for (const src of sources) {
+            const direct = _pick(src.obj, keys, src.consumed);
+            if (direct !== undefined) return direct;
+        }
+        for (const src of sources) {
+            for (const wrapperKey of _WRAPPER_KEYS) {
+                const wrapper = src.obj && typeof src.obj === "object" ? src.obj[wrapperKey] : undefined;
+                if (wrapper && typeof wrapper === "object") {
+                    const nested = _pick(wrapper, keys, null);
+                    if (nested !== undefined) return nested;
+                }
+            }
+        }
+        return undefined;
+    };
+    return { score: lookup(_SCORE_KEYS), grade: lookup(_GRADE_KEYS) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -512,34 +598,91 @@ function _writeTable(sheet, row, columns, rows) {
 function _writeOverview(sheet, row, opts, dq, statistics, consumedKeys) {
     const rowsCount = opts.rows ?? _pick(dq, ["rows", "total_rows", "row_count", "n_rows"], consumedKeys);
     const colsCount = opts.columns ?? _pick(dq, ["columns", "total_columns", "column_count", "n_columns"], consumedKeys);
-    // Quality Score isn't guaranteed to live inside dataQuality — some
-    // backend responses put it alongside the numeric stats instead. Check
-    // dataQuality first (semantically the more likely home), then fall back
-    // to statistics, so the value that's already shown on screen (wherever
-    // the generic Report tab card happens to render it from) is the one
-    // that ends up in the worksheet, rather than N/A.
-    const qualityScore = _pick(dq, ["quality_score", "score", "overall_score", "overall_quality_score"], consumedKeys)
-        ?? _pick(statistics, ["quality_score", "score", "overall_score", "overall_quality_score"], null);
-    const missingValues = _pickCount(dq, ["missing_cells", "missing_count", "total_missing", "missing_values"], consumedKeys) ?? opts.missingValues;
-    const duplicateRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys) ?? opts.duplicateRows;
+
+    // Quality Score/Grade: only shown when the AI report actually contains
+    // them. Never shown as N/A — if absent, the row is omitted entirely
+    // rather than making the report look broken.
+    const { score: qualityScore, grade: qualityGrade } = _pickQualityScoreAndGrade(dq, statistics, consumedKeys);
+
+    const missingValues = opts.missingValues;
+    const missingByColumn = (opts.missingValuesByColumn && typeof opts.missingValuesByColumn === "object") ? opts.missingValuesByColumn : {};
+    const hasMissingByColumn = Object.keys(missingByColumn).length > 0;
+    const columnsWithMissing = Object.values(missingByColumn).filter((v) => (_num(v) ?? 0) > 0).length;
+
+    // duplicateRows comes from analysisData['duplicates']['count'] — always
+    // a number (including 0) after a scan. A value of 0 must render as "0",
+    // never as N/A. We use explicit null-check, not falsy check, to preserve 0.
+    const duplicateRows = opts.duplicateRows !== null && opts.duplicateRows !== undefined
+        ? opts.duplicateRows : undefined;
+    // Duplicate %: only from the source — never calculated or defaulted.
+    const duplicatePct = _pick(dq, ["duplicate_percentage", "duplicate_pct", "duplicate_rate"], consumedKeys);
     const memoryUsage = _pick(dq, ["memory_usage", "memory", "memory_mb", "memory_usage_mb"], consumedKeys);
 
-    const pairs = [
-        ["Dataset Name", opts.datasetName || "N/A"],
-        ["Generated", opts.generatedAt || new Date().toLocaleString()],
-        ["Rows", rowsCount !== undefined && rowsCount !== null ? _fmtNum(rowsCount, 0) : "N/A"],
-        ["Columns", colsCount !== undefined && colsCount !== null ? _fmtNum(colsCount, 0) : "N/A"],
-        ["Quality Score", qualityScore !== undefined ? _fmtNum(qualityScore, 1) : "N/A"],
-        ["Missing Values", missingValues !== undefined ? _fmtNum(missingValues, 0) : "N/A"],
-        ["Duplicate Rows", duplicateRows !== undefined ? _fmtNum(duplicateRows, 0) : "N/A"],
-        ["Memory Usage", memoryUsage !== undefined ? _fmtAny(memoryUsage) : "N/A"],
-    ];
+    // Build pairs — only include rows where we have actual values.
+    // Fields with no source are omitted (not shown as N/A) to avoid
+    // making the report look broken or fabricated.
+    const pairs = [];
+    pairs.push(["Dataset Name", opts.datasetName || "Unknown"]);
+    pairs.push(["Generated", opts.generatedAt || new Date().toLocaleString()]);
+    if (rowsCount !== undefined && rowsCount !== null) pairs.push(["Rows", _fmtNum(rowsCount, 0)]);
+    if (colsCount !== undefined && colsCount !== null) pairs.push(["Columns", _fmtNum(colsCount, 0)]);
+    // Quality Score/Grade only when a real value exists (from AI report)
+    if (qualityScore !== undefined) pairs.push(["Quality Score (AI)", _fmtNum(qualityScore, 1)]);
+    if (qualityGrade !== undefined) pairs.push(["Quality Grade (AI)", _fmtAny(qualityGrade)]);
+    // Missing values from scan pipeline (always available after scan)
+    if (missingValues !== undefined && missingValues !== null) pairs.push(["Total Missing Values", _fmtNum(missingValues, 0)]);
+    if (hasMissingByColumn) pairs.push(["Columns With Missing Values", _fmtNum(columnsWithMissing, 0)]);
+    // Duplicates — explicit null-check so 0 renders as "0" not N/A
+    if (duplicateRows !== undefined) pairs.push(["Duplicate Rows", _fmtNum(duplicateRows, 0)]);
+    if (duplicatePct !== undefined) pairs.push(["Duplicate %", _fmtPct(duplicatePct)]);
+    if (memoryUsage !== undefined) pairs.push(["Memory Usage", _fmtAny(memoryUsage)]);
+
     return _writeKeyValueBlock(sheet, row, pairs, {
-        severity: (label, value) => {
-            if (label === "Quality Score" && qualityScore !== undefined) return _severityHighIsGood(qualityScore);
+        severity: (label) => {
+            if (label === "Quality Score (AI)" && qualityScore !== undefined) return _severityHighIsGood(qualityScore);
+            if (label === "Duplicate %" && duplicatePct !== undefined) return _severityHighIsBad(duplicatePct);
             return null;
         },
     });
+}
+
+// Builds a short plain-language summary purely by narrating numbers already
+// on hand (rows/columns/missing/duplicates) — this is string formatting of
+// existing values, not a new scoring system or an inferred conclusion. Used
+// ONLY as a fallback when Section 2 has no explicit quality-summary metrics
+// to show (i.e. the alternative was the generic, less useful "No additional
+// quality metrics returned." message). Returns null when there's nothing at
+// all to narrate, so the original fallback message still applies.
+function _buildOverviewNarrative(opts) {
+    const rows = _num(opts.rows);
+    const cols = _num(opts.columns);
+    const missing = _num(opts.missingValues);
+    const missingByColumn = (opts.missingValuesByColumn && typeof opts.missingValuesByColumn === "object") ? opts.missingValuesByColumn : {};
+    const columnsWithMissing = Object.values(missingByColumn).filter((v) => (_num(v) ?? 0) > 0).length;
+    const dup = _num(opts.duplicateRows);
+
+    if (rows === null && cols === null && missing === null && dup === null) return null;
+
+    const parts = [];
+    if (rows !== null && cols !== null) {
+        parts.push("The dataset contains " + rows.toLocaleString() + " rows across " + cols.toLocaleString() + " columns.");
+    } else if (rows !== null) {
+        parts.push("The dataset contains " + rows.toLocaleString() + " rows.");
+    }
+    if (missing !== null) {
+        if (missing === 0) {
+            parts.push("No missing values were detected.");
+        } else if (columnsWithMissing > 0) {
+            const columnWord = columnsWithMissing === 1 ? "column" : "columns";
+            parts.push(missing.toLocaleString() + " missing value(s) were detected across " + columnsWithMissing + " " + columnWord + ".");
+        } else {
+            parts.push(missing.toLocaleString() + " missing value(s) were detected.");
+        }
+    }
+    if (dup !== null) {
+        parts.push(dup === 0 ? "No duplicate rows were detected." : dup.toLocaleString() + " duplicate row(s) were detected.");
+    }
+    return parts.length > 0 ? parts.join(" ") : null;
 }
 
 // Every metric the AI Quality tab could plausibly show, each tried against a
@@ -558,7 +701,7 @@ const _QUALITY_SUMMARY_METRICS = [
     { label: "Invalid Values", keys: ["invalid_values", "invalid_value_count"], pct: false },
 ];
 
-function _writeQualitySummary(sheet, row, dq, statistics, consumedKeys) {
+function _writeQualitySummary(sheet, row, dq, statistics, opts, consumedKeys) {
     const pairs = [];
     const severities = [];
     for (const metric of _QUALITY_SUMMARY_METRICS) {
@@ -567,32 +710,42 @@ function _writeQualitySummary(sheet, row, dq, statistics, consumedKeys) {
         pairs.push([metric.label, metric.pct ? _fmtPct(v) : _fmtAny(v)]);
         severities.push(metric.badHigh ? _severityHighIsBad(v) : null);
     }
-    // Also fold in a free-text quality_summary/quality_grade, if present,
-    // matching the fields the earlier minimal exporter already surfaced.
-    // Quality Grade can live alongside Quality Score wherever the backend
-    // put it — check dataQuality first, then statistics as a fallback.
-    const grade = _pick(dq, ["quality_grade"], consumedKeys) ?? _pick(statistics, ["quality_grade"], null);
+    // Same shared Quality Grade lookup as Section 1 — one source of truth.
+    const { grade } = _pickQualityScoreAndGrade(dq, statistics, consumedKeys);
     if (grade !== undefined) { pairs.push(["Quality Grade", _fmtAny(grade)]); severities.push(null); }
     const summaryText = _pick(dq, ["quality_summary", "summary"], consumedKeys);
     if (summaryText !== undefined) { pairs.push(["Summary", _fmtAny(summaryText)]); severities.push(null); }
 
     if (pairs.length === 0) {
+        // Nothing explicit from the AI report — fall back to narrating the
+        // overview numbers we already have (rows/columns/missing/duplicates)
+        // which ARE available after every scan (the Quality Tab source).
+        const narrative = _buildOverviewNarrative(opts);
+        if (narrative) {
+            const cell = sheet.getRangeByIndexes(row, 0, 1, 1);
+            cell.values = [[narrative]];
+            cell.format.wrapText = true;
+            return row + 1;
+        }
         sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No additional quality metrics returned."]];
         return row + 1;
     }
-    return _writeKeyValueBlock(sheet, row, pairs, { severity: (label, value) => severities[pairs.findIndex(p => p[0] === label)] });
+    return _writeKeyValueBlock(sheet, row, pairs, { severity: (label) => severities[pairs.findIndex(p => p[0] === label)] });
 }
 
-// Finds the per-column detail structure the backend already computed
-// (whatever it's called), normalising it to a flat array of
-// { name, ...rest } objects without altering any values. Then merges in
-// raw per-column missing-value counts (from the backend's own
-// `missing_values` map) as a FALLBACK ONLY — an existing missing_count
-// already present on a column entry is never overwritten, and a column
-// that has missing values but no column_quality entry at all still gets
-// surfaced (with its real name, never a placeholder like "Column 3") so
-// that information is never silently dropped.
-function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn) {
+// Builds the canonical column-entry list. Priority order:
+// 1. AiReport.dataQuality column_quality / columns (richest, if AI report ran)
+// 2. AiReport.statistics column data (fallback)
+// 3. Merge per-column missing counts from missingValuesByColumn
+//    (client-side computed, exact Quality Tab source) — never overwrites
+//    an existing authoritative missing_count
+// 4. Merge per-column unique counts from uniqueValuesByColumn
+//    (client-side computed, exact Quality Tab source) — never overwrites
+// 5. Merge per-column dtypes from a flat dtype map in dataQuality/statistics
+// 6. Guarantee every column the scan found (columnNames) has an entry,
+//    even if none of the above produced data for it — using the real
+//    column name, never a "Column N" placeholder
+function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn, uniqueValuesByColumn, columnNames) {
     const raw = _pick(dq, ["column_quality", "columns_quality", "per_column_quality", "column_details", "columns"], consumedKeys)
         ?? _pick(statistics, ["column_quality", "columns", "per_column"], null);
 
@@ -616,61 +769,150 @@ function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColu
         entries = [];
     }
 
-    if (missingValuesByColumn && typeof missingValuesByColumn === "object" && Object.keys(missingValuesByColumn).length > 0) {
-        const byName = new Map(entries.map((e) => [String(e.name), e]));
-        for (const [columnName, missingCount] of Object.entries(missingValuesByColumn)) {
-            const existing = byName.get(columnName);
+    const buildIndex = () => new Map(entries.map((e) => [String(e.name), e]));
+
+    // Step 3: merge missing counts (Quality Tab source — exact values shown in UI)
+    if (missingValuesByColumn && Object.keys(missingValuesByColumn).length > 0) {
+        const idx = buildIndex();
+        for (const [colName, missingCount] of Object.entries(missingValuesByColumn)) {
+            const existing = idx.get(colName);
             if (existing) {
-                // Existing column-level data takes priority — only fill the
-                // gap when this entry has no missing-count field of its own.
                 if (existing.missing_count === undefined && existing.missing === undefined && existing.null_count === undefined) {
                     existing.missing_count = missingCount;
                 }
             } else {
-                const newEntry = { name: columnName, missing_count: missingCount };
-                entries.push(newEntry);
-                byName.set(columnName, newEntry);
+                const e = { name: colName, missing_count: missingCount };
+                entries.push(e);
+                idx.set(colName, e);
             }
         }
+    }
+
+    // Step 4: merge unique counts (Quality Tab source — exact values shown in UI)
+    if (uniqueValuesByColumn && Object.keys(uniqueValuesByColumn).length > 0) {
+        const idx = buildIndex();
+        for (const [colName, uniqueCount] of Object.entries(uniqueValuesByColumn)) {
+            const existing = idx.get(colName);
+            if (existing) {
+                if (existing.unique_count === undefined && existing.unique === undefined && existing.n_unique === undefined) {
+                    existing.unique_count = uniqueCount;
+                }
+            } else {
+                const e = { name: colName, unique_count: uniqueCount };
+                entries.push(e);
+                idx.set(colName, e);
+            }
+        }
+    }
+
+    // Step 5: merge a flat dtype map if present
+    const rawDtypeMap = _pick(dq, ["data_types", "dtypes", "column_types", "column_dtypes"], consumedKeys)
+        ?? _pick(statistics, ["data_types", "dtypes", "column_types", "column_dtypes"], null);
+    if (rawDtypeMap && typeof rawDtypeMap === "object" && !Array.isArray(rawDtypeMap)) {
+        const idx = buildIndex();
+        for (const [colName, dtypeValue] of Object.entries(rawDtypeMap)) {
+            if (dtypeValue && typeof dtypeValue === "object") continue;
+            const existing = idx.get(colName);
+            if (existing) {
+                if (existing.dtype === undefined && existing.type === undefined && existing.data_type === undefined && existing.detected_type === undefined) {
+                    existing.dtype = dtypeValue;
+                }
+            } else {
+                const e = { name: colName, dtype: dtypeValue };
+                entries.push(e);
+                idx.set(colName, e);
+            }
+        }
+    }
+
+    // Step 6: guarantee every scanned column appears, in scan order.
+    // This ensures Column Quality table matches the Quality Tab column list
+    // exactly, even for columns that have zero missing values and no AI data.
+    if (columnNames && columnNames.length > 0) {
+        const idx = buildIndex();
+        // Add any missing columns first (preserving scan order for them)
+        for (const colName of columnNames) {
+            const name = String(colName);
+            if (!idx.has(name)) {
+                const e = { name };
+                entries.push(e);
+                idx.set(name, e);
+            }
+        }
+        // Re-sort entries to match scan order (known columns first, then any
+        // AI-report-only columns that didn't appear in the scan list)
+        const order = new Map(columnNames.map((c, i) => [String(c), i]));
+        entries.sort((a, b) => {
+            const ia = order.has(a.name) ? order.get(a.name) : columnNames.length;
+            const ib = order.has(b.name) ? order.get(b.name) : columnNames.length;
+            return ia - ib;
+        });
     }
 
     return entries;
 }
 
 function _writeColumnQuality(sheet, row, columnEntries) {
+    if (columnEntries.length === 0) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No column data available."]];
+        return { nextRow: row + 1, headerRange: null, dataRangeForFilter: null };
+    }
+
+    // Only include a column in the table if at least one entry has a real
+    // value for it — don't show a "Datatype" column if every row is N/A.
+    // This prevents the table from looking fabricated.
     const rows = columnEntries.map((c) => {
         const missingCount = _pickCount(c, ["missing_count", "missing", "null_count"]);
+        const uniqueCount = _pick(c, ["unique_count", "unique", "n_unique"]);
+        const dtype = _pick(c, ["dtype", "type", "data_type", "detected_type"]);
         const missingPct = _pick(c, ["missing_percentage", "missing_pct", "null_pct", "null_percentage"]);
-        const issues = c.issues !== undefined ? _fmtAny(c.issues) : "";
-        const recs = c.recommendations !== undefined ? _fmtAny(c.recommendations) : (c.recommendation !== undefined ? _fmtAny(c.recommendation) : "");
+        const dupCount = _pickCount(c, ["duplicate_count", "duplicates"]);
+        const issues = c.issues !== undefined ? _fmtAny(c.issues) : undefined;
+        const recs = c.recommendations !== undefined ? _fmtAny(c.recommendations)
+            : (c.recommendation !== undefined ? _fmtAny(c.recommendation) : undefined);
         return {
             column: _fmtAny(c.name),
-            datatype: _fmtAny(_pick(c, ["dtype", "type", "data_type", "detected_type"]) ?? "N/A"),
-            missing_count: missingCount !== undefined ? _fmtNum(missingCount, 0) : "N/A",
-            missing_pct: missingPct !== undefined ? _fmtPct(missingPct) : "N/A",
-            unique_count: (() => { const u = _pick(c, ["unique_count", "unique", "n_unique"]); return u !== undefined ? _fmtNum(u, 0) : "N/A"; })(),
-            duplicate_count: (() => { const d = _pickCount(c, ["duplicate_count", "duplicates"]); return d !== undefined ? _fmtNum(d, 0) : "N/A"; })(),
-            memory: (() => { const m = _pick(c, ["memory", "memory_usage"]); return m !== undefined ? _fmtAny(m) : "N/A"; })(),
-            null_pct: missingPct !== undefined ? _fmtPct(missingPct) : "N/A",
-            issues: issues || "—",
-            recommendations: recs || "—",
+            // missingCount and uniqueCount are always present (from scan pipeline)
+            missing_count: missingCount !== undefined && missingCount !== null ? _fmtNum(missingCount, 0) : "0",
+            unique_count: uniqueCount !== undefined && uniqueCount !== null ? _fmtNum(uniqueCount, 0) : null,
+            // dtype, missingPct, dupCount, issues, recs only from AI report
+            datatype: dtype !== undefined ? _fmtAny(dtype) : null,
+            missing_pct: missingPct !== undefined ? _fmtPct(missingPct) : null,
+            duplicate_count: dupCount !== undefined ? _fmtNum(dupCount, 0) : null,
+            issues: issues || null,
+            recommendations: recs || null,
             _missingPctRaw: missingPct,
         };
     });
 
-    const columns = [
-        { label: "Column", key: "column" },
-        { label: "Datatype", key: "datatype" },
-        { label: "Missing Count", key: "missing_count" },
-        { label: "Missing %", key: "missing_pct", severity: (r) => _severityHighIsBad(r._missingPctRaw) },
-        { label: "Unique Count", key: "unique_count" },
-        { label: "Duplicate Count", key: "duplicate_count" },
-        { label: "Memory", key: "memory" },
-        { label: "Null %", key: "null_pct" },
-        { label: "Issues", key: "issues", wrap: true },
-        { label: "Recommendations", key: "recommendations", wrap: true },
+    // Determine which columns have at least one non-null value
+    const hasAny = (key) => rows.some(r => r[key] !== null && r[key] !== undefined);
+
+    const allColumns = [
+        { label: "Column", key: "column", always: true },
+        { label: "Missing Count", key: "missing_count", always: true }, // from scan
+        { label: "Unique Count", key: "unique_count", always: false },  // from scan
+        { label: "Datatype", key: "datatype", always: false },          // AI only
+        { label: "Missing %", key: "missing_pct", always: false,        // AI only
+          severity: (r) => _severityHighIsBad(r._missingPctRaw) },
+        { label: "Duplicate Count", key: "duplicate_count", always: false }, // AI only
+        { label: "Issues", key: "issues", always: false, wrap: true },       // AI only
+        { label: "Recommendations", key: "recommendations", always: false, wrap: true }, // AI only
     ];
-    return _writeTable(sheet, row, columns, rows);
+
+    const activeColumns = allColumns.filter(c => c.always || hasAny(c.key));
+
+    // Fill remaining nulls with "—" for display (only for active columns)
+    const displayRows = rows.map(r => {
+        const out = {};
+        for (const c of activeColumns) {
+            out[c.key] = (r[c.key] !== null && r[c.key] !== undefined) ? r[c.key] : "—";
+        }
+        out._missingPctRaw = r._missingPctRaw;
+        return out;
+    });
+
+    return _writeTable(sheet, row, activeColumns, displayRows);
 }
 
 function _writeMissingValueAnalysis(sheet, row, columnEntries, totalRows) {
@@ -678,10 +920,9 @@ function _writeMissingValueAnalysis(sheet, row, columnEntries, totalRows) {
         .map((c) => {
             const missingCount = _pickCount(c, ["missing_count", "missing", "null_count"]);
             let missingPct = _pick(c, ["missing_percentage", "missing_pct", "null_pct", "null_percentage"]);
-            // Only derive a percentage ourselves when the backend genuinely
-            // didn't supply one for this column AND we know the dataset's
-            // total row count — never overwrite an authoritative backend
-            // value, and never fabricate a percentage out of nothing.
+            // Derive missing % from count/rows only when the source doesn't
+            // already supply it — never overwrite an authoritative value.
+            // Requires totalRows > 0 to avoid division by zero.
             if (missingPct === undefined && missingCount !== undefined && totalRows !== undefined && totalRows !== null) {
                 const totalN = _num(totalRows);
                 const countN = _num(missingCount);
@@ -693,71 +934,93 @@ function _writeMissingValueAnalysis(sheet, row, columnEntries, totalRows) {
                 column: _fmtAny(c.name),
                 missing_count: missingCount,
                 missing_pct: missingPct,
+                // suggested_treatment: only from AI report — never fabricated.
+                // If the backend didn't supply it, the column is omitted from
+                // the Suggested Treatment column entirely.
                 suggested: _pick(c, ["suggested_treatment", "treatment", "missing_treatment"]),
             };
         })
-        .filter((c) => (_num(c.missing_count) ?? 0) > 0 || (_num(c.missing_pct) ?? 0) > 0);
+        .filter((c) => {
+            // Only include columns that genuinely have missing values.
+            // Use explicit null-check on missing_count: 0 means no missing,
+            // undefined means we have no count at all — both are excluded.
+            const countN = _num(c.missing_count);
+            return countN !== null && countN > 0;
+        });
 
     if (withMissing.length === 0) {
         sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No columns contain missing values."]];
         return row + 1;
     }
 
-    const rows = withMissing.map((c) => {
-        let suggestion = c.suggested !== undefined ? _fmtAny(c.suggested) : null;
-        if (!suggestion) {
-            // Presentational fallback only — used solely when the backend
-            // didn't already supply a suggested_treatment for this column.
-            const pct = _num(c.missing_pct);
-            if (pct === null) suggestion = "Review manually";
-            else if (pct > 50) suggestion = "Consider dropping column";
-            else if (pct > 10) suggestion = "Impute (median/mode) or flag";
-            else suggestion = "Impute or leave as-is";
-        }
-        return {
-            column: c.column,
-            missing_count: c.missing_count !== undefined ? _fmtNum(c.missing_count, 0) : "N/A",
-            missing_pct: c.missing_pct !== undefined ? _fmtPct(c.missing_pct) : "N/A",
-            suggested: suggestion,
-            _pctRaw: c.missing_pct,
-        };
-    });
+    const hasSuggested = withMissing.some(c => c.suggested !== undefined);
+
+    const rows = withMissing.map((c) => ({
+        column: c.column,
+        missing_count: _fmtNum(c.missing_count, 0),
+        missing_pct: c.missing_pct !== undefined ? _fmtPct(c.missing_pct) : "—",
+        suggested: hasSuggested ? (c.suggested !== undefined ? _fmtAny(c.suggested) : "—") : undefined,
+        _pctRaw: c.missing_pct,
+    }));
 
     const columns = [
         { label: "Column", key: "column" },
         { label: "Missing Count", key: "missing_count" },
         { label: "Missing %", key: "missing_pct", severity: (r) => _severityHighIsBad(r._pctRaw) },
-        { label: "Suggested Treatment", key: "suggested", wrap: true },
     ];
+    // Only add Suggested Treatment column if the AI report provided at least
+    // one value — never show a column full of "—" entries.
+    if (hasSuggested) {
+        columns.push({ label: "Suggested Treatment", key: "suggested", wrap: true });
+    }
     return _writeTable(sheet, row, columns, rows).nextRow;
 }
 
-function _writeDuplicateAnalysis(sheet, row, dq, consumedKeys) {
-    const dupRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys);
-    const dupPct = _pick(dq, ["duplicate_percentage", "duplicate_pct", "duplicate_rate"], consumedKeys);
-    const affected = _pick(dq, ["affected_columns", "duplicate_affected_columns"], consumedKeys);
-    const recommendation = _pick(dq, ["duplicate_recommendation"], consumedKeys)
-        ?? ((_num(dupRows) ?? 0) > 0 || (_num(dupPct) ?? 0) > 0 ? "Review and remove duplicate rows before downstream analysis." : "No action needed.");
+function _writeDuplicateAnalysis(sheet, row, dq, opts, consumedKeys) {
+    // dupRows: from dataQuality map if present, otherwise from the scan
+    // pipeline value (opts.duplicateRows). Uses ?? so 0 is preserved — a
+    // value of undefined (no source) falls through to opts, while 0
+    // (genuinely zero duplicates) is kept as 0.
+    const dupRows = _pickCount(dq, ["duplicate_rows", "duplicates", "duplicate_count"], consumedKeys) ?? opts.duplicateRows;
 
-    const pairs = [
-        ["Duplicate Rows", dupRows !== undefined ? _fmtNum(dupRows, 0) : "N/A"],
-        ["Duplicate %", dupPct !== undefined ? _fmtPct(dupPct) : "N/A"],
-        ["Affected Columns", affected !== undefined ? _fmtAny(affected) : "N/A"],
-        ["Recommendation", _fmtAny(recommendation)],
-    ];
+    // dupPct: source value only — never calculated, never defaulted to 0.
+    // If the source doesn't provide it, the field is omitted from the output.
+    const dupPct = _pick(dq, ["duplicate_percentage", "duplicate_pct", "duplicate_rate"], consumedKeys);
+
+    // affectedRaw: only from the source — never inferred from dupRows.
+    const affectedRaw = _pick(dq, ["affected_columns", "duplicate_affected_columns"], consumedKeys);
+
+    // recommendation: source value only — never generated from dupRows count.
+    const recommendation = _pick(dq, ["duplicate_recommendation"], consumedKeys);
+
+    // Build pairs — only include fields where the source provides a value.
+    // dupRows is always shown (from scan pipeline, 0 is valid and kept as 0).
+    // dupPct, affectedRaw, recommendation only shown when source provides them.
+    const pairs = [];
+    pairs.push(["Duplicate Rows", dupRows !== null && dupRows !== undefined ? _fmtNum(dupRows, 0) : "N/A"]);
+    if (dupPct !== undefined) pairs.push(["Duplicate %", _fmtPct(dupPct)]);
+    if (affectedRaw !== undefined) pairs.push(["Affected Columns", _fmtAny(affectedRaw)]);
+    if (recommendation !== undefined) pairs.push(["Recommendation", _fmtAny(recommendation)]);
+
     return _writeKeyValueBlock(sheet, row, pairs, {
         severity: (label) => label === "Duplicate %" ? _severityHighIsBad(dupPct) : null,
     });
 }
 
-function _writeOutlierAnalysis(sheet, row, outliers, dq, consumedKeys) {
+function _writeOutlierAnalysis(sheet, row, outliers, dq, analysisPresent, consumedKeys) {
     let source = outliers;
     if (!source || source.length === 0) {
         const dqOutliers = _pick(dq, ["outliers", "outlier_analysis"], consumedKeys);
         source = Array.isArray(dqOutliers) ? dqOutliers : [];
     }
     if (source.length === 0) {
-        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No outlier analysis available."]];
+        // Distinguish between "the backend ran outlier detection and found
+        // none" vs. "the backend never ran / didn't include outlier data".
+        // analysisPresent is set from AiReport.outliersAnalysisPresent (see
+        // ai_report_model.dart), which captures whether the `outliers` key
+        // was actually present in the raw JSON (even if it was []).
+        const msg = analysisPresent ? "No outliers detected." : "No outlier analysis available.";
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [[msg]];
         return row + 1;
     }
     const rows = source.map((o) => {
@@ -789,6 +1052,32 @@ function _writeDataTypeAnalysis(sheet, row, columnEntries) {
         sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No data type analysis available."]];
         return row + 1;
     }
+
+    // Distribution summary ahead of the per-column detail table — a tally
+    // of the dtype values already present on each column entry (not a new
+    // inference), so it's easy to see at a glance how many columns are of
+    // each type before scanning the full per-column list below.
+    const counts = new Map();
+    const namesByType = new Map();
+    relevant.forEach((c) => {
+        const dt = _fmtAny(_pick(c, ["dtype", "type", "data_type", "detected_type"]) ?? "Unknown");
+        counts.set(dt, (counts.get(dt) || 0) + 1);
+        if (!namesByType.has(dt)) namesByType.set(dt, []);
+        namesByType.get(dt).push(_fmtAny(c.name));
+    });
+    const distRows = Array.from(counts.entries()).map(([dt, n]) => ({
+        datatype: dt,
+        count: _fmtNum(n, 0),
+        columns: namesByType.get(dt).join(", "),
+    }));
+    const distColumns = [
+        { label: "Datatype", key: "datatype" },
+        { label: "Column Count", key: "count" },
+        { label: "Columns", key: "columns", wrap: true },
+    ];
+    let nextRow = _writeTable(sheet, row, distColumns, distRows).nextRow;
+    nextRow += 1;
+
     const rows = relevant.map((c) => ({
         column: _fmtAny(c.name),
         detected: _fmtAny(_pick(c, ["dtype", "type", "data_type", "detected_type"]) ?? "N/A"),
@@ -801,7 +1090,84 @@ function _writeDataTypeAnalysis(sheet, row, columnEntries) {
         { label: "Recommended Type", key: "recommended" },
         { label: "Issues", key: "issues", wrap: true },
     ];
-    return _writeTable(sheet, row, columns, rows).nextRow;
+    return _writeTable(sheet, nextRow, columns, rows).nextRow;
+}
+
+// Writes the statistics matrix from analysisData['describe'] — the same
+// table the DescribeMatrix widget shows in the Analysis tab's Statistics
+// section. `describeList` is a list of row objects, each keyed by column
+// name plus an 'index' key for the metric name (count, mean, std, etc.).
+function _writeDescribeMatrix(sheet, row, describeList) {
+    if (!describeList || describeList.length === 0) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No statistics matrix available."]];
+        return row + 1;
+    }
+    const headers = Object.keys(describeList[0] || {});
+    if (headers.length === 0) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["Statistics matrix has no columns."]];
+        return row + 1;
+    }
+    const numCols = headers.length;
+    const displayHeaders = headers.map((h) => h === "index" ? "Metric" : h);
+    sheet.getRangeByIndexes(row, 0, 1, numCols).values = [displayHeaders];
+    _styleHeaderRow(sheet, row, numCols);
+    row += 1;
+    describeList.forEach((rowObj, i) => {
+        const vals = headers.map((h) => {
+            const v = rowObj[h];
+            if (v === null || v === undefined) return "";
+            const n = typeof v === "number" ? v : Number(v);
+            return Number.isFinite(n) ? parseFloat(n.toFixed(4)) : String(v);
+        });
+        const r = sheet.getRangeByIndexes(row + i, 0, 1, numCols);
+        r.values = [vals];
+        if (i % 2 === 1) r.format.fill.color = _QR_COLORS.bandFill;
+    });
+    const fullRange = sheet.getRangeByIndexes(row - 1, 0, describeList.length + 1, numCols);
+    fullRange.format.borders.getItem("EdgeTop").style = "Continuous";
+    fullRange.format.borders.getItem("EdgeBottom").style = "Continuous";
+    fullRange.format.borders.getItem("EdgeLeft").style = "Continuous";
+    fullRange.format.borders.getItem("EdgeRight").style = "Continuous";
+    fullRange.format.borders.getItem("InsideHorizontal").style = "Continuous";
+    fullRange.format.borders.getItem("InsideVertical").style = "Continuous";
+    return row + describeList.length;
+}
+
+// Renders the AI dataQuality map exactly as _buildMapResultCard does in
+// report_tab.dart — generic key-value rendering with no hardcoded field
+// names. Any key the backend returns is surfaced; nothing is added that
+// wasn't in the original response. Also shows Quality Score/Grade when
+// the AI report includes them, labelled as AI-provided.
+function _writeAiDataQuality(sheet, row, dq, statistics, opts, consumedKeys) {
+    const { score, grade } = _pickQualityScoreAndGrade(dq, statistics, consumedKeys);
+    const pairs = [];
+
+    // Quality Score/Grade — only if the AI report actually has them
+    if (score !== undefined) pairs.push(["Quality Score (AI)", _fmtNum(score, 1)]);
+    if (grade !== undefined) pairs.push(["Quality Grade (AI)", _fmtAny(grade)]);
+
+    // Everything else in dataQuality verbatim (same as UI generic render)
+    for (const [k, v] of Object.entries(dq)) {
+        if (consumedKeys.has(k)) continue;
+        // Skip column-quality sub-objects — those are handled in Column Quality section
+        if (k === "column_quality" || k === "columns_quality" || k === "per_column_quality" || k === "column_details") continue;
+        // Skip dtype maps — handled in Column Quality section
+        if (k === "data_types" || k === "dtypes" || k === "column_types" || k === "column_dtypes") continue;
+        pairs.push([_titleCase(k), _fmtAny(v)]);
+        consumedKeys.add(k);
+    }
+
+    if (pairs.length === 0) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No structured AI quality data returned."]];
+        return row + 1;
+    }
+
+    return _writeKeyValueBlock(sheet, row, pairs, {
+        severity: (label) => {
+            if (label === "Quality Score (AI)" && score !== undefined) return _severityHighIsGood(score);
+            return null;
+        },
+    });
 }
 
 function _writeRecommendations(sheet, row, recommendations) {
@@ -825,26 +1191,35 @@ function _writeRecommendations(sheet, row, recommendations) {
     return _writeTable(sheet, row, columns, rows).nextRow;
 }
 
-function _writeExecutiveSummary(sheet, row, executiveSummary) {
+function _writeExecutiveSummary(sheet, row, executiveSummary, reportText) {
+    // First show the free-text AI report if present (same as _buildReportCard
+    // in report_tab.dart which renders r.report directly)
+    if (reportText && typeof reportText === "string" && reportText.trim()) {
+        const cell = sheet.getRangeByIndexes(row, 0, 1, 1);
+        cell.values = [[reportText.trim()]];
+        cell.format.wrapText = true;
+        sheet.getRangeByIndexes(row, 0, 1, 6).merge(false);
+        sheet.getRangeByIndexes(row, 0, 1, 6).format.rowHeight = 80;
+        row += 1;
+    }
     const narrative = _pick(executiveSummary, ["summary", "text", "narrative", "overview"]);
-    let nextRow = row;
     if (narrative !== undefined) {
-        const cell = sheet.getRangeByIndexes(nextRow, 0, 1, 1);
+        const cell = sheet.getRangeByIndexes(row, 0, 1, 1);
         cell.values = [[_fmtAny(narrative)]];
         cell.format.wrapText = true;
-        sheet.getRangeByIndexes(nextRow, 0, 1, 6).merge(false);
-        sheet.getRangeByIndexes(nextRow, 0, 1, 6).format.rowHeight = 60;
-        nextRow += 1;
+        sheet.getRangeByIndexes(row, 0, 1, 6).merge(false);
+        sheet.getRangeByIndexes(row, 0, 1, 6).format.rowHeight = 60;
+        row += 1;
     }
     const rest = Object.assign({}, executiveSummary);
     ["summary", "text", "narrative", "overview"].forEach((k) => delete rest[k]);
     if (Object.keys(rest).length > 0) {
-        nextRow = _writeKeyValueTable(sheet, nextRow, rest);
-    } else if (narrative === undefined) {
-        sheet.getRangeByIndexes(nextRow, 0, 1, 1).values = [["No executive summary available."]];
-        nextRow += 1;
+        row = _writeKeyValueTable(sheet, row, rest);
+    } else if (narrative === undefined && !(reportText && reportText.trim())) {
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No executive summary available."]];
+        row += 1;
     }
-    return nextRow;
+    return row;
 }
 
 // Anything in dataQuality that no section above read gets surfaced here so
