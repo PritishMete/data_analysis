@@ -68,7 +68,17 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
         return { success: false, sheet: null, rowsWritten: 0, error: "Invalid options JSON: " + err.toString() };
     }
 
-    // ── Unpack every field from the payload. ─────────────────────────────
+    // ── Runtime payload diagnostics (DevTools console) ───────────────────
+    // Logs exactly what arrives at the JS layer so dtype-path failures
+    // can be diagnosed without adding any new state or API calls.
+    console.log("[QualityReport] payload keys:", Object.keys(opts));
+    console.log("[QualityReport] columnNames:", (opts.columnNames || []).slice(0, 5), "(first 5)");
+    console.log("[QualityReport] describe rows:", Array.isArray(opts.describe) ? opts.describe.length : "none",
+        "— index values:", Array.isArray(opts.describe) ? opts.describe.map(r => r["index"]) : []);
+    const _diag_dtypeRow = Array.isArray(opts.describe)
+        ? opts.describe.find(r => ["dtype","dtypes","Dtype","DType","data type","type"].includes(r["index"]))
+        : null;
+    console.log("[QualityReport] dtypeRow found:", !!_diag_dtypeRow, _diag_dtypeRow ? "(first 3 cols: " + JSON.stringify(Object.entries(_diag_dtypeRow).slice(0,4)) + ")" : "");
     // These are the EXACT fields the Quality Tab widgets display, passed
     // through verbatim from _buildQualityReportPayload() in data_screen.dart.
     // No analysis is repeated here; these are reads of existing values only.
@@ -94,6 +104,11 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     const describe = Array.isArray(opts.describe) ? opts.describe : [];
     // duplicatesRaw: full duplicates map from backend (may contain more than just count)
     const duplicatesRaw = (opts.duplicatesRaw && typeof opts.duplicatesRaw === "object") ? opts.duplicatesRaw : {};
+    // dtypesByColumn: top-level {"ColName": "dtype"} map from the backend.
+    // Secondary dtype source alongside the describe dtype row — whichever
+    // is actually populated at runtime wins (describe row takes priority
+    // since it's the authoritative pandas output).
+    const dtypesByColumn = (opts.dtypesByColumn && typeof opts.dtypesByColumn === "object") ? opts.dtypesByColumn : {};
 
     const hasAnything =
         Object.keys(dataQuality).length > 0 ||
@@ -207,18 +222,27 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             row += 1;
 
             // ── Section 5: Column Data Types (Scan Pipeline) ─────────────
-            // Source: the 'dtype' row inside analysisData['describe'].
-            // This is the exact same data the DescribeMatrix widget renders —
-            // every column's dtype as returned by the backend, using the
-            // backend's own type names (int64, float64, object, etc.) with
-            // no normalisation.  The section is only added when the describe
-            // list actually contains a dtype row; it is skipped (not shown
-            // as "unavailable") when there are no dtype entries to display.
-            if (describe.length > 0) {
-                const dtypeRow = describe.find(r => r["index"] === "dtype" || r["index"] === "dtypes");
-                if (dtypeRow) {
+            // Two sources, tried in priority order:
+            //   1. describe dtype row (authoritative pandas output)
+            //   2. dtypesByColumn top-level map (some backends return this)
+            // The section is ALWAYS written when column names are known,
+            // showing "Not available" per column if neither source has data.
+            {
+                const dtypeRow = describe.length > 0
+                    ? (describe.find(r =>
+                        r["index"] === "dtype" ||
+                        r["index"] === "dtypes" ||
+                        r["index"] === "Dtype" ||
+                        r["index"] === "DType" ||
+                        r["index"] === "data type" ||
+                        r["index"] === "type"
+                      ) || null)
+                    : null;
+                console.log("[QualityReport] Section 5 dtypeRow:", dtypeRow ? "found in describe" : "not in describe",
+                    "| dtypesByColumn keys:", Object.keys(dtypesByColumn).length);
+                if (columnNames.length > 0 || dtypeRow || Object.keys(dtypesByColumn).length > 0) {
                     row = _writeSectionHeader(sheet, row, "5. COLUMN DATA TYPES  ·  Source: Dataset Scan", NUM_COLS);
-                    row = _writeColumnDataTypes(sheet, row, dtypeRow, columnNames);
+                    row = _writeColumnDataTypes(sheet, row, dtypeRow, dtypesByColumn, columnNames);
                     row += 1;
                 }
             }
@@ -1110,49 +1134,59 @@ function _writeDataTypeAnalysis(sheet, row, columnEntries) {
     return _writeTable(sheet, nextRow, columns, rows).nextRow;
 }
 
-// Writes the Column Data Types section. `dtypeRow` is the single row from
-// analysisData['describe'] where index === "dtype" — every key other than
-// "index" is a column name and its value is the dtype string (int64,
-// float64, object, datetime64[ns], bool, etc.) exactly as the backend
-// returned it. No normalisation is applied — the values shown here are
-// identical to what the DescribeMatrix widget renders in the Statistics tab.
-// `columnNames` is the ordered list from summary.column_names so columns
-// always appear in dataset order; any column that appears in dtypeRow but
-// not in columnNames is appended at the end rather than silently dropped.
-function _writeColumnDataTypes(sheet, row, dtypeRow, columnNames) {
+// Writes the Column Data Types section.
+// `dtypeRow`: single row from analysisData['describe'] where index === "dtype"
+//   (or similar), or null when the backend didn't include one.
+// `dtypesByColumn`: top-level {"ColName": "dtype"} map from the backend,
+//   used as a fallback when dtypeRow is null or missing a particular column.
+// `columnNames`: ordered list from summary.column_names.
+// Values are the backend's own strings — no normalisation applied.
+// When neither source has a dtype for a column, shows "Not available".
+function _writeColumnDataTypes(sheet, row, dtypeRow, dtypesByColumn, columnNames) {
     const ordered = [];
     const seen = new Set();
-    // First pass: in scan order (columnNames)
+
+    const getDtype = (key) => {
+        // Priority 1: describe dtype row
+        if (dtypeRow && dtypeRow[key] !== null && dtypeRow[key] !== undefined && dtypeRow[key] !== "") {
+            return String(dtypeRow[key]);
+        }
+        // Priority 2: top-level dtypes map
+        if (dtypesByColumn && dtypesByColumn[key] !== null && dtypesByColumn[key] !== undefined && dtypesByColumn[key] !== "") {
+            return String(dtypesByColumn[key]);
+        }
+        return "Not available";
+    };
+
+    // First pass: scan order from columnNames
     if (columnNames && columnNames.length > 0) {
         for (const name of columnNames) {
             const key = String(name);
             if (key === "index") continue;
             seen.add(key);
-            const dtype = dtypeRow[key];
-            ordered.push({
-                column: key,
-                dtype: (dtype !== null && dtype !== undefined) ? String(dtype) : "Not available",
-            });
+            ordered.push({ column: key, dtype: getDtype(key) });
         }
     }
-    // Second pass: any column in dtypeRow not yet seen (AI-only columns)
-    for (const key of Object.keys(dtypeRow)) {
+    // Second pass: any column in dtypeRow or dtypesByColumn not yet seen
+    const extraSources = [
+        ...(dtypeRow ? Object.keys(dtypeRow) : []),
+        ...Object.keys(dtypesByColumn),
+    ];
+    for (const key of extraSources) {
         if (key === "index" || seen.has(key)) continue;
-        const dtype = dtypeRow[key];
-        ordered.push({
-            column: key,
-            dtype: (dtype !== null && dtype !== undefined) ? String(dtype) : "Not available",
-        });
+        seen.add(key);
+        ordered.push({ column: key, dtype: getDtype(key) });
     }
+
     if (ordered.length === 0) {
-        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No column type information available."]];
+        sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No column datatype information available."]];
         return row + 1;
     }
-    const columns = [
+    const tableColumns = [
         { label: "Column Name", key: "column" },
         { label: "Data Type", key: "dtype" },
     ];
-    return _writeTable(sheet, row, columns, ordered).nextRow;
+    return _writeTable(sheet, row, tableColumns, ordered).nextRow;
 }
 
 // Writes the statistics matrix from analysisData['describe'] — the same
