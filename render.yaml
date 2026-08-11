@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: insightflow-powerbi-backend
-    runtime: python
+    name: data-analysis-oajs
+    env: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /powerbi/health
+    autoDeploy: true

@@ -1,429 +1,254 @@
 from __future__ import annotations
 
-import time
-import traceback
+import copy
+import re
 import uuid
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from data_cleaner import clean_dataframe
-from common.analytics.profiling import analyze_dataframe
-from common.json_safe import to_json_safe
-from common.transformations import TransformationEngine, TransformationHistory
-from ai_analyst import generate_report
-from command_agent import parse_agentic_command
-from query_router import handle_smart_query
+from data_cleaner import DataCleaner
 
-router = APIRouter(prefix="/powerbi", tags=["Power BI"])
+router = APIRouter()
 
-# Single shared engine instance — same TransformationEngine class the Excel
-# /transform/* routes in main.py use (see common/transformations/). No
-# separate/duplicate transformation logic is defined here.
-_ENGINE = TransformationEngine()
+# In-memory sessions are intentional for the Power BI visual. The visual sends
+# the dataset with each request, so the server does not need local files.
+SESSIONS: dict[str, dict[str, Any]] = {}
 
-# Process-local, in-memory session store: session_id -> {"history": ..., "df": ...}.
-# Power BI never uploads a file, so this dict IS the "working dataset" the
-# spec calls for. Same idle-eviction pattern main.py's own
-# _TRANSFORMATION_HISTORIES uses, for the same reason (unbounded growth risk
-# otherwise). This is a same-process stopgap: it does not survive multiple
-# Render worker processes or a restart. Swap for Redis/Postgres-backed
-# storage if the deployment ever runs >1 worker.
-_SESSIONS: dict[str, dict[str, Any]] = {}
-_SESSION_TTL = 2 * 60 * 60  # 2 hours idle
+TRANSFORMATIONS = [
+    {"id": "standardize_columns", "name": "standardize_columns", "display_name": "Standardize column names"},
+    {"id": "remove_duplicates", "name": "remove_duplicates", "display_name": "Remove duplicates"},
+    {"id": "remove_empty_rows", "name": "remove_empty_rows", "display_name": "Remove empty rows"},
+    {"id": "handle_missing_values", "name": "handle_missing_values", "display_name": "Handle missing values"},
+    {"id": "normalize_text", "name": "normalize_text", "display_name": "Normalize text"},
+    {"id": "infer_types", "name": "infer_types", "display_name": "Infer data types"},
+    {"id": "handle_outliers", "name": "handle_outliers", "display_name": "Handle outliers"},
+    {"id": "filter_rows", "name": "filter_rows", "display_name": "Filter rows"},
+]
 
 
-class DatasetPayload(BaseModel):
+class SessionRequest(BaseModel):
     columns: list[str] = Field(default_factory=list)
-    rows: list[dict[str, Any]] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+
+
+class DatasetRequest(SessionRequest):
     session_id: str | None = None
 
 
-class SessionInitRequest(DatasetPayload):
-    """Body for POST /powerbi/session. columns/rows are optional — a
-    session can be created empty and populated by a later call that passes
-    the same session_id."""
-    pass
-
-
-class PipelineRequest(DatasetPayload):
+class TransformRequest(DatasetRequest):
     transformation_name: str | None = None
     query: str | None = None
-    params: dict[str, Any] | None = None
-    value_column: str | None = None
-    sample_rows: int = 15
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
-class CleanRequest(DatasetPayload):
-    config: dict[str, Any] = Field(default_factory=dict)
+def _df(columns: list[str], rows: list[list[Any]]) -> pd.DataFrame:
+    width = len(columns)
+    fixed = []
+    for row in rows or []:
+        values = list(row)
+        values += [None] * max(0, width - len(values))
+        fixed.append(values[:width])
+    return pd.DataFrame(fixed, columns=columns)
 
 
-class QueryRequest(DatasetPayload):
-    query: str
-    available_sheets: list[str] = Field(default_factory=list)
+def _export(df: pd.DataFrame) -> dict[str, Any]:
+    clean = df.astype(object).where(pd.notna(df), None)
+    return {"columns": [str(c) for c in clean.columns], "rows": clean.values.tolist(), "row_count": len(clean)}
 
 
-class AgenticCommandRequest(BaseModel):
-    text: str
-    columns: list[str] = Field(default_factory=list)
-    available_sheets: list[str] = Field(default_factory=list)
-    session_id: str | None = None
-
-
-# ── Diagnostics ──────────────────────────────────────────────────────────
-# The visual needs to tell "backend unavailable / timeout / 404 / 400 / 500 /
-# CORS / invalid request / transformation failure / unsupported operation"
-# apart. FastAPI's own validation errors (missing/invalid fields -> 422) and
-# the global 404 handler registered in main.py already produce this same
-# {"success": false, "error": {...}} shape; every route below funnels its
-# own failures through this helper so ALL /powerbi/* error bodies share one
-# envelope, regardless of which route or which underlying engine raised.
-def _error(error_type: str, message: str, endpoint: str, **extra: Any) -> dict[str, Any]:
+def _profile(df: pd.DataFrame) -> dict[str, Any]:
     return {
-        "success": False,
-        "error": {"type": error_type, "message": message, "endpoint": endpoint, **extra},
+        "rows": int(len(df)),
+        "columns": int(len(df.columns)),
+        "column_names": [str(c) for c in df.columns],
+        "missing_values": {str(c): int(df[c].isna().sum()) for c in df.columns},
+        "duplicates": int(df.duplicated().sum()) if len(df.columns) else 0,
     }
 
 
-def _df(payload: DatasetPayload) -> pd.DataFrame:
-    if payload.columns:
-        df = pd.DataFrame(payload.rows, columns=payload.columns)
-    else:
-        df = pd.DataFrame(payload.rows)
-    # Preserve the column order Power BI sent.
-    if payload.columns:
-        for col in payload.columns:
-            if col not in df.columns:
-                df[col] = None
-        df = df[payload.columns]
-    return df
+def _session(req: TransformRequest) -> dict[str, Any]:
+    sid = req.session_id
+    if not sid:
+        sid = str(uuid.uuid4())
+    state = SESSIONS.setdefault(sid, {"history": [], "future": []})
+    if req.columns:
+        state["columns"] = list(req.columns)
+        state["rows"] = copy.deepcopy(req.rows)
+    return state
 
 
-def _json_df(df: pd.DataFrame, limit: int | None = None) -> dict[str, Any]:
-    view = df if limit is None else df.head(limit)
-    return {
-        "columns": list(df.columns),
-        "rows": to_json_safe(view.fillna("").to_dict(orient="records")),
-        "row_count": int(len(df)),
-        "preview_row_count": int(len(view)),
-    }
+def _query_to_step(query: str | None, params: dict[str, Any]) -> dict[str, Any] | None:
+    q = (query or "").strip()
+    if not q:
+        return None
+    low = q.lower()
+
+    if "standardize" in low or "lowercase" in low and ("column" in low or "header" in low):
+        return {"op": "standardize_columns"}
+    if "duplicate" in low:
+        return {"op": "remove_duplicates"}
+    if "empty row" in low or "blank row" in low:
+        return {"op": "remove_empty_rows"}
+    if "missing" in low or "null" in low or "blank value" in low:
+        return {"op": "handle_missing_values", "strategy": params.get("strategy", "smart")}
+    if "normalize" in low and "text" in low:
+        return {"op": "normalize_text"}
+    if "infer" in low and "type" in low:
+        return {"op": "infer_types"}
+    if "outlier" in low:
+        return {"op": "handle_outliers", "method": params.get("method", "cap")}
+
+    # Examples: filter sales > 100, filter rows where amount is greater than 100
+    patterns = [
+        r"(?:where|filter)\s+(?:rows?\s+where\s+)?['\"]?([^'\"\s]+)['\"]?\s*(>=|<=|!=|=|>|<)\s*['\"]?([^'\"]+)['\"]?",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, low)
+        if m:
+            col, op, value = m.groups()
+            value = value.strip()
+            try:
+                value = float(value)
+                if value.is_integer():
+                    value = int(value)
+            except ValueError:
+                pass
+            op_map = {"=": "equals", "!=": "not_equals", ">": "greater_than", "<": "less_than", ">=": "greater_than_equal", "<=": "less_than_equal"}
+            return {"op": "filter_rows", "column": col, "operator": op_map[op], "value": value}
+    return None
 
 
-def _evict_stale_sessions() -> None:
-    now = time.time()
-    stale = [k for k, v in _SESSIONS.items() if now - v.get("last_access", now) > _SESSION_TTL]
-    for k in stale:
-        _SESSIONS.pop(k, None)
+def _step(req: TransformRequest) -> dict[str, Any] | None:
+    name = (req.transformation_name or "").strip().lower()
+    p = req.params or {}
+    if name in {t["name"] for t in TRANSFORMATIONS}:
+        if name == "filter_rows":
+            return {
+                "op": "filter_rows",
+                "column": p.get("column"),
+                "operator": p.get("operator", "not_equals"),
+                "value": p.get("value"),
+            }
+        if name == "handle_missing_values":
+            return {"op": name, "strategy": p.get("strategy", "smart"), "columns": p.get("columns")}
+        if name == "handle_outliers":
+            return {"op": name, "method": p.get("method", "cap")}
+        return {"op": name}
+    return _query_to_step(req.query, p)
 
 
-def _session(session_id: str | None) -> tuple[str, dict[str, Any]]:
-    _evict_stale_sessions()
-    sid = session_id or str(uuid.uuid4())
-    state = _SESSIONS.setdefault(sid, {"history": TransformationHistory(), "df": None})
-    state["last_access"] = time.time()
-    return sid, state
+def _run(req: TransformRequest, action: str) -> dict[str, Any]:
+    state = _session(req)
+    df = _df(req.columns, req.rows)
+    before = _profile(df)
 
+    if action == "undo":
+        if not state["history"]:
+            return {"success": False, "message": "Nothing to undo.", "session_id": req.session_id}
+        state["future"].append(state["history"].pop())
+        previous = state["history"][-1] if state["history"] else {"columns": req.columns, "rows": req.rows}
+        out = _df(previous["columns"], previous["rows"])
+        state["columns"], state["rows"] = _export(out)["columns"], _export(out)["rows"]
+        return {"success": True, "session_id": req.session_id, "export": _export(out), "profile": _profile(out), "message": "Undo completed."}
 
-def _working_df(payload: DatasetPayload, state: dict[str, Any]) -> pd.DataFrame:
-    """Rows sent on THIS request always take priority (Power BI resends its
-    current DataView on most calls); otherwise fall back to whatever this
-    session already has stored from a prior /session or /transform/apply
-    call. This is what lets /transform/preview and /transform/apply be
-    called with only a session_id once a session has a working dataset."""
-    if payload.rows or payload.columns:
-        return _df(payload)
-    if state.get("df") is not None:
-        return state["df"]
-    return pd.DataFrame()
+    if action == "redo":
+        if not state["future"]:
+            return {"success": False, "message": "Nothing to redo.", "session_id": req.session_id}
+        target = state["future"].pop()
+        state["history"].append({"columns": target["columns"], "rows": target["rows"]})
+        out = _df(target["columns"], target["rows"])
+        state["columns"], state["rows"] = target["columns"], target["rows"]
+        return {"success": True, "session_id": req.session_id, "export": _export(out), "profile": _profile(out), "message": "Redo completed."}
 
+    step = _step(req)
+    if not step or not step.get("op"):
+        return {"success": False, "session_id": req.session_id, "message": "No valid transformation was supplied."}
 
-def _classify_transform_error(message: str | None) -> str:
-    """Maps the shared TransformationEngine's error strings to the specific
-    diagnostic types the Power BI visual needs to distinguish (per spec:
-    invalid dataset / invalid transformation / unsupported transformation),
-    instead of collapsing every engine failure into one generic type."""
-    text = (message or "").lower()
-    if "could not locate a matching transformation" in text:
-        return "unsupported_transformation"
-    if "could not evaluate this request against the transformation registry" in text:
-        return "invalid_transformation"
-    return "transformation_failed"
+    # Resolve case-insensitive column names for filter_rows.
+    if step.get("op") == "filter_rows":
+        wanted = str(step.get("column") or "")
+        match = next((c for c in df.columns if str(c).lower() == wanted.lower()), None)
+        if match is None:
+            return {"success": False, "session_id": req.session_id, "message": f"Column not found: {wanted}"}
+        step["column"] = match
+        if step.get("value") is None:
+            return {"success": False, "session_id": req.session_id, "message": "Filter requires a value."}
 
+    cleaner = DataCleaner(df)
+    cleaner.run_steps([step])
+    out = cleaner.get_cleaned_dataframe()
+    report = cleaner.get_report_dict()
+    after = _profile(out)
 
-def _pipeline_result(result, state: dict[str, Any], sid: str) -> dict[str, Any]:
-    if not result.success:
-        return _error(
-            _classify_transform_error(result.error), result.error or "Transformation failed.",
-            "/powerbi/transform", session_id=sid, transformation=result.transformation,
-        )
-    if result.dataframe is not None:
-        state["df"] = result.dataframe.copy()
-    out = {
+    result = {
         "success": True,
-        "session_id": sid,
-        "transformation": result.transformation,
-        "preview": result.preview,
-        "metadata": result.metadata,
-        "updated_schema": result.updated_schema,
-        "updated_statistics": result.updated_statistics,
-        "updated_kpis": result.updated_kpis,
-        "updated_charts": result.updated_charts,
-        "updated_ai_report": result.updated_ai_report,
-        "execution_time": result.execution_time,
-        "message": result.message,
-        "history": state["history"].list(),
-    }
-    if state.get("df") is not None:
-        out["export"] = _json_df(state["df"])
-    return to_json_safe(out)
-
-
-@router.get("/version")
-def version():
-    return {
-        "service": "InsightFlow Power BI Backend",
-        "version": "3.0.0",
-        "source": "shared Excel analysis engine",
-        "pipeline": True,
-        "shared_engine": True,
-        "routes": [
-            "/powerbi/session",
-            "/powerbi/profile",
-            "/powerbi/analyze",
-            "/powerbi/analyze-report",
-            "/powerbi/clean",
-            "/powerbi/transform/preview",
-            "/powerbi/transform/apply",
-            "/powerbi/transform/undo",
-            "/powerbi/transform/redo",
-            "/powerbi/transform/history/{session_id}",
-            "/powerbi/transform/list",
-            "/powerbi/smart_query",
-            "/powerbi/agentic_command",
-        ],
+        "session_id": req.session_id,
+        "transformation": step,
+        "before": before,
+        "after": after,
+        "report": report,
+        "export": _export(out),
+        "message": f"Transformation '{step['op']}' completed.",
     }
 
-
-@router.get("/ping")
-def ping():
-    return {"status": "awake", "service": "powerbi", "pipeline": True}
-
-
-@router.get("/health")
-def health():
-    return {"status": "ok", "service": "InsightFlow Power BI Backend", "pipeline": True}
+    if action == "apply":
+        state["history"].append({"columns": before["column_names"], "rows": _export(df)["rows"]})
+        state["future"] = []
+        state["columns"], state["rows"] = _export(out)["columns"], _export(out)["rows"]
+    return result
 
 
-@router.post("/session")
-def create_session(payload: SessionInitRequest):
-    """Initializes (or re-initializes) the working dataset for a session_id.
-    Power BI calls this once after the visual builds its DataView JSON; every
-    later /powerbi/* call in the pipeline (clean/transform/query/...) can
-    then be sent with just that session_id, or with a fresh rows payload to
-    overwrite it."""
-    sid, state = _session(payload.session_id)
-    df = _df(payload) if (payload.rows or payload.columns) else pd.DataFrame()
-    state["df"] = df
-    state["history"] = TransformationHistory()
-    return to_json_safe({
-        "success": True,
-        "session_id": sid,
-        "profile": analyze_dataframe(df) if not df.empty else None,
-        "data": _json_df(df, 15),
-    })
+@router.get("/powerbi/ping")
+def powerbi_ping():
+    return {"status": "awake", "service": "powerbi", "pipeline": True, "version": "3.0.0"}
 
 
-@router.post("/profile")
-def profile(payload: DatasetPayload):
-    if not payload.rows and not payload.session_id:
-        return _error("invalid_dataset", "No rows provided and no session_id to fall back on.", "/powerbi/profile")
-    try:
-        df = _df(payload) if payload.rows else _SESSIONS.get(payload.session_id, {}).get("df", pd.DataFrame())
-        return to_json_safe({"success": True, "profile": analyze_dataframe(df), "data": _json_df(df, 15)})
-    except Exception as e:
-        traceback.print_exc()
-        return _error("invalid_dataset", str(e), "/powerbi/profile")
+@router.get("/powerbi/health")
+def powerbi_health():
+    return {"status": "healthy", "service": "powerbi", "pipeline": True}
 
 
-@router.post("/analyze")
-def analyze(payload: DatasetPayload):
-    if not payload.rows and not payload.session_id:
-        return _error("invalid_dataset", "No rows provided and no session_id to fall back on.", "/powerbi/analyze")
-    try:
-        df = _df(payload) if payload.rows else _SESSIONS.get(payload.session_id, {}).get("df", pd.DataFrame())
-        return to_json_safe({"success": True, **analyze_dataframe(df)})
-    except Exception as e:
-        traceback.print_exc()
-        return _error("invalid_dataset", str(e), "/powerbi/analyze")
+@router.get("/powerbi/version")
+def powerbi_version():
+    return {"service": "powerbi", "version": "3.0.0", "pipeline": True, "transformations": len(TRANSFORMATIONS)}
 
 
-@router.post("/analyze-report")
-async def analyze_report(payload: DatasetPayload):
-    """AI-narrated report, reusing the exact same ai_analyst.generate_report()
-    the Excel /analyze-report route calls — the only difference is the
-    DataFrame comes from a Power BI DataView JSON body instead of an
-    uploaded file."""
-    try:
-        df = _df(payload)
-        result = await generate_report(df)
-        return to_json_safe({"success": True, **result} if isinstance(result, dict) else {"success": True, "report": result})
-    except Exception as e:
-        traceback.print_exc()
-        return _error("ai_report_failed", str(e), "/powerbi/analyze-report")
-
-
-@router.post("/clean")
-def clean(payload: CleanRequest):
-    try:
-        sid, state = _session(payload.session_id)
-        df = _working_df(payload, state)
-        config = payload.config or {}
-        cleaned, report = clean_dataframe(df, config)
-        state["df"] = cleaned.copy()
-        return to_json_safe({
-            "success": True,
-            "session_id": sid,
-            "before": analyze_dataframe(df),
-            "after": analyze_dataframe(cleaned),
-            "cleaning_report": report,
-            "export": _json_df(cleaned),
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return _error("cleaning_failed", str(e), "/powerbi/clean")
-
-
-@router.get("/transform/list")
+@router.get("/powerbi/transform/list")
 def transform_list():
-    from common.transformations.transformation_registry import all_transformations
-    return to_json_safe({"success": True, "transformations": all_transformations()})
+    return {"success": True, "transformations": TRANSFORMATIONS}
 
 
-@router.post("/transform/preview")
-def transform_preview(payload: PipelineRequest):
-    sid, state = _session(payload.session_id)
-    try:
-        df = _working_df(payload, state)
-        result = _ENGINE.preview(
-            df,
-            transformation_name=payload.transformation_name,
-            query=payload.query,
-            params=payload.params,
-            sample_rows=payload.sample_rows,
-        )
-        if not result.success:
-            return _error(_classify_transform_error(result.error), result.error or "Preview failed.", "/powerbi/transform/preview", session_id=sid)
-        return to_json_safe({
-            "success": True,
-            "session_id": sid,
-            "transformation": result.transformation,
-            "preview": result.preview,
-            "execution_time": result.execution_time,
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return _error("transformation_failed", str(e), "/powerbi/transform/preview", session_id=sid)
+@router.post("/powerbi/session")
+def create_session(req: SessionRequest):
+    sid = str(uuid.uuid4())
+    export = _export(_df(req.columns, req.rows))
+    SESSIONS[sid] = {"history": [], "future": [], "columns": export["columns"], "rows": export["rows"]}
+    return {"success": True, "session_id": sid, "profile": _profile(_df(req.columns, req.rows))}
 
 
-@router.post("/transform/apply")
-def transform_apply(payload: PipelineRequest):
-    sid, state = _session(payload.session_id)
-    try:
-        df = _working_df(payload, state)
-        result = _ENGINE.run(
-            df,
-            transformation_name=payload.transformation_name,
-            query=payload.query,
-            params=payload.params,
-            history=state["history"],
-            value_column=payload.value_column,
-        )
-        return _pipeline_result(result, state, sid)
-    except Exception as e:
-        traceback.print_exc()
-        return _error("transformation_failed", str(e), "/powerbi/transform/apply", session_id=sid)
+@router.post("/powerbi/profile")
+def profile(req: DatasetRequest):
+    return {"success": True, "profile": _profile(_df(req.columns, req.rows))}
 
 
-@router.post("/transform/undo")
-def transform_undo(payload: DatasetPayload):
-    if payload.session_id and payload.session_id not in _SESSIONS and not (payload.rows or payload.columns):
-        return _error(
-            "session_not_found",
-            f"No session found for session_id '{payload.session_id}'. Call /powerbi/session first.",
-            "/powerbi/transform/undo", session_id=payload.session_id,
-        )
-    sid, state = _session(payload.session_id)
-    try:
-        if state.get("df") is None:
-            state["df"] = _working_df(payload, state)
-        result = _ENGINE.undo(state["history"], value_column=None)
-        return _pipeline_result(result, state, sid)
-    except Exception as e:
-        traceback.print_exc()
-        return _error("transformation_failed", str(e), "/powerbi/transform/undo", session_id=sid)
+@router.post("/powerbi/transform/preview")
+def transform_preview(req: TransformRequest):
+    return _run(req, "preview")
 
 
-@router.post("/transform/redo")
-def transform_redo(payload: DatasetPayload):
-    if payload.session_id and payload.session_id not in _SESSIONS and not (payload.rows or payload.columns):
-        return _error(
-            "session_not_found",
-            f"No session found for session_id '{payload.session_id}'. Call /powerbi/session first.",
-            "/powerbi/transform/redo", session_id=payload.session_id,
-        )
-    sid, state = _session(payload.session_id)
-    try:
-        if state.get("df") is None:
-            state["df"] = _working_df(payload, state)
-        result = _ENGINE.redo(state["history"], value_column=None)
-        return _pipeline_result(result, state, sid)
-    except Exception as e:
-        traceback.print_exc()
-        return _error("transformation_failed", str(e), "/powerbi/transform/redo", session_id=sid)
+@router.post("/powerbi/transform/apply")
+def transform_apply(req: TransformRequest):
+    return _run(req, "apply")
 
 
-@router.get("/transform/history/{session_id}")
-def transform_history(session_id: str):
-    state = _SESSIONS.get(session_id)
-    if state is None:
-        return _error(
-            "session_not_found", f"No session found for session_id '{session_id}'.",
-            "/powerbi/transform/history",
-        )
-    return to_json_safe({"success": True, "history": state["history"].list()})
+@router.post("/powerbi/transform/undo")
+def transform_undo(req: TransformRequest):
+    return _run(req, "undo")
 
 
-@router.post("/smart_query")
-async def smart_query(payload: QueryRequest):
-    """Reuses the exact same query_router.handle_smart_query() the Excel
-    /smart_query route calls: rule-based transformation fast-path first,
-    then DuckDB SQL / spreadsheet-action routing via the LLM router. Same
-    engine, same behavior — only the DataFrame source differs."""
-    sid, state = _session(payload.session_id)
-    try:
-        df = _working_df(payload, state)
-        result = await handle_smart_query(payload.query, df, payload.available_sheets)
-        if isinstance(result, dict):
-            result.setdefault("success", True)
-            result["session_id"] = sid
-        return to_json_safe(result)
-    except Exception as e:
-        traceback.print_exc()
-        return _error("smart_query_failed", str(e), "/powerbi/smart_query", session_id=sid)
-
-
-@router.post("/agentic_command")
-async def agentic_command(payload: AgenticCommandRequest):
-    """Reuses command_agent.parse_agentic_command() exactly as the Excel
-    /agentic_command route does. This route only needs column names (not
-    row data), matching the underlying function's signature."""
-    try:
-        result = await parse_agentic_command(payload.text, payload.columns, payload.available_sheets)
-        if isinstance(result, dict):
-            result.setdefault("success", result.get("action") not in (None, "unknown"))
-        return to_json_safe(result)
-    except Exception as e:
-        traceback.print_exc()
-        return _error("agentic_command_failed", str(e), "/powerbi/agentic_command")
+@router.post("/powerbi/transform/redo")
+def transform_redo(req: TransformRequest):
+    return _run(req, "redo")
