@@ -756,6 +756,115 @@ async function jsWriteRangeBinningFormulas(optionsJson) {
 
 window.jsWriteRangeBinningFormulas = jsWriteRangeBinningFormulas;
 
+
+/// Append one static column to the current/live worksheet. Unlike
+/// jsWriteQueryResultToSheet this never creates a new worksheet and never
+/// rewrites the existing table. It is intentionally chunked for large
+/// datasets such as 10k+ restaurant reviews.
+///
+/// Expected optionsJson:
+/// {
+///   "sheetName": "Sheet1" | null,
+///   "columnName": "Sentiment",
+///   "values": ["Positive", "Negative", "Neutral", ...]
+/// }
+async function jsAppendStaticColumn(optionsJson) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") {
+        return { success: false, processedRows: 0, error: "Office JS layer unreachable." };
+    }
+
+    let opts;
+    try {
+        opts = JSON.parse(optionsJson);
+    } catch (err) {
+        return { success: false, processedRows: 0, error: "Invalid options JSON: " + err.toString() };
+    }
+
+    const columnName = String(opts.columnName || "").trim();
+    const values = Array.isArray(opts.values) ? opts.values : [];
+    if (!columnName) return { success: false, processedRows: 0, error: "Missing columnName." };
+    if (values.length === 0) return { success: false, processedRows: 0, error: "No column values supplied." };
+
+    const CHUNK_ROWS = 2000;
+
+    return await Excel.run(async function (context) {
+        const workbook = context.workbook;
+        const sheet = opts.sheetName
+            ? workbook.worksheets.getItem(opts.sheetName)
+            : workbook.worksheets.getActiveWorksheet();
+
+        const usedRange = sheet.getUsedRange();
+        usedRange.load(["values", "rowIndex", "columnIndex", "rowCount", "columnCount"]);
+        await context.sync();
+
+        const matrix = usedRange.values || [];
+        if (matrix.length === 0) {
+            return { success: false, processedRows: 0, error: "Sheet has no data." };
+        }
+
+        const headers = matrix[0] || [];
+        const normalized = columnName.toLowerCase();
+        let existingIndex = -1;
+        for (let i = 0; i < headers.length; i++) {
+            if (String(headers[i] ?? "").trim().toLowerCase() === normalized) {
+                existingIndex = i;
+                break;
+            }
+        }
+
+        // If Sentiment already exists, replace that column rather than adding
+        // Sentiment_1 / Sentiment_2 on repeated client queries.
+        const targetColumnIndex = existingIndex >= 0
+            ? usedRange.columnIndex + existingIndex
+            : usedRange.columnIndex + headers.length;
+
+        const headerCell = sheet.getRangeByIndexes(usedRange.rowIndex, targetColumnIndex, 1, 1);
+        headerCell.values = [[columnName]];
+        headerCell.format.font.bold = true;
+
+        const dataRowCount = matrix.length - 1;
+        const rowsToWrite = Math.min(dataRowCount, values.length);
+        for (let start = 0; start < rowsToWrite; start += CHUNK_ROWS) {
+            const end = Math.min(start + CHUNK_ROWS, rowsToWrite);
+            const chunk = [];
+            for (let i = start; i < end; i++) {
+                const v = values[i];
+                chunk.push([v === null || v === undefined ? "" : v]);
+            }
+            const range = sheet.getRangeByIndexes(
+                usedRange.rowIndex + 1 + start,
+                targetColumnIndex,
+                chunk.length,
+                1
+            );
+            range.values = chunk;
+            await context.sync();
+        }
+
+        // If the source range contains more rows than values, explicitly clear
+        // the remainder so an older sentiment result cannot survive a rerun.
+        if (rowsToWrite < dataRowCount) {
+            const clearRange = sheet.getRangeByIndexes(
+                usedRange.rowIndex + 1 + rowsToWrite,
+                targetColumnIndex,
+                dataRowCount - rowsToWrite,
+                1
+            );
+            clearRange.clear("Contents");
+            await context.sync();
+        }
+
+        sheet.getUsedRange().format.autofitColumns();
+        await context.sync();
+        return { success: true, processedRows: rowsToWrite, error: null };
+    }).catch(function (err) {
+        return { success: false, processedRows: 0, error: err.toString() };
+    });
+}
+
+window.jsAppendStaticColumn = jsAppendStaticColumn;
+
 // ── Orchestrator Pipeline ───────────────────────────────────────────────────
 
 async function processExcelPipeline(optionsJson) {
