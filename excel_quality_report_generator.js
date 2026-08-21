@@ -207,7 +207,7 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             //  • dataQuality / statistics column_quality — from AI report, if available
             const columnEntries = _extractColumnEntries(
                 dataQuality, statistics, consumedKeys,
-                missingValuesByColumn, uniqueValuesByColumn, columnNames);
+                missingValuesByColumn, uniqueValuesByColumn, duplicateValuesByColumn, columnNames);
 
             row = _writeSectionHeader(sheet, row, "2. COLUMN QUALITY  ·  Source: Dataset Scan (+ AI report if available)", NUM_COLS);
             const colQualityResult = _writeColumnQuality(sheet, row, columnEntries);
@@ -791,7 +791,7 @@ function _writeQualitySummary(sheet, row, dq, statistics, opts, consumedKeys) {
 // 7. Guarantee every column the scan found (columnNames) has an entry,
 //    even if none of the above produced data for it — using the real
 //    column name, never a "Column N" placeholder
-function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn, uniqueValuesByColumn, columnNames) {
+function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn, uniqueValuesByColumn, duplicateValuesByColumn, columnNames) {
     const raw = _pick(dq, ["column_quality", "columns_quality", "per_column_quality", "column_details", "columns"], consumedKeys)
         ?? _pick(statistics, ["column_quality", "columns", "per_column"], null);
 
