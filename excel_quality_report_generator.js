@@ -98,6 +98,8 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     // unique_values: {"ColName": count} — client-side computed, exact Quality Tab source
     const uniqueValuesByColumn = (opts.uniqueValuesByColumn && typeof opts.uniqueValuesByColumn === "object")
         ? opts.uniqueValuesByColumn : {};
+    const duplicateValuesByColumn = (opts.duplicateValuesByColumn && typeof opts.duplicateValuesByColumn === "object")
+        ? opts.duplicateValuesByColumn : {};
     // columnNames: ordered list from summary.column_names — same as Quality Tab column list
     const columnNames = Array.isArray(opts.columnNames) ? opts.columnNames : [];
     // describe: list of statistic row-maps (the Statistics matrix in Analysis tab)
@@ -118,6 +120,7 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
         outliers.length > 0 ||
         Object.keys(missingValuesByColumn).length > 0 ||
         Object.keys(uniqueValuesByColumn).length > 0 ||
+        Object.keys(duplicateValuesByColumn).length > 0 ||
         columnNames.length > 0 ||
         describe.length > 0 ||
         opts.rows !== undefined || opts.columns !== undefined ||
@@ -782,8 +785,10 @@ function _writeQualitySummary(sheet, row, dq, statistics, opts, consumedKeys) {
 //    an existing authoritative missing_count
 // 4. Merge per-column unique counts from uniqueValuesByColumn
 //    (client-side computed, exact Quality Tab source) — never overwrites
-// 5. Merge per-column dtypes from a flat dtype map in dataQuality/statistics
-// 6. Guarantee every column the scan found (columnNames) has an entry,
+// 5. Merge per-column duplicate-value counts from duplicateValuesByColumn
+//    (client-side computed, exact Quality Tab source)
+// 6. Merge per-column dtypes from a flat dtype map in dataQuality/statistics
+// 7. Guarantee every column the scan found (columnNames) has an entry,
 //    even if none of the above produced data for it — using the real
 //    column name, never a "Column N" placeholder
 function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColumn, uniqueValuesByColumn, columnNames) {
@@ -846,7 +851,24 @@ function _extractColumnEntries(dq, statistics, consumedKeys, missingValuesByColu
         }
     }
 
-    // Step 5: merge a flat dtype map if present
+    // Step 5: merge duplicate-value counts (repeated occurrences beyond the first)
+    if (duplicateValuesByColumn && Object.keys(duplicateValuesByColumn).length > 0) {
+        const idx = buildIndex();
+        for (const [colName, duplicateCount] of Object.entries(duplicateValuesByColumn)) {
+            const existing = idx.get(colName);
+            if (existing) {
+                if (existing.duplicate_value_count === undefined && existing.value_duplicates === undefined) {
+                    existing.duplicate_value_count = duplicateCount;
+                }
+            } else {
+                const e = { name: colName, duplicate_value_count: duplicateCount };
+                entries.push(e);
+                idx.set(colName, e);
+            }
+        }
+    }
+
+    // Step 6: merge a flat dtype map if present
     const rawDtypeMap = _pick(dq, ["data_types", "dtypes", "column_types", "column_dtypes"], consumedKeys)
         ?? _pick(statistics, ["data_types", "dtypes", "column_types", "column_dtypes"], null);
     if (rawDtypeMap && typeof rawDtypeMap === "object" && !Array.isArray(rawDtypeMap)) {
@@ -908,6 +930,7 @@ function _writeColumnQuality(sheet, row, columnEntries) {
         const dtype = _pick(c, ["dtype", "type", "data_type", "detected_type"]);
         const missingPct = _pick(c, ["missing_percentage", "missing_pct", "null_pct", "null_percentage"]);
         const dupCount = _pickCount(c, ["duplicate_count", "duplicates"]);
+        const dupValueCount = _pickCount(c, ["duplicate_value_count", "value_duplicates"]);
         const issues = c.issues !== undefined ? _fmtAny(c.issues) : undefined;
         const recs = c.recommendations !== undefined ? _fmtAny(c.recommendations)
             : (c.recommendation !== undefined ? _fmtAny(c.recommendation) : undefined);
@@ -920,6 +943,7 @@ function _writeColumnQuality(sheet, row, columnEntries) {
             datatype: dtype !== undefined ? _fmtAny(dtype) : null,
             missing_pct: missingPct !== undefined ? _fmtPct(missingPct) : null,
             duplicate_count: dupCount !== undefined ? _fmtNum(dupCount, 0) : null,
+            duplicate_value_count: dupValueCount !== undefined ? _fmtNum(dupValueCount, 0) : null,
             issues: issues || null,
             recommendations: recs || null,
             _missingPctRaw: missingPct,
@@ -936,7 +960,8 @@ function _writeColumnQuality(sheet, row, columnEntries) {
         { label: "Datatype", key: "datatype", always: false },          // AI only
         { label: "Missing %", key: "missing_pct", always: false,        // AI only
           severity: (r) => _severityHighIsBad(r._missingPctRaw) },
-        { label: "Duplicate Count", key: "duplicate_count", always: false }, // AI only
+        { label: "Duplicate Values", key: "duplicate_value_count", always: true }, // scan source
+        { label: "Duplicate Rows", key: "duplicate_count", always: false }, // AI only
         { label: "Issues", key: "issues", always: false, wrap: true },       // AI only
         { label: "Recommendations", key: "recommendations", always: false, wrap: true }, // AI only
     ];
