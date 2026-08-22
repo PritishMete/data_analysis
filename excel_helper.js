@@ -1579,12 +1579,14 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         outSheet.getUsedRange().format.autofitColumns();
         await context.sync();
 
+        // Query/filter result sheets are the user's new working dataset.
+        // Switch Excel to the newly-created sheet instead of restoring the
+        // previous worksheet. This is also used by pivot/query-result flows
+        // that write through this helper.
         try {
-            const sheetToRestore = workbook.worksheets.getItem(previousSheetName);
-            sheetToRestore.activate();
-            if (previousSelectionAddress) {
-                sheetToRestore.getRange(previousSelectionAddress).select();
-            }
+            outSheet.activate();
+            const outUsed = outSheet.getUsedRange();
+            outUsed.select();
             await context.sync();
         } catch (_) {
         }
