@@ -99114,8 +99114,12 @@ case 15:p=18
 s=21
 return A.t(n.rt(),$async$j2)
 case 21:h=b1
+e=m.x.a
+d=m.x.b
+c=k
+if(c==null)c=A.p(t.N,t.z)
 s=22
-return A.t(A.uZ(B.O.dI(A.E(["targetSheetName",h,"columns",m.x.a,"rows",m.x.b],t.N,t.K))),$async$j2)
+return A.t(A.uZ(B.O.dI(A.E(["targetSheetName",h,"columns",e,"rows",d,"metadata",c],t.N,t.K))),$async$j2)
 case 22:g=b1
 s=J.d(J.V(g,"success"),!0)?23:25
 break

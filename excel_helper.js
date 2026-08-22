@@ -1561,6 +1561,21 @@ async function jsWriteQueryResultToSheet(optionsJson) {
             await context.sync();
         }
 
+        // Apply transformation-provided number formats after writing values.
+        // Categorization can include currency conversion (e.g. "currency in INR");
+        // the backend returns column -> Excel number format in metadata.
+        if (opts.metadata && opts.metadata.number_formats && typeof opts.metadata.number_formats === "object") {
+            const formats = opts.metadata.number_formats;
+            for (let i = 0; i < columns.length; i++) {
+                const columnName = String(columns[i]);
+                const fmt = formats[columnName];
+                if (!fmt) continue;
+                const colRange = outSheet.getRangeByIndexes(1, i, Math.max(rows.length, 1), 1);
+                colRange.numberFormat = Array.from({ length: Math.max(rows.length, 1) }, () => [fmt]);
+            }
+            await context.sync();
+        }
+
         outSheet.getUsedRange().format.autofitColumns();
         await context.sync();
 
