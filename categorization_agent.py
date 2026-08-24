@@ -221,7 +221,7 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
             elif v in {"", "none", "null", "na", "n/a", "unknown"}:
                 out[original] = "Unknown"
             else:
-                return None
+                out[original] = "Unknown"
         return out
     return None
 
@@ -320,22 +320,34 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
                 "explanation": f"Normalized '{source_column}' using deterministic categorical rules."}
     else:
-        try:
-            if strict_enabled():
-                raise RuntimeError("Local processing mode: real worksheet values are not sent to the external AI provider.")
-            plan = await _ask_agent(user_request, source_column, values, requested_categories, unmatched_label)
-            mapping_raw = plan.get("mapping") if isinstance(plan, dict) else None
-            if not isinstance(mapping_raw, dict):
-                raise ValueError("The Categorization Agent did not return a valid value mapping.")
-            mapping = {str(k): str(v) for k, v in mapping_raw.items()}
-            categories = [str(x) for x in (plan.get("categories") or requested_categories) if str(x).strip()]
-            fallback = str(plan.get("unmatchedLabel") or unmatched_label)
-        except Exception as agent_exc:
-            print(f"[categorization_agent] LLM failed for {source_column}; using deterministic fallback: {agent_exc}")
-            mapping, categories, fallback_explanation = _deterministic_fallback_mapping(series)
+        money_like = bool(re.search(r"(currency|price|amount|cost|fare|salary|revenue|sales|income|budget|fee|charge|value)", source_column, re.I))
+        if money_like and not requested_categories:
+            mapping = {v: ("Unknown" if v.strip() == "" else v) for v in values}
+            categories = sorted(set(mapping.values()))
             fallback = unmatched_label
-            plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
-                    "explanation": fallback_explanation}
+            plan = {
+                "mapping": mapping,
+                "categories": categories,
+                "unmatchedLabel": fallback,
+                "explanation": f"Left monetary values in '{source_column}' unchanged because no currency conversion was requested.",
+            }
+        else:
+            try:
+                if strict_enabled():
+                    raise RuntimeError("Local processing mode: real worksheet values are not sent to the external AI provider.")
+                plan = await _ask_agent(user_request, source_column, values, requested_categories, unmatched_label)
+                mapping_raw = plan.get("mapping") if isinstance(plan, dict) else None
+                if not isinstance(mapping_raw, dict):
+                    raise ValueError("The Categorization Agent did not return a valid value mapping.")
+                mapping = {str(k): str(v) for k, v in mapping_raw.items()}
+                categories = [str(x) for x in (plan.get("categories") or requested_categories) if str(x).strip()]
+                fallback = str(plan.get("unmatchedLabel") or unmatched_label)
+            except Exception as agent_exc:
+                print(f"[categorization_agent] LLM failed for {source_column}; using deterministic fallback: {agent_exc}")
+                mapping, categories, fallback_explanation = _deterministic_fallback_mapping(series)
+                fallback = unmatched_label
+                plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
+                        "explanation": fallback_explanation}
     missing = [v for v in values if v not in mapping]
     if missing:
         # Never leave rows silently uncategorized.
