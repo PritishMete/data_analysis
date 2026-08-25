@@ -1,4 +1,5 @@
 from privacy_policy import LOCAL_ONLY, privacy_status, reject_if_local_only
+from ai_privacy import validate_metadata_planner_payload
 from fastapi import HTTPException
 
 
@@ -36,3 +37,26 @@ def test_local_only_blocks_future_multipart_uploads():
             raise AssertionError('expected multipart upload to be blocked')
     finally:
         privacy_policy.LOCAL_ONLY = old
+
+
+def test_metadata_planner_payload_rejects_workbook_content():
+    safe_text, safe_columns, safe_sheets = validate_metadata_planner_payload({
+        'text': 'categorize all columns',
+        'available_columns': ['Country', 'City'],
+        'available_sheets': ['Sheet1'],
+    })
+    assert safe_text == 'categorize all columns'
+    assert safe_columns == ['Country', 'City']
+    assert safe_sheets == ['Sheet1']
+
+    for forbidden in (
+        {'text': 'categorize', 'rows': [{'Country': 'India'}]},
+        {'text': 'categorize', 'values': ['PRIVATE_TEST_VALUE_928371']},
+        {'text': 'categorize', 'samples': ['PRIVATE_REVIEW_88127']},
+    ):
+        try:
+            validate_metadata_planner_payload(forbidden)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('expected workbook-shaped payload to be rejected')
