@@ -1376,7 +1376,7 @@ async def agentic_categorize(payload: dict):
 
                 column_role = classify_column_operation(source_column, column_series, user_text)
 
-                if target_currency and column_role == "currency_standardization" and df is not None:
+                if target_currency and column_role in {"currency_standardization", "protected_currency"} and df is not None:
                     converted = []
                     converted_count = 0
                     for value in df[source_column].tolist():

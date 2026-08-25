@@ -5,7 +5,7 @@ import pandas as pd
 
 import categorization_agent as ca
 import main as backend_main
-from currency_utils import detect_currency_from_value, has_currency_conversion_intent, standardize_currency_value
+from currency_utils import detect_currency_from_value, has_currency_conversion_intent
 from query_router import _detect_sentiment_intent
 
 
@@ -46,27 +46,6 @@ def test_currency_helpers_require_explicit_conversion_intent():
     assert has_currency_conversion_intent("convert all monetary values to USD")
     assert not has_currency_conversion_intent("Categorize Currency")
     assert not has_currency_conversion_intent("Categorize all columns")
-    assert standardize_currency_value("$1250") == "USD 1250.00"
-    assert standardize_currency_value("₹900") == "₹900.00"
-    assert standardize_currency_value("Aed 150") == "AED 150.00"
-    assert standardize_currency_value("د.إ 80") == "AED 80.00"
-    assert standardize_currency_value("Rubel 2500") == "RUB 2500.00"
-    assert standardize_currency_value("S$25") == "SGD 25.00"
-    assert standardize_currency_value("C$45") == "CAD 45.00"
-    assert standardize_currency_value("₹ 50") == "₹50.00"
-    assert standardize_currency_value("₹ 100") == "₹100.00"
-    assert standardize_currency_value("₹ 20") == "₹20.00"
-    assert standardize_currency_value("₹1,500") == "₹1,500.00"
-    assert standardize_currency_value("\u00A0₹\u00A0 50\u00A0") == "₹50.00"
-    assert standardize_currency_value("₹\u202F1,500") == "₹1,500.00"
-    assert standardize_currency_value("Usd 75") == "USD 75.00"
-    assert standardize_currency_value("Cad 60") == "CAD 60.00"
-    assert standardize_currency_value("৳1200") == "BDT 1200.00"
-    assert standardize_currency_value("₽3000") == "RUB 3000.00"
-    assert standardize_currency_value("£35") == "GBP 35.00"
-    assert standardize_currency_value("Sgd 40") == "SGD 40.00"
-    assert standardize_currency_value("Aed 150") == "AED 150.00"
-    assert standardize_currency_value("XYZ 500") == "XYZ 500"
     assert detect_currency_from_value("C$45") == "CAD"
     assert detect_currency_from_value("S$25") == "SGD"
 
@@ -104,7 +83,7 @@ def test_gemini_mapping_is_applied_and_not_overwritten(monkeypatch):
     _assert_no_category_suffix(list(out.columns))
 
 
-def test_categorize_all_columns_preserves_protected_columns_and_standardizes_currency(monkeypatch):
+def test_categorize_all_columns_preserves_protected_columns_and_currency_unchanged(monkeypatch):
     monkeypatch.setattr(ca, "strict_enabled", lambda: False)
 
     async def fake_ask(user_request, source_column, values, categories, unmatched):
@@ -130,9 +109,9 @@ def test_categorize_all_columns_preserves_protected_columns_and_standardizes_cur
     assert out["Region"].tolist()[0:4] == ["Asia", "Asia", "Asia", "Europe"]
     assert out["Gender"].tolist()[0:4] == ["Female", "Female", "Female", "Male"]
     assert out["Bool"].tolist()[0:4] == ["Yes", "Yes", "Yes", "No"]
-    assert out["Currency"].tolist()[0] == "USD 1250.00"
-    assert out["Currency"].tolist()[1] == "₹900.00"
-    assert out["Currency"].tolist()[2] == "AED 150.00"
+    assert out["Currency"].tolist()[0] == "$1250"
+    assert out["Currency"].tolist()[1] == "₹900"
+    assert out["Currency"].tolist()[2] == "Aed 150"
     assert out["Rating"].tolist() == df["Rating"].tolist()
     assert out["Rating Count"].tolist() == df["Rating Count"].tolist()
     assert out["Latitude"].tolist() == df["Latitude"].tolist()
@@ -146,7 +125,8 @@ def test_categorize_all_columns_preserves_protected_columns_and_standardizes_cur
     assert meta["Longitude"]["write_mode"] == "unchanged"
     assert meta["RestaurantID"]["write_mode"] == "unchanged"
     assert meta["ReviewText"]["write_mode"] == "unchanged"
-    assert meta["Currency"]["execution"]["categorization_engine"] == "currency_standardization"
+    assert meta["Currency"]["write_mode"] == "unchanged"
+    assert meta["Currency"]["execution"]["column_role"] == "protected_currency"
 
 
 def test_bool_and_gender_variants_normalize_without_low_medium_high(monkeypatch):

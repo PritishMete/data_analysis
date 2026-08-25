@@ -43,8 +43,6 @@ except Exception:  # pragma: no cover - import fallback for local tests
     InMemorySessionService = _UnavailableSessionService
     types = _TypesNamespace()
 from privacy_context import strict_enabled
-from currency_utils import standardize_currency_value
-
 MODEL = "gemini-3.5-flash"
 
 INSTRUCTION = """You are the Categorization Agent in an Excel data-analysis product.
@@ -63,8 +61,9 @@ Rules:
   generic numeric columns.
 - Do not perform sentiment analysis or review-theme extraction unless the user has
   explicitly asked for sentiment.
-- Do not convert currency. Currency standardization preserves the original amount and
-  currency code/symbol; currency conversion is a separate operation.
+- Currency values are protected during generic categorization. Do not rewrite,
+  standardize, or normalize currency unless a separate explicit conversion step
+  is being executed elsewhere.
 - Do not modify the source values. The output is only a mapping to a new label or a
   standardized representation.
 - Every supplied value MUST appear exactly once in the mapping. Use unmatchedLabel only
@@ -112,7 +111,7 @@ def classify_column_operation(source_column: str, series: pd.Series, user_reques
     """Classify a column before applying categorization.
 
     Returns one of:
-      categorical_normalization, currency_standardization, numeric_measure,
+      categorical_normalization, protected_currency, numeric_measure,
       geographic_coordinate, identifier, datetime, free_text,
       sentiment_text, protected_numeric, unknown
     """
@@ -137,7 +136,7 @@ def classify_column_operation(source_column: str, series: pd.Series, user_reques
     if any(token in name for token in {"date", "time", "timestamp", "datetime", "createdat", "updatedat"}):
         return "datetime"
     if any(token in name for token in {"currency", "price", "amount", "cost", "fare", "salary", "revenue", "sales", "income", "budget", "fee", "charge", "value", "balance", "payment", "paid"}) or _compact_name(source_column) == "currency":
-        return "currency_standardization"
+        return "protected_currency"
 
     non_null = series.dropna()
     if non_null.empty:
@@ -468,9 +467,12 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         "values_changed_count": 0,
     }
 
-    if column_role in {"numeric_measure", "geographic_coordinate", "identifier", "datetime", "free_text", "sentiment_text", "protected_numeric"}:
+    if column_role in {"numeric_measure", "geographic_coordinate", "identifier", "datetime", "free_text", "sentiment_text", "protected_numeric", "protected_currency"}:
         out = df.copy()
-        explanation = f"Left '{source_column}' unchanged because it is a {column_role.replace('_', ' ')}."
+        if column_role == "protected_currency":
+            explanation = f"Left '{source_column}' unchanged because currency conversion was not requested."
+        else:
+            explanation = f"Left '{source_column}' unchanged because it is a {column_role.replace('_', ' ')}."
         metadata = {
             "source_column": source_column,
             "new_column": source_column,
@@ -485,23 +487,22 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         }
         return out, metadata
 
-    if column_role == "currency_standardization" and not requested_categories:
-        mapping = {v: (standardize_currency_value(v) if str(v).strip() else "") for v in values}
-        categories = sorted({str(v) for v in mapping.values() if str(v).strip()})
-        fallback = unmatched_label
+    if column_role == "protected_currency":
+        out = df.copy()
+        mapping = {v: v for v in values}
         execution.update({
-            "categorization_engine": "currency_standardization",
-            "engine_used": "currency_standardization",
-            "currency_engine": "deterministic_standardization",
+            "categorization_engine": "protected_currency",
+            "engine_used": "protected_currency",
+            "currency_engine": "unused",
             "local_fallback_used": True,
             "fallback_used": True,
-            "fallback_reason": "currency representation standardized locally",
+            "fallback_reason": "currency changes require explicit conversion intent",
         })
         plan = {
             "mapping": mapping,
-            "categories": categories,
-            "unmatchedLabel": fallback,
-            "explanation": f"Standardized currency-like values in '{source_column}' without converting exchange rates.",
+            "categories": [],
+            "unmatchedLabel": unmatched_label,
+            "explanation": f"Left currency-like values in '{source_column}' unchanged because currency conversion was not requested.",
             "execution": execution.copy(),
         }
     else:
