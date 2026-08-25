@@ -5,7 +5,13 @@ import pandas as pd
 
 import categorization_agent as ca
 import main as backend_main
-from currency_utils import detect_currency_from_value, has_currency_conversion_intent
+from currency_utils import (
+    currency_format,
+    detect_currency_from_value,
+    extract_target_currency,
+    has_currency_conversion_intent,
+    normalize_currency,
+)
 from query_router import _detect_sentiment_intent
 
 
@@ -46,6 +52,20 @@ def test_currency_helpers_require_explicit_conversion_intent():
     assert has_currency_conversion_intent("convert all monetary values to USD")
     assert not has_currency_conversion_intent("Categorize Currency")
     assert not has_currency_conversion_intent("Categorize all columns")
+    assert normalize_currency("Indian rupee") == "INR"
+    assert normalize_currency("rupees") == "INR"
+    assert normalize_currency("dollars") == "USD"
+    assert normalize_currency("British pound") == "GBP"
+    assert extract_target_currency("convert currency to rupee") == "INR"
+    assert extract_target_currency("convert currency to rupees") == "INR"
+    assert extract_target_currency("convert currency to Indian rupee") == "INR"
+    assert extract_target_currency("convert currency to $") == "USD"
+    assert extract_target_currency("convert currency to €") == "EUR"
+    assert extract_target_currency("convert currency to £") == "GBP"
+    assert extract_target_currency("convert currency to ¥") == "JPY"
+    assert currency_format("INR") == "₹#,##0.00"
+    assert currency_format("USD") == '$#,##0.00'
+    assert currency_format("JPY") == '¥#,##0'
     assert detect_currency_from_value("C$45") == "CAD"
     assert detect_currency_from_value("S$25") == "SGD"
 

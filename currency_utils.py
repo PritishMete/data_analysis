@@ -8,29 +8,88 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+TARGET_CURRENCY_REGISTRY: dict[str, dict[str, Any]] = {
+    "INR": {
+        "aliases": ("INR", "inr", "rupee", "rupees", "Indian rupee", "Indian rupees", "₹", "rs", "rs."),
+        "symbol": "₹",
+        "decimals": 2,
+    },
+    "USD": {
+        "aliases": ("USD", "usd", "dollar", "dollars", "US dollar", "US dollars", "$", "us$", "us dollar", "us dollars"),
+        "symbol": "$",
+        "decimals": 2,
+    },
+    "EUR": {
+        "aliases": ("EUR", "eur", "euro", "euros", "€"),
+        "symbol": "€",
+        "decimals": 2,
+    },
+    "GBP": {
+        "aliases": ("GBP", "gbp", "pound", "pounds", "British pound", "British pounds", "£"),
+        "symbol": "£",
+        "decimals": 2,
+    },
+    "JPY": {
+        "aliases": ("JPY", "jpy", "yen", "Japanese yen", "¥"),
+        "symbol": "¥",
+        "decimals": 0,
+    },
+    "AED": {
+        "aliases": ("AED", "aed", "dirham", "dirhams", "د.إ"),
+        "symbol": "د.إ",
+        "decimals": 2,
+    },
+    "SGD": {
+        "aliases": ("SGD", "sgd", "Singapore dollar", "Singapore dollars", "S$"),
+        "symbol": "S$",
+        "decimals": 2,
+    },
+    "CAD": {
+        "aliases": ("CAD", "cad", "Canadian dollar", "Canadian dollars", "C$"),
+        "symbol": "C$",
+        "decimals": 2,
+    },
+    "RUB": {
+        "aliases": ("RUB", "rub", "ruble", "rubles", "rubel", "rubels", "rouble", "roubles", "₽"),
+        "symbol": "₽",
+        "decimals": 2,
+    },
+    "BDT": {
+        "aliases": ("BDT", "bdt", "taka", "৳"),
+        "symbol": "৳",
+        "decimals": 2,
+    },
+    "AUD": {
+        "aliases": ("AUD", "aud", "australian dollar", "australian dollars", "A$"),
+        "symbol": "A$",
+        "decimals": 2,
+    },
+    "CNY": {
+        "aliases": ("CNY", "cny", "yuan", "renminbi", "元"),
+        "symbol": "¥",
+        "decimals": 2,
+    },
+    "HKD": {
+        "aliases": ("HKD", "hkd", "hong kong dollar", "hong kong dollars", "HK$"),
+        "symbol": "HK$",
+        "decimals": 2,
+    },
+}
+
 CURRENCY_ALIASES = {
-    "usd": "USD", "us dollar": "USD", "us dollars": "USD", "us$": "USD", "$": "USD",
-    "inr": "INR", "rs": "INR", "rs.": "INR", "rupee": "INR", "rupees": "INR", "₹": "INR",
-    "rub": "RUB", "ruble": "RUB", "rubles": "RUB", "rubel": "RUB", "rubels": "RUB", "rouble": "RUB", "roubles": "RUB", "₽": "RUB",
-    "bdt": "BDT", "taka": "BDT", "৳": "BDT",
-    "eur": "EUR", "euro": "EUR", "euros": "EUR", "€": "EUR",
-    "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "£": "GBP",
-    "aed": "AED", "dirham": "AED", "dirhams": "AED", "د.إ": "AED",
-    "sgd": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD", "s$": "SGD",
-    "jpy": "JPY", "yen": "JPY", "¥": "JPY",
-    "cny": "CNY", "yuan": "CNY", "renminbi": "CNY", "元": "CNY",
-    "cad": "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD", "c$": "CAD",
-    "aud": "AUD", "australian dollar": "AUD", "australian dollars": "AUD", "a$": "AUD",
-    "hkd": "HKD", "hong kong dollar": "HKD", "hong kong dollars": "HKD", "hk$": "HKD",
+    alias.strip().lower(): code
+    for code, config in TARGET_CURRENCY_REGISTRY.items()
+    for alias in config["aliases"]
 }
+
 SYMBOL_BY_CODE = {
-    "USD": "$", "INR": "₹", "RUB": "₽", "BDT": "৳", "EUR": "€", "GBP": "£",
-    "AED": "د.إ", "SGD": "S$", "JPY": "¥", "CNY": "¥", "CAD": "C$", "AUD": "A$",
+    code: str(config["symbol"])
+    for code, config in TARGET_CURRENCY_REGISTRY.items()
 }
+
 FORMAT_BY_CODE = {
-    "USD": '$#,##0.00', "INR": '₹#,##0.00', "RUB": '₽#,##0.00', "BDT": '৳#,##0.00',
-    "EUR": '€#,##0.00', "GBP": '£#,##0.00', "AED": 'د.إ#,##0.00', "SGD": 'S$#,##0.00',
-    "JPY": '¥#,##0', "CNY": '¥#,##0.00', "CAD": 'C$#,##0.00', "AUD": 'A$#,##0.00',
+    code: (f"{config['symbol']}#,##0" if int(config["decimals"]) == 0 else f"{config['symbol']}#,##0.00")
+    for code, config in TARGET_CURRENCY_REGISTRY.items()
 }
 _CACHE: dict[str, tuple[float, dict[str, float]]] = {}
 
@@ -48,21 +107,36 @@ def normalize_currency(value: str | None) -> str | None:
     s = _normalize_currency_text(value).lower()
     if s in CURRENCY_ALIASES:
         return CURRENCY_ALIASES[s]
-    # Prefer explicit 3-letter codes embedded in natural language.
-    m = re.search(r"\b(usd|inr|rub|bdt|eur|gbp|aed|sgd|jpy|cny|cad|aud|c\$|s\$)\b", s)
-    return m.group(1).upper() if m else None
+    # Prefer explicit codes embedded in natural language.
+    for code, config in TARGET_CURRENCY_REGISTRY.items():
+        for alias in sorted(config["aliases"], key=lambda x: len(str(x)), reverse=True):
+            alias_norm = str(alias).strip().lower()
+            if not alias_norm:
+                continue
+            if re.search(rf"(?<!\w){re.escape(alias_norm)}(?!\w)", s):
+                return code
+    return None
 
 
 def extract_target_currency(text: str) -> str | None:
     text = str(text or "")
     # Explicit target language is deliberately required; merely mentioning
     # "currency" must not trigger conversion.
-    m = re.search(r"\b(?:in|to|into|convert(?:ed|ing)?\s+(?:to|into)?)\s+([A-Za-z]{3}|[$€£₹₽৳¥])\b", text, re.I)
-    if m:
-        return normalize_currency(m.group(1))
-    # Common "categorize currency INR" phrasing.
-    m = re.search(r"\bcurrency\s+(?:as|in|to|into)\s+([A-Za-z]{3}|[$€£₹₽৳¥])\b", text, re.I)
-    return normalize_currency(m.group(1)) if m else None
+    lowered = _normalize_currency_text(text).lower()
+    if not re.search(r"\b(?:convert|change|exchange|transform|express|denominate)\b", lowered):
+        return None
+    patterns = [
+        r"\b(?:in|to|into|as)\s+(.+?)(?=$|\b(?:and|then|for|with|from|on|by|please)\b|[.,;:])",
+        r"\bcurrency\s+(?:as|in|to|into)\s+(.+?)(?=$|\b(?:and|then|for|with|from|on|by|please)\b|[.,;:])",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, lowered, re.I)
+        if not m:
+            continue
+        candidate = normalize_currency(m.group(1))
+        if candidate:
+            return candidate
+    return None
 
 
 def has_currency_conversion_intent(text: str) -> bool:
@@ -207,3 +281,8 @@ def convert_amount(amount: float, source: str, target: str) -> float:
 
 def currency_format(code: str) -> str:
     return FORMAT_BY_CODE.get(code.upper(), '#,##0.00')
+
+
+def currency_symbol(code: str) -> str | None:
+    normalized = normalize_currency(code) or str(code or "").upper()
+    return SYMBOL_BY_CODE.get(normalized)
