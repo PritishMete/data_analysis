@@ -35,10 +35,17 @@ FORMAT_BY_CODE = {
 _CACHE: dict[str, tuple[float, dict[str, float]]] = {}
 
 
+def _normalize_currency_text(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(r"[\u00A0\u202F\t\r\n]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def normalize_currency(value: str | None) -> str | None:
     if not value:
         return None
-    s = str(value).strip().lower()
+    s = _normalize_currency_text(value).lower()
     if s in CURRENCY_ALIASES:
         return CURRENCY_ALIASES[s]
     # Prefer explicit 3-letter codes embedded in natural language.
@@ -77,7 +84,7 @@ def has_currency_conversion_intent(text: str) -> bool:
 def detect_currency_from_value(value: Any) -> str | None:
     if value is None:
         return None
-    s = str(value).strip()
+    s = _normalize_currency_text(value)
     low = s.lower()
     ordered_patterns: list[tuple[str, str, bool]] = [
         (r"us\$", "USD", True),
@@ -155,6 +162,9 @@ def standardize_currency_value(value: Any) -> str | Any:
         return value
     if amount is None:
         return source
+    if source == "INR":
+        symbol = SYMBOL_BY_CODE.get(source, "₹")
+        return f"{symbol}{amount:,.2f}"
     return f"{source} {amount:.2f}"
 
 
@@ -163,7 +173,7 @@ def parse_amount(value: Any) -> float | None:
         return None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
-    s = str(value).strip().replace(',', '')
+    s = _normalize_currency_text(value).replace(',', '')
     m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
     return float(m.group(0)) if m else None
 
