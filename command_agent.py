@@ -710,10 +710,11 @@ def _repair_explicit_filter_criteria(user_text: str, plan: dict, columns: list[s
 async def parse_filter_plan(user_text: str, available_columns: list[str] | None = None) -> dict:
     """Use Gemini as the primary natural-language filter planner.
 
-    Privacy boundary: Gemini receives ONLY the user's query and the column
-    names. Workbook rows, cell values, previews, files, dataframes, and raw
-    sheet contents are never sent. A deterministic parser is retained only as
-    a local/backend fallback if Gemini is unavailable or returns an invalid plan.
+    Privacy boundary: Gemini receives ONLY a redacted query plus anonymized
+    column aliases in strict mode. Workbook rows, cell values, previews, files,
+    dataframes, and raw sheet contents are never sent. A deterministic parser
+    is retained only as a local/backend fallback if Gemini is unavailable or
+    returns an invalid plan.
 
     Making Gemini primary is intentional: natural-language requests such as
     "restaurants having online table booking and online delivery and rating
@@ -724,14 +725,18 @@ async def parse_filter_plan(user_text: str, available_columns: list[str] | None 
     if not columns:
         raise ValueError("Available columns are required for filter planning.")
 
+    strict = strict_enabled()
+    prompt_columns, _, reverse_cols = safe_columns(columns) if strict else (columns, {}, {})
+    prompt_text = sanitize_user_text(user_text, columns) if strict else str(user_text or "")
     allowed_ops = sorted(FILTER_PLAN_OPERATORS)
     agent = LlmAgent(
         name="generic_filter_plan_agent",
         model=MODEL,
         instruction=(
             "You are a generic read-only data filter planner. Return ONLY JSON. "
-            "Do not write SQL. Do not invent columns. The available dataset columns are: "
-            + json.dumps(columns, ensure_ascii=False)
+            "Do not write SQL. Do not invent columns. In strict privacy mode the available "
+            "dataset columns are anonymized aliases and must be treated as opaque placeholders: "
+            + json.dumps(prompt_columns, ensure_ascii=False)
             + ". Convert the user's request into {intent:'filter', logic:'AND', filters:[...]}. "
             "Each filter must have column, operator, value and optional value2. Operators allowed: "
             + ", ".join(allowed_ops) + ". Preserve user values exactly except normalizing numeric strings. "
@@ -752,7 +757,7 @@ async def parse_filter_plan(user_text: str, available_columns: list[str] | None 
     session_id = str(uuid.uuid4())
     await session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
     runner = Runner(agent=agent, app_name=app_name, session_service=session_service)
-    content = types.Content(role="user", parts=[types.Part(text=str(user_text or ""))])
+    content = types.Content(role="user", parts=[types.Part(text=prompt_text)])
     final_text = None
     async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
         if getattr(event, "is_final_response", lambda: False)():
@@ -785,7 +790,7 @@ async def parse_filter_plan(user_text: str, available_columns: list[str] | None 
         if not isinstance(f, dict):
             raise ValueError("Invalid filter predicate")
         column = str(f.get("column") or "").strip()
-        if column not in columns:
+        if column not in prompt_columns:
             raise ValueError(f"Filter column '{column}' is not in the available dataset columns")
         op = str(f.get("operator") or "").strip()
         if op not in FILTER_PLAN_OPERATORS:
@@ -795,6 +800,8 @@ async def parse_filter_plan(user_text: str, available_columns: list[str] | None 
             item["value2"] = f.get("value2")
         clean.append(item)
     plan = {"intent": "filter", "logic": "AND", "filters": clean, "planner": "gemini"}
+    if strict:
+        plan = remap_plan(plan, reverse_cols)
     return _repair_explicit_filter_criteria(user_text, plan, columns)
 
 async def parse_filter_intent(user_text: str) -> dict:

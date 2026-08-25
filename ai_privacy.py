@@ -10,9 +10,38 @@ import re
 from typing import Any
 
 FORBIDDEN_PAYLOAD_KEYS = {
-    "rows", "data", "dataset", "dataset_rows", "records", "values", "cells",
-    "preview", "sample", "samples", "csv", "file", "file_bytes", "upload",
-    "workbook", "dataframe", "df", "raw_data", "raw_rows", "sheet_data",
+    "rows",
+    "row_data",
+    "data",
+    "dataset",
+    "dataset_rows",
+    "records",
+    "values",
+    "value",
+    "distinct_values",
+    "sample",
+    "samples",
+    "sample_values",
+    "column_samples",
+    "cells",
+    "cell_values",
+    "preview",
+    "csv",
+    "file",
+    "file_name",
+    "filename",
+    "file_bytes",
+    "upload",
+    "workbook",
+    "dataframe",
+    "df",
+    "raw_data",
+    "raw_rows",
+    "sheet_data",
+    "sheet_name",
+    "sheet_names",
+    "original_columns",
+    "raw_columns",
 }
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
@@ -24,9 +53,19 @@ def validate_metadata_planner_payload(payload: dict[str, Any], *, allow_sheets: 
     if not isinstance(payload, dict):
         raise ValueError("Planner payload must be a JSON object.")
 
-    forbidden = FORBIDDEN_PAYLOAD_KEYS.intersection(payload.keys())
-    if forbidden:
-        raise ValueError("Dataset content is not accepted by the metadata-only planner.")
+    def _scan(value: Any, path: str = "payload") -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key)
+                if key_text.lower() in FORBIDDEN_PAYLOAD_KEYS:
+                    raise ValueError(f"Dataset content is not accepted by the metadata-only planner ({path}.{key_text}).")
+                _scan(item, f"{path}.{key_text}")
+            return
+        if isinstance(value, (list, tuple, set)):
+            for index, item in enumerate(value):
+                _scan(item, f"{path}[{index}]")
+
+    _scan(payload)
 
     allowed = {"text", "available_columns"} | ({"available_sheets"} if allow_sheets else set())
     unknown = set(payload.keys()) - allowed
