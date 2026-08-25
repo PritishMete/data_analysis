@@ -1,19 +1,37 @@
-cd G:\data_analyst
-flutter build web --base-href /data_analysis/
-cd build\web
-git add .
-git commit -m "Deploy Flutter web"
-git remote remove origin
-git remote add origin https://github.com/PritishMete/data_analysis.git
-git push -f origin gh-pages --force
+param(
+  [string]$BaseHref = '/data_analysis/',
+  [string]$RemoteUrl = 'https://github.com/PritishMete/data_analysis.git'
+)
 
-cd G:\data_analyst
-flutter build web --base-href /data_analysis/
-cd build\web
-git init
-git remote remove origin
-git remote add origin https://github.com/PritishMete/data_analysis.git
-git add . --force
-git commit -m "Deploy production web assets to gh-pages"
-git branch -M gh-pages
-git push -f origin gh-pages
+$ErrorActionPreference = 'Stop'
+
+$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+Push-Location $RepoRoot
+try {
+  flutter build web --base-href $BaseHref
+
+  $BuildWeb = Join-Path $RepoRoot 'build\web'
+  Push-Location $BuildWeb
+  try {
+    if (-not (Test-Path .git)) {
+      git init
+    }
+
+    $originUrl = git remote get-url origin 2>$null
+    if ($LASTEXITCODE -eq 0 -and $originUrl) {
+      git remote remove origin
+    }
+
+    git remote add origin $RemoteUrl
+    git add -A
+    git commit -m "Deploy production web assets to gh-pages"
+    git branch -M gh-pages
+    git push -f origin gh-pages
+  }
+  finally {
+    Pop-Location
+  }
+}
+finally {
+  Pop-Location
+}
