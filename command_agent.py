@@ -3,11 +3,35 @@ import re
 import traceback
 import uuid
 
-from google.adk.agents import LlmAgent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+try:
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+except Exception:  # pragma: no cover - import fallback for local tests
+    class _UnavailableGemini:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("google.adk is unavailable in this environment.")
+
+    class _UnavailableSessionService:
+        async def create_session(self, *args, **kwargs):
+            return None
+
+    class _TypesNamespace:
+        class Content:
+            def __init__(self, *args, **kwargs):
+                self.parts = kwargs.get("parts", [])
+
+        class Part:
+            def __init__(self, *args, **kwargs):
+                self.text = kwargs.get("text", "")
+
+    LlmAgent = _UnavailableGemini
+    Runner = _UnavailableGemini
+    InMemorySessionService = _UnavailableSessionService
+    types = _TypesNamespace()
 from privacy_context import strict_enabled, safe_columns, sanitize_user_text, remap_plan
+from currency_utils import has_currency_conversion_intent
 
 MODEL = "gemini-3.5-flash"
 
@@ -318,10 +342,11 @@ fill the null ratings with median or mode or mean based, then remove duplicate i
 ]},
 "message":"Ran 4 steps in order: standardized column names, removed rows with rating_count 0, filled missing rating values (median/mode by type), and removed duplicate ids."}
 
-7. MULTI-CATEGORIZE — if the user asks to categorize ALL columns, or names TWO OR MORE columns in one request (for example "categorize Country, City, Currency"), return ONE action "categorize" with categorize.sourceColumns containing every requested column in the exact order stated. This is a single run with ordered per-column categorization; do not split it into separate user operations. If the request says "all columns", set categorize.allColumns=true and sourceColumns to the available columns. If the request specifies a target currency such as "currency in INR", "convert currency to INR", or "categorize currency in INR", set categorize.targetCurrency to the three-letter ISO code (e.g. INR). Currency conversion is part of that same ordered categorization run and must happen before the currency column is categorized/formatted.
+7. MULTI-CATEGORIZE — if the user asks to categorize ALL columns, or names TWO OR MORE columns in one request (for example "categorize Country, City, Currency"), return ONE action "categorize" with categorize.sourceColumns containing every requested column in the exact order stated. This is a single run with ordered per-column categorization; do not split it into separate user operations. If the request says "all columns", set categorize.allColumns=true and sourceColumns to the available columns. Only set categorize.targetCurrency when the user explicitly asks to convert/change/exchange currency values to a target currency. Currency conversion is part of that same ordered categorization run and must happen before the currency column is categorized/formatted.
 
 7. CATEGORIZE — classify the values in one existing column into meaningful business/user-requested categories and WRITE THE RESULT BACK INTO THAT SAME SOURCE COLUMN in the original worksheet. This is an IN-PLACE categorization operation; do NOT create a *_Category companion column. Use this when the user says categorize, classify, group into categories, bucket by meaning, standardize variants into categories, or similar.
    The categorization agent will receive the actual distinct values from the target column after this intent is detected, so do NOT invent a mapping in this first routing step. Return: sourceColumn, newColumnName (set it equal to sourceColumn), categories (the requested category labels if the user explicitly supplied them, otherwise an empty list), and unmatchedLabel (default "Other"). Preserve the user's requested labels exactly when possible.
+   Generic categorization must never silently bin numeric measurements, perform sentiment analysis, or convert currency. Only surface a targetCurrency when the user explicitly asks to convert/change/exchange/express currency values.
 
 Respond with ONLY a single JSON object — no markdown fences, no leading/trailing commentary, no
 "Here is the JSON:" preamble, nothing but the object itself — matching EXACTLY this shape:
@@ -867,11 +892,7 @@ async def parse_agentic_command(
     # Deterministic fast-path for explicit currency conversion requests.
     # These must never enter the general LLM router: the target currency and the
     # likely currency column can be resolved locally from the workbook headers.
-    currency_conversion_request = re.search(
-        r"\b(?:convert|change|exchange|transform)\b.*\bcurrenc(?:y|ies)\b|"
-        r"\bcurrenc(?:y|ies)\b.*\b(?:convert|change|exchange|transform)\b",
-        user_text or "", re.IGNORECASE,
-    )
+    currency_conversion_request = has_currency_conversion_intent(user_text)
     if currency_conversion_request:
         from currency_utils import extract_target_currency
         target_currency = extract_target_currency(user_text)
@@ -923,48 +944,6 @@ async def parse_agentic_command(
                         "targetCurrency": target_currency,
                     },
                 }
-
-    if categorize_request and not range_request and False:
-        # Kept as a defensive deterministic fallback block below; normal
-        # categorization requests are sent through Gemini first so the model
-        # understands compound language and column semantics.
-        cols = [str(c) for c in (available_columns or [])]
-        norm = lambda x: re.sub(r"[^a-z0-9]", "", str(x).lower())
-        normalized_request = norm(user_text)
-        all_columns = bool(re.search(r"\b(?:all|every)\s+columns?\b|\bcategorize\s+all\b", user_text or "", re.I))
-        selected = []
-        # Preserve available-column order for "all"; preserve user order for named columns.
-        if all_columns:
-            selected = cols[:]
-        else:
-            # Exact normalized names, longest first, then restore occurrence order.
-            found = []
-            for col in cols:
-                nc = norm(col)
-                if nc and nc in normalized_request:
-                    idx = normalized_request.find(nc)
-                    found.append((idx, col))
-            selected = [c for _, c in sorted(found, key=lambda x: (x[0], -len(x[1])))]
-            # "bool/boolean column" means: let execution inspect the actual values.
-            if not selected and re.search(r"\b(?:bool|boolean)\s+column\b", user_text or "", re.I):
-                selected = ["__BOOLEAN_COLUMN__"]
-        if selected:
-            from currency_utils import extract_target_currency
-            target_currency = extract_target_currency(user_text)
-            return {
-                "action": "categorize",
-                "confidence": 1.0,
-                "message": f"Categorizing {len(selected)} column(s) in order." if len(selected) > 1 else f"Categorizing '{selected[0]}' in place.",
-                "categorize": {
-                    "sourceColumn": selected[0],
-                    "sourceColumns": selected,
-                    "allColumns": all_columns,
-                    "newColumnName": selected[0],
-                    "categories": [],
-                    "unmatchedLabel": "Other",
-                    "targetCurrency": target_currency,
-                },
-            }
 
     try:
         agent = LlmAgent(
@@ -1070,8 +1049,9 @@ async def parse_agentic_command(
                         "newColumnName": sources[0],
                         "categories": cfg.get("categories") or [],
                         "unmatchedLabel": cfg.get("unmatchedLabel") or "Other",
-                        "targetCurrency": cfg.get("targetCurrency") or extract_target_currency(user_text),
                     }
+                    if has_currency_conversion_intent(user_text):
+                        parsed["categorize"]["targetCurrency"] = cfg.get("targetCurrency") or extract_target_currency(user_text)
                 parsed["message"] = parsed.get("message") or (f"Categorizing {len(sources)} columns in order." if len(sources) > 1 else f"Categorizing '{source}' in place.")
                 # A generic categorization request must never carry a stale
                 # range_binning payload into downstream execution.

@@ -4,10 +4,34 @@ import math
 import json
 import numpy as np
 import pandas as pd
-from google.adk.agents import LlmAgent, SequentialAgent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+try:
+    from google.adk.agents import LlmAgent, SequentialAgent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+except Exception:  # pragma: no cover - import fallback for local tests
+    class _UnavailableGemini:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("google.adk is unavailable in this environment.")
+
+    class _UnavailableSessionService:
+        async def create_session(self, *args, **kwargs):
+            return None
+
+    class _TypesNamespace:
+        class Content:
+            def __init__(self, *args, **kwargs):
+                self.parts = kwargs.get("parts", [])
+
+        class Part:
+            def __init__(self, *args, **kwargs):
+                self.text = kwargs.get("text", "")
+
+    LlmAgent = _UnavailableGemini
+    SequentialAgent = _UnavailableGemini
+    Runner = _UnavailableGemini
+    InMemorySessionService = _UnavailableSessionService
+    types = _TypesNamespace()
 
 from command_agent import _extract_json
 from common.report.orchestrator import generate_structured_report_data

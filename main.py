@@ -8,14 +8,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional in local test envs
+    def load_dotenv(*args, **kwargs):
+        return False
 import numpy as np
 import pandas as pd
 import io
 import json
 import traceback
 from command_agent import parse_agentic_command, parse_filter_intent, parse_filter_plan
-from categorization_agent import categorize_dataframe
+from categorization_agent import categorize_dataframe, classify_column_operation
 from currency_utils import convert_amount, currency_format, detect_currency_from_value, parse_amount, normalize_currency
 from location_agent import enrich_rows
 from query_router import handle_smart_query
@@ -1285,13 +1289,16 @@ async def agentic_categorize(payload: dict):
     but the transformations happen sequentially and are committed together.
     """
     rows = payload.get("rows")
+    column_samples = payload.get("columnSamples")
+    if not isinstance(column_samples, dict):
+        column_samples = payload.get("column_samples") if isinstance(payload.get("column_samples"), dict) else {}
     config = payload.get("categorize") or {}
     user_text = str(payload.get("text") or "categorize this column")
-    if not isinstance(rows, list) or not rows:
+    if (not isinstance(rows, list) or not rows) and not column_samples:
         return {"success": False, "route": "operation", "operation": {
             "action": "categorize", "message": "No worksheet data was supplied for categorization."
         }}
-    if len(rows) > 25000:
+    if isinstance(rows, list) and len(rows) > 25000:
         return {"success": False, "route": "operation", "operation": {
             "action": "categorize", "message": "Categorization is limited to 25,000 rows per request."
         }}
@@ -1302,6 +1309,8 @@ async def agentic_categorize(payload: dict):
 
     source_columns = config.get("sourceColumns") if isinstance(config.get("sourceColumns"), list) else []
     source_columns = [str(c).strip() for c in source_columns if str(c).strip()]
+    if not source_columns and isinstance(column_samples, dict):
+        source_columns = [str(c).strip() for c in column_samples.keys() if str(c).strip()]
     if not source_columns:
         source = str(config.get("sourceColumn") or "").strip()
         if source:
@@ -1316,12 +1325,14 @@ async def agentic_categorize(payload: dict):
     unmatched = str(config.get("unmatchedLabel") or "Other")
 
     try:
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows) if isinstance(rows, list) and rows else None
         # Case-insensitive live-column resolution, including the bool shorthand.
         def norm_col(v: Any) -> str:
             return re.sub(r"[^a-z0-9]", "", str(v).strip().lower())
 
         def resolve_col(name: str) -> str | None:
+            if df is None:
+                return str(name) if str(name).strip() else None
             exact = next((c for c in df.columns if norm_col(c) == norm_col(name)), None)
             if exact is not None:
                 return str(exact)
@@ -1344,26 +1355,28 @@ async def agentic_categorize(payload: dict):
             }}
 
         all_requested = bool(config.get("allColumns"))
-        if all_requested:
+        if all_requested and df is not None:
             resolved = [str(c) for c in df.columns]
 
         operations = []
         number_formats: dict[str, str] = {}
         currency_conversions = []
+        column_mappings: dict[str, dict[str, str]] = {}
+        column_statuses: list[dict[str, Any]] = []
 
         failures = []
         for source_column in resolved:
             try:
-                # Currency is a special categorization mode: when the user gives a
-                # target currency (e.g. "currency in INR"), convert monetary cells to
-                # that currency first, then mark the column with an Excel currency format.
-                lower_name = source_column.lower()
-                sample_values = df[source_column].dropna().tolist()[:100]
-                currency_hits = sum(1 for v in sample_values if detect_currency_from_value(v))
-                looks_monetary = bool(re.search(r"currency|price|amount|cost|value|fare|salary|revenue|sales|income|budget|fee|charge", lower_name))
-                do_currency = bool(target_currency and (currency_hits > 0 or looks_monetary))
+                if df is not None:
+                    column_series = df[source_column]
+                    sample_values = column_series.dropna().tolist()[:100]
+                else:
+                    sample_values = list(column_samples.get(source_column) or [])
+                    column_series = pd.Series(sample_values, name=source_column)
 
-                if do_currency:
+                column_role = classify_column_operation(source_column, column_series, user_text)
+
+                if target_currency and column_role == "currency_standardization" and df is not None:
                     converted = []
                     converted_count = 0
                     for value in df[source_column].tolist():
@@ -1388,7 +1401,25 @@ async def agentic_categorize(payload: dict):
                         "converted_rows": converted_count,
                         "format": number_formats[source_column],
                     })
-                    operations.append({"column": source_column, "mode": "currency_conversion", "targetCurrency": target_currency})
+                    operations.append({"column": source_column, "mode": "currency_conversion", "targetCurrency": target_currency, "role": column_role})
+                    column_statuses.append({"column": source_column, "status": "converted", "role": column_role})
+                    continue
+
+                if df is None:
+                    unique_values = list(dict.fromkeys(str(v) for v in (sample_values or [])))
+                    tiny_df = pd.DataFrame({source_column: unique_values})
+                    categorized_df, op_metadata = await categorize_dataframe(
+                        tiny_df, source_column, source_column, user_text,
+                        requested_categories=categories, unmatched_label=unmatched,
+                    )
+                    mapping = op_metadata.get("mapping") if isinstance(op_metadata.get("mapping"), dict) else {}
+                    column_mappings[source_column] = {str(k): str(v) for k, v in mapping.items()}
+                    operations.append(op_metadata)
+                    column_statuses.append({
+                        "column": source_column,
+                        "status": op_metadata.get("write_mode") or "updated",
+                        "role": op_metadata.get("execution", {}).get("column_role", column_role),
+                    })
                     continue
 
                 # Ordinary columns go through the agent one at a time, in order.
@@ -1396,36 +1427,67 @@ async def agentic_categorize(payload: dict):
                     df, source_column, source_column, user_text,
                     requested_categories=categories, unmatched_label=unmatched,
                 )
+                mapping = op_metadata.get("mapping") if isinstance(op_metadata.get("mapping"), dict) else {}
+                if mapping:
+                    column_mappings[source_column] = {str(k): str(v) for k, v in mapping.items()}
                 operations.append(op_metadata)
+                column_statuses.append({
+                    "column": source_column,
+                    "status": op_metadata.get("write_mode") or "updated",
+                    "role": op_metadata.get("execution", {}).get("column_role", column_role),
+                })
             except Exception as exc:
                 # A multi-column categorization run must never silently skip a requested
                 # column. Retry ordinary categorization with the deterministic fallback.
                 try:
                     print(f"[agentic_categorize] retrying {source_column} after error: {exc}")
-                    df, op_metadata = await categorize_dataframe(
-                        df, source_column, source_column,
-                        user_text + " Use a deterministic fallback if needed.",
-                        requested_categories=categories, unmatched_label=unmatched,
-                    )
+                    if df is not None:
+                        df, op_metadata = await categorize_dataframe(
+                            df, source_column, source_column,
+                            user_text + " Use a deterministic fallback if needed.",
+                            requested_categories=categories, unmatched_label=unmatched,
+                        )
+                    else:
+                        tiny_df = pd.DataFrame({source_column: list(dict.fromkeys(str(v) for v in (column_samples.get(source_column) or [])))})
+                        df, op_metadata = await categorize_dataframe(
+                            tiny_df, source_column, source_column,
+                            user_text + " Use a deterministic fallback if needed.",
+                            requested_categories=categories, unmatched_label=unmatched,
+                        )
                     op_metadata["retry_after_error"] = str(exc)
                     operations.append(op_metadata)
+                    if isinstance(op_metadata.get("mapping"), dict):
+                        column_mappings[source_column] = {str(k): str(v) for k, v in op_metadata["mapping"].items()}
+                    column_statuses.append({
+                        "column": source_column,
+                        "status": "fallback",
+                        "role": op_metadata.get("execution", {}).get("column_role", "unknown"),
+                    })
                 except Exception as retry_exc:
                     # Last resort: write normalized strings directly so the column is
                     # still processed and never appears in a "Skipped" list.
-                    series = df[source_column]
-                    df[source_column] = series.map(lambda v: "Unknown" if pd.isna(v) else re.sub(r"\s+", " ", str(v).strip()).title())
+                    if df is not None:
+                        series = df[source_column]
+                        df[source_column] = series.map(lambda v: "Unknown" if pd.isna(v) else re.sub(r"\s+", " ", str(v).strip()).title())
                     op_metadata = {
                         "column": source_column, "source_column": source_column,
                         "new_column": source_column, "write_mode": "replace_source",
                         "mode": "fallback_normalization",
-                        "categories": sorted(set(df[source_column].astype(str).tolist())),
+                        "categories": sorted(set((df[source_column].astype(str).tolist()) if df is not None else [])),
                         "explanation": f"Applied final deterministic normalization after agent error: {retry_exc}",
                     }
                     operations.append(op_metadata)
+                    column_statuses.append({
+                        "column": source_column,
+                        "status": "fallback_normalization",
+                        "role": "unknown",
+                    })
         message_parts = []
         for op in operations:
             if op.get("mode") == "currency_conversion":
                 message_parts.append(f"{op['column']} → {op['targetCurrency']}")
+            elif op.get("write_mode") == "unchanged":
+                message_parts.append(str(op.get("explanation") or op.get("column") or "unchanged"))
             else:
                 message_parts.append(str(op.get("explanation") or op.get("column") or "categorized"))
         # Never report requested columns as skipped. Every resolved column has a
@@ -1441,9 +1503,18 @@ async def agentic_categorize(payload: dict):
             "all_columns": all_requested,
             "write_mode": "replace_source",
             "operations": operations,
+            "column_statuses": column_statuses,
+            "column_mappings": column_mappings,
             "currency_conversions": currency_conversions,
             "number_formats": number_formats,
         }
+        data_payload = None
+        if df is not None:
+            data_payload = {
+                "columns": list(df.columns),
+                "rows": df.where(pd.notnull(df), None).to_dict(orient="records"),
+                "row_count": len(df),
+            }
         return to_json_safe({
             "success": True,
             "route": "operation",
@@ -1451,11 +1522,8 @@ async def agentic_categorize(payload: dict):
                 "action": "categorize",
                 "message": message,
                 "metadata": metadata,
-                "data": {
-                    "columns": list(df.columns),
-                    "rows": df.where(pd.notnull(df), None).to_dict(orient="records"),
-                    "row_count": len(df),
-                },
+                "data": data_payload,
+                "column_mappings": column_mappings,
             },
         })
     except Exception as exc:
@@ -1701,8 +1769,12 @@ def ping():
 # ---------------------------------------------------------
 # AI Routes — must be AFTER app is created
 # ---------------------------------------------------------
-from ai_routes import ai_router
-app.include_router(ai_router)
+try:
+    from ai_routes import ai_router
+except Exception:  # pragma: no cover - optional in local test envs
+    ai_router = None
+if ai_router is not None:
+    app.include_router(ai_router)
 
 # ---------------------------------------------------------
 # Enterprise Analytics Platform extensions — must also be AFTER app is

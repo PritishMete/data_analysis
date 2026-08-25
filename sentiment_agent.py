@@ -11,8 +11,24 @@ import re
 from typing import Any
 
 import pandas as pd
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except Exception:  # pragma: no cover - import fallback for local tests
+    class _UnavailableClient:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("google.genai is unavailable in this environment.")
+
+    class _TypesNamespace:
+        class GenerateContentConfig:
+            def __init__(self, *args, **kwargs):
+                pass
+
+    class _GenAI:
+        Client = _UnavailableClient
+
+    genai = _GenAI()
+    types = _TypesNamespace()
 from privacy_context import strict_enabled
 
 MODEL = os.getenv("SENTIMENT_AGENT_MODEL", "gemini-2.5-flash")

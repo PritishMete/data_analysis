@@ -56,6 +56,22 @@ def extract_target_currency(text: str) -> str | None:
     return normalize_currency(m.group(1)) if m else None
 
 
+def has_currency_conversion_intent(text: str) -> bool:
+    """Return True only when the user explicitly asks for conversion.
+
+    Simply mentioning a target currency code should not be treated as a
+    conversion request; the request must include a conversion verb/phrase.
+    """
+    text = str(text or "")
+    return bool(re.search(
+        r"\b(?:convert|change|exchange|transform|express|denominate)\b.*\bcurrenc(?:y|ies)\b|"
+        r"\bcurrenc(?:y|ies)\b.*\b(?:convert|change|exchange|transform|express|denominate)\b|"
+        r"\bconvert\b.*\b(?:to|into)\b",
+        text,
+        re.I,
+    ))
+
+
 def detect_currency_from_value(value: Any) -> str | None:
     if value is None:
         return None
@@ -69,6 +85,30 @@ def detect_currency_from_value(value: Any) -> str | None:
         if symbol in s:
             return code
     return None
+
+
+def standardize_currency_value(value: Any) -> str | Any:
+    """Canonicalize a currency-like value without converting its amount.
+
+    Examples:
+      "$1250" -> "USD 1,250.00"
+      "Aed 150" -> "AED 150.00"
+      "Rubel 2500" -> "RUB 2,500.00"
+    """
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        # A bare number has no detectable source currency, so leave it alone.
+        return value
+    source = detect_currency_from_value(value)
+    amount = parse_amount(value)
+    if source is None and amount is None:
+        return value
+    if source is None:
+        source = "USD"
+    if amount is None:
+        return source
+    return f"{source} {amount:,.2f}"
 
 
 def parse_amount(value: Any) -> float | None:

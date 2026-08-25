@@ -37,10 +37,33 @@ import os
 import duckdb
 import pandas as pd
 
-from google.adk.agents import LlmAgent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+try:
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+except Exception:  # pragma: no cover - import fallback for local tests
+    class _UnavailableGemini:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("google.adk is unavailable in this environment.")
+
+    class _UnavailableSessionService:
+        async def create_session(self, *args, **kwargs):
+            return None
+
+    class _TypesNamespace:
+        class Content:
+            def __init__(self, *args, **kwargs):
+                self.parts = kwargs.get("parts", [])
+
+        class Part:
+            def __init__(self, *args, **kwargs):
+                self.text = kwargs.get("text", "")
+
+    LlmAgent = _UnavailableGemini
+    Runner = _UnavailableGemini
+    InMemorySessionService = _UnavailableSessionService
+    types = _TypesNamespace()
 
 from command_agent import parse_agentic_command
 from common.transformations import TransformationEngine
@@ -565,7 +588,7 @@ def _detect_sentiment_intent(user_text: str, available_columns: list[str]) -> di
     sentiment_terms = (
         "sentiment", "sentement", "customer satisfaction", "satisfaction",
         "satisfied", "dissatisfied", "happy customers", "unhappy customers",
-        "review sentiment", "review tone", "customer feedback",
+        "review sentiment", "review tone", "analyze sentiment", "analyse sentiment",
         "how restaurants are performing", "restaurant performance based on review",
         "based on review", "based on reviews", "from reviews", "from review"
     )
