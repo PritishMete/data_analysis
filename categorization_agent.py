@@ -106,6 +106,47 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
     boolean_tokens = {"yes", "no", "y", "n", "ye", "true", "false", "t", "f", "1", "0"}
     null_tokens = {"", "none", "null", "na", "n/a", "nan", "unknown"}
 
+    def _norm_token(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", value.strip().lower())
+
+    def _levenshtein(a: str, b: str) -> int:
+        if a == b:
+            return 0
+        if not a:
+            return len(b)
+        if not b:
+            return len(a)
+        prev = list(range(len(b) + 1))
+        curr = [0] * (len(b) + 1)
+        for i, ca in enumerate(a, start=1):
+            curr[0] = i
+            for j, cb in enumerate(b, start=1):
+                cost = 0 if ca == cb else 1
+                curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            prev, curr = curr, prev
+        return prev[-1]
+
+    def _fuzzy_lookup(raw: str, aliases: dict[str, str], canonicals: list[str], max_distance: int = 2) -> str | None:
+        token = _norm_token(raw)
+        if not token:
+            return None
+        if token in aliases:
+            return aliases[token]
+        best = None
+        best_distance = 10**9
+        for canonical in canonicals:
+            canonical_token = _norm_token(canonical)
+            distance = _levenshtein(token, canonical_token)
+            if distance < best_distance:
+                best_distance = distance
+                best = canonical
+            elif distance == best_distance:
+                best = None
+        return best if best is not None and best_distance <= max_distance else None
+
+    def _collapse_token(value: str) -> str:
+        return re.sub(r"(.)\1+$", r"\1", value.strip().lower())
+
     # Explicit boolean/flag column names get the boolean mapping even when the
     # column has a small amount of missing data or mixed numeric/string storage.
     explicit_bool_name = (
@@ -121,8 +162,8 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
         # Do not accidentally turn arbitrary empty text into Yes/No. Unknown/missing
         # values remain explicit so every row is still handled.
         return {
-            original: ("Yes" if v in {"yes", "y", "ye", "true", "t", "1"}
-                       else "No" if v in {"no", "n", "false", "f", "0"}
+            original: ("Yes" if v in {"yes", "y", "ye", "true", "t", "1"} or _collapse_token(v) in {"yes", "y", "ye", "true", "t", "1"}
+                       else "No" if v in {"no", "n", "false", "f", "0"} or _collapse_token(v) in {"no", "n", "false", "f", "0"}
                        else "Unknown")
             for original, v in low.items()
         }
@@ -130,20 +171,33 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
     # Country normalization: common casing, spelling, abbreviation and typo variants.
     if "country" in name or name in {"nation", "countryname"}:
         country_aliases = {
-            "india": "India", "ind": "India", "in": "India", "idnia": "India",
-            "uae": "UAE", "united arab emirates": "UAE", "arab": "UAE",
+            "india": "India", "ind": "India", "in": "India", "idnia": "India", "indai": "India",
+            "uae": "United Arab Emirates", "unitedarabemirates": "United Arab Emirates",
+            "singapore": "Singapore", "singapor": "Singapore",
             "uk": "United Kingdom", "united kingdom": "United Kingdom",
             "us": "United States", "usa": "United States", "united states": "United States",
-            "singapore": "Singapore", "singapor": "Singapore",
             "bangladesh": "Bangladesh", "bangladsh": "Bangladesh",
-            "russia": "Russia", "canada": "Canada",
+            "bd": "Bangladesh",
+            "russia": "Russia", "russina": "Russia",
+            "canada": "Canada", "canad": "Canada",
             "china": "China", "japan": "Japan", "germany": "Germany",
             "france": "France", "australia": "Australia",
         }
+        canonicals = [
+            "India",
+            "United Arab Emirates",
+            "Singapore",
+            "United Kingdom",
+            "United States",
+            "Bangladesh",
+            "Russia",
+            "Canada",
+        ]
         out = {}
         for original, v in low.items():
-            if v in country_aliases:
-                out[original] = country_aliases[v]
+            matched = _fuzzy_lookup(v, country_aliases, canonicals, max_distance=2)
+            if matched is not None:
+                out[original] = matched
             elif v in {"", "none", "null", "na", "n/a", "unknown"}:
                 out[original] = "Unknown"
             else:
@@ -210,12 +264,24 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
         return out
 
     if "gender" in name or name in {"sex", "gendercode"}:
+        gender_aliases = {
+            "m": "Male",
+            "male": "Male",
+            "malee": "Male",
+            "mlae": "Male",
+            "mal": "Male",
+            "f": "Female",
+            "female": "Female",
+            "femalee": "Female",
+            "femle": "Female",
+            "femaile": "Female",
+        }
+        canonicals = ["Male", "Female", "Non-binary"]
         out = {}
         for original, v in low.items():
-            if v in {"m", "male", "man", "men"}:
-                out[original] = "Male"
-            elif v in {"f", "female", "femal", "femalle", "woman", "women"}:
-                out[original] = "Female"
+            matched = _fuzzy_lookup(v, gender_aliases, canonicals, max_distance=2)
+            if matched is not None:
+                out[original] = matched
             elif v in {"nb", "nonbinary", "non-binary", "non binary"}:
                 out[original] = "Non-binary"
             elif v in {"", "none", "null", "na", "n/a", "unknown"}:
@@ -311,28 +377,56 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
 
     requested_categories = [str(x).strip() for x in (requested_categories or []) if str(x).strip()]
     unmatched_label = str(unmatched_label or "Other").strip() or "Other"
+    execution = {
+        "ai_used": False,
+        "gemini_attempted": False,
+        "privacy_mode": "local_only" if strict_enabled() else "remote_allowed",
+        "raw_data_sent_to_ai": False,
+        "metadata_sent_to_ai": False,
+        "unique_values_sent_to_ai": False,
+        "local_fallback_used": False,
+        "categorization_engine": "deterministic",
+        "currency_engine": "unused",
+    }
     # Handle high-confidence spreadsheet categories deterministically first.
     special_mapping = _deterministic_special_mapping(values, source_column)
     if special_mapping is not None and not requested_categories:
         mapping = special_mapping
         categories = sorted(set(mapping.values()))
         fallback = unmatched_label
+        execution.update({
+            "categorization_engine": "deterministic_special_mapping",
+            "local_fallback_used": True,
+        })
         plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
-                "explanation": f"Normalized '{source_column}' using deterministic categorical rules."}
+                "explanation": f"Normalized '{source_column}' using deterministic categorical rules.",
+                "execution": execution.copy()}
     else:
         money_like = bool(re.search(r"(currency|price|amount|cost|fare|salary|revenue|sales|income|budget|fee|charge|value)", source_column, re.I))
         if money_like and not requested_categories:
             mapping = {v: ("Unknown" if v.strip() == "" else v) for v in values}
             categories = sorted(set(mapping.values()))
             fallback = unmatched_label
+            execution.update({
+                "categorization_engine": "deterministic_money_passthrough",
+                "currency_engine": "deterministic_passthrough",
+                "local_fallback_used": True,
+            })
             plan = {
                 "mapping": mapping,
                 "categories": categories,
                 "unmatchedLabel": fallback,
                 "explanation": f"Left monetary values in '{source_column}' unchanged because no currency conversion was requested.",
+                "execution": execution.copy(),
             }
         else:
             try:
+                execution.update({
+                    "gemini_attempted": not strict_enabled(),
+                    "raw_data_sent_to_ai": not strict_enabled(),
+                    "metadata_sent_to_ai": not strict_enabled(),
+                    "unique_values_sent_to_ai": not strict_enabled(),
+                })
                 if strict_enabled():
                     raise RuntimeError("Local processing mode: real worksheet values are not sent to the external AI provider.")
                 plan = await _ask_agent(user_request, source_column, values, requested_categories, unmatched_label)
@@ -342,12 +436,20 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
                 mapping = {str(k): str(v) for k, v in mapping_raw.items()}
                 categories = [str(x) for x in (plan.get("categories") or requested_categories) if str(x).strip()]
                 fallback = str(plan.get("unmatchedLabel") or unmatched_label)
+                execution.update({
+                    "ai_used": True,
+                    "categorization_engine": "gemini_assisted",
+                })
             except Exception as agent_exc:
                 print(f"[categorization_agent] LLM failed for {source_column}; using deterministic fallback: {agent_exc}")
                 mapping, categories, fallback_explanation = _deterministic_fallback_mapping(series)
                 fallback = unmatched_label
+                execution.update({
+                    "local_fallback_used": True,
+                    "categorization_engine": "deterministic_fallback",
+                })
                 plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
-                        "explanation": fallback_explanation}
+                        "explanation": fallback_explanation, "execution": execution.copy()}
     missing = [v for v in values if v not in mapping]
     if missing:
         # Never leave rows silently uncategorized.
@@ -371,5 +473,6 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         "distinct_values": len(values),
         "rows_affected": int(len(out)),
         "explanation": str(plan.get("explanation") or f"Categorized '{source_column}' into {len(categories)} categories."),
+        "execution": (plan.get("execution") if isinstance(plan, dict) else None) or execution,
     }
     return out, metadata
