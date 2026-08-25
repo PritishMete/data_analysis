@@ -5,7 +5,7 @@ import pandas as pd
 
 import categorization_agent as ca
 import main as backend_main
-from currency_utils import has_currency_conversion_intent, standardize_currency_value
+from currency_utils import detect_currency_from_value, has_currency_conversion_intent, standardize_currency_value
 from query_router import _detect_sentiment_intent
 
 
@@ -49,6 +49,9 @@ def test_currency_helpers_require_explicit_conversion_intent():
     assert standardize_currency_value("$1250") == "USD 1,250.00"
     assert standardize_currency_value("Aed 150") == "AED 150.00"
     assert standardize_currency_value("Rubel 2500") == "RUB 2,500.00"
+    assert standardize_currency_value("C$45") == "CAD 45.00"
+    assert standardize_currency_value("XYZ 500") == "XYZ 500"
+    assert detect_currency_from_value("C$45") == "CAD"
 
 
 def test_sentiment_requires_explicit_intent():
@@ -58,11 +61,11 @@ def test_sentiment_requires_explicit_intent():
     assert _detect_sentiment_intent("Show the review text.", columns) is None
 
 
-def test_gemini_is_primary_for_eligible_categorical_columns(monkeypatch):
+def test_gemini_mapping_is_applied_and_not_overwritten(monkeypatch):
     monkeypatch.setattr(ca, "strict_enabled", lambda: False)
 
     async def fake_ask(user_request, source_column, values, categories, unmatched):
-        mapping = ca._deterministic_special_mapping(values, source_column) or {v: v.title() for v in values}
+        mapping = {v: f"Gemini::{i}" for i, v in enumerate(values, start=1)}
         return {
             "categories": sorted(set(mapping.values())),
             "unmatchedLabel": unmatched,
@@ -71,14 +74,16 @@ def test_gemini_is_primary_for_eligible_categorical_columns(monkeypatch):
         }
 
     monkeypatch.setattr(ca, "_ask_agent", fake_ask)
-    df = pd.DataFrame({"Country": ["India", "india", "Idnia", "Uae"]})
+    df = pd.DataFrame({"Signal": ["alpha", "beta", "gamma"]})
 
     async def run():
-        return await ca.categorize_dataframe(df, "Country", "Country", "categorize Country")
+        return await ca.categorize_dataframe(df, "Signal", "Signal", "categorize signal")
 
     out, meta = asyncio.run(run())
     assert meta["execution"]["ai_used"] is True
-    assert out["Country"].tolist() == ["India", "India", "India", "United Arab Emirates"]
+    assert meta["execution"]["gemini_mapping_used"] is True
+    assert meta["execution"]["fallback_used"] is False
+    assert out["Signal"].tolist() == ["Gemini::1", "Gemini::2", "Gemini::3"]
     _assert_no_category_suffix(list(out.columns))
 
 
@@ -152,7 +157,7 @@ def test_bool_and_gender_variants_normalize_without_low_medium_high(monkeypatch)
 
     out, meta_bool, meta_gender = asyncio.run(run())
     assert out["Bool"].tolist() == ["Yes", "No", "Yes", "No", "Yes", "No", "Yes", "No"]
-    assert out["Gender"].tolist() == ["Female", "Female", "Female", "Male", "Male", "Male", "Unknown", "Female"]
+    assert out["Gender"].tolist() == ["Female", "Female", "Female", "Male", "Male", "Male", "Transgender", "Female"]
     assert "Low" not in out["Bool"].tolist()
     assert "Medium" not in out["Bool"].tolist()
     assert "High" not in out["Bool"].tolist()
@@ -178,11 +183,41 @@ def test_country_typo_fallback_is_high_confidence_without_numeric_binning(monkey
         "India",
         "India",
         "United Arab Emirates",
-        "Arab",
+        "United Arab Emirates",
     ]
     assert "Low" not in out["Country"].tolist()
     assert "Medium" not in out["Country"].tolist()
     assert "High" not in out["Country"].tolist()
+
+
+def test_semantic_aliases_are_preserved_when_gemini_fails(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise RuntimeError("gemini unavailable")
+
+    monkeypatch.setattr(ca, "_ask_agent", fail)
+    df = pd.DataFrame({
+        "Country": ["Arab", "Uae", "Uk"],
+        "Region": ["eu", "asia", "Middle East"],
+        "City": ["nyc", "moscow", "mumbai"],
+        "Gender": ["T", "Femalee", "M"],
+    })
+
+    async def run():
+        df1, meta_country = await ca.categorize_dataframe(df, "Country", "Country", "categorize country")
+        df2, meta_region = await ca.categorize_dataframe(df1, "Region", "Region", "categorize region")
+        df3, meta_city = await ca.categorize_dataframe(df2, "City", "City", "categorize city")
+        df4, meta_gender = await ca.categorize_dataframe(df3, "Gender", "Gender", "categorize gender")
+        return df4, meta_country, meta_region, meta_city, meta_gender
+
+    out, meta_country, meta_region, meta_city, meta_gender = asyncio.run(run())
+    assert out["Country"].tolist() == ["United Arab Emirates", "United Arab Emirates", "United Kingdom"]
+    assert out["Region"].tolist() == ["Europe", "Asia", "Middle East"]
+    assert out["City"].tolist() == ["New York", "Moscow", "Mumbai"]
+    assert out["Gender"].tolist() == ["Transgender", "Female", "Male"]
+    assert meta_country["execution"]["fallback_used"] is True
+    assert meta_region["execution"]["fallback_used"] is True
+    assert meta_city["execution"]["fallback_used"] is True
+    assert meta_gender["execution"]["fallback_used"] is True
 
 
 def test_numeric_measurements_remain_unchanged_under_generic_categorization(monkeypatch):

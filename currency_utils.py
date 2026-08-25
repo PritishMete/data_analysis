@@ -19,7 +19,7 @@ CURRENCY_ALIASES = {
     "sgd": "SGD", "singapore dollar": "SGD", "s$": "SGD",
     "jpy": "JPY", "yen": "JPY", "¥": "JPY",
     "cny": "CNY", "yuan": "CNY", "renminbi": "CNY", "元": "CNY",
-    "cad": "CAD", "australian dollar": "AUD", "aud": "AUD",
+    "cad": "CAD", "c$": "CAD", "canadian dollar": "CAD", "australian dollar": "AUD", "aud": "AUD",
 }
 SYMBOL_BY_CODE = {
     "USD": "$", "INR": "₹", "RUB": "₽", "BDT": "৳", "EUR": "€", "GBP": "£",
@@ -40,7 +40,7 @@ def normalize_currency(value: str | None) -> str | None:
     if s in CURRENCY_ALIASES:
         return CURRENCY_ALIASES[s]
     # Prefer explicit 3-letter codes embedded in natural language.
-    m = re.search(r"\b(usd|inr|rub|bdt|eur|gbp|aed|sgd|jpy|cny|cad|aud)\b", s)
+    m = re.search(r"\b(usd|inr|rub|bdt|eur|gbp|aed|sgd|jpy|cny|cad|aud|c\$|s\$)\b", s)
     return m.group(1).upper() if m else None
 
 
@@ -105,7 +105,8 @@ def standardize_currency_value(value: Any) -> str | Any:
     if source is None and amount is None:
         return value
     if source is None:
-        source = "USD"
+        # Preserve ambiguous values instead of inventing a currency code.
+        return value
     if amount is None:
         return source
     return f"{source} {amount:,.2f}"

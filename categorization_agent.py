@@ -287,6 +287,7 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
         country_aliases = {
             "india": "India", "ind": "India", "in": "India", "idnia": "India", "indai": "India",
             "uae": "United Arab Emirates", "unitedarabemirates": "United Arab Emirates",
+            "arab": "United Arab Emirates",
             "singapore": "Singapore", "singapor": "Singapore",
             "uk": "United Kingdom", "united kingdom": "United Kingdom",
             "us": "United States", "usa": "United States", "united states": "United States",
@@ -333,7 +334,7 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
             "jaipur": "Jaipur", "ahmedabad": "Ahmedabad",
             "dubai": "Dubai", "abu dhabi": "Abu Dhabi", "abudhabi": "Abu Dhabi",
             "london": "London", "singapore": "Singapore", "dhaka": "Dhaka",
-            "moscow": "Moscow", "new york": "New York", "newyork": "New York",
+            "moscow": "Moscow", "new york": "New York", "newyork": "New York", "nyc": "New York",
             "toronto": "Toronto",
         }
         out = {}
@@ -344,8 +345,8 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
 
     if "region" in name or name in {"area", "zone", "territory"}:
         region_aliases = {
-            "asia": "Asia", "ncr": "NCR", "middle east": "Middle East",
-            "middleeast": "Middle East", "europe": "Europe",
+            "asia": "Asia", "asia pacific": "Asia", "apac": "Asia", "ncr": "NCR", "middle east": "Middle East",
+            "middleeast": "Middle East", "eu": "Europe", "europe": "Europe",
             "north america": "North America", "northamerica": "North America",
             "south america": "South America", "southamerica": "South America",
             "africa": "Africa", "oceania": "Oceania",
@@ -368,8 +369,11 @@ def _deterministic_special_mapping(values: list[str], source_column: str) -> dic
             "femalee": "Female",
             "femle": "Female",
             "femaile": "Female",
+            "t": "Transgender",
+            "transgender": "Transgender",
+            "trans": "Transgender",
         }
-        canonicals = ["Male", "Female", "Non-binary"]
+        canonicals = ["Male", "Female", "Transgender", "Non-binary", "Other", "Unknown"]
         out = {}
         for original, v in low.items():
             matched = _fuzzy_lookup(v, gender_aliases, canonicals, max_distance=2)
@@ -438,6 +442,7 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
     # *_Category companion column for this operation.
 
     series = df[source_column]
+    original_series = series.copy()
     values = _sample_series_values(series)
     requested_categories = [str(x).strip() for x in (requested_categories or []) if str(x).strip()]
     unmatched_label = str(unmatched_label or "Other").strip() or "Other"
@@ -445,14 +450,22 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
     execution = {
         "ai_used": False,
         "gemini_attempted": False,
+        "gemini_request_success": False,
+        "gemini_response_parsed": False,
+        "gemini_mapping_used": False,
         "privacy_mode": "local_only" if strict_enabled() else "remote_allowed",
         "raw_data_sent_to_ai": False,
         "metadata_sent_to_ai": False,
         "unique_values_sent_to_ai": False,
         "local_fallback_used": False,
         "categorization_engine": "deterministic",
+        "engine_used": "deterministic",
+        "semantic_type": column_role,
         "currency_engine": "unused",
         "column_role": column_role,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "values_changed_count": 0,
     }
 
     if column_role in {"numeric_measure", "geographic_coordinate", "identifier", "datetime", "free_text", "sentiment_text", "protected_numeric"}:
@@ -478,8 +491,11 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         fallback = unmatched_label
         execution.update({
             "categorization_engine": "currency_standardization",
+            "engine_used": "currency_standardization",
             "currency_engine": "deterministic_standardization",
             "local_fallback_used": True,
+            "fallback_used": True,
+            "fallback_reason": "currency representation standardized locally",
         })
         plan = {
             "mapping": mapping,
@@ -512,6 +528,12 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
             execution.update({
                 "ai_used": True,
                 "categorization_engine": "gemini_assisted",
+                "engine_used": "gemini_assisted",
+                "gemini_request_success": True,
+                "gemini_response_parsed": True,
+                "gemini_mapping_used": True,
+                "fallback_used": False,
+                "fallback_reason": None,
             })
         except Exception as agent_exc:
             print(f"[categorization_agent] LLM failed for {source_column}; using deterministic fallback: {agent_exc}")
@@ -520,6 +542,9 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
             execution.update({
                 "local_fallback_used": True,
                 "categorization_engine": "deterministic_fallback",
+                "engine_used": "deterministic_fallback",
+                "fallback_used": True,
+                "fallback_reason": str(agent_exc),
             })
             plan = {"mapping": mapping, "categories": categories, "unmatchedLabel": fallback,
                     "explanation": fallback_explanation, "execution": execution.copy()}
@@ -536,6 +561,13 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
 
     out = df.copy()
     out[new_column] = out[source_column].map(lambda v: mapping.get("" if pd.isna(v) else str(v), fallback))
+    changed_count = 0
+    for before, after in zip(original_series.tolist(), out[new_column].tolist()):
+        if pd.isna(before) and pd.isna(after):
+            continue
+        if pd.isna(before) != pd.isna(after) or str(before) != str(after):
+            changed_count += 1
+    execution["values_changed_count"] = changed_count
     metadata = {
         "source_column": source_column,
         "new_column": new_column,
@@ -548,4 +580,8 @@ async def categorize_dataframe(df: pd.DataFrame, source_column: str, new_column:
         "explanation": str(plan.get("explanation") or f"Categorized '{source_column}' into {len(categories)} categories."),
         "execution": (plan.get("execution") if isinstance(plan, dict) else None) or execution,
     }
+    if isinstance(metadata["execution"], dict):
+        metadata["execution"].setdefault("semantic_type", column_role)
+        metadata["execution"].setdefault("engine_used", metadata["execution"].get("categorization_engine", "deterministic"))
+        metadata["execution"].setdefault("values_changed_count", changed_count)
     return out, metadata
