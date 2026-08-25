@@ -900,13 +900,15 @@ async def parse_agentic_command(
         # must remain ONE categorization operation. Do not collapse it to only the
         # first currency-looking column; the local executor will convert every
         # monetary column it can safely identify, then categorize the remaining columns.
-        compound_all = bool(re.search(r"\b(?:all|every)\s+columns?\b|\bcategorize\s+all\b", user_text or "", re.I)) and bool(categorize_request)
+        compound_all = bool(
+            re.search(r"\b(?:all|every)\s+columns?\b|\bcategorize\s+all\b|\bcategorize\s+columns?\b", user_text or "", re.I)
+        ) and bool(categorize_request)
         if target_currency and compound_all:
             cols = [str(c) for c in (available_columns or [])]
             return {
                 "action": "categorize",
                 "confidence": 1.0,
-                "message": f"Categorizing all {len(cols)} columns and converting detected currency values to {target_currency} locally.",
+                "message": f"Categorizing all {len(cols)} columns; convert currency to {target_currency} as a separate step.",
                 "categorize": {
                     "sourceColumn": cols[0] if cols else "",
                     "sourceColumns": cols,
@@ -914,7 +916,6 @@ async def parse_agentic_command(
                     "newColumnName": cols[0] if cols else "",
                     "categories": [],
                     "unmatchedLabel": "Other",
-                    "targetCurrency": target_currency,
                 },
             }
         if target_currency:
@@ -1050,7 +1051,7 @@ async def parse_agentic_command(
                         "categories": cfg.get("categories") or [],
                         "unmatchedLabel": cfg.get("unmatchedLabel") or "Other",
                     }
-                    if has_currency_conversion_intent(user_text):
+                    if has_currency_conversion_intent(user_text) and not (all_columns or len(sources) > 1):
                         parsed["categorize"]["targetCurrency"] = cfg.get("targetCurrency") or extract_target_currency(user_text)
                 parsed["message"] = parsed.get("message") or (f"Categorizing {len(sources)} columns in order." if len(sources) > 1 else f"Categorizing '{source}' in place.")
                 # A generic categorization request must never carry a stale
