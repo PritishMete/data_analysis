@@ -9,17 +9,19 @@ import urllib.request
 from typing import Any
 
 CURRENCY_ALIASES = {
-    "usd": "USD", "dollar": "USD", "dollars": "USD", "$": "USD",
-    "inr": "INR", "rupee": "INR", "rupees": "INR", "₹": "INR",
+    "usd": "USD", "us dollar": "USD", "us dollars": "USD", "us$": "USD", "$": "USD",
+    "inr": "INR", "rs": "INR", "rs.": "INR", "rupee": "INR", "rupees": "INR", "₹": "INR",
     "rub": "RUB", "ruble": "RUB", "rubles": "RUB", "rubel": "RUB", "rubels": "RUB", "rouble": "RUB", "roubles": "RUB", "₽": "RUB",
     "bdt": "BDT", "taka": "BDT", "৳": "BDT",
     "eur": "EUR", "euro": "EUR", "euros": "EUR", "€": "EUR",
     "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "£": "GBP",
     "aed": "AED", "dirham": "AED", "dirhams": "AED", "د.إ": "AED",
-    "sgd": "SGD", "singapore dollar": "SGD", "s$": "SGD",
+    "sgd": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD", "s$": "SGD",
     "jpy": "JPY", "yen": "JPY", "¥": "JPY",
     "cny": "CNY", "yuan": "CNY", "renminbi": "CNY", "元": "CNY",
-    "cad": "CAD", "c$": "CAD", "canadian dollar": "CAD", "australian dollar": "AUD", "aud": "AUD",
+    "cad": "CAD", "canadian dollar": "CAD", "canadian dollars": "CAD", "c$": "CAD",
+    "aud": "AUD", "australian dollar": "AUD", "australian dollars": "AUD", "a$": "AUD",
+    "hkd": "HKD", "hong kong dollar": "HKD", "hong kong dollars": "HKD", "hk$": "HKD",
 }
 SYMBOL_BY_CODE = {
     "USD": "$", "INR": "₹", "RUB": "₽", "BDT": "৳", "EUR": "€", "GBP": "£",
@@ -77,12 +79,56 @@ def detect_currency_from_value(value: Any) -> str | None:
         return None
     s = str(value).strip()
     low = s.lower()
-    # Explicit codes/names first.
-    for token, code in sorted(CURRENCY_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
-        if len(token) > 1 and re.search(r"(?<![a-z])" + re.escape(token) + r"(?![a-z])", low):
-            return code
-    for symbol, code in [("₹", "INR"), ("$", "USD"), ("₽", "RUB"), ("৳", "BDT"), ("€", "EUR"), ("£", "GBP"), ("¥", "JPY")]:
-        if symbol in s:
+    ordered_patterns: list[tuple[str, str, bool]] = [
+        (r"us\$", "USD", True),
+        (r"\bus dollar(?:s)?\b", "USD", True),
+        (r"\busd\b", "USD", True),
+        (r"s\$", "SGD", True),
+        (r"\bsingapore dollar(?:s)?\b", "SGD", True),
+        (r"\bsgd\b", "SGD", True),
+        (r"c\$", "CAD", True),
+        (r"\bcanadian dollar(?:s)?\b", "CAD", True),
+        (r"\bcad\b", "CAD", True),
+        (r"a\$", "AUD", True),
+        (r"\baustralian dollar(?:s)?\b", "AUD", True),
+        (r"\baud\b", "AUD", True),
+        (r"hk\$", "HKD", True),
+        (r"\bhong kong dollar(?:s)?\b", "HKD", True),
+        (r"\bhkd\b", "HKD", True),
+        (re.escape("د.إ"), "AED", True),
+        (r"\baed\b", "AED", True),
+        (r"\bdirham(?:s)?\b", "AED", True),
+        (r"₹", "INR", False),
+        (r"\binr\b", "INR", True),
+        (r"\brs\.?\b", "INR", True),
+        (r"\brupee(?:s)?\b", "INR", True),
+        (r"৳", "BDT", False),
+        (r"\bbdt\b", "BDT", True),
+        (r"\btaka\b", "BDT", True),
+        (r"₽", "RUB", False),
+        (r"\brub(?:le|les)?\b", "RUB", True),
+        (r"\brubel(?:s)?\b", "RUB", True),
+        (r"\brouble(?:s)?\b", "RUB", True),
+        (r"€", "EUR", False),
+        (r"\beur\b", "EUR", True),
+        (r"\beuro(?:s)?\b", "EUR", True),
+        (r"£", "GBP", False),
+        (r"\bgbp\b", "GBP", True),
+        (r"\bpound(?:s)?\b", "GBP", True),
+        (r"¥", "JPY", False),
+        (r"\bjpy\b", "JPY", True),
+        (r"\byen\b", "JPY", True),
+        (r"\bcny\b", "CNY", True),
+        (r"\byuan\b", "CNY", True),
+        (r"\brenminbi\b", "CNY", True),
+        (r"元", "CNY", False),
+        (r"\$", "USD", True),
+    ]
+    for pattern, code, is_regex in ordered_patterns:
+        if is_regex:
+            if re.search(pattern, low):
+                return code
+        elif pattern in s:
             return code
     return None
 
@@ -91,9 +137,9 @@ def standardize_currency_value(value: Any) -> str | Any:
     """Canonicalize a currency-like value without converting its amount.
 
     Examples:
-      "$1250" -> "USD 1,250.00"
+      "$1250" -> "USD 1250.00"
       "Aed 150" -> "AED 150.00"
-      "Rubel 2500" -> "RUB 2,500.00"
+      "Rubel 2500" -> "RUB 2500.00"
     """
     if value is None or isinstance(value, bool):
         return value
@@ -109,7 +155,7 @@ def standardize_currency_value(value: Any) -> str | Any:
         return value
     if amount is None:
         return source
-    return f"{source} {amount:,.2f}"
+    return f"{source} {amount:.2f}"
 
 
 def parse_amount(value: Any) -> float | None:
