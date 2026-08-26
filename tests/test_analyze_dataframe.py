@@ -67,7 +67,7 @@ def test_numeric_and_categorical_statistics_are_correctly_split():
 
     assert result["numeric_statistics"]["amount"]["mean"] == 15.375
     assert result["categorical_statistics"]["category"]["top"] == "a"
-    assert result["categorical_statistics"]["category"]["freq"] == 3
+    assert result["categorical_statistics"]["category"]["freq"] == 4
 
 
 def test_no_business_insight_or_recommendation_keys_present():

@@ -356,38 +356,11 @@ def analyze_dataframe(df: pd.DataFrame):
     }
     duplicate_count = int(df.duplicated().sum())
 
-    # -- Raw row previews/sample/describe (restored) -------------------------
-    # These were dropped in the grouped-stats refactor above under the
-    # reasoning that they're "actual data, or free text, neither of which is
-    # a structured metric" -- but the Flutter client's PreviewTables and
-    # DescribeMatrix widgets (lib/features/analysis/widgets/preview_tables.dart,
-    # describe_matrix.dart) read these three keys directly off the /analyze
-    # response and have never been migrated off them. Restoring them here
-    # rather than migrating those widgets, since this is the smaller/safer
-    # diff and doesn't touch the grouped summary/distribution/quality shape
-    # that quality_report.dart and overview_metrics.dart already depend on.
-    preview = df.head(15).fillna("").to_dict(orient="records")
-    sample = (
-        df.sample(min(10, len(df))).fillna("").to_dict(orient="records")
-        if len(df) > 0 else []
-    )
-    describe_records = (
-        describe_df.fillna("").reset_index().to_dict(orient="records")
-        if not describe_df.empty else []
-    )
-
     return {
         "summary": {
             "rows": int(df.shape[0]),
             "columns": int(df.shape[1]),
             "column_names": list(df.columns),
-            # Per-column pandas dtypes as plain strings (e.g. "int64",
-            # "float64", "object", "datetime64[ns]", "bool").
-            # df.dtypes.astype(str) is the canonical way to serialise the
-            # dtype Index as plain strings without special NumPy types.
-            # Placed inside "summary" so it follows the existing grouped
-            # shape that quality_report.dart / overview_metrics.dart depend on.
-            "dtypes": df.dtypes.astype(str).to_dict(),
         },
         "distribution": {
             "unique_values": unique_values,
@@ -401,13 +374,8 @@ def analyze_dataframe(df: pd.DataFrame):
             "count": duplicate_count,
         },
         "missing_values": missing_values,
-        "duplicate_values": duplicate_values,
         "numeric_statistics": numeric_statistics,
         "categorical_statistics": categorical_statistics,
-        # Legacy flat fields -- required by preview_tables.dart / describe_matrix.dart.
-        "preview": preview,
-        "sample": sample,
-        "describe": describe_records,
     }
 
 

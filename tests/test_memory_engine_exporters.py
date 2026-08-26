@@ -24,7 +24,7 @@ def _sales_df() -> pd.DataFrame:
 def _build(db_session):
     dataset_repo = DatasetRepository(db_session)
     registry_service = DatasetRegistryService(dataset_repo)
-    history_service = QueryHistoryService(QueryHistoryRepository(db_session))
+    history_service = QueryHistoryService(QueryHistoryRepository(db_session), dataset_repo)
     exporter = TrainingDatasetExporter(QueryHistoryRepository(db_session), dataset_repo)
     return registry_service, history_service, exporter
 
