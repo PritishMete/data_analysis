@@ -1,45 +1,11 @@
-# memory_engine/exporters.py
-# ─────────────────────────────────────────────────────────────────────────────
-# "ML Ready" step for this backend: turn the reusable experiences already
-# sitting in query_history into a flat, structured table a FUTURE training
-# job can consume directly — nothing in this file fits, trains, evaluates,
-# or even imports a model/ML library. It reads already-stored rows (via
-# QueryHistoryRepository) and reshapes them; that's the entire job.
-#
-# Exactly seven columns, per spec — no more, no less:
-#   intent              QueryHistory.intent
-#   question            QueryHistory.user_query
-#   sql                 QueryHistory.generated_sql
-#   pipeline            QueryHistory.python_pipeline (JSON-encoded — see below)
-#   execution_time_ms   QueryHistory.execution_time_ms
-#   feedback            QueryHistory.feedback_score
-#   dataset_type        datasets.Dataset.source_type, resolved via
-#                       QueryHistory.dataset_id (denormalized in at export
-#                       time — query_history itself has no dataset_type
-#                       column, and shouldn't grow one just for this: it
-#                       would just be a second copy of the Dataset
-#                       Registry's own source_type, going stale the moment
-#                       a dataset is re-typed).
-#
-# `pipeline` is JSON-encoded to a plain string column (json.dumps), even in
-# the Parquet output where a nested/struct column would otherwise be
-# possible. Deliberate: query_router.py's plan dicts and cleaning_ops.py's
-# steps lists don't share one fixed shape, and a column pyarrow has to
-# infer a schema for needs one; a plain string column sidesteps that
-# entirely and — just as importantly — keeps the CSV and Parquet outputs
-# schema-identical, which is one less thing a future training pipeline
-# needs to special-case per format.
-#
-# Why this lives in memory_engine/ rather than query_history/: query_history
-# is deliberately just the raw append-only log (see its own module
-# docstring) — reshaping that log into ML-ready tables is exactly the kind
-# of "future ML integration" surface memory_engine exists to own (see
-# contracts.py). datasets/ is only ever READ here (for source_type), never
-# written to.
-# ─────────────────────────────────────────────────────────────────────────────
+from __future__ import annotations
 
+import copy
 import io
 import json
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -47,36 +13,62 @@ from datasets.repository import DatasetRepository
 from query_history.models import QueryHistory
 from query_history.repository import QueryHistoryRepository
 
+from .collection import (
+    ExampleAssessment,
+    TrainingExportBundle,
+    TrainingExportPolicy,
+    _flatten_record,
+    assess_entry,
+    build_report,
+    persist_bundle,
+)
+
 TRAINING_EXPORT_COLUMNS: list[str] = [
-    "intent",
-    "question",
-    "sql",
-    "pipeline",
-    "execution_time_ms",
-    "feedback",
-    "dataset_type",
+    "input.intent",
+    "input.semantic_roles",
+    "input.predicate_graph.logical_structure",
+    "input.predicate_graph.predicate_count",
+    "input.predicate_graph.operators",
+    "input.step_count",
+    "output.tool_graph",
+    "metadata.quality",
+    "metadata.plan_source",
+    "metadata.execution_success",
+    "metadata.critic_passed",
+    "metadata.result_validation_passed",
+    "metadata.plan_completeness_passed",
+    "metadata.privacy_validation_passed",
+    "metadata.no_unresolved_ambiguity",
+    "metadata.no_critical_repair",
+    "metadata.repair_count",
+    "metadata.correction_state",
+    "metadata.planner_version",
+    "metadata.structural_fingerprint",
+    "metadata.split",
+    "metadata.source_record_id",
+    "metadata.source_kind",
 ]
 
-SUPPORTED_EXPORT_FORMATS: tuple[str, ...] = ("csv", "parquet")
-
-
-def _serialize_pipeline(value: dict | list | None) -> str | None:
-    """dict/list -> compact JSON string; None stays None (a real NULL in
-    both CSV and Parquet, not the string "None" or "null")."""
-    if value is None:
-        return None
-    return json.dumps(value, separators=(",", ":"), default=str)
+SUPPORTED_EXPORT_FORMATS: tuple[str, ...] = ("csv", "jsonl", "parquet", "report")
 
 
 class TrainingDatasetExporter:
-    """Prepares (never trains on) a flat table of past query executions for
-    a future ML training pipeline. See module docstring for the exact
-    column set and why each choice was made.
+    """Builds privacy-safe, structurally deduplicated training candidates.
+
+    The exporter never trains a model. It only reshapes already-stored
+    query history rows into a safe, future-ready training dataset and
+    accompanying report.
     """
 
-    def __init__(self, history_repository: QueryHistoryRepository, dataset_repository: DatasetRepository):
+    def __init__(
+        self,
+        history_repository: QueryHistoryRepository,
+        dataset_repository: DatasetRepository,
+        policy: TrainingExportPolicy | None = None,
+    ) -> None:
         self.history_repository = history_repository
         self.dataset_repository = dataset_repository
+        self.policy = policy or TrainingExportPolicy.from_env()
 
     # ── Collection ──────────────────────────────────────────────────────
 
@@ -89,20 +81,6 @@ class TrainingDatasetExporter:
         only_successful: bool = False,
         limit: int = 5000,
     ) -> list[QueryHistory]:
-        """Which rows to include is delegated entirely to
-        QueryHistoryRepository.list_candidates — the same general-purpose,
-        multi-dimension query memory_engine's own find_*() methods already
-        use, so this exporter adds no new query logic, just a different
-        output SHAPE for the same underlying data.
-
-        `only_successful` defaults to False (unlike
-        QueryHistoryRepository.list_for_training's True default): a future
-        model learning what NOT to produce needs failed executions too —
-        see query_history/models.py's module docstring on why `success` is
-        kept as a labeled column rather than filtered out at the source.
-        Callers who only want positive examples can pass
-        only_successful=True.
-        """
         return self.history_repository.list_candidates(
             organization_id=organization_id,
             dataset_id=dataset_id,
@@ -111,75 +89,175 @@ class TrainingDatasetExporter:
             limit=limit,
         )
 
-    # ── Shaping ─────────────────────────────────────────────────────────
+    # ── Assessment / selection ──────────────────────────────────────────
 
-    def to_records(self, entries: list[QueryHistory]) -> list[dict]:
-        """One dict per entry, exactly the seven columns in
-        TRAINING_EXPORT_COLUMNS — nothing else is exported, even though
-        QueryHistory has more fields available (e.g. success, planner_version,
-        rows_returned). Batches dataset_type lookups through a small local
-        cache keyed by dataset_id, so a 5000-row export against a handful of
-        datasets does a handful of lookups, not 5000.
-        """
-        dataset_type_by_id: dict[str, str | None] = {}
+    def assess(self, entries: list[QueryHistory]) -> list[ExampleAssessment]:
+        return [assess_entry(entry, self.policy) for entry in entries]
 
-        def _dataset_type(dataset_id: str | None) -> str | None:
-            if dataset_id is None:
-                return None
-            if dataset_id not in dataset_type_by_id:
-                dataset = self.dataset_repository.get_by_id(dataset_id)
-                dataset_type_by_id[dataset_id] = dataset.source_type if dataset is not None else None
-            return dataset_type_by_id[dataset_id]
+    def _select_assessments(self, assessments: list[ExampleAssessment]) -> tuple[list[ExampleAssessment], int]:
+        eligible_by_family: dict[str, list[ExampleAssessment]] = defaultdict(list)
+        for assessment in assessments:
+            if assessment.safe_record is not None and assessment.structural_fingerprint:
+                eligible_by_family[assessment.structural_fingerprint].append(assessment)
 
-        return [
+        selected: list[ExampleAssessment] = []
+        intent_counts: dict[str, int] = defaultdict(int)
+        tool_counts: dict[str, int] = defaultdict(int)
+        duplicates_removed = 0
+
+        family_order = sorted(
+            eligible_by_family.items(),
+            key=lambda item: (
+                -max((candidate.quality_score for candidate in item[1]), default=0.0),
+                item[0],
+            ),
+        )
+
+        for _, family in family_order:
+            family.sort(key=lambda candidate: (-candidate.quality_score, candidate.entry.id))
+            keep = family[: self.policy.max_examples_per_family]
+            dropped = family[self.policy.max_examples_per_family :]
+            for candidate in dropped:
+                if candidate.safe_record is not None:
+                    candidate.safe_record = None
+                candidate.eligible = False
+                candidate.rejection_reasons.append("duplicate_family")
+                duplicates_removed += 1
+
+            for candidate in keep:
+                if intent_counts[candidate.intent] >= self.policy.max_examples_per_intent:
+                    if candidate.safe_record is not None:
+                        candidate.safe_record = None
+                    candidate.eligible = False
+                    candidate.rejection_reasons.append("intent_cap_reached")
+                    continue
+                if tool_counts[candidate.tool_graph_key] >= self.policy.max_examples_per_tool_graph:
+                    if candidate.safe_record is not None:
+                        candidate.safe_record = None
+                    candidate.eligible = False
+                    candidate.rejection_reasons.append("tool_graph_cap_reached")
+                    continue
+
+                selected.append(candidate)
+                intent_counts[candidate.intent] += 1
+                tool_counts[candidate.tool_graph_key] += 1
+
+        return selected, duplicates_removed
+
+    def _finalize_record(self, assessment: ExampleAssessment) -> dict[str, Any]:
+        record = copy.deepcopy(assessment.safe_record or {})
+        metadata = dict(record.get("metadata") or {})
+        metadata.update(
             {
-                "intent": entry.intent,
-                "question": entry.user_query,
-                "sql": entry.generated_sql,
-                "pipeline": _serialize_pipeline(entry.python_pipeline),
-                "execution_time_ms": entry.execution_time_ms,
-                "feedback": entry.feedback_score,
-                "dataset_type": _dataset_type(entry.dataset_id),
+                "split": assessment.split,
+                "structural_fingerprint": assessment.structural_fingerprint,
+                "source_record_id": assessment.entry.id,
+                "source_kind": "experience",
+                "tool_graph_key": assessment.tool_graph_key,
+                "semantic_role_pattern": assessment.semantic_role_pattern,
+                "predicate_complexity": assessment.predicate_complexity,
+                "step_count": assessment.step_count,
             }
-            for entry in entries
-        ]
+        )
+        record["metadata"] = metadata
+        return record
 
-    def to_dataframe(self, entries: list[QueryHistory]) -> pd.DataFrame:
-        """Same seven columns as to_records(), as a DataFrame with nullable
-        dtypes on the two numeric columns — so a missing execution_time_ms
-        or feedback round-trips as an actual NULL in Parquet (and an empty
-        cell in CSV), not a silently-wrong placeholder like 0 or NaN-as-str.
-        """
-        records = self.to_records(entries)
-        df = pd.DataFrame(records, columns=TRAINING_EXPORT_COLUMNS)
-        df["execution_time_ms"] = df["execution_time_ms"].astype("Float64")
-        df["feedback"] = df["feedback"].astype("Int64")
-        return df
+    def build_bundle(
+        self,
+        entries: list[QueryHistory],
+        *,
+        persist: bool = False,
+        output_dir: str | Path | None = None,
+    ) -> TrainingExportBundle:
+        assessments = self.assess(entries)
+        selected_assessments, duplicates_removed = self._select_assessments(assessments)
+        records = [self._finalize_record(assessment) for assessment in selected_assessments]
+
+        split_buckets: dict[str, list[dict[str, Any]]] = {"train": [], "validation": [], "test": []}
+        for record in records:
+            split = str((record.get("metadata") or {}).get("split") or "train")
+            if split not in split_buckets:
+                split = "train"
+            split_buckets[split].append(record)
+
+        report = build_report(
+            assessments,
+            records,
+            policy=self.policy,
+            duplicates_removed=duplicates_removed,
+        )
+        bundle = TrainingExportBundle(records=records, report=report, splits=split_buckets)
+        if persist:
+            bundle = persist_bundle(bundle, output_dir=Path(output_dir) if output_dir is not None else None)
+        return bundle
+
+    def collect_bundle(
+        self,
+        *,
+        organization_id: str | None = None,
+        dataset_id: str | None = None,
+        schema_hash: str | None = None,
+        only_successful: bool = False,
+        limit: int = 5000,
+        persist: bool = False,
+        output_dir: str | Path | None = None,
+    ) -> TrainingExportBundle:
+        entries = self.collect(
+            organization_id=organization_id,
+            dataset_id=dataset_id,
+            schema_hash=schema_hash,
+            only_successful=only_successful,
+            limit=limit,
+        )
+        return self.build_bundle(entries, persist=persist, output_dir=output_dir)
 
     # ── Serialization ───────────────────────────────────────────────────
-    # Both return raw bytes (never write to disk themselves) so a caller —
-    # e.g. memory_engine/routes.py's /training-export endpoint — can stream
-    # the result straight into an HTTP response or hand it to whatever
-    # storage it likes, without this module needing an opinion on where
-    # exports live.
 
-    def export_csv(self, entries: list[QueryHistory]) -> bytes:
-        df = self.to_dataframe(entries)
-        return df.to_csv(index=False).encode("utf-8")
+    def _records_dataframe(self, records: list[dict[str, Any]]) -> pd.DataFrame:
+        flattened = [_flatten_record(record) for record in records]
+        df = pd.DataFrame(flattened, columns=TRAINING_EXPORT_COLUMNS)
+        return df
 
-    def export_parquet(self, entries: list[QueryHistory]) -> bytes:
-        df = self.to_dataframe(entries)
+    def render_csv(self, records: list[dict[str, Any]]) -> bytes:
+        return self._records_dataframe(records).to_csv(index=False).encode("utf-8")
+
+    def render_jsonl(self, records: list[dict[str, Any]]) -> bytes:
+        lines = [json.dumps(record, ensure_ascii=False, sort_keys=True, default=str) for record in records]
+        return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+    def render_parquet(self, records: list[dict[str, Any]]) -> bytes:
         buffer = io.BytesIO()
-        df.to_parquet(buffer, index=False, engine="pyarrow")
+        self._records_dataframe(records).to_parquet(buffer, index=False, engine="pyarrow")
         return buffer.getvalue()
 
+    def export_csv(self, entries: list[QueryHistory]) -> bytes:
+        bundle = self.build_bundle(entries)
+        return self.render_csv(bundle.records)
+
+    def export_jsonl(self, entries: list[QueryHistory]) -> bytes:
+        bundle = self.build_bundle(entries)
+        return self.render_jsonl(bundle.records)
+
+    def export_parquet(self, entries: list[QueryHistory]) -> bytes:
+        bundle = self.build_bundle(entries)
+        return self.render_parquet(bundle.records)
+
     def export(self, entries: list[QueryHistory], *, fmt: str) -> bytes:
-        """Single entry point taking a format string — what
-        memory_engine/routes.py's endpoint calls, so adding a third format
-        later is a one-line addition here rather than a new route."""
         fmt = fmt.lower()
         if fmt == "csv":
             return self.export_csv(entries)
+        if fmt == "jsonl":
+            return self.export_jsonl(entries)
         if fmt == "parquet":
             return self.export_parquet(entries)
+        raise ValueError(f"unsupported export format: {fmt!r} (expected one of {SUPPORTED_EXPORT_FORMATS})")
+
+    def render(self, records: list[dict[str, Any]], *, fmt: str) -> bytes:
+        fmt = fmt.lower()
+        if fmt == "csv":
+            return self.render_csv(records)
+        if fmt == "jsonl":
+            return self.render_jsonl(records)
+        if fmt == "parquet":
+            return self.render_parquet(records)
         raise ValueError(f"unsupported export format: {fmt!r} (expected one of {SUPPORTED_EXPORT_FORMATS})")
