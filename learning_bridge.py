@@ -83,6 +83,17 @@ def _infer_intent(user_text: str) -> str:
     return "analysis"
 
 
+def _has_numeric_threshold(text: str) -> bool:
+    normalized = _normalize_text(text)
+    return bool(
+        re.search(
+            r"\b(?:above|over|greater than|more than|at least|below|under|less than|equal to|equals?|between)\b",
+            normalized,
+            flags=re.I,
+        )
+    )
+
+
 def _query_features_payload(intent: str, fields: list[dict[str, Any]]) -> dict[str, Any]:
     semantic_roles = [str(field.get("semantic_role") or "unknown") for field in fields]
     operator_hints: list[str] = []
@@ -171,6 +182,7 @@ class SafeQueryAbstraction:
 
     def to_plan_request(self) -> dict[str, Any]:
         return {
+            "text": self.anonymized_text or self.text,
             "intent": self.intent,
             "query_features": self.query_features,
             "dataset_profile": {"fields": [field.to_dict() for field in self.fields]},
@@ -388,6 +400,11 @@ def build_safe_query_abstraction(
         reverse_map = {field.id: str(column) for column, field in zip(df.columns, fields)}
 
     intent = _infer_intent(user_text)
+    numeric_role_family = {"numeric_metric", "rating_metric", "currency_metric", "percentage", "count"}
+    if intent == "analysis" and fields and _has_numeric_threshold(safe_text) and any(
+        field.semantic_role in numeric_role_family for field in fields
+    ):
+        intent = "filter"
     query_features = _query_features_payload(intent, [field.to_dict() for field in fields])
     anonymized_text = sanitize_user_text(safe_text, columns=list(df.columns), df=df)
     dataset_semantic_signature = None
