@@ -1,3 +1,4 @@
+import asyncio
 import re
 import time
 import logging
@@ -25,11 +26,13 @@ from location_agent import enrich_rows
 from query_router import handle_smart_query
 from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
+from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
 from common.excel_context import ExcelContextError, scan_workbook
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
 
+_LEARNING_EVENT_TASKS: set[asyncio.Task[Any]] = set()
 
 from common.json_safe import to_json_safe
 
@@ -76,6 +79,37 @@ def smart_query_error_response(
         operation=operation,
         errors=[{"error_type": error_type, "message": message}],
     )
+
+
+async def _record_learning_event(
+    *,
+    text: str,
+    df: pd.DataFrame,
+    sheets: list,
+    result: dict[str, Any],
+) -> None:
+    try:
+        abstraction = build_safe_query_abstraction(text, df, sheets)
+        event = build_learning_event(user_text=text, result=result if isinstance(result, dict) else {}, abstraction=abstraction)
+        await get_learning_bridge().ingest(event)
+    except Exception:
+        logger.exception("[/smart_query] Failed to record a learning event")
+
+
+def _queue_learning_event(
+    *,
+    text: str,
+    df: pd.DataFrame,
+    sheets: list,
+    result: dict[str, Any],
+) -> None:
+    try:
+        task = asyncio.create_task(_record_learning_event(text=text, df=df, sheets=sheets, result=result))
+    except RuntimeError:
+        logger.debug("[/smart_query] No running event loop available for learning event scheduling")
+        return
+    _LEARNING_EVENT_TASKS.add(task)
+    task.add_done_callback(_LEARNING_EVENT_TASKS.discard)
 
 # ── Enterprise Analytics Platform extensions (new, additive) ────────────────
 # Everything above this line is completely untouched. These imports bring in
@@ -1646,6 +1680,7 @@ async def smart_query(
             sheets = []
 
         result = await handle_smart_query(text, df, sheets)
+        _queue_learning_event(text=text, df=df, sheets=sheets, result=result if isinstance(result, dict) else {})
         if excel_context and isinstance(result, dict):
             result["excel_context"] = excel_context
 
@@ -1664,6 +1699,7 @@ async def smart_query(
                 extra_operation_fields={"exception": str(e)},
             ))
             json.dumps(fallback, allow_nan=False)  # final safety check before we trust this is returnable
+            _queue_learning_event(text=text, df=df if "df" in locals() else pd.DataFrame(), sheets=sheets if "sheets" in locals() else [], result=fallback)
         except Exception:
             # json_safe() is designed to never raise and always produce
             # something json.dumps can handle, but if str(e) itself somehow

@@ -71,6 +71,7 @@ from common.json_safe import to_json_safe
 from common.response_envelope import smart_query_envelope
 from sentiment_agent import analyze_sentiment
 from privacy_context import strict_enabled, safe_columns, sanitize_user_text, remap_plan, value_aliases
+from learning_bridge import build_safe_query_abstraction, get_learning_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,57 @@ def _operation_error_response(message: str, *, error_type: str = "INTERNAL_ERROR
         errors=[{"error_type": error_type, "message": message}],
     )
     return to_json_safe(envelope)
+
+
+async def _try_learning_plan(
+    user_text: str,
+    df: pd.DataFrame,
+    available_sheets: list,
+) -> dict | None:
+    """Try the privacy-safe learner before Gemini.
+
+    The learner only sees aliased columns and sanitized text. If it returns a
+    confident SQL plan, we remap the aliases back to the live dataframe and
+    execute it locally. Any bridge failure falls through silently to the
+    existing router.
+    """
+    try:
+        abstraction = build_safe_query_abstraction(user_text, df, available_sheets)
+        bridge = get_learning_bridge()
+        learning_plan = await bridge.plan(abstraction)
+        if learning_plan is None or not learning_plan.accepted:
+            return None
+        learned_plan = learning_plan.remap_plan() or learning_plan.plan
+        if not learned_plan or not isinstance(learned_plan, dict):
+            return None
+        sql = build_sql_from_plan(learned_plan, list(df.columns))
+        result = _execute_sql(sql, df)
+        return to_json_safe(smart_query_envelope(
+            success=True,
+            route="sql",
+            confidence=learning_plan.confidence,
+            message="Reused a learned plan template before Gemini.",
+            plan=learned_plan,
+            sql=sql,
+            result=result,
+            metadata={
+                "learning": {
+                    "used": True,
+                    "plan_source": learning_plan.plan_source,
+                    "plan_template_id": learning_plan.plan_template_id,
+                    "skill_id": learning_plan.skill_id,
+                    "confidence": learning_plan.confidence,
+                }
+            },
+            plan_source=learning_plan.plan_source,
+            plan_template_id=learning_plan.plan_template_id,
+            skill_id=learning_plan.skill_id,
+        ))
+    except PlanError as e:
+        logger.info("[query_router] learned plan could not be executed safely: %s", e)
+    except Exception:
+        logger.exception("[query_router] learner bridge failed; falling back to Gemini")
+    return None
 
 # Single shared engine instance — stateless, see common/transformations/
 # transformation_engine.py. The fast-path below routes ANY transformation
@@ -941,6 +993,9 @@ async def handle_smart_query(
     if sentiment_decision is not None:
         decision = sentiment_decision
     else:
+        learned_response = await _try_learning_plan(user_text, df, available_sheets)
+        if learned_response is not None:
+            return learned_response
         try:
             decision = await _run_router_agent(user_text, available_columns, df)
         except Exception as e:
