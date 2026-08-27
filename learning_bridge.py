@@ -716,6 +716,7 @@ class LearningBridgeClient:
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         if not self.enabled or self._circuit_open():
             return None
+        logger.info("Insight Learning POST %s", path)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -729,6 +730,7 @@ class LearningBridgeClient:
                 parsed = json.loads(response_body) if response_body else {}
                 if isinstance(parsed, dict) and parsed:
                     self._register_success()
+                    logger.info("Insight Learning POST %s succeeded", path)
                     return parsed
                 self._register_failure()
                 return None
@@ -792,6 +794,7 @@ class _LegacyLearningBridgeClient:
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         if not self.enabled:
             return None
+        logger.info("Insight Learning POST %s", path)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -802,7 +805,10 @@ class _LegacyLearningBridgeClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 response_body = response.read().decode("utf-8")
-                return json.loads(response_body) if response_body else {}
+                parsed = json.loads(response_body) if response_body else {}
+                if isinstance(parsed, dict) and parsed:
+                    logger.info("Insight Learning POST %s succeeded", path)
+                return parsed
         except urllib.error.HTTPError as exc:
             try:
                 logger.warning("Insight Learning HTTP %s on %s: %s", exc.code, path, exc.read().decode("utf-8", errors="ignore"))

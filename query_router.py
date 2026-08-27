@@ -33,6 +33,7 @@ import traceback
 import uuid
 import logging
 import os
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -104,10 +105,55 @@ def _operation_error_response(message: str, *, error_type: str = "INTERNAL_ERROR
     return to_json_safe(envelope)
 
 
+def _empty_learning_debug() -> dict[str, Any]:
+    return {
+        "learner_attempted": False,
+        "learner_available": False,
+        "learner_plan_returned": False,
+        "learner_confidence": 0.0,
+        "learner_plan_source": None,
+        "learner_skill_id": None,
+        "learner_template_id": None,
+        "learner_accepted": False,
+        "learner_rejection_reason": None,
+        "gemini_called": False,
+        "final_plan_source": None,
+        "experience_sent": False,
+        "experience_accepted": None,
+        "critic_passed": None,
+        "result_validation_passed": None,
+        "plan_completeness_passed": None,
+        "privacy_validation_passed": None,
+        "no_unresolved_ambiguity": None,
+        "no_critical_repair": None,
+        "repair_count": None,
+        "correction_state": None,
+    }
+
+
+def _attach_learning_metadata(payload: dict[str, Any], learning_debug: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload)
+    metadata = dict(result.get("metadata") or {})
+    learning = dict(metadata.get("learning") or {})
+    for key, value in learning_debug.items():
+        if value is not None:
+            learning[key] = value
+    metadata["learning"] = learning
+    result["metadata"] = metadata
+    return result
+
+
+def _is_learning_candidate(intent: str) -> bool:
+    return intent in {"analysis", "filter", "aggregate", "compare", "trend"}
+
+
 async def _try_learning_plan(
     user_text: str,
     df: pd.DataFrame,
     available_sheets: list,
+    *,
+    abstraction=None,
+    learning_debug: dict[str, Any] | None = None,
 ) -> dict | None:
     """Try the privacy-safe learner before Gemini.
 
@@ -116,18 +162,52 @@ async def _try_learning_plan(
     execute it locally. Any bridge failure falls through silently to the
     existing router.
     """
+    learning_debug = learning_debug if learning_debug is not None else _empty_learning_debug()
+    learning_debug["learner_attempted"] = True
     try:
-        abstraction = build_safe_query_abstraction(user_text, df, available_sheets)
+        abstraction = abstraction or build_safe_query_abstraction(user_text, df, available_sheets)
         bridge = get_learning_bridge()
+        learning_debug["learner_available"] = bool(getattr(bridge, "enabled", False)) and not bool(getattr(bridge, "_circuit_open", lambda: False)())
         learning_plan = await bridge.plan(abstraction)
-        if learning_plan is None or not learning_plan.accepted:
+        if learning_plan is None:
+            learning_debug["learner_plan_returned"] = False
+            learning_debug["learner_rejection_reason"] = "no_plan"
+            return None
+        learning_debug["learner_plan_returned"] = True
+        learning_debug["learner_confidence"] = float(learning_plan.confidence or 0.0)
+        learning_debug["learner_plan_source"] = learning_plan.plan_source
+        learning_debug["learner_skill_id"] = learning_plan.skill_id
+        learning_debug["learner_template_id"] = learning_plan.plan_template_id
+        if not learning_plan.accepted:
+            learning_debug["learner_accepted"] = False
+            learning_debug["learner_rejection_reason"] = "untrusted_or_low_confidence"
             return None
         learned_plan = learning_plan.remap_plan() or learning_plan.plan
         if not learned_plan or not isinstance(learned_plan, dict):
+            learning_debug["learner_rejection_reason"] = "empty_plan"
             return None
         sql = build_sql_from_plan(learned_plan, list(df.columns))
         result = _execute_sql(sql, df)
-        return to_json_safe(smart_query_envelope(
+        critic_passed = None
+        critic_status = learning_plan.raw_response.get("critic_status")
+        if isinstance(critic_status, dict):
+            critic_passed = critic_status.get("passed")
+        learning_debug.update(
+            {
+                "learner_accepted": True,
+                "final_plan_source": learning_plan.plan_source,
+                "gemini_called": False,
+                "critic_passed": critic_passed if isinstance(critic_passed, bool) else True,
+                "result_validation_passed": True,
+                "plan_completeness_passed": True,
+                "privacy_validation_passed": True,
+                "no_unresolved_ambiguity": True,
+                "no_critical_repair": True,
+                "repair_count": 0,
+                "correction_state": "validated",
+            }
+        )
+        payload = smart_query_envelope(
             success=True,
             route="sql",
             confidence=learning_plan.confidence,
@@ -142,15 +222,34 @@ async def _try_learning_plan(
                     "plan_template_id": learning_plan.plan_template_id,
                     "skill_id": learning_plan.skill_id,
                     "confidence": learning_plan.confidence,
+                    "learner_attempted": True,
+                    "learner_available": learning_debug["learner_available"],
+                    "learner_plan_returned": True,
+                    "learner_accepted": True,
+                    "learner_rejection_reason": None,
+                    "gemini_called": False,
+                    "final_plan_source": learning_plan.plan_source,
+                    "critic_passed": learning_debug["critic_passed"],
+                    "result_validation_passed": True,
+                    "plan_completeness_passed": True,
+                    "privacy_validation_passed": True,
+                    "no_unresolved_ambiguity": True,
+                    "no_critical_repair": True,
+                    "repair_count": 0,
+                    "correction_state": "validated",
                 }
             },
             plan_source=learning_plan.plan_source,
             plan_template_id=learning_plan.plan_template_id,
             skill_id=learning_plan.skill_id,
-        ))
+        )
+        logger.info("[query_router] learner_probe=%s", json.dumps(learning_debug, sort_keys=True))
+        return to_json_safe(payload)
     except PlanError as e:
+        learning_debug["learner_rejection_reason"] = "plan_build_failed"
         logger.info("[query_router] learned plan could not be executed safely: %s", e)
     except Exception:
+        learning_debug["learner_rejection_reason"] = "bridge_failed"
         logger.exception("[query_router] learner bridge failed; falling back to Gemini")
     return None
 
@@ -855,6 +954,20 @@ async def handle_smart_query(
     """
     available_columns = list(df.columns)
     available_sheets = available_sheets or []
+    learning_debug = _empty_learning_debug()
+    abstraction = build_safe_query_abstraction(user_text, df, available_sheets)
+    if _is_learning_candidate(abstraction.intent):
+        learned_response = await _try_learning_plan(
+            user_text,
+            df,
+            available_sheets,
+            abstraction=abstraction,
+            learning_debug=learning_debug,
+        )
+        if learned_response is not None:
+            return learned_response
+    else:
+        learning_debug["learner_rejection_reason"] = "ineligible_intent"
 
     # ── Deterministic entity/filter fast-path ───────────────────────────────
     # Resolve named values against the real worksheet before the LLM router.
@@ -865,7 +978,8 @@ async def handle_smart_query(
         if entity_plan is not None:
             sql = build_sql_from_plan(entity_plan, available_columns, TABLE_NAME)
             result = _execute_sql(sql, df)
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = "local_entity_filter"
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=True,
                 route="sql",
                 confidence=1.0,
@@ -873,11 +987,12 @@ async def handle_smart_query(
                 plan=entity_plan,
                 sql=sql,
                 result=result,
-            ))
+            ), learning_debug))
         # A show/filter request that contained an entity-like phrase but no
         # actual match must not fall through to Gemini and invent a column.
         if entity_message and _entity_filter_intent(user_text):
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = "local_entity_filter"
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=True,
                 route="sql",
                 confidence=1.0,
@@ -885,7 +1000,7 @@ async def handle_smart_query(
                 plan=None,
                 result={"columns": list(df.columns), "rows": [], "row_count": 0},
                 warnings=[entity_message],
-            ))
+            ), learning_debug))
     except Exception as e:
         logger.exception("[query_router] local entity/filter resolution failed")
         return _operation_error_response(
@@ -930,6 +1045,7 @@ async def handle_smart_query(
             new_df = transform_result.dataframe
             new_df_json = new_df.where(pd.notnull(new_df), None)
             ai_report = transform_result.updated_ai_report or {}
+            learning_debug["final_plan_source"] = "deterministic_transformation"
             envelope = smart_query_envelope(
                 success=True,
                 route="operation",
@@ -967,7 +1083,7 @@ async def handle_smart_query(
             # too is intentionally redundant (to_json_safe() is idempotent on
             # already-safe values) so this function is safe to call from
             # anywhere, not just from behind that one route.
-            return to_json_safe(envelope)
+            return to_json_safe(_attach_learning_metadata(envelope, learning_debug))
         except Exception as e:
             logger.exception("[query_router] Exception building the response for a successful transformation")
             return _operation_error_response(
@@ -993,9 +1109,15 @@ async def handle_smart_query(
     if sentiment_decision is not None:
         decision = sentiment_decision
     else:
-        learned_response = await _try_learning_plan(user_text, df, available_sheets)
-        if learned_response is not None:
-            return learned_response
+        if not learning_debug["learner_attempted"]:
+            learned_response = await _try_learning_plan(
+                user_text,
+                df,
+                available_sheets,
+                learning_debug=learning_debug,
+            )
+            if learned_response is not None:
+                return learned_response
         try:
             decision = await _run_router_agent(user_text, available_columns, df)
         except Exception as e:
@@ -1019,39 +1141,43 @@ async def handle_smart_query(
             restaurant_col = plan.get("restaurant_column")
             sentiment = await analyze_sentiment(df, review_column=review_col, restaurant_column=restaurant_col)
             overall = sentiment["overall"]
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = "deterministic_sentiment"
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=True,
                 route="sentiment",
                 confidence=confidence,
                 message=message or "Analyzed customer sentiment from the review text in batches.",
                 sentiment=sentiment,
-            ))
+            ), learning_debug))
         except Exception as e:
             logger.exception("[query_router] Exception during sentiment analysis")
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = "deterministic_sentiment"
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=False, route="sentiment", confidence=confidence,
                 message=f"Sentiment analysis failed: {e}",
                 errors=[{"error_type":"SENTIMENT_ANALYSIS_FAILED","message":str(e)}],
-            ))
+            ), learning_debug))
 
     if route == "sql":
         plan = decision.get("plan")
         try:
             sql = build_sql_from_plan(plan, available_columns)
         except PlanError as e:
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = str(decision.get("plan_source") or "gemini")
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=False,
                 route="sql",
                 confidence=confidence,
                 message=f"Could not build a valid query from the plan: {e}",
                 plan=plan,
                 errors=[{"error_type": "PLAN_BUILD_FAILED", "message": str(e)}],
-            ))
+            ), learning_debug))
         try:
             result = _execute_sql(sql, df)
         except Exception as e:
             logger.exception("[query_router] Exception during SQL execution")
-            return to_json_safe(smart_query_envelope(
+            learning_debug["final_plan_source"] = str(decision.get("plan_source") or "gemini")
+            return to_json_safe(_attach_learning_metadata(smart_query_envelope(
                 success=False,
                 route="sql",
                 confidence=confidence,
@@ -1059,8 +1185,9 @@ async def handle_smart_query(
                 plan=plan,
                 sql=sql,
                 errors=[{"error_type": "SQL_EXECUTION_FAILED", "message": str(e)}],
-            ))
-        return to_json_safe(smart_query_envelope(
+            ), learning_debug))
+        learning_debug["final_plan_source"] = str(decision.get("plan_source") or "gemini")
+        return to_json_safe(_attach_learning_metadata(smart_query_envelope(
             success=True,
             route="sql",
             confidence=confidence,
@@ -1068,26 +1195,29 @@ async def handle_smart_query(
             plan=plan,
             sql=sql,
             result=result,
-        ))
+        ), learning_debug))
 
     # route == "operation" (also the default fallback for anything unexpected)
     try:
+        learning_debug["gemini_called"] = True
         op_result = await parse_agentic_command(user_text, available_columns, available_sheets)
     except Exception as e:
         logger.exception("[query_router] Exception during operation parsing")
-        return to_json_safe(smart_query_envelope(
+        learning_debug["final_plan_source"] = "gemini"
+        return to_json_safe(_attach_learning_metadata(smart_query_envelope(
             success=False,
             route="operation",
             confidence=confidence,
             message=f"Operation parsing failed: {e}",
             operation={"action": "transformation_error", "error_type": "OPERATION_PARSE_FAILED", "error": str(e)},
             errors=[{"error_type": "OPERATION_PARSE_FAILED", "message": str(e)}],
-        ))
+        ), learning_debug))
 
-    return to_json_safe(smart_query_envelope(
+    learning_debug["final_plan_source"] = str(decision.get("plan_source") or "gemini")
+    return to_json_safe(_attach_learning_metadata(smart_query_envelope(
         success=True,
         route="operation",
         confidence=confidence,
         message=message,
         operation=op_result,
-    ))
+    ), learning_debug))

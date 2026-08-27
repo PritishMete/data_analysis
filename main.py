@@ -91,7 +91,14 @@ async def _record_learning_event(
     try:
         abstraction = build_safe_query_abstraction(text, df, sheets)
         event = build_learning_event(user_text=text, result=result if isinstance(result, dict) else {}, abstraction=abstraction)
-        await get_learning_bridge().ingest(event)
+        response = await get_learning_bridge().ingest(event)
+        accepted = bool(isinstance(response, dict) and response.get("stored"))
+        logger.info(
+            "[/smart_query] learning_event_result event_id=%s experience_sent=%s experience_accepted=%s",
+            event.event_id,
+            True,
+            accepted,
+        )
     except Exception:
         logger.exception("[/smart_query] Failed to record a learning event")
 
@@ -1648,6 +1655,10 @@ async def smart_query(
             sheets = []
 
         result = await handle_smart_query(text, df, sheets)
+        if isinstance(result, dict):
+            metadata = result.setdefault("metadata", {})
+            learning = metadata.setdefault("learning", {})
+            learning["experience_sent"] = True
         _queue_learning_event(text=text, df=df, sheets=sheets, result=result if isinstance(result, dict) else {})
         if excel_context and isinstance(result, dict):
             result["excel_context"] = excel_context

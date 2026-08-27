@@ -41,7 +41,17 @@ def _free_port() -> int:
 
 def _python_executable() -> Path:
     if STUDENT_PYTHON.exists():
-        return STUDENT_PYTHON
+        try:
+            probe = subprocess.run(
+                [str(STUDENT_PYTHON), "-c", "import uvicorn"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if probe.returncode == 0:
+                return STUDENT_PYTHON
+        except Exception:
+            pass
     fallback = Path(sys.executable)
     return fallback
 

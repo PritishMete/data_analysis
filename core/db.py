@@ -24,11 +24,26 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./enterprise_registry.db")
+
+def _default_sqlite_path() -> Path:
+    runtime_root = Path(os.environ.get("DATA_ANALYSIS_RUNTIME_DIR", Path(__file__).resolve().parents[1] / "runtime"))
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    return runtime_root / "enterprise_registry.db"
+
+
+def _database_url() -> str:
+    override = os.environ.get("DATABASE_URL")
+    if override:
+        return override
+    return f"sqlite:///{_default_sqlite_path().as_posix()}"
+
+
+DATABASE_URL = _database_url()
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
