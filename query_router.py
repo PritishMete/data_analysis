@@ -75,6 +75,7 @@ from privacy_context import strict_enabled, safe_columns, sanitize_user_text, re
 from learning_bridge import build_safe_query_abstraction, get_learning_bridge
 
 logger = logging.getLogger(__name__)
+GEMINI_CALL_COUNT = 0
 
 
 def _operation_error_response(message: str, *, error_type: str = "INTERNAL_ERROR", confidence: float = 0.0, **extra) -> dict:
@@ -117,6 +118,7 @@ def _empty_learning_debug() -> dict[str, Any]:
         "learner_accepted": False,
         "learner_rejection_reason": None,
         "gemini_called": False,
+        "gemini_call_count": GEMINI_CALL_COUNT,
         "final_plan_source": None,
         "experience_sent": False,
         "experience_accepted": None,
@@ -197,6 +199,7 @@ async def _try_learning_plan(
                 "learner_accepted": True,
                 "final_plan_source": learning_plan.plan_source,
                 "gemini_called": False,
+                "gemini_call_count": GEMINI_CALL_COUNT,
                 "critic_passed": critic_passed if isinstance(critic_passed, bool) else True,
                 "result_validation_passed": True,
                 "plan_completeness_passed": True,
@@ -228,6 +231,7 @@ async def _try_learning_plan(
                     "learner_accepted": True,
                     "learner_rejection_reason": None,
                     "gemini_called": False,
+                    "gemini_call_count": GEMINI_CALL_COUNT,
                     "final_plan_source": learning_plan.plan_source,
                     "critic_passed": learning_debug["critic_passed"],
                     "result_validation_passed": True,
@@ -946,6 +950,7 @@ async def handle_smart_query(
     df: pd.DataFrame,
     available_sheets: list | None = None,
 ) -> dict:
+    global GEMINI_CALL_COUNT
     """Decides SQL vs spreadsheet-operation for a natural-language request.
     For "sql", the LLM only produces a structured plan; build_sql_from_plan
     (pure Python, no LLM) turns that into the actual query against whichever
@@ -1200,6 +1205,8 @@ async def handle_smart_query(
     # route == "operation" (also the default fallback for anything unexpected)
     try:
         learning_debug["gemini_called"] = True
+        GEMINI_CALL_COUNT += 1
+        learning_debug["gemini_call_count"] = GEMINI_CALL_COUNT
         op_result = await parse_agentic_command(user_text, available_columns, available_sheets)
     except Exception as e:
         logger.exception("[query_router] Exception during operation parsing")
