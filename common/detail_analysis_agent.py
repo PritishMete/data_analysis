@@ -62,7 +62,17 @@ def _metadata_payload(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             "target_column": next((key for key, value in aliases.items() if value == relationship["target_column"]), relationship["target_column"]),
             "confidence": relationship.get("confidence"),
         })
-    return {"tables": tables, "deterministic_relationships": relationships}, aliases
+    recommendation = result.get("model_recommendation", {})
+    payload = {
+        "tables": tables,
+        "deterministic_relationships": relationships,
+        "candidate_model": {
+            "fact_tables": [next((key for key, value in aliases.items() if value == name), name) for name in recommendation.get("fact_tables", [])],
+            "dimension_tables": [next((key for key, value in aliases.items() if value == name), name) for name in recommendation.get("dimension_tables", [])],
+            "status": recommendation.get("status"),
+        },
+    }
+    return payload, aliases
 
 
 def _extract_json(text: str | None) -> dict[str, Any] | None:
@@ -180,11 +190,15 @@ async def enrich_detail_analysis(result: dict[str, Any]) -> dict[str, Any]:
         return result
     payload, aliases = _metadata_payload(result)
     prompt = (
-        "You are a senior data modeler. Interpret ONLY this metadata-only JSON. "
+        "You are a senior data modeler and data-quality reviewer. Interpret ONLY this metadata-only JSON. "
         "Do not invent table or column names. A numeric attribute such as age, cost, or selling_price "
         "does not make an entity table a fact table. Prefer the table whose rows represent business events "
-        "as the fact table. Return JSON only with keys: executive_summary, dataset_roles, relationships, "
-        "star_schema, data_quality_findings, assumptions, next_steps. dataset_roles items must include "
+        "as the fact table. Explain the findings for a non-technical business user. In particular, "
+        "you must reason explicitly about section 10 other_data_quality_observations and section 11 "
+        "fact_table_analysis, rather than repeating generic advice. Return JSON only with keys: "
+        "executive_summary, dataset_roles, relationships, star_schema, data_quality_findings, "
+        "other_data_quality_observations, fact_table_analysis, dimension_table_analysis, assumptions, next_steps. "
+        "dataset_roles items must include "
         "table, role, confidence, grain, reason, key_candidates, measures. roles are fact_table, "
         "dimension_table, bridge_table, reference_table, or unknown.\n\nMETADATA:\n" + json.dumps(_json_safe(payload))
     )

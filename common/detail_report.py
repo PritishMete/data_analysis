@@ -36,6 +36,24 @@ def _list(items: list[str]) -> str:
     return "<ul>" + "".join(f"<li>{escape(str(item))}</li>" for item in items) + "</ul>"
 
 
+def _agent_bullets(value: Any) -> list[str]:
+    """Turn flexible agent output into readable bullets without raw JSON."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        if "explanation" in value:
+            return [f"{value.get('title', 'Finding')}: {value['explanation']}"]
+        return [f"{key}: {item}" for key, item in value.items()]
+    if isinstance(value, list):
+        bullets: list[str] = []
+        for item in value:
+            bullets.extend(_agent_bullets(item))
+        return bullets
+    return [str(value)]
+
+
 def _key_for(profile: dict[str, Any]) -> dict[str, Any] | None:
     candidates = profile.get("primary_key_candidates", [])
     if candidates:
@@ -290,6 +308,22 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
 def render_detail_report(result: dict[str, Any]) -> str:
     report = result["detail_report"]
     role = "Gemini interpretation" if result.get("diagnostics", {}).get("ai_used") else "deterministic fallback"
+    agent = result.get("agent_analysis", {})
+    ai_quality = _agent_bullets(agent.get("other_data_quality_observations"))
+    ai_fact = _agent_bullets(agent.get("fact_table_analysis"))
+    ai_dimensions = _agent_bullets(agent.get("dimension_table_analysis"))
+    quality_section = ai_quality if ai_quality else [
+        "The report is using deterministic quality evidence because Gemini metadata interpretation was unavailable.",
+        "Review missing keys, duplicate records, formula checks, and categorical inconsistencies before modeling.",
+    ]
+    fact_section = ai_fact or [
+        f"{name} is the fact-table candidate because it contains repeated event-level rows, foreign keys, and numeric measures."
+        for name in report["fact_tables"]
+    ]
+    dimension_section = ai_dimensions or [
+        f"{name} is a dimension-table candidate because it describes a reusable entity and is joined by an identifier."
+        for name in report["dimension_tables"]
+    ]
     sections = [
         "<h1>Dataset Detail Analysis</h1>",
         f"<p class='report-meta'><strong>{escape(str(result.get('dataset_count', 0)))}</strong> datasets analyzed · Reasoning: <strong>{role}</strong></p>",
@@ -312,10 +346,9 @@ def render_detail_report(result: dict[str, Any]) -> str:
         "<h3>Observed categorical distributions</h3>",
         _table(["Dataset", "Column", "Raw value", "Count"], report["categorical_values"]) if report["categorical_values"] else "<p>No low-cardinality categorical fields were observed.</p>",
         "<h3>Category/sub-category mismatches</h3>", _list(report["category_mismatches"]),
-        "<h2>10. Other data-quality observations</h2>",
-        "<p>Review the schema notes, missing-key counts, duplicate evidence, formula checks, and relationship integrity above before modeling.</p>",
-        "<h2>11. Fact table</h2>", _list([f"{name} is the fact-table candidate because it contains repeated event-level rows, foreign keys, and numeric measures." for name in report["fact_tables"]]),
-        "<h2>12. Dimension tables</h2>", _list([f"{name} is a dimension-table candidate because it describes a reusable entity and is joined by an identifier." for name in report["dimension_tables"]]),
+        "<h2>10. Other data-quality observations</h2>", _list(quality_section),
+        "<h2>11. Fact table</h2>", _list(fact_section),
+        "<h2>12. Dimension tables</h2>", _list(dimension_section),
         "<h2>13. Proposed star schema</h2>", _star_schema_diagram(report),
         "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]),
         "<h3>Recommended next step</h3>", _list(report["next_steps"]),
