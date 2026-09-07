@@ -85,6 +85,9 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
     duplicates: list[str] = []
     suspicious: list[str] = []
     inconsistencies: list[str] = []
+    ranges: list[str] = []
+    invalid_dates: list[str] = []
+    categorical_values: list[list[Any]] = []
     for item in datasets:
         name = item["name"]
         frame = tables[name]
@@ -104,6 +107,12 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
             if entry["missing"]:
                 missing.append([name, entry["column"], entry["missing"]])
         exact_duplicates = int(frame.duplicated().sum())
+        if key:
+            duplicate_key_values = frame[key["column"]].dropna().astype(str).value_counts()
+            duplicate_key_values = duplicate_key_values[duplicate_key_values > 1]
+            if len(duplicate_key_values):
+                sample_ids = ", ".join(duplicate_key_values.head(8).index.tolist())
+                duplicates.append(f"{name}: {len(duplicate_key_values):,} duplicate {key['column']} value group(s); examples: {sample_ids}.")
         if exact_duplicates:
             duplicates.append(f"{name}: {exact_duplicates:,} exact duplicate row(s).")
         else:
@@ -113,6 +122,25 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         for issue in profile.get("categorical_inconsistencies", []):
             variants = "; ".join(", ".join(values) for values in issue.get("variants", [])[:3])
             inconsistencies.append(f"{name} / {issue['column']}: casing or whitespace variants ({variants}).")
+        for entry in profile["schema"]:
+            if entry["role"] == "categorical" and entry["unique"] <= 20:
+                counts = frame[entry["column"]].dropna().astype(str).value_counts().head(20)
+                categorical_values.extend(
+                    [name, entry["column"], value, int(count)]
+                    for value, count in counts.items()
+                )
+        for entry in profile["schema"]:
+            series = frame[entry["column"]]
+            if entry["role"] == "numeric_measure":
+                numeric = pd.to_numeric(series, errors="coerce").dropna()
+                if not numeric.empty:
+                    ranges.append(f"{name} / {entry['column']}: {_fmt(float(numeric.min()))} to {_fmt(float(numeric.max()))}.")
+            if entry["role"] == "datetime" or any(token in entry["column"].casefold() for token in ("date", "time", "timestamp")):
+                parsed = pd.to_datetime(series, errors="coerce")
+                invalid_mask = series.notna() & parsed.isna()
+                if int(invalid_mask.sum()):
+                    examples = ", ".join(series[invalid_mask].astype(str).head(8).tolist())
+                    invalid_dates.append(f"{name} / {entry['column']}: {int(invalid_mask.sum()):,} invalid value(s), examples: {examples}.")
 
     relation_rows: list[list[Any]] = []
     relationship_notes: list[str] = []
@@ -141,6 +169,69 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
     for name in fact_tables:
         measures.extend(entry["column"] for entry in next(item for item in datasets if item["name"] == name)["profile"]["schema"] if entry["role"] == "numeric_measure")
     schema_lines = []
+    formula_findings: list[str] = []
+    category_mismatches: list[str] = []
+    for name, frame in tables.items():
+        low_columns = {str(column).casefold(): column for column in frame.columns}
+        if {"quantity", "discount", "sales_amount"}.issubset(low_columns):
+            quantity = pd.to_numeric(frame[low_columns["quantity"]], errors="coerce")
+            discount = pd.to_numeric(frame[low_columns["discount"]], errors="coerce")
+            sales = pd.to_numeric(frame[low_columns["sales_amount"]], errors="coerce")
+            negative_quantity = int((quantity < 0).sum())
+            negative_sales = int((sales < 0).sum())
+            if negative_quantity:
+                formula_findings.append(f"{name}: {negative_quantity:,} row(s) have negative quantity; these also need review as returns/cancellations or sign errors.")
+            if negative_sales:
+                formula_findings.append(f"{name}: {negative_sales:,} row(s) have negative sales_amount.")
+            if "selling_price" in low_columns and "product_id" in low_columns:
+                formula_findings.append(f"{name}: sales_amount can be checked as selling_price x quantity x (1 - discount) after joining products.")
+        if "profit" in low_columns:
+            profit = pd.to_numeric(frame[low_columns["profit"]], errors="coerce")
+            negative_profit = int((profit < 0).sum())
+            if negative_profit:
+                formula_findings.append(f"{name}: {negative_profit:,} row(s) have negative profit; verify whether this is a valid margin or a data issue.")
+        category = next((column for key, column in low_columns.items() if key in {"category", "product_category"}), None)
+        subcategory = next((column for key, column in low_columns.items() if key in {"sub_category", "subcategory", "product_subcategory"}), None)
+        if category and subcategory:
+            grouped = frame[[category, subcategory]].dropna().astype(str)
+            if not grouped.empty:
+                dominant = grouped.groupby(category)[subcategory].agg(lambda values: values.mode().iloc[0] if not values.mode().empty else "")
+                mismatch = grouped[grouped.apply(lambda row: row[subcategory] != dominant.get(row[category], row[subcategory]), axis=1)]
+                if len(mismatch):
+                    category_mismatches.append(f"{name}: {len(mismatch):,} category/sub-category combination(s) differ from the dominant category family; inspect before standardizing.")
+
+    # Verify common order/catalog formulas when the required columns exist.
+    order_name = next((name for name, frame in tables.items() if {"product_id", "quantity", "discount", "sales_amount"}.issubset({str(column).casefold() for column in frame.columns})), None)
+    product_name = next((name for name, frame in tables.items() if {"product_id", "cost", "selling_price"}.issubset({str(column).casefold() for column in frame.columns})), None)
+    if order_name and product_name:
+        orders = tables[order_name]
+        products = tables[product_name]
+        order_columns = {str(column).casefold(): column for column in orders.columns}
+        product_columns = {str(column).casefold(): column for column in products.columns}
+        catalog = products[[product_columns["product_id"], product_columns["cost"], product_columns["selling_price"]]].drop_duplicates(product_columns["product_id"])
+        joined = orders.merge(catalog, left_on=order_columns["product_id"], right_on=product_columns["product_id"], how="inner")
+        quantity = pd.to_numeric(joined[order_columns["quantity"]], errors="coerce")
+        discount = pd.to_numeric(joined[order_columns["discount"]], errors="coerce")
+        expected_sales = pd.to_numeric(joined[product_columns["selling_price"]], errors="coerce") * quantity * (1 - discount)
+        actual_sales = pd.to_numeric(joined[order_columns["sales_amount"]], errors="coerce")
+        sales_ok = expected_sales.notna() & actual_sales.notna()
+        if int(sales_ok.sum()):
+            mismatches = int(((expected_sales[sales_ok] - actual_sales[sales_ok]).abs() > 0.01).sum())
+            formula_findings.append(f"{order_name}: sales_amount = selling_price x quantity x (1 - discount) verified on {int(sales_ok.sum()):,} joinable rows; {mismatches:,} mismatch(es).")
+        if "cost_amount" in order_columns:
+            expected_cost = pd.to_numeric(joined[product_columns["cost"]], errors="coerce") * quantity.abs()
+            actual_cost = pd.to_numeric(joined[order_columns["cost_amount"]], errors="coerce")
+            cost_ok = expected_cost.notna() & actual_cost.notna()
+            if int(cost_ok.sum()):
+                mismatches = int(((expected_cost[cost_ok] - actual_cost[cost_ok]).abs() > 0.01).sum())
+                formula_findings.append(f"{order_name}: cost_amount = product.cost x abs(quantity) verified on {int(cost_ok.sum()):,} joinable rows; {mismatches:,} mismatch(es).")
+        if "profit" in order_columns:
+            expected_profit = quantity * (pd.to_numeric(joined[product_columns["selling_price"]], errors="coerce") * (1 - discount) - pd.to_numeric(joined[product_columns["cost"]], errors="coerce"))
+            actual_profit = pd.to_numeric(joined[order_columns["profit"]], errors="coerce")
+            profit_ok = expected_profit.notna() & actual_profit.notna()
+            if int(profit_ok.sum()):
+                mismatches = int(((expected_profit[profit_ok] - actual_profit[profit_ok]).abs() > 0.01).sum())
+                formula_findings.append(f"{order_name}: profit formula verified on {int(profit_ok.sum()):,} joinable rows; {mismatches:,} mismatch(es).")
     for fact in fact_tables:
         schema_lines.append(f"{fact} (fact table)\n  Measures: {', '.join(measures) or 'none detected'}")
         for relation in result.get("relationships", []):
@@ -172,6 +263,11 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         "duplicates": duplicates,
         "suspicious": suspicious,
         "inconsistencies": inconsistencies,
+        "invalid_dates": invalid_dates,
+        "ranges": ranges,
+        "formula_findings": formula_findings,
+        "category_mismatches": category_mismatches,
+        "categorical_values": categorical_values,
         "fact_tables": fact_tables,
         "dimension_tables": dimension_tables,
         "measures": measures,
@@ -206,7 +302,24 @@ def render_detail_report(result: dict[str, Any]) -> str:
     sections += [_table(["From", "To", "Confidence", "Integrity evidence"], report["relationships"])] if report["relationships"] else ["<p>No relationship was confidently detected.</p>"]
     sections += [_list(report["relationship_notes"]), "<h2>6. Missing values</h2>"]
     sections += [_table(["File", "Column", "Missing"], report["missing"])] if report["missing"] else ["<p>All supplied columns are complete.</p>"]
-    sections += ["<h2>7. Duplicate records</h2>", _list(report["duplicates"]), "<h2>8. Invalid or suspicious values</h2>", _list(report["suspicious"]), "<h2>9. Inconsistent categorical values</h2>", _list(report["inconsistencies"]), "<h2>10. Other data-quality observations</h2>", "<p>Review the schema notes, missing-key counts, duplicate evidence, and relationship integrity above before modeling.</p>", "<h2>11. Fact table</h2>", _list([f"{name} holds event-level rows and measures." for name in report["fact_tables"]]), "<h2>12. Dimension tables</h2>", _list([f"{name} provides descriptive attributes." for name in report["dimension_tables"]]), "<h2>13. Proposed star schema</h2>", _star_schema_diagram(report), "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]), "<h3>Recommended next step</h3>", _list(report["next_steps"])]
+    sections += [
+        "<h2>7. Duplicate records</h2>", _list(report["duplicates"]),
+        "<h2>8. Invalid or suspicious values</h2>",
+        "<h3>Invalid dates</h3>", _list(report["invalid_dates"]),
+        "<h3>Numeric and measure checks</h3>", _list(report["formula_findings"]),
+        "<h3>Other numeric ranges</h3>", _list(report["ranges"]),
+        "<h2>9. Inconsistent categorical values</h2>", _list(report["inconsistencies"]),
+        "<h3>Observed categorical distributions</h3>",
+        _table(["Dataset", "Column", "Raw value", "Count"], report["categorical_values"]) if report["categorical_values"] else "<p>No low-cardinality categorical fields were observed.</p>",
+        "<h3>Category/sub-category mismatches</h3>", _list(report["category_mismatches"]),
+        "<h2>10. Other data-quality observations</h2>",
+        "<p>Review the schema notes, missing-key counts, duplicate evidence, formula checks, and relationship integrity above before modeling.</p>",
+        "<h2>11. Fact table</h2>", _list([f"{name} is the fact-table candidate because it contains repeated event-level rows, foreign keys, and numeric measures." for name in report["fact_tables"]]),
+        "<h2>12. Dimension tables</h2>", _list([f"{name} is a dimension-table candidate because it describes a reusable entity and is joined by an identifier." for name in report["dimension_tables"]]),
+        "<h2>13. Proposed star schema</h2>", _star_schema_diagram(report),
+        "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]),
+        "<h3>Recommended next step</h3>", _list(report["next_steps"]),
+    ]
     if result.get("agent_analysis", {}).get("executive_summary"):
         sections.insert(2, f"<section class='ai-summary'><strong>AI model interpretation:</strong> {escape(result['agent_analysis']['executive_summary'])}</section>")
     if result.get("ignored_files"):
