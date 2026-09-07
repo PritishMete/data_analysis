@@ -90,6 +90,8 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     const recommendations = Array.isArray(opts.recommendations) ? opts.recommendations : [];
     const outliers = Array.isArray(opts.outliers) ? opts.outliers : [];
     const chartRecommendation = (opts.chartRecommendation && typeof opts.chartRecommendation === "object") ? opts.chartRecommendation : {};
+    const dataUnderstandingProfile = (opts.dataUnderstandingProfile && typeof opts.dataUnderstandingProfile === "object")
+        ? opts.dataUnderstandingProfile : {};
 
     // /analyze fields — these ARE available after every scan (Quality Tab source)
     // missing_values: {"ColName": count} — client-side computed, exact Quality Tab source
@@ -184,6 +186,15 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
             // ── Title ──────────────────────────────────────────────────────
             row = _writeTitle(sheet, row, "Data Quality Report", NUM_COLS);
             row += 1;
+
+            // ── Data Understanding Profile ───────────────────────────────
+            // This is deterministic profiling of the selected Excel dataset.
+            // It is deliberately separate from quality scoring and AI prose.
+            if (Object.keys(dataUnderstandingProfile).length > 0) {
+                row = _writeSectionHeader(sheet, row, "DATA UNDERSTANDING PROFILE  ·  Source: Excel Scan", NUM_COLS);
+                row = _writeDataUnderstandingProfile(sheet, row, dataUnderstandingProfile);
+                row += 1;
+            }
 
             // ══════════════════════════════════════════════════════════════
             // PIPELINE A — SCAN ANALYSIS (/analyze)
@@ -688,6 +699,88 @@ function _writeOverview(sheet, row, opts, dq, statistics, consumedKeys) {
             return null;
         },
     });
+}
+
+function _writeDataUnderstandingProfile(sheet, row, profile) {
+    const overview = profile.dataset_overview && typeof profile.dataset_overview === "object"
+        ? profile.dataset_overview : {};
+    const schema = Array.isArray(profile.schema) ? profile.schema : [];
+    const pk = Array.isArray(profile.primary_key_candidates) ? profile.primary_key_candidates : [];
+    const fk = Array.isArray(profile.foreign_key_candidates) ? profile.foreign_key_candidates : [];
+    const relationships = Array.isArray(profile.relationships) ? profile.relationships : [];
+    const suspicious = Array.isArray(profile.invalid_or_suspicious_values) ? profile.invalid_or_suspicious_values : [];
+    const inconsistencies = Array.isArray(profile.categorical_inconsistencies) ? profile.categorical_inconsistencies : [];
+    const dimensions = Array.isArray(profile.dimension_table_recommendation) ? profile.dimension_table_recommendation : [];
+    const assumptions = Array.isArray(profile.assumptions) ? profile.assumptions : [];
+
+    row = _writeKeyValueBlock(sheet, row, [
+        ["Rows", _fmtAny(overview.rows)],
+        ["Columns", _fmtAny(overview.columns)],
+        ["Likely grain", _fmtAny(overview.grain)],
+        ["Primary key candidates", pk.length ? pk.join(", ") : "None observed"],
+        ["Foreign key candidates", fk.length ? fk.join(", ") : "None observed"],
+    ], { });
+    row += 1;
+
+    if (schema.length) {
+        const schemaRows = schema.map((entry) => ({
+            column: _fmtAny(entry.column),
+            dtype: _fmtAny(entry.dtype),
+            role: _fmtAny(entry.role),
+            non_null: _fmtNum(entry.non_null, 0),
+            missing: _fmtNum(entry.missing, 0),
+            unique: _fmtNum(entry.unique, 0),
+            key: entry.key_candidate === true ? "Candidate" : "",
+            samples: _fmtAny(entry.sample_values),
+        }));
+        row = _writeTable(sheet, row, [
+            { label: "Column", key: "column" },
+            { label: "Data Type", key: "dtype" },
+            { label: "Likely Role", key: "role" },
+            { label: "Non-null", key: "non_null" },
+            { label: "Missing", key: "missing" },
+            { label: "Unique", key: "unique" },
+            { label: "Key", key: "key" },
+            { label: "Sample Values", key: "samples", wrap: true },
+        ], schemaRows).nextRow;
+        row += 1;
+    }
+
+    row = _writeKeyValueBlock(sheet, row, [
+        ["Relationships", relationships.length ? relationships.join(" ") : "None observed"],
+        ["Fact table recommendation", _fmtAny(profile.fact_table_recommendation)],
+        ["Dimension table recommendation", dimensions.length ? dimensions.join(" ") : "None observed"],
+    ], {});
+    row += 1;
+
+    const star = profile.star_schema && typeof profile.star_schema === "object" ? profile.star_schema : {};
+    row = _writeKeyValueBlock(sheet, row, [
+        ["Proposed fact table", _fmtAny(star.fact_table)],
+        ["Proposed measures", _fmtAny(star.measures)],
+        ["Proposed dimensions", _fmtAny(star.dimensions)],
+        ["Schema relationship rule", _fmtAny(star.relationships)],
+    ], {});
+    row += 1;
+
+    const issueRows = suspicious.map((entry) => ({ column: _fmtAny(entry.column), issue: _fmtAny(entry.issue) }));
+    row = _writeSectionHeader(sheet, row, "SUSPICIOUS OR INVALID VALUES", 8);
+    row = issueRows.length
+        ? _writeTable(sheet, row, [{ label: "Column", key: "column" }, { label: "Finding", key: "issue", wrap: true }], issueRows).nextRow
+        : (sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No suspicious values detected by the scan heuristics."]], row + 1);
+    row += 1;
+
+    const inconsistencyRows = inconsistencies.map((entry) => ({ column: _fmtAny(entry.column), variants: _fmtAny(entry.variants), issue: _fmtAny(entry.issue) }));
+    row = _writeSectionHeader(sheet, row, "INCONSISTENT CATEGORICAL VALUES", 8);
+    row = inconsistencyRows.length
+        ? _writeTable(sheet, row, [{ label: "Column", key: "column" }, { label: "Observed Variants", key: "variants", wrap: true }, { label: "Finding", key: "issue", wrap: true }], inconsistencyRows).nextRow
+        : (sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No case/whitespace categorical variants detected."]], row + 1);
+    row += 1;
+
+    row = _writeSectionHeader(sheet, row, "ASSUMPTIONS", 8);
+    const assumptionRows = assumptions.map((value) => ({ assumption: _fmtAny(value) }));
+    return assumptionRows.length
+        ? _writeTable(sheet, row, [{ label: "Assumption", key: "assumption", wrap: true }], assumptionRows).nextRow
+        : (sheet.getRangeByIndexes(row, 0, 1, 1).values = [["No assumptions recorded."]], row + 1);
 }
 
 // Builds a short plain-language summary purely by narrating numbers already
