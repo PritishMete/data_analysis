@@ -26,6 +26,7 @@ from query_router import handle_smart_query
 from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
 from common.excel_context import ExcelContextError, scan_workbook
+from common.data_understanding import profile_dataframe
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
@@ -355,6 +356,7 @@ def analyze_dataframe(df: pd.DataFrame):
             # shape that quality_report.dart / overview_metrics.dart depend on.
             "dtypes": df.dtypes.astype(str).to_dict(),
         },
+        "data_understanding_profile": profile_dataframe(df),
         "distribution": {
             "unique_values": unique_values,
             "duplicate_values": duplicate_values,
