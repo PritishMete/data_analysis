@@ -12,6 +12,7 @@ from typing import Any
 
 from ai_analyst import MODEL, _json_safe, _run_single_agent, LlmAgent
 from privacy_context import strict_enabled
+from common.detail_report import render_detail_report
 
 
 def _metadata_payload(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -175,6 +176,7 @@ async def enrich_detail_analysis(result: dict[str, Any]) -> dict[str, Any]:
     if not enabled:
         result["diagnostics"] = _fallback_diagnostics("Gemini detail-analysis interpretation is disabled by configuration.")
         result["readable_report"] = _readable_report(result)
+        result["readable_report_html"] = render_detail_report(result)
         return result
     payload, aliases = _metadata_payload(result)
     prompt = (
@@ -197,6 +199,7 @@ async def enrich_detail_analysis(result: dict[str, Any]) -> dict[str, Any]:
     if strict_enabled() and os.getenv("DETAIL_ANALYSIS_ALLOW_METADATA_AI", "false").casefold() != "true":
         result["diagnostics"]["diagnostic"] = "Strict local-only mode kept the metadata agent disabled; deterministic fallback used."
         result["readable_report"] = _readable_report(result)
+        result["readable_report_html"] = render_detail_report(result)
         return result
     try:
         result["diagnostics"]["gemini_attempted"] = True
@@ -213,4 +216,5 @@ async def enrich_detail_analysis(result: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         result["diagnostics"]["diagnostic"] = f"Gemini unavailable or rejected: {exc}"
     result["readable_report"] = _readable_report(result)
+    result["readable_report_html"] = render_detail_report(result)
     return result

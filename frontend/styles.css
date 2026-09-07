@@ -85,7 +85,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-pre {
+.report-output {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: auto;
@@ -94,6 +94,77 @@ pre {
   padding: 12px;
   margin: 14px 0 0;
   min-height: 120px;
+}
+
+.report-output h1 {
+  font-size: 1.8rem;
+  margin: 0 0 8px;
+}
+
+.report-output h2 {
+  color: #bae6fd;
+  font-size: 1.12rem;
+  margin: 26px 0 9px;
+}
+
+.report-output h3 {
+  color: #cbd5e1;
+  margin: 18px 0 8px;
+}
+
+.report-output table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0 14px;
+  white-space: normal;
+}
+
+.report-output th,
+.report-output td {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.report-output th {
+  background: rgba(56, 189, 248, 0.13);
+  color: #e0f2fe;
+}
+
+.report-output td {
+  color: #dbeafe;
+}
+
+.report-output ul {
+  margin: 8px 0 14px;
+  padding-left: 22px;
+  white-space: normal;
+}
+
+.report-output li {
+  margin: 6px 0;
+}
+
+.report-meta,
+.muted {
+  color: #b8c2d6;
+}
+
+.ai-summary {
+  border-left: 3px solid #38bdf8;
+  background: rgba(14, 116, 144, 0.16);
+  padding: 12px 14px;
+  margin: 14px 0;
+  white-space: normal;
+}
+
+.schema-diagram {
+  white-space: pre-wrap;
+  color: #dbeafe;
+  background: rgba(2, 6, 23, 0.78);
+  padding: 14px;
+  border-radius: 10px;
 }
 
 @media (max-width: 720px) {

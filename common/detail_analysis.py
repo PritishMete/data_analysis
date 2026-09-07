@@ -17,6 +17,7 @@ from typing import Any
 import pandas as pd
 
 from .data_understanding import profile_dataframe
+from .detail_report import build_detail_report_data
 
 
 def _safe_name(name: str) -> str:
@@ -180,7 +181,7 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
     if not fact_tables and len(tables) == 1:
         fact_tables = [next(iter(tables))]
 
-    return {
+    result = {
         "analysis_mode": "multi_dataset_detail",
         "dataset_count": len(tables),
         "datasets": [
@@ -210,3 +211,5 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
             "Large sources should use the local backend or Power BI connector path; raw rows are not returned in this response.",
         ],
     }
+    result["detail_report"] = build_detail_report_data(result, tables)
+    return result
