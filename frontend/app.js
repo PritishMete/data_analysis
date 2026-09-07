@@ -16,6 +16,13 @@ function setOutput(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
+function detailReport(result) {
+  if (!result || !result.success || !result.readable_report) {
+    return result;
+  }
+  return result.readable_report;
+}
+
 createButton.addEventListener("click", async () => {
   const file = fileInput.files && fileInput.files[0];
   if (!file) {
@@ -62,7 +69,7 @@ detailButton.addEventListener("click", async () => {
     if (result.ignored_files && result.ignored_files.length > 0) {
       result.notice = `Ignored unsupported files: ${result.ignored_files.join(", ")}`;
     }
-    setOutput(result);
+    setOutput(detailReport(result));
   } catch (error) {
     setOutput(`Detail analysis failed: ${error}`);
   } finally {
@@ -81,7 +88,7 @@ pathButton.addEventListener("click", async () => {
   pathButton.disabled = true;
   try {
     const res = await fetch("/v2/detail-analysis/path", { method: "POST", body: form });
-    setOutput(await res.json());
+    setOutput(detailReport(await res.json()));
   } catch (error) {
     setOutput(`Local path analysis failed: ${error}`);
   } finally {

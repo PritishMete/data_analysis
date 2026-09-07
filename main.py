@@ -30,8 +30,8 @@ from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
 from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
 from common.excel_context import ExcelContextError, scan_workbook
-from common.data_understanding import profile_dataframe
 from common.detail_analysis import analyze_dataset_collection, load_dataset_tables
+from common.detail_analysis_agent import enrich_detail_analysis
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
@@ -373,7 +373,6 @@ def analyze_dataframe(df: pd.DataFrame):
             "columns": int(df.shape[1]),
             "column_names": list(df.columns),
         },
-        "data_understanding_profile": profile_dataframe(df),
         "distribution": {
             "unique_values": unique_values,
             "duplicate_values": duplicate_values,
@@ -1787,6 +1786,7 @@ async def _detail_analysis_response(files: list[UploadFile], source_platform: st
         result = analyze_dataset_collection(tables)
         result["source_platform"] = source_platform or "web"
         result["ignored_files"] = ignored_files
+        result = await enrich_detail_analysis(result)
         return {"success": True, **result}
     except (ValueError, ImportError) as exc:
         return {"success": False, "error": str(exc)}
@@ -1828,7 +1828,10 @@ async def detail_analysis_path(path: str = Form(...)):
             loaded = load_dataset_tables(source.read_bytes(), source.name)
             for name, frame in loaded.items():
                 tables[f"{source.name}:{name}"] = frame
-        return {"success": True, **analyze_dataset_collection(tables), "source_platform": "local_path", "path": str(requested)}
+        result = analyze_dataset_collection(tables)
+        result["source_platform"] = "local_path"
+        result["path"] = str(requested)
+        return {"success": True, **(await enrich_detail_analysis(result))}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
