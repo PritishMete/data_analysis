@@ -1764,12 +1764,19 @@ async def excel_context(
 
 async def _detail_analysis_response(files: list[UploadFile], source_platform: str | None = None):
     tables: dict[str, pd.DataFrame] = {}
+    ignored_files: list[str] = []
+    supported_suffixes = {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}
     try:
         for file in files:
-            if Path(file.filename or "").name.startswith("."):
+            filename = file.filename or "dataset.csv"
+            file_path = Path(filename)
+            if file_path.name.startswith("."):
+                continue
+            if file_path.suffix.casefold() not in supported_suffixes:
+                ignored_files.append(filename)
                 continue
             raw = await file.read()
-            loaded = load_dataset_tables(raw, file.filename or "dataset.csv")
+            loaded = load_dataset_tables(raw, filename)
             for name, frame in loaded.items():
                 table_name = name
                 suffix = 2
@@ -1779,6 +1786,7 @@ async def _detail_analysis_response(files: list[UploadFile], source_platform: st
                 tables[table_name] = frame
         result = analyze_dataset_collection(tables)
         result["source_platform"] = source_platform or "web"
+        result["ignored_files"] = ignored_files
         return {"success": True, **result}
     except (ValueError, ImportError) as exc:
         return {"success": False, "error": str(exc)}

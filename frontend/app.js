@@ -58,7 +58,11 @@ detailButton.addEventListener("click", async () => {
   detailButton.disabled = true;
   try {
     const res = await fetch("/v2/detail-analysis", { method: "POST", body: form });
-    setOutput(await res.json());
+    const result = await res.json();
+    if (result.ignored_files && result.ignored_files.length > 0) {
+      result.notice = `Ignored unsupported files: ${result.ignored_files.join(", ")}`;
+    }
+    setOutput(result);
   } catch (error) {
     setOutput(`Detail analysis failed: ${error}`);
   } finally {
