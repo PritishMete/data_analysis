@@ -1766,6 +1766,8 @@ async def _detail_analysis_response(files: list[UploadFile], source_platform: st
     tables: dict[str, pd.DataFrame] = {}
     try:
         for file in files:
+            if Path(file.filename or "").name.startswith("."):
+                continue
             raw = await file.read()
             loaded = load_dataset_tables(raw, file.filename or "dataset.csv")
             for name, frame in loaded.items():
@@ -1813,7 +1815,7 @@ async def detail_analysis_path(path: str = Form(...)):
     try:
         tables: dict[str, pd.DataFrame] = {}
         for source in sorted(requested.rglob("*")):
-            if not source.is_file() or source.suffix.casefold() not in {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}:
+            if source.name.startswith(".") or not source.is_file() or source.suffix.casefold() not in {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}:
                 continue
             loaded = load_dataset_tables(source.read_bytes(), source.name)
             for name, frame in loaded.items():
