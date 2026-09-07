@@ -159,12 +159,97 @@ button:disabled {
   white-space: normal;
 }
 
-.schema-diagram {
-  white-space: pre-wrap;
-  color: #dbeafe;
-  background: rgba(2, 6, 23, 0.78);
-  padding: 14px;
+.star-schema-diagram {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.45fr) minmax(140px, 1fr);
+  grid-template-rows: auto auto auto;
+  gap: 18px 26px;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(8, 47, 73, 0.72));
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 14px;
+  overflow: auto;
+}
+
+.star-center,
+.star-dimension {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 74px;
+  padding: 13px 15px;
   border-radius: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
+}
+
+.star-center {
+  grid-column: 2;
+  grid-row: 2;
+  border-color: #38bdf8;
+  background: rgba(14, 116, 144, 0.38);
+}
+
+.star-dimension-0 { grid-column: 1; grid-row: 2; }
+.star-dimension-1 { grid-column: 3; grid-row: 2; }
+.star-dimension-2 { grid-column: 2; grid-row: 1; }
+.star-dimension-3 { grid-column: 2; grid-row: 3; }
+
+.star-center::after,
+.star-dimension::after {
+  content: "";
+  position: absolute;
+  background: #7dd3fc;
+  opacity: 0.7;
+}
+
+.star-dimension-0::after { width: 26px; height: 2px; right: -26px; top: 50%; }
+.star-dimension-1::after { width: 26px; height: 2px; left: -26px; top: 50%; }
+.star-dimension-2::after { width: 2px; height: 18px; left: 50%; bottom: -18px; }
+.star-dimension-3::after { width: 2px; height: 18px; left: 50%; top: -18px; }
+
+.star-center strong,
+.star-dimension strong {
+  color: #f8fafc;
+  font-size: 0.98rem;
+}
+
+.star-center span,
+.star-dimension span {
+  color: #7dd3fc;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
+.star-center small,
+.star-dimension small,
+.star-dimension em {
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+  .star-schema-diagram {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .star-center,
+  .star-dimension,
+  .star-dimension-0,
+  .star-dimension-1,
+  .star-dimension-2,
+  .star-dimension-3 {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .star-center::after,
+  .star-dimension::after { display: none; }
 }
 
 @media (max-width: 720px) {

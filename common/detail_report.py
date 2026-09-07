@@ -176,6 +176,16 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         "dimension_tables": dimension_tables,
         "measures": measures,
         "star_schema": "\n".join(schema_lines) or "No star schema candidate was identified.",
+        "star_links": [
+            {
+                "dimension": relation["target_table"],
+                "fact_column": relation["source_column"],
+                "dimension_column": relation["target_column"],
+            }
+            for relation in result.get("relationships", [])
+            if relation["source_table"] in fact_tables
+            and relation["target_table"] in dimension_tables
+        ],
         "assumptions": assumptions,
         "next_steps": next_steps,
     }
@@ -196,9 +206,35 @@ def render_detail_report(result: dict[str, Any]) -> str:
     sections += [_table(["From", "To", "Confidence", "Integrity evidence"], report["relationships"])] if report["relationships"] else ["<p>No relationship was confidently detected.</p>"]
     sections += [_list(report["relationship_notes"]), "<h2>6. Missing values</h2>"]
     sections += [_table(["File", "Column", "Missing"], report["missing"])] if report["missing"] else ["<p>All supplied columns are complete.</p>"]
-    sections += ["<h2>7. Duplicate records</h2>", _list(report["duplicates"]), "<h2>8. Invalid or suspicious values</h2>", _list(report["suspicious"]), "<h2>9. Inconsistent categorical values</h2>", _list(report["inconsistencies"]), "<h2>10. Other data-quality observations</h2>", "<p>Review the schema notes, missing-key counts, duplicate evidence, and relationship integrity above before modeling.</p>", "<h2>11. Fact table</h2>", _list([f"{name} holds event-level rows and measures." for name in report["fact_tables"]]), "<h2>12. Dimension tables</h2>", _list([f"{name} provides descriptive attributes." for name in report["dimension_tables"]]), "<h2>13. Proposed star schema</h2>", f"<pre class='schema-diagram'>{escape(report['star_schema'])}</pre>", "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]), "<h3>Recommended next step</h3>", _list(report["next_steps"])]
+    sections += ["<h2>7. Duplicate records</h2>", _list(report["duplicates"]), "<h2>8. Invalid or suspicious values</h2>", _list(report["suspicious"]), "<h2>9. Inconsistent categorical values</h2>", _list(report["inconsistencies"]), "<h2>10. Other data-quality observations</h2>", "<p>Review the schema notes, missing-key counts, duplicate evidence, and relationship integrity above before modeling.</p>", "<h2>11. Fact table</h2>", _list([f"{name} holds event-level rows and measures." for name in report["fact_tables"]]), "<h2>12. Dimension tables</h2>", _list([f"{name} provides descriptive attributes." for name in report["dimension_tables"]]), "<h2>13. Proposed star schema</h2>", _star_schema_diagram(report), "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]), "<h3>Recommended next step</h3>", _list(report["next_steps"])]
     if result.get("agent_analysis", {}).get("executive_summary"):
         sections.insert(2, f"<section class='ai-summary'><strong>AI model interpretation:</strong> {escape(result['agent_analysis']['executive_summary'])}</section>")
     if result.get("ignored_files"):
         sections += ["<h2>Ignored files</h2>", _list(result["ignored_files"])]
     return "\n".join(sections)
+
+
+def _star_schema_diagram(report: dict[str, Any]) -> str:
+    """Render a visual star: fact in the center, dimensions around it."""
+    fact = report["fact_tables"][0] if report["fact_tables"] else "Fact table"
+    measures = ", ".join(report.get("measures", [])) or "none detected"
+    dimensions = report.get("dimension_tables", [])
+    links = {item["dimension"]: item for item in report.get("star_links", [])}
+    cards = [
+        "<div class='star-center'>"
+        f"<strong>{escape(fact)}</strong><span>FACT TABLE</span>"
+        f"<small>Measures: {escape(measures)}</small>"
+        "</div>"
+    ]
+    for index, dimension in enumerate(dimensions):
+        link = links.get(dimension, {})
+        cards.append(
+            f"<div class='star-dimension star-dimension-{index % 4}'>"
+            f"<strong>{escape(dimension)}</strong><span>DIMENSION TABLE</span>"
+            f"<small>{escape(str(link.get('dimension_column', 'key')))}</small>"
+            f"<em>fact join: {escape(str(link.get('fact_column', 'join key')))}</em>"
+            "</div>"
+        )
+    if not dimensions:
+        cards.append("<p class='muted'>No dimension table was confidently identified.</p>")
+    return "<div class='star-schema-diagram'>" + "".join(cards) + "</div>"
