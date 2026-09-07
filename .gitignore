@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+runtime/
+enterprise_registry.db
+training_data.json
+.env
+.venv/
+venv/
+env/

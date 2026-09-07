@@ -3,9 +3,21 @@ import sqlite3
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
-# Use /tmp on Render (always writable)
-DB_PATH = "/tmp/ai_memory.db"
+
+def _default_db_path() -> Path:
+    runtime_root = Path(
+        os.environ.get(
+            "DATA_ANALYSIS_RUNTIME_DIR",
+            Path(__file__).resolve().parent / "runtime",
+        )
+    )
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    return runtime_root / "ai_memory.db"
+
+
+DB_PATH = os.environ.get("AI_MEMORY_DB_PATH") or str(_default_db_path())
 
 
 def init_db():

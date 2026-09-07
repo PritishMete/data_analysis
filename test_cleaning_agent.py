@@ -11,6 +11,8 @@
 
 import pandas as pd
 import numpy as np
+import asyncio
+import inspect
 
 from cleaning_ops import run_steps
 
@@ -107,7 +109,7 @@ def test_bad_step_is_skipped_not_fatal():
 # ── TEST 6: whole-request round trip through parse_cleaning_query ─────────
 # Only runs if google-adk + a live model/API key are configured; otherwise
 # skips gracefully so this file still runs standalone with just pandas.
-async def test_live_agent_roundtrip():
+def test_live_agent_roundtrip():
     try:
         from cleaning_agent import parse_cleaning_query
     except Exception as e:
@@ -122,7 +124,9 @@ async def test_live_agent_roundtrip():
              "then fill missing amount usd with the mean, then convert "
              "amount usd to inr at 83.5")
     try:
-        parsed = await parse_cleaning_query(query, list(df.columns))
+        parsed = parse_cleaning_query(query, list(df.columns))
+        if inspect.isawaitable(parsed):
+            parsed = asyncio.run(parsed)
     except Exception as e:
         print(f"\n[SKIPPED] live agent call failed (likely no API key configured): {e}")
         return
@@ -152,6 +156,6 @@ if __name__ == "__main__":
     test_bad_step_is_skipped_not_fatal()
 
     import asyncio
-    asyncio.run(test_live_agent_roundtrip())
+    test_live_agent_roundtrip()
 
     print("\nALL TESTS COMPLETE.")

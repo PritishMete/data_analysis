@@ -410,24 +410,21 @@ class DataCleaner:
         """
         text_cols = self.df.select_dtypes(include=['object']).columns
         normalized_count = 0
+
+        def _normalize_value(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            cleaned = value.strip()
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+            cleaned = re.sub(r'[\u200b\u200c\u200d\ufeff\u00ad]', '', cleaned)
+            return cleaned
         
         for col in text_cols:
             if self.df[col].isna().all():
                 continue
-            
             original = self.df[col].copy()
-            
-            # Convert to string, strip whitespace
-            self.df[col] = self.df[col].astype(str).str.strip()
-            
-            # Normalize whitespace
-            self.df[col] = self.df[col].str.replace(r'\s+', ' ', regex=True)
-            
-            # Remove zero-width and control characters
-            self.df[col] = self.df[col].str.replace(
-                r'[\u200b\u200c\u200d\ufeff\u00ad]', '', regex=True
-            )
-            
+            self.df[col] = self.df[col].map(_normalize_value)
+
             # Check if column changed
             if not (self.df[col] == original).all():
                 normalized_count += 1

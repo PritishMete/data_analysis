@@ -12,7 +12,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from datasets.repository import DatasetRepository
@@ -170,43 +170,59 @@ async def feedback(
 # Prepares data only — see memory_engine/exporters.py's module docstring.
 # No model is trained, fit, or evaluated anywhere on this path.
 
-_EXPORT_MEDIA_TYPES = {"csv": "text/csv", "parquet": "application/octet-stream"}
+_EXPORT_MEDIA_TYPES = {"csv": "text/csv", "jsonl": "application/x-ndjson", "parquet": "application/octet-stream"}
 
 
 @memory_engine_router.get("/training-export")
 async def export_training_dataset(
-    format: str = "csv",
+    format: str = "jsonl",
     organization_id: str | None = None,
     dataset_id: str | None = None,
     schema_hash: str | None = None,
     only_successful: bool = False,
     limit: int = 5000,
+    persist: bool = False,
+    output_dir: str | None = None,
     exporter: TrainingDatasetExporter = Depends(get_training_dataset_exporter),
 ):
-    """Downloadable, structured export of query_history for a future ML
-    training pipeline — intent, question, sql, pipeline, execution_time_ms,
-    feedback, dataset_type. `format` is "csv" (default) or "parquet".
-    Filters mirror /v2/memory-engine's other endpoints: scope by
-    organization_id/dataset_id/schema_hash, and set only_successful=true to
-    export positive examples only (failures are included by default — see
-    TrainingDatasetExporter.collect for why).
+    """Privacy-safe, structure-only export of query_history for future ML use.
+
+    One serialization format per request: csv, jsonl, parquet, or report.
+    The exporter applies the shared TrainingExportPolicy, so the route never
+    bypasses the privacy gate or returns raw query/sql text.
     """
     fmt = format.lower()
     if fmt not in SUPPORTED_EXPORT_FORMATS:
         raise HTTPException(
             status_code=400, detail=f"format must be one of {SUPPORTED_EXPORT_FORMATS}, got {format!r}"
         )
+    if limit <= 0:
+        raise HTTPException(status_code=400, detail="limit must be a positive integer")
 
-    entries = exporter.collect(
+    bundle = exporter.collect_bundle(
         organization_id=organization_id,
         dataset_id=dataset_id,
         schema_hash=schema_hash,
         only_successful=only_successful,
         limit=limit,
+        persist=persist,
+        output_dir=output_dir,
     )
-    body = exporter.export(entries, fmt=fmt)
+    if fmt == "report":
+        return JSONResponse(
+            content={
+                "exported": True,
+                "report": bundle.report,
+                "persisted_paths": bundle.persisted_paths,
+            }
+        )
+
+    body = exporter.render(bundle.records, fmt=fmt)
+    headers = {"Content-Disposition": f'attachment; filename="training_export.{fmt}"'}
+    if bundle.persisted_paths:
+        headers["X-Persisted-Paths"] = ";".join(f"{key}={value}" for key, value in sorted(bundle.persisted_paths.items()))
     return Response(
         content=body,
         media_type=_EXPORT_MEDIA_TYPES[fmt],
-        headers={"Content-Disposition": f'attachment; filename="training_export.{fmt}"'},
+        headers=headers,
     )

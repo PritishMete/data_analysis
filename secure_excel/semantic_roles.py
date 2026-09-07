@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from datetime import datetime
 import math
 import re
 
@@ -72,6 +73,14 @@ NAME_HINTS = {
 BOOLEAN_LIKE = {"yes", "no", "true", "false", "y", "n", "1", "0", "available", "not available", "open", "closed"}
 BOOLEAN_TRUE = {"yes", "true", "y", "1", "available", "open", "on", "enabled"}
 BOOLEAN_FALSE = {"no", "false", "n", "0", "not available", "closed", "off", "disabled"}
+DATE_NAME_HINTS = {"date", "time", "month", "year", "day", "created", "updated", "timestamp", "due", "dob"}
+DATE_VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"^\d{4}-\d{2}-\d{2}$"), "%Y-%m-%d"),
+    (re.compile(r"^\d{4}/\d{2}/\d{2}$"), "%Y/%m/%d"),
+    (re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$"), "%m/%d/%Y"),
+    (re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$"), "%m-%d-%Y"),
+    (re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$"), "%Y-%m-%d %H:%M:%S"),
+]
 
 
 def _clean_name(name: str) -> str:
@@ -88,13 +97,45 @@ def _series_text(series: pd.Series, limit: int = 50) -> list[str]:
     return [value.strip() for value in values if value.strip()]
 
 
-def _datetime_ratio(series: pd.Series) -> float:
+def _looks_date_like(value: str) -> bool:
+    cleaned = value.strip()
+    if not cleaned:
+        return False
+    return any(pattern.fullmatch(cleaned) for pattern, _ in DATE_VALUE_PATTERNS)
+
+
+def _parse_date_value(value: str) -> bool:
+    cleaned = value.strip()
+    for pattern, fmt in DATE_VALUE_PATTERNS:
+        if pattern.fullmatch(cleaned):
+            try:
+                if "T" in cleaned:
+                    datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+                else:
+                    datetime.strptime(cleaned, fmt)
+                return True
+            except ValueError:
+                return False
+    return False
+
+
+def _datetime_ratio(series: pd.Series, column_name: str) -> float:
     if pd.api.types.is_datetime64_any_dtype(series):
         return 1.0 if len(series) else 0.0
     if pd.api.types.is_numeric_dtype(series):
         return 0.0
-    parsed = pd.to_datetime(series, errors="coerce")
-    return float(parsed.notna().mean()) if len(series) else 0.0
+    name_tokens = _name_tokens(column_name)
+    compact = _clean_name(column_name)
+    if not (name_tokens & DATE_NAME_HINTS or any(hint in compact for hint in DATE_NAME_HINTS)):
+        return 0.0
+    values = _series_text(series, limit=50)
+    if not values:
+        return 0.0
+    date_like = [value for value in values if _looks_date_like(value)]
+    if not date_like:
+        return 0.0
+    parsed = sum(1 for value in date_like if _parse_date_value(value))
+    return float(parsed / len(values)) if values else 0.0
 
 
 def _numeric_ratio(series: pd.Series) -> float:
@@ -141,7 +182,7 @@ def detect_column_role(column_name: str, series: pd.Series) -> dict[str, Any]:
     text_values = _series_text(series)
     unique_ratio = _unique_ratio(series)
     numeric_ratio = _numeric_ratio(series)
-    datetime_ratio = _datetime_ratio(series)
+    datetime_ratio = _datetime_ratio(series, column_name)
     bool_ratio = _bool_ratio(series)
     dtype_name = str(series.dtype)
 

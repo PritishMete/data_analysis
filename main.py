@@ -1,3 +1,4 @@
+import asyncio
 import re
 import time
 import logging
@@ -25,12 +26,14 @@ from location_agent import enrich_rows
 from query_router import handle_smart_query
 from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
+from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
 from common.excel_context import ExcelContextError, scan_workbook
 from common.data_understanding import profile_dataframe
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
 
+_LEARNING_EVENT_TASKS: set[asyncio.Task[Any]] = set()
 
 from common.json_safe import to_json_safe
 
@@ -77,6 +80,44 @@ def smart_query_error_response(
         operation=operation,
         errors=[{"error_type": error_type, "message": message}],
     )
+
+
+async def _record_learning_event(
+    *,
+    text: str,
+    df: pd.DataFrame,
+    sheets: list,
+    result: dict[str, Any],
+) -> None:
+    try:
+        abstraction = build_safe_query_abstraction(text, df, sheets)
+        event = build_learning_event(user_text=text, result=result if isinstance(result, dict) else {}, abstraction=abstraction)
+        response = await get_learning_bridge().ingest(event)
+        accepted = bool(isinstance(response, dict) and response.get("stored"))
+        logger.info(
+            "[/smart_query] learning_event_result event_id=%s experience_sent=%s experience_accepted=%s",
+            event.event_id,
+            True,
+            accepted,
+        )
+    except Exception:
+        logger.exception("[/smart_query] Failed to record a learning event")
+
+
+def _queue_learning_event(
+    *,
+    text: str,
+    df: pd.DataFrame,
+    sheets: list,
+    result: dict[str, Any],
+) -> None:
+    try:
+        task = asyncio.create_task(_record_learning_event(text=text, df=df, sheets=sheets, result=result))
+    except RuntimeError:
+        logger.debug("[/smart_query] No running event loop available for learning event scheduling")
+        return
+    _LEARNING_EVENT_TASKS.add(task)
+    task.add_done_callback(_LEARNING_EVENT_TASKS.discard)
 
 # ── Enterprise Analytics Platform extensions (new, additive) ────────────────
 # Everything above this line is completely untouched. These imports bring in
@@ -323,38 +364,11 @@ def analyze_dataframe(df: pd.DataFrame):
     }
     duplicate_count = int(df.duplicated().sum())
 
-    # -- Raw row previews/sample/describe (restored) -------------------------
-    # These were dropped in the grouped-stats refactor above under the
-    # reasoning that they're "actual data, or free text, neither of which is
-    # a structured metric" -- but the Flutter client's PreviewTables and
-    # DescribeMatrix widgets (lib/features/analysis/widgets/preview_tables.dart,
-    # describe_matrix.dart) read these three keys directly off the /analyze
-    # response and have never been migrated off them. Restoring them here
-    # rather than migrating those widgets, since this is the smaller/safer
-    # diff and doesn't touch the grouped summary/distribution/quality shape
-    # that quality_report.dart and overview_metrics.dart already depend on.
-    preview = df.head(15).fillna("").to_dict(orient="records")
-    sample = (
-        df.sample(min(10, len(df))).fillna("").to_dict(orient="records")
-        if len(df) > 0 else []
-    )
-    describe_records = (
-        describe_df.fillna("").reset_index().to_dict(orient="records")
-        if not describe_df.empty else []
-    )
-
     return {
         "summary": {
             "rows": int(df.shape[0]),
             "columns": int(df.shape[1]),
             "column_names": list(df.columns),
-            # Per-column pandas dtypes as plain strings (e.g. "int64",
-            # "float64", "object", "datetime64[ns]", "bool").
-            # df.dtypes.astype(str) is the canonical way to serialise the
-            # dtype Index as plain strings without special NumPy types.
-            # Placed inside "summary" so it follows the existing grouped
-            # shape that quality_report.dart / overview_metrics.dart depend on.
-            "dtypes": df.dtypes.astype(str).to_dict(),
         },
         "data_understanding_profile": profile_dataframe(df),
         "distribution": {
@@ -369,13 +383,8 @@ def analyze_dataframe(df: pd.DataFrame):
             "count": duplicate_count,
         },
         "missing_values": missing_values,
-        "duplicate_values": duplicate_values,
         "numeric_statistics": numeric_statistics,
         "categorical_statistics": categorical_statistics,
-        # Legacy flat fields -- required by preview_tables.dart / describe_matrix.dart.
-        "preview": preview,
-        "sample": sample,
-        "describe": describe_records,
     }
 
 
@@ -1648,6 +1657,11 @@ async def smart_query(
             sheets = []
 
         result = await handle_smart_query(text, df, sheets)
+        if isinstance(result, dict):
+            metadata = result.setdefault("metadata", {})
+            learning = metadata.setdefault("learning", {})
+            learning["experience_sent"] = True
+        _queue_learning_event(text=text, df=df, sheets=sheets, result=result if isinstance(result, dict) else {})
         if excel_context and isinstance(result, dict):
             result["excel_context"] = excel_context
 
@@ -1666,6 +1680,7 @@ async def smart_query(
                 extra_operation_fields={"exception": str(e)},
             ))
             json.dumps(fallback, allow_nan=False)  # final safety check before we trust this is returnable
+            _queue_learning_event(text=text, df=df if "df" in locals() else pd.DataFrame(), sheets=sheets if "sheets" in locals() else [], result=fallback)
         except Exception:
             # json_safe() is designed to never raise and always produce
             # something json.dumps can handle, but if str(e) itself somehow

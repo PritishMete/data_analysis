@@ -4,6 +4,10 @@ This project has been updated to support an Excel-only, privacy-first workflow.
 The default path keeps the workbook, schema, row values, and all column
 semantics local to the backend process.
 
+Operational query-history and export helpers in this repository are for local
+inspection, reporting, and bridge validation only. The canonical fine-tuning
+corpus now lives in the student repository.
+
 ## 1. How the architecture works
 
 The secure pipeline is:

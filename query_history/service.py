@@ -43,6 +43,14 @@ class QueryHistoryService:
         dataset = self.dataset_repository.get_by_id(dataset_id)
         return dataset.schema_hash if dataset is not None else None
 
+    def _resolve_organization_id(self, dataset_id: str | None, organization_id: str | None) -> str | None:
+        if organization_id is not None:
+            return organization_id
+        if dataset_id is None or self.dataset_repository is None:
+            return None
+        dataset = self.dataset_repository.get_by_id(dataset_id)
+        return dataset.organization_id if dataset is not None else None
+
     def log_execution(
         self,
         *,
@@ -61,7 +69,7 @@ class QueryHistoryService:
     ) -> QueryHistory:
         entry = QueryHistory(
             dataset_id=dataset_id,
-            organization_id=organization_id,
+            organization_id=self._resolve_organization_id(dataset_id, organization_id),
             schema_hash=self._resolve_schema_hash(dataset_id),
             user_query=user_query,
             intent=intent,

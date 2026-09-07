@@ -1,4 +1,5 @@
 import io
+import warnings
 
 import pandas as pd
 from openpyxl import Workbook
@@ -85,4 +86,20 @@ def test_fastapi_routes_exist():
     assert client.get("/excel/ping").status_code == 200
     assert client.get("/powerbi/ping").status_code == 200
     assert client.get("/powerbi/transform/list").status_code == 200
+
+
+def test_build_schema_profile_handles_date_columns_without_warnings():
+    df = pd.DataFrame(
+        {
+            "Date": ["2026-01-01", "2026-01-02"],
+            "Title": ["text", "more text"],
+        }
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        schema = build_schema_profile(df)
+    assert caught == []
+    roles = {column["role"] for column in schema["columns"]}
+    assert "date" in roles
+    assert "entity_name" in roles
 
