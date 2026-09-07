@@ -148,6 +148,10 @@ Key endpoints:
 - `POST /excel/session`
 - `POST /excel/query`
 - `POST /excel/interpret`
+- `POST /excel/detail-analysis` — profile every non-empty worksheet together
+- `POST /v2/detail-analysis` — compare multiple uploaded CSV/Excel/JSON tables
+- `POST /v2/detail-analysis/path` — local-folder analysis when explicitly enabled
+- `POST /powerbi/detail-analysis` — Power BI-compatible multi-table upload
 
 ## 9. How to configure the API
 
@@ -161,6 +165,27 @@ Useful variables:
 
 If `SECURE_EXCEL_REMOTE_AI` is left at the default `false`, the secure Excel
 path remains local-only.
+
+## Detail Analysis Across Tables
+
+The normal scan describes one selected table. Use Detail Analysis when you
+need a model-level view across multiple tables or worksheets. It compares
+candidate keys and observed value overlap, then reports fact-table,
+dimension-table, relationship, and star-schema candidates. These are still
+modeling hypotheses until the business grain is confirmed.
+
+For a local folder path, enable the path endpoint only on a local backend:
+
+```powershell
+$env:DETAIL_ANALYSIS_PATHS_ENABLED = "true"
+$env:DETAIL_ANALYSIS_ALLOWED_ROOTS = "C:\datasets"
+```
+
+Hosted web browsers cannot grant a server access to `C:\datasets`; use the
+folder picker, which uploads the selected dataset files. Power BI connectors
+can post multiple exported tables to `/powerbi/detail-analysis`. Large files
+should use the local backend or connector path so the workbook does not need
+to be opened in Excel.
 
 ## 10. How to disable remote AI completely
 

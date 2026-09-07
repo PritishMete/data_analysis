@@ -2,6 +2,8 @@ import asyncio
 import re
 import time
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, UploadFile, File, Form
@@ -29,6 +31,7 @@ from data_cleaner import clean_dataframe
 from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
 from common.excel_context import ExcelContextError, scan_workbook
 from common.data_understanding import profile_dataframe
+from common.detail_analysis import analyze_dataset_collection, load_dataset_tables
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
@@ -1757,6 +1760,75 @@ async def excel_context(
         print("[/v2/excel/context] EXCEPTION:")
         traceback.print_exc()
         return {"success": False, "error": f"Excel context failed: {exc}"}
+
+
+async def _detail_analysis_response(files: list[UploadFile], source_platform: str | None = None):
+    tables: dict[str, pd.DataFrame] = {}
+    try:
+        for file in files:
+            raw = await file.read()
+            loaded = load_dataset_tables(raw, file.filename or "dataset.csv")
+            for name, frame in loaded.items():
+                table_name = name
+                suffix = 2
+                while table_name in tables:
+                    table_name = f"{name}_{suffix}"
+                    suffix += 1
+                tables[table_name] = frame
+        result = analyze_dataset_collection(tables)
+        result["source_platform"] = source_platform or "web"
+        return {"success": True, **result}
+    except (ValueError, ImportError) as exc:
+        return {"success": False, "error": str(exc)}
+    except Exception as exc:
+        print("[/v2/detail-analysis] EXCEPTION:")
+        traceback.print_exc()
+        return {"success": False, "error": f"Detail analysis failed: {exc}"}
+
+
+@app.post("/v2/detail-analysis")
+async def detail_analysis(
+    files: list[UploadFile] = File(...),
+    source_platform: str | None = Form(None),
+):
+    """Analyze multiple uploaded datasets together for model discovery."""
+    return await _detail_analysis_response(files, source_platform)
+
+
+@app.post("/v2/detail-analysis/path")
+async def detail_analysis_path(path: str = Form(...)):
+    """Analyze a local folder when explicitly enabled on a local backend.
+
+    A hosted backend cannot access the user's C: drive. Local deployments must
+    set DETAIL_ANALYSIS_PATHS_ENABLED=true and allow the folder through
+    DETAIL_ANALYSIS_ALLOWED_ROOTS (semicolon-separated on Windows).
+    """
+    enabled = os.getenv("DETAIL_ANALYSIS_PATHS_ENABLED", "false").casefold() == "true"
+    if not enabled:
+        return {"success": False, "error": "Local path analysis is disabled on this backend."}
+    requested = Path(path).expanduser().resolve()
+    allowed = [Path(item.strip()).expanduser().resolve() for item in os.getenv("DETAIL_ANALYSIS_ALLOWED_ROOTS", "").split(";") if item.strip()]
+    if not requested.is_dir() or not allowed or not any(requested == root or root in requested.parents for root in allowed):
+        return {"success": False, "error": "The requested folder is not an allowed detail-analysis path."}
+    try:
+        tables: dict[str, pd.DataFrame] = {}
+        for source in sorted(requested.rglob("*")):
+            if not source.is_file() or source.suffix.casefold() not in {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}:
+                continue
+            loaded = load_dataset_tables(source.read_bytes(), source.name)
+            for name, frame in loaded.items():
+                tables[f"{source.name}:{name}"] = frame
+        return {"success": True, **analyze_dataset_collection(tables), "source_platform": "local_path", "path": str(requested)}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@app.post("/powerbi/detail-analysis")
+async def powerbi_detail_analysis(
+    files: list[UploadFile] = File(...),
+):
+    """Power BI-compatible batch table profiling endpoint."""
+    return await _detail_analysis_response(files, "power_bi")
 
 # ---------------------------------------------------------
 # Root Route

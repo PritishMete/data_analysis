@@ -48,6 +48,13 @@ label {
   color: #cbd5e1;
 }
 
+.help {
+  color: #b8c2d6;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
 input, textarea, button {
   width: 100%;
   box-sizing: border-box;
@@ -94,4 +101,3 @@ pre {
     grid-template-columns: 1fr;
   }
 }
-

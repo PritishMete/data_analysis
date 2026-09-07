@@ -7,6 +7,10 @@ const queryInput = document.getElementById("query");
 const output = document.getElementById("output");
 const runButton = document.getElementById("runQuery");
 const createButton = document.getElementById("createSession");
+const detailFilesInput = document.getElementById("detailFiles");
+const detailButton = document.getElementById("runDetailAnalysis");
+const detailPathInput = document.getElementById("detailPath");
+const pathButton = document.getElementById("runPathAnalysis");
 
 function setOutput(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -42,3 +46,41 @@ runButton.addEventListener("click", async () => {
   setOutput(data);
 });
 
+detailButton.addEventListener("click", async () => {
+  const files = detailFilesInput.files;
+  if (!files || files.length === 0) {
+    setOutput("Choose a folder or multiple dataset files first.");
+    return;
+  }
+  const form = new FormData();
+  for (const file of files) form.append("files", file, file.name);
+  form.append("source_platform", "web");
+  detailButton.disabled = true;
+  try {
+    const res = await fetch("/v2/detail-analysis", { method: "POST", body: form });
+    setOutput(await res.json());
+  } catch (error) {
+    setOutput(`Detail analysis failed: ${error}`);
+  } finally {
+    detailButton.disabled = false;
+  }
+});
+
+pathButton.addEventListener("click", async () => {
+  const path = detailPathInput.value.trim();
+  if (!path) {
+    setOutput("Enter a local folder path first.");
+    return;
+  }
+  const form = new FormData();
+  form.append("path", path);
+  pathButton.disabled = true;
+  try {
+    const res = await fetch("/v2/detail-analysis/path", { method: "POST", body: form });
+    setOutput(await res.json());
+  } catch (error) {
+    setOutput(`Local path analysis failed: ${error}`);
+  } finally {
+    pathButton.disabled = false;
+  }
+});
