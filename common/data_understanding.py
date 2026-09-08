@@ -25,6 +25,11 @@ def _text(value: Any) -> str:
     return "" if value is None or (isinstance(value, float) and pd.isna(value)) else str(value).strip()
 
 
+def _missing_mask(series: pd.Series) -> pd.Series:
+    """Treat nulls and whitespace-only strings as missing without mutating data."""
+    return series.isna() | series.astype("string").str.strip().eq("")
+
+
 def _role(name: str, series: pd.Series) -> str:
     low = name.casefold().replace("_", " ").replace("-", " ")
     if any(h in low for h in _GEO_HINTS):
@@ -59,25 +64,56 @@ def _display_dtype(series: pd.Series) -> str:
     return "text"
 
 
+def _logical_type(name: str, series: pd.Series) -> tuple[str, int]:
+    """Infer a logical type without changing the supplied values."""
+    non_null = series[~_missing_mask(series)]
+    if pd.api.types.is_bool_dtype(series):
+        return "boolean", 0
+    if not len(non_null):
+        return "unknown", 0
+    text = non_null.map(lambda value: str(value).strip())
+    if text.str.casefold().isin({"true", "false", "yes", "no"}).all():
+        return "boolean-like", 0
+    low = name.casefold()
+    if any(hint in low for hint in _DATE_HINTS):
+        parsed = pd.to_datetime(text, errors="coerce")
+        invalid = int(parsed.isna().sum())
+        return "datetime", invalid
+    numeric = pd.to_numeric(text, errors="coerce")
+    if numeric.notna().all():
+        return ("integer" if (numeric % 1 == 0).all() else "decimal"), 0
+    return "text", 0
+
+
 def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
     """Return a compact, evidence-based profile for one dataset."""
     rows = int(len(df))
     columns = [str(c) for c in df.columns]
     schema: list[dict[str, Any]] = []
     primary_candidates: list[str] = []
+    business_candidates: list[str] = []
     foreign_candidates: list[str] = []
     suspicious: list[dict[str, Any]] = []
     inconsistencies: list[dict[str, Any]] = []
 
     for name in columns:
         series = df[name]
-        non_null = series.dropna()
+        missing_mask = _missing_mask(series)
+        non_null = series[~missing_mask]
         unique = int(non_null.nunique())
-        missing = int(series.isna().sum())
+        missing = int(missing_mask.sum())
         role = _role(name, series)
         non_null_text = non_null.map(_text)
+        raw_text = non_null.map(lambda value: str(value))
         samples = list(dict.fromkeys(non_null_text.head(3).tolist()))
-        key_candidate = bool(rows > 0 and missing == 0 and unique == rows and role in {"identifier", "categorical"})
+        business_key = bool(
+            rows > 0
+            and missing == 0
+            and (role == "identifier" or (role == "categorical" and unique == rows))
+        )
+        key_candidate = bool(business_key and unique == rows)
+        if business_key:
+            business_candidates.append(name)
         if key_candidate:
             primary_candidates.append(name)
         if role == "identifier" and not key_candidate:
@@ -85,37 +121,46 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
 
         schema.append({
             "column": name,
-            "dtype": _display_dtype(series),
+            "dtype": _logical_type(name, series)[0],
+            "physical_dtype": _display_dtype(series),
+            "logical_type": _logical_type(name, series)[0],
             "pandas_dtype": str(series.dtype),
             "role": role,
             "non_null": int(len(non_null)),
             "missing": missing,
             "unique": unique,
             "key_candidate": key_candidate,
+            "business_key_candidate": business_key,
+            "primary_key_valid": key_candidate,
             "sample_values": samples,
         })
 
         low = name.casefold()
+        logical_type, invalid_logical = _logical_type(name, series)
+        if invalid_logical:
+            suspicious.append({"column": name, "issue": f"{invalid_logical} non-null value(s) cannot be parsed as {logical_type}.", "classification": "invalid"})
         if missing:
-            suspicious.append({"column": name, "issue": f"{missing} missing value(s)."})
+            suspicious.append({"column": name, "issue": f"{missing} missing value(s).", "classification": "observed fact"})
         if pd.api.types.is_numeric_dtype(series) and any(h in low for h in ("amount", "price", "sales", "revenue", "profit", "quantity", "qty")):
             negative = int((series.dropna() < 0).sum())
             if negative:
-                suspicious.append({"column": name, "issue": f"{negative} negative measure value(s); verify whether they are valid returns/adjustments."})
+                suspicious.append({"column": name, "issue": f"{negative} negative measure value(s); verify whether they are valid returns/adjustments.", "classification": "suspicious"})
         if unique == 1 and rows > 1:
-            suspicious.append({"column": name, "issue": "Constant value across all non-empty records."})
+            suspicious.append({"column": name, "issue": "Constant value across all non-empty records.", "classification": "suspicious"})
 
         grouped: dict[str, set[str]] = defaultdict(set)
-        for value in non_null_text:
-            if value:
+        for value in raw_text:
+            if value.strip():
                 grouped[" ".join(value.casefold().split())].add(value)
         variants = [sorted(values) for values in grouped.values() if len(values) > 1]
         if variants and role == "categorical":
-            inconsistencies.append({"column": name, "variants": variants[:8], "issue": "Values differ only by case or whitespace."})
+            inconsistencies.append({"column": name, "variants": variants[:20], "issue": "Values differ only by case or whitespace."})
 
     grain = "One row per observed record in the scanned worksheet."
-    if primary_candidates:
-        grain += f" Candidate row key: {primary_candidates[0]}."
+    if business_candidates:
+        grain += f" Intended row key candidate: {business_candidates[0]}."
+        if business_candidates[0] not in primary_candidates:
+            grain += " The candidate is not physically unique in the supplied rows."
     else:
         grain += " No reliable single-column row key was observed."
 
@@ -129,6 +174,7 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         "dataset_overview": {"rows": rows, "columns": len(columns), "grain": grain},
         "schema": schema,
         "primary_key_candidates": primary_candidates,
+        "business_key_candidates": business_candidates,
         "foreign_key_candidates": foreign_candidates,
         "relationships": ["Relationships to other tables cannot be verified from one scanned worksheet."],
         "invalid_or_suspicious_values": suspicious,
@@ -149,4 +195,8 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
             "The scanned worksheet represents one logical dataset, not multiple stacked tables.",
             "Key and relationship candidates are hypotheses and require business confirmation.",
         ],
+        "quality_summary": {
+            "exact_duplicate_rows": int(df.duplicated().sum()),
+            "exact_duplicate_groups": int(df.astype(str).value_counts().gt(1).sum()) if rows else 0,
+        },
     }

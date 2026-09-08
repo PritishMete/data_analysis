@@ -8,9 +8,30 @@ const output = document.getElementById("output");
 const runButton = document.getElementById("runQuery");
 const createButton = document.getElementById("createSession");
 const detailFilesInput = document.getElementById("detailFiles");
+const detailFileStatus = document.getElementById("detailFileStatus");
 const detailButton = document.getElementById("runDetailAnalysis");
 const detailPathInput = document.getElementById("detailPath");
 const pathButton = document.getElementById("runPathAnalysis");
+let selectedDetailFiles = [];
+
+const supportedDetailExtensions = new Set([".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"]);
+
+function updateDetailFileStatus(files) {
+  selectedDetailFiles = Array.from(files || []);
+  if (selectedDetailFiles.length === 0) {
+    detailFileStatus.textContent = "No files selected.";
+    return;
+  }
+  const unsupported = selectedDetailFiles.filter((file) => {
+    const dot = file.name.lastIndexOf(".");
+    return !supportedDetailExtensions.has(dot >= 0 ? file.name.slice(dot).toLowerCase() : "");
+  });
+  const names = selectedDetailFiles.map((file) => file.name).join(", ");
+  const warning = unsupported.length ? ` Unsupported files will be ignored: ${unsupported.map((file) => file.name).join(", ")}.` : "";
+  detailFileStatus.textContent = `${selectedDetailFiles.length} file${selectedDetailFiles.length === 1 ? "" : "s"} selected: ${names}.${warning}`;
+}
+
+detailFilesInput.addEventListener("change", () => updateDetailFileStatus(detailFilesInput.files));
 
 function setOutput(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -63,9 +84,9 @@ runButton.addEventListener("click", async () => {
 });
 
 detailButton.addEventListener("click", async () => {
-  const files = detailFilesInput.files;
+  const files = selectedDetailFiles;
   if (!files || files.length === 0) {
-    setOutput("Choose a folder or multiple dataset files first.");
+    setOutput("No files selected. Choose one or more dataset files first.");
     return;
   }
   const form = new FormData();

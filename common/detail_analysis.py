@@ -18,6 +18,8 @@ import pandas as pd
 
 from .data_understanding import profile_dataframe
 from .detail_report import build_detail_report_data
+from .detail_enhancements import date_profiles, duplicate_analysis, kpi_readiness, numeric_profiles
+from .chat_reasoning import build_quality_evidence
 
 
 def _safe_name(name: str) -> str:
@@ -40,8 +42,8 @@ def load_dataset_tables(raw_bytes: bytes, filename: str) -> dict[str, pd.DataFra
 
 
 def _overlap(left: pd.Series, right: pd.Series) -> float:
-    left_values = set(left.dropna().astype(str).str.strip())
-    right_values = set(right.dropna().astype(str).str.strip())
+    left_values = set(left.dropna().astype(str).str.strip()) - {""}
+    right_values = set(right.dropna().astype(str).str.strip()) - {""}
     if not left_values or not right_values:
         return 0.0
     return len(left_values & right_values) / len(left_values)
@@ -110,6 +112,9 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
         raise ValueError("At least one non-empty dataset is required.")
 
     profiles = {name: profile_dataframe(frame) for name, frame in tables.items()}
+    quality_evidence = build_quality_evidence(tables)
+    for name, profile in profiles.items():
+        profile["quality_evidence"] = quality_evidence.get(name, [])
     fact_scores: Counter[str] = Counter()
     dimension_scores: Counter[str] = Counter()
     for name, profile in profiles.items():
@@ -134,7 +139,9 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
             if source_name == target_name:
                 continue
             target_frame = tables[target_name]
-            target_keys = [] if _table_hint(target_name) == "fact" else list(target_profile["primary_key_candidates"])
+            target_keys = [] if _table_hint(target_name) == "fact" else list(
+                target_profile.get("business_key_candidates", target_profile["primary_key_candidates"])
+            )
             # A dimension can contain duplicate records and still be the
             # intended relationship target. Keep the quality warning, but do
             # not lose an obvious *_id relationship because of it.
@@ -168,6 +175,14 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
                             "target_table": target_name,
                             "target_column": target_column,
                             "confidence": round(confidence, 4),
+                            "source_nulls": int(
+                                source_frame[source_column].isna().sum()
+                                + source_frame[source_column].astype("string").str.strip().eq("").sum()
+                            ),
+                            "target_unique": bool(
+                                target_frame[target_column].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+                                == target_frame[target_column].dropna().astype(str).str.strip().replace("", pd.NA).dropna().size
+                            ),
                         })
 
     ranked_facts = [name for name, _ in fact_scores.most_common() if fact_scores[name] > 0]
@@ -180,6 +195,89 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
     dimension_tables = [name for name in ranked_dimensions if name not in fact_tables]
     if not fact_tables and len(tables) == 1:
         fact_tables = [next(iter(tables))]
+
+    for relationship in relationships:
+        source = tables[relationship["source_table"]][relationship["source_column"]]
+        target = tables[relationship["target_table"]][relationship["target_column"]]
+        source_present = source.dropna().astype(str).str.strip()
+        target_present = set(target.dropna().astype(str).str.strip()) - {""}
+        source_present = source_present[source_present != ""]
+        valid_mask = source_present.isin(target_present)
+        relationship["orphan_rows"] = int((~valid_mask).sum())
+        relationship["orphan_values"] = sorted(set(source_present[~valid_mask]))
+        relationship["non_null_referential_coverage"] = round(float(valid_mask.mean()), 4) if len(source_present) else 0.0
+        relationship["cardinality"] = "many_to_one" if relationship["target_unique"] else "many_to_many_or_non_unique_target"
+        relationship["evidence"] = "Validated by normalized value membership; null source keys excluded from coverage."
+
+    # Publish one explicit, validated model contract for deterministic
+    # renderers. Keep the legacy model_recommendation shape below for clients
+    # that still consume lists of table names.
+    profile_by_name = profiles
+    fact_specs = []
+    for index, name in enumerate(fact_tables, start=1):
+        profile = profile_by_name[name]
+        fact_specs.append({
+            "id": f"fact_{index}",
+            "source_table": name,
+            "display_name": name,
+            "grain": profile["dataset_overview"]["grain"],
+            "business_key": profile.get("business_key_candidates", [])[:1],
+            "foreign_keys": sorted({
+                relation["source_column"]
+                for relation in relationships
+                if relation["source_table"] == name
+            }),
+            "measures": [
+                entry["column"]
+                for entry in profile.get("schema", [])
+                if entry.get("role") == "numeric_measure"
+            ],
+        })
+    dimension_specs = []
+    dimension_ids = {name: f"dim_{index}" for index, name in enumerate(dimension_tables, start=1)}
+    for name in dimension_tables:
+        profile = profile_by_name[name]
+        key_candidates = profile.get("business_key_candidates", [])
+        key = key_candidates[0] if key_candidates else None
+        dimension_specs.append({
+            "id": dimension_ids[name],
+            "source_table": name,
+            "display_name": name,
+            "key": key,
+            "attributes": [
+                entry["column"]
+                for entry in profile.get("schema", [])
+                if entry.get("role") != "identifier"
+            ],
+            "derived": False,
+            "quality_status": "valid" if key and key in profile.get("primary_key_candidates", []) else "requires_key_cleanup",
+        })
+    relationship_specs = []
+    for relation in relationships:
+        if relation["source_table"] not in fact_tables or relation["target_table"] not in dimension_ids:
+            continue
+        relationship_specs.append({
+            "from": dimension_ids[relation["target_table"]],
+            "to": f"fact_{fact_tables.index(relation['source_table']) + 1}",
+            "dimension_key": relation["target_column"],
+            "fact_key": relation["source_column"],
+            "cardinality": "one_to_many" if relation["target_unique"] else "not_validated",
+            "status": "valid" if relation["target_unique"] and relation["orphan_rows"] == 0 else "requires_key_cleanup",
+            "null_fk_count": relation["source_nulls"],
+            "orphan_count": relation["orphan_rows"],
+            "target_key_unique": relation["target_unique"],
+        })
+    star_schema = {
+        "fact_tables": fact_specs,
+        "dimensions": dimension_specs,
+        "relationships": relationship_specs,
+    }
+    enhancements = duplicate_analysis(tables, profiles, fact_tables, dimension_tables)
+    enhancements["numeric_profiles"] = numeric_profiles(tables, profiles)
+    enhancements["date_profiles"] = date_profiles(tables, profiles)
+    enhancements["kpi_readiness"] = kpi_readiness(
+        tables, profiles, fact_tables, dimension_tables, enhancements, relationships
+    )
 
     result = {
         "analysis_mode": "multi_dataset_detail",
@@ -194,14 +292,11 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
             for name, frame in tables.items()
         ],
         "relationships": relationships,
+        "star_schema": star_schema,
         "model_recommendation": {
             "fact_tables": fact_tables,
             "dimension_tables": dimension_tables,
-            "star_schema": {
-                "fact_tables": fact_tables,
-                "dimension_tables": dimension_tables,
-                "relationships": relationships,
-            },
+            "star_schema": star_schema,
             "status": "candidate_model" if not relationships else "relationship_backed_candidate_model",
             "note": "Numeric attributes do not make an entity table a fact table; confirm business grain before production modeling.",
         },
@@ -210,6 +305,16 @@ def analyze_dataset_collection(tables: dict[str, pd.DataFrame]) -> dict[str, Any
             "A browser folder picker sends selected files, not the user's local path.",
             "Large sources should use the local backend or Power BI connector path; raw rows are not returned in this response.",
         ],
+        **enhancements,
+    }
+    result["model_readiness"] = {
+        "status": "ready_for_transformation_design" if not any(
+            item["profile"].get("invalid_or_suspicious_values")
+            or item["profile"].get("categorical_inconsistencies")
+            or item["profile"].get("quality_summary", {}).get("exact_duplicate_rows")
+            for item in result["datasets"]
+        ) else "requires_quality_rules",
+        "evidence": "Readiness is based on deterministic duplicate, missing-key, invalid-value, and categorical-quality observations.",
     }
     result["detail_report"] = build_detail_report_data(result, tables)
     return result

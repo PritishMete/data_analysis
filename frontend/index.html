@@ -26,8 +26,9 @@
 
     <section class="card">
       <label>Detail Analysis</label>
-      <p class="help">Select a folder or multiple dataset files. InsightFlow will compare tables and propose fact, dimension, and relationship candidates without returning raw rows.</p>
-      <input id="detailFiles" type="file" multiple webkitdirectory directory accept=".csv,.tsv,.xlsx,.xlsm,.json" />
+      <p class="help">Select multiple dataset files. InsightFlow will compare tables and propose fact, dimension, and relationship candidates without returning raw rows.</p>
+      <input id="detailFiles" type="file" multiple accept=".csv,.tsv,.xlsx,.xlsm,.xls,.json" />
+      <div id="detailFileStatus" class="file-status" aria-live="polite">No files selected.</div>
       <button id="runDetailAnalysis">Analyze Dataset Collection</button>
       <input id="detailPath" placeholder="Local backend folder, e.g. C:\\datasets" />
       <button id="runPathAnalysis">Analyze Local Folder Path</button>

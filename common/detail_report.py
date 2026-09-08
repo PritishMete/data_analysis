@@ -8,6 +8,7 @@ alter measured counts or fabricate quality findings.
 from __future__ import annotations
 
 from html import escape
+import math
 from typing import Any
 
 import pandas as pd
@@ -55,7 +56,7 @@ def _agent_bullets(value: Any) -> list[str]:
 
 
 def _key_for(profile: dict[str, Any]) -> dict[str, Any] | None:
-    candidates = profile.get("primary_key_candidates", [])
+    candidates = profile.get("business_key_candidates", profile.get("primary_key_candidates", []))
     if candidates:
         return next((entry for entry in profile["schema"] if entry["column"] == candidates[0]), None)
     id_like = [entry for entry in profile["schema"] if entry["role"] == "identifier"]
@@ -65,16 +66,19 @@ def _key_for(profile: dict[str, Any]) -> dict[str, Any] | None:
 def _grain(name: str, profile: dict[str, Any], key: dict[str, Any] | None) -> str:
     low = name.casefold()
     if any(token in low for token in ("order", "sale", "transaction", "fact")):
-        return f"One business event / line item per {key['column']}." if key else "One business event or line item per row."
+        base = f"One intended business event / line item per {key['column']}." if key else "One intended business event or line item per row."
+        return base + (" Observed duplicate key rows require a quality rule." if key and not key.get("primary_key_valid") else "")
     if any(token in low for token in ("customer", "product", "region", "dimension", "dim")):
-        return f"One entity record per {key['column']}." if key else "One entity record per row."
+        base = f"One intended entity record per {key['column']}." if key else "One entity record per row."
+        return base + (" Observed duplicate key rows require a quality rule." if key and not key.get("primary_key_valid") else "")
     return profile["dataset_overview"]["grain"]
 
 
 def _schema_note(entry: dict[str, Any], series: pd.Series) -> str:
     notes: list[str] = []
-    if entry.get("key_candidate"):
-        notes.append(f"{entry['unique']:,}/{entry['non_null']:,} unique")
+    if entry.get("business_key_candidate"):
+        label = "physically unique" if entry.get("primary_key_valid") else "candidate key, not physically unique"
+        notes.append(f"{label}; {entry['unique']:,}/{entry['non_null']:,} unique")
     if entry.get("missing"):
         notes.append(f"{entry['missing']:,} blank")
     if entry.get("role") == "categorical":
@@ -85,11 +89,13 @@ def _schema_note(entry: dict[str, Any], series: pd.Series) -> str:
         numeric = pd.to_numeric(series, errors="coerce").dropna()
         if not numeric.empty:
             notes.append(f"range {_fmt(float(numeric.min()))} to {_fmt(float(numeric.max()))}")
-    if entry.get("role") == "datetime":
+    if entry.get("logical_type") == "datetime":
         parsed = pd.to_datetime(series, errors="coerce")
         invalid = int(series.notna().sum() - parsed.notna().sum())
         if invalid:
             notes.append(f"{invalid:,} invalid date value(s)")
+    if entry.get("physical_dtype") and entry.get("physical_dtype") != entry.get("logical_type"):
+        notes.append(f"physical={entry['physical_dtype']}; logical={entry['logical_type']}")
     return "; ".join(notes)
 
 
@@ -106,19 +112,28 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
     ranges: list[str] = []
     invalid_dates: list[str] = []
     categorical_values: list[list[Any]] = []
+    issue_register: list[list[Any]] = []
+    duplicate_analysis = result.get("duplicate_analysis", {})
+    duplicate_impact = result.get("duplicate_impact", {})
+    numeric_profiles = result.get("numeric_profiles", {})
+    date_profiles = result.get("date_profiles", {})
+    kpi_readiness = result.get("kpi_readiness", [])
     for item in datasets:
         name = item["name"]
         frame = tables[name]
         profile = item["profile"]
         key = _key_for(profile)
         schema[name] = [
-            [entry["column"], entry["dtype"], _schema_note(entry, frame[entry["column"]])]
+            [entry["column"], entry.get("physical_dtype", "unknown"), entry.get("logical_type", entry["dtype"]), _schema_note(entry, frame[entry["column"]])]
             for entry in profile["schema"]
         ]
-        grains.append(f"{name}: {_grain(name, profile, key)}")
+        grains.append(f"INFERENCE: {name}: {_grain(name, profile, key)}")
         if key:
             duplicate_rows = int(frame.duplicated(subset=[key["column"]], keep=False).sum())
-            keys.append([name, key["column"], f"{key['unique']:,}/{key['non_null']:,} non-null values are unique; {duplicate_rows:,} rows share a key value."])
+            validity = "valid physical primary key" if key.get("primary_key_valid") else "candidate/business key only; not physically unique"
+            keys.append([name, key["column"], f"OBSERVED FACT: {validity}; {key['unique']:,}/{key['non_null']:,} non-null values are unique; {duplicate_rows:,} rows share a key value."])
+            if not key.get("primary_key_valid"):
+                issue_register.append([name, key["column"], "OBSERVED FACT", "HIGH", f"{duplicate_rows:,} rows participate in duplicate candidate-key values.", "Resolve the business key or define a deduplication rule before modeling."])
         else:
             keys.append([name, "None confidently identified", "No reliable identifier-like key was observed."])
         for entry in profile["schema"]:
@@ -169,16 +184,21 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         target_values = set(target.dropna().astype(str).str.strip())
         orphan_count = len(source_values - target_values)
         missing_source = int(source.isna().sum())
-        target_coverage = len(source_values & target_values) / len(target_values) if target_values else 0
+        non_null_coverage = int(source.isna().sum())
+        valid_rows = int(source.dropna().astype(str).str.strip().isin(target_values).sum())
+        non_null_rows = int(source.notna().sum())
+        target_coverage = valid_rows / non_null_rows if non_null_rows else 0
+        orphan_rows = non_null_rows - valid_rows
+        cardinality = relation.get("cardinality", "many_to_one")
         relation_rows.append([
             f"{relation['source_table']}.{relation['source_column']}",
             f"{relation['target_table']}.{relation['target_column']}",
             relation.get("confidence", "n/a"),
-            f"{missing_source:,} blank; {orphan_count:,} orphan value(s)",
+            f"{missing_source:,} null; {orphan_rows:,} orphan row(s); {target_coverage:.0%} non-null coverage; {cardinality}",
         ])
         relationship_notes.append(
-            f"{relation['source_table']}.{relation['source_column']} -> {relation['target_table']}.{relation['target_column']}: "
-            f"{orphan_count:,} orphan value(s); target coverage {target_coverage:.0%}."
+            f"OBSERVED FACT: {relation['source_table']}.{relation['source_column']} -> {relation['target_table']}.{relation['target_column']}: "
+            f"{missing_source:,} null FK row(s); {orphan_rows:,} orphan row(s); {target_coverage:.0%} non-null referential coverage; cardinality {cardinality}."
         )
 
     fact_tables = result["model_recommendation"].get("fact_tables", [])
@@ -213,10 +233,12 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         if category and subcategory:
             grouped = frame[[category, subcategory]].dropna().astype(str)
             if not grouped.empty:
-                dominant = grouped.groupby(category)[subcategory].agg(lambda values: values.mode().iloc[0] if not values.mode().empty else "")
-                mismatch = grouped[grouped.apply(lambda row: row[subcategory] != dominant.get(row[category], row[subcategory]), axis=1)]
+                normalized_category = grouped[category].map(lambda value: " ".join(value.casefold().split()))
+                normalized_subcategory = grouped[subcategory].map(lambda value: " ".join(value.casefold().split()))
+                dominant = pd.crosstab(normalized_subcategory, normalized_category).idxmax(axis=1)
+                mismatch = grouped[normalized_category != normalized_subcategory.map(dominant)]
                 if len(mismatch):
-                    category_mismatches.append(f"{name}: {len(mismatch):,} category/sub-category combination(s) differ from the dominant category family; inspect before standardizing.")
+                    category_mismatches.append(f"{name}: {len(mismatch):,} row(s) have a category/sub-category family mismatch after case/whitespace normalization; mapping is based on the dominant category per sub-category.")
 
     # Verify common order/catalog formulas when the required columns exist.
     order_name = next((name for name, frame in tables.items() if {"product_id", "quantity", "discount", "sales_amount"}.issubset({str(column).casefold() for column in frame.columns})), None)
@@ -251,18 +273,39 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
                 mismatches = int(((expected_profit[profit_ok] - actual_profit[profit_ok]).abs() > 0.01).sum())
                 formula_findings.append(f"{order_name}: profit formula verified on {int(profit_ok.sum()):,} joinable rows; {mismatches:,} mismatch(es).")
     for fact in fact_tables:
-        schema_lines.append(f"{fact} (fact table)\n  Measures: {', '.join(measures) or 'none detected'}")
+        fact_item = next(item for item in datasets if item["name"] == fact)
+        fact_key = _key_for(fact_item["profile"])
+        schema_lines.append(f"{fact} (fact table)\n  Grain: {_grain(fact, fact_item['profile'], fact_key)}\n  Measures: {', '.join(measures) or 'none detected'}")
         for relation in result.get("relationships", []):
             if relation["source_table"] == fact:
                 schema_lines.append(f"  -> {relation['target_table']} via {relation['source_column']} = {relation['target_column']}")
+    dimension_attributes = {}
     for dimension in dimension_tables:
-        schema_lines.append(f"{dimension} (dimension table)")
+        dimension_item = next(item for item in datasets if item["name"] == dimension)
+        attrs = [entry["column"] for entry in dimension_item["profile"]["schema"] if entry["role"] != "identifier"]
+        dimension_attributes[dimension] = attrs
+        schema_lines.append(f"{dimension} (dimension table)\n  Key: {_key_for(dimension_item['profile'])['column'] if _key_for(dimension_item['profile']) else 'none'}\n  Attributes: {', '.join(attrs) or 'none detected'}")
+
+    for item in datasets:
+        name = item["name"]
+        profile = item["profile"]
+        for issue in profile.get("invalid_or_suspicious_values", []):
+            issue_register.append([name, issue["column"], issue.get("classification", "suspicious").upper(), "MEDIUM", issue["issue"], "Define a business rule before transformation."])
+        for issue in profile.get("categorical_inconsistencies", []):
+            issue_register.append([name, issue["column"], "OBSERVED FACT", "MEDIUM", issue["issue"], "Standardize using an approved mapping."])
+        if profile.get("quality_summary", {}).get("exact_duplicate_rows"):
+            issue_register.append([name, "<row>", "OBSERVED FACT", "HIGH", f"{profile['quality_summary']['exact_duplicate_rows']:,} exact duplicate extra row(s).", "Confirm whether duplicates are load artifacts or valid events."])
+    for relation in result.get("relationships", []):
+        if relation.get("source_nulls") or relation.get("orphan_rows"):
+            issue_register.append([relation["source_table"], relation["source_column"], "OBSERVED FACT", "HIGH", f"{relation.get('source_nulls', 0):,} null FK row(s); {relation.get('orphan_rows', 0):,} orphan row(s).", "Define null/orphan foreign-key handling."])
+    for message in category_mismatches:
+        issue_register.append([message.split(":", 1)[0], "category/sub_category", "OBSERVED FACT", "MEDIUM", message, "Review the category-family mapping before standardization."])
 
     assumptions = [
-        "Duplicate rows are treated as possible load errors until business rules confirm they are real events.",
-        "Key and relationship proposals are based on metadata, identifier semantics, and observed value overlap.",
-        "Numeric attributes such as age, cost, and selling price do not by themselves make a table a fact table.",
-        "The proposed star schema should be confirmed against business definitions before production joins are built.",
+        "ASSUMPTION: Duplicate rows are treated as possible load errors until business rules confirm they are real events.",
+        "ASSUMPTION: Key and relationship proposals are based on metadata, identifier semantics, and observed value overlap.",
+        "ASSUMPTION: Numeric attributes such as age, cost, and selling price do not by themselves make a table a fact table.",
+        "ASSUMPTION: The proposed star schema should be confirmed against business definitions before production joins are built.",
     ]
     next_steps = [
         "Agree on duplicate-row handling and the business grain of each source.",
@@ -290,11 +333,17 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         "dimension_tables": dimension_tables,
         "measures": measures,
         "star_schema": "\n".join(schema_lines) or "No star schema candidate was identified.",
+        "fact_grain": _grain(fact_tables[0], next(item for item in datasets if item["name"] == fact_tables[0])["profile"], _key_for(next(item for item in datasets if item["name"] == fact_tables[0])["profile"])) if fact_tables else "No fact grain identified.",
+        "dimension_attributes": dimension_attributes,
+        "star_schema": result.get("star_schema", {}),
+        "issue_register": issue_register,
         "star_links": [
             {
                 "dimension": relation["target_table"],
                 "fact_column": relation["source_column"],
                 "dimension_column": relation["target_column"],
+                "cardinality": relation.get("cardinality"),
+                "target_unique": relation.get("target_unique"),
             }
             for relation in result.get("relationships", [])
             if relation["source_table"] in fact_tables
@@ -302,6 +351,11 @@ def build_detail_report_data(result: dict[str, Any], tables: dict[str, pd.DataFr
         ],
         "assumptions": assumptions,
         "next_steps": next_steps,
+        "duplicate_analysis": duplicate_analysis,
+        "duplicate_impact": duplicate_impact,
+        "numeric_profiles": numeric_profiles,
+        "date_profiles": date_profiles,
+        "kpi_readiness": kpi_readiness,
     }
 
 
@@ -331,13 +385,22 @@ def render_detail_report(result: dict[str, Any]) -> str:
         "<p class='muted'>Counts describe the supplied datasets. No raw data rows are returned in this report.</p>",
     ]
     for name, rows in report["schema"].items():
-        sections += [f"<h2>2. Schema: {escape(name)}</h2>", _table(["Column", "Inferred type", "Notes"], rows)]
+        sections += [f"<h2>2. Schema: {escape(name)}</h2>", _table(["Column", "Physical type", "Logical type", "Evidence"], rows)]
     sections += ["<h2>3. Likely grain</h2>", _list(report["grains"]), "<h2>4. Likely primary keys</h2>", _table(["Dataset", "Proposed PK", "Evidence"], report["keys"]), "<h2>5. Foreign keys and relationships</h2>"]
     sections += [_table(["From", "To", "Confidence", "Integrity evidence"], report["relationships"])] if report["relationships"] else ["<p>No relationship was confidently detected.</p>"]
     sections += [_list(report["relationship_notes"]), "<h2>6. Missing values</h2>"]
     sections += [_table(["File", "Column", "Missing"], report["missing"])] if report["missing"] else ["<p>All supplied columns are complete.</p>"]
     sections += [
         "<h2>7. Duplicate records</h2>", _list(report["duplicates"]),
+        "<h3>Duplicate classification and potential impact</h3>",
+        _table(["Dataset", "Candidate key", "Exact rows", "Key groups", "Identical groups", "Conflicting groups", "Assessment"], [
+            [name, data.get("candidate_key") or "none", data.get("exact_duplicate_rows", 0), data.get("duplicate_key_groups", 0), data.get("identical_duplicate_key_groups", 0), data.get("conflicting_duplicate_key_groups", 0), data.get("assessment", "")]
+            for name, data in report["duplicate_analysis"].items()
+        ]) if report["duplicate_analysis"] else "<p>No duplicate classification was applicable.</p>",
+        _table(["Dataset", "Exact duplicate rows", "% of rows", "Potential event inflation", "Measure impact"], [
+            [name, data.get("exact_duplicate_rows", 0), data.get("percentage_of_rows", 0), data.get("potential_event_count_inflation", 0), "; ".join(f"{measure}: {_fmt(values.get('duplicate_value', 0))} ({_fmt(values.get('potential_effect_percent')) if values.get('potential_effect_percent') is not None else 'n/a'}%)" for measure, values in data.get("measures", {}).items()) or data.get("join_multiplication_risk", "")]
+            for name, data in report["duplicate_impact"].items()
+        ]) if report["duplicate_impact"] else "<p>No duplicate impact was applicable.</p>",
         "<h2>8. Invalid or suspicious values</h2>",
         "<h3>Invalid dates</h3>", _list(report["invalid_dates"]),
         "<h3>Numeric and measure checks</h3>", _list(report["formula_findings"]),
@@ -346,11 +409,27 @@ def render_detail_report(result: dict[str, Any]) -> str:
         "<h3>Observed categorical distributions</h3>",
         _table(["Dataset", "Column", "Raw value", "Count"], report["categorical_values"]) if report["categorical_values"] else "<p>No low-cardinality categorical fields were observed.</p>",
         "<h3>Category/sub-category mismatches</h3>", _list(report["category_mismatches"]),
-        "<h2>10. Other data-quality observations</h2>", _list(quality_section),
-        "<h2>11. Fact table</h2>", _list(fact_section),
-        "<h2>12. Dimension tables</h2>", _list(dimension_section),
-        "<h2>13. Proposed star schema</h2>", _star_schema_diagram(report),
-        "<h2>14. Assumptions and recommendation</h2>", _list(report["assumptions"]),
+        "<h2>10. Numerical distribution and outliers</h2>",
+        _table(["Dataset", "Column", "Median", "Mean", "Min", "Max", "IQR outliers", "Distribution", "Interpretation"], [
+            [name, item["column"], item["median"], item["mean"], item["min"], item["max"], f"{item['iqr_outliers']} ({item['outlier_percent']}%)", item["distribution"], item["interpretation"]]
+            for name, items in report["numeric_profiles"].items() for item in items
+        ]) if any(report["numeric_profiles"].values()) else "<p>No meaningful numeric measures were available.</p>",
+        "<h2>11. Date coverage and freshness</h2>",
+        _table(["Dataset", "Column", "Valid", "Invalid", "Null", "Date range", "No-record dates", "Longest gap", "Freshness"], [
+            [name, item["column"], item.get("valid_count", 0), item.get("invalid_count", 0), item.get("null_count", 0), f"{item.get('min_valid_date', 'n/a')} to {item.get('max_valid_date', 'n/a')}", f"{item.get('no_record_date_count', 0)} ({item.get('no_record_date_percent', 0)}%)", item.get("longest_no_record_gap", 0), item.get("freshness_status", "INSUFFICIENT EVIDENCE")]
+            for name, items in report["date_profiles"].items() for item in items
+        ]) if any(report["date_profiles"].values()) else "<p>No confidently identified date fields were available.</p>",
+        "<p class='muted'>No-record dates are not automatically missing data. Freshness is conservative because no refresh SLA is assumed.</p>",
+        "<h2>12. Other data-quality observations</h2>", _list(quality_section),
+        "<h3>Data Quality Issue Register</h3>",
+        _table(["Dataset", "Column", "Finding type", "Severity", "Evidence", "Recommended action"], report.get("issue_register", [])) if report.get("issue_register") else "<p>No data-quality issues observed.</p>",
+        "<h2>13. Fact table</h2>", _list(fact_section),
+        "<h2>14. Dimension tables</h2>", _list(dimension_section),
+        "<h2>15. Proposed star schema</h2>", _star_schema_diagram(report),
+        "<h2>16. KPI readiness</h2>",
+        _table(["KPI", "Required measure", "Required grain", "Dependencies", "Known issue", "Readiness", "Reason"], [[item.get("kpi"), item.get("required_measure"), item.get("required_grain"), "; ".join(item.get("relationship_dependencies", [])), item.get("known_issue"), item.get("readiness"), item.get("reason")] for item in report["kpi_readiness"]]) if report["kpi_readiness"] else "<p>No KPI candidates were identified from the supplied semantic schema.</p>",
+        "<h2>17. Assumptions and recommendation</h2>", _list(report["assumptions"]),
+        "<h3>Model readiness</h3>", _list([f"{result.get('model_readiness', {}).get('status', 'unknown')}: {result.get('model_readiness', {}).get('evidence', '')}"]),
         "<h3>Recommended next step</h3>", _list(report["next_steps"]),
     ]
     if result.get("agent_analysis", {}).get("executive_summary"):
@@ -361,26 +440,103 @@ def render_detail_report(result: dict[str, Any]) -> str:
 
 
 def _star_schema_diagram(report: dict[str, Any]) -> str:
-    """Render a visual star: fact in the center, dimensions around it."""
-    fact = report["fact_tables"][0] if report["fact_tables"] else "Fact table"
-    measures = ", ".join(report.get("measures", [])) or "none detected"
-    dimensions = report.get("dimension_tables", [])
-    links = {item["dimension"]: item for item in report.get("star_links", [])}
+    """Render a data-driven star with SVG links behind semantic HTML cards."""
+    contract = report.get("star_schema", {})
+    fact_specs = contract.get("fact_tables", [])
+    dimension_specs = contract.get("dimensions", [])
+    fact = (fact_specs[0].get("display_name") if fact_specs else None) or (report["fact_tables"][0] if report["fact_tables"] else "Fact table")
+    measures = ", ".join(fact_specs[0].get("measures", [])) if fact_specs else ", ".join(report.get("measures", []))
+    measures = measures or "none detected"
+    dimensions = [item.get("display_name", item.get("source_table")) for item in dimension_specs] or report.get("dimension_tables", [])
+    dimension_by_id = {item.get("id"): item for item in dimension_specs}
+    links = {}
+    for item in contract.get("relationships", []):
+        dimension = dimension_by_id.get(item.get("from"), {})
+        name = dimension.get("display_name", dimension.get("source_table"))
+        if name:
+            links[name] = {
+                "dimension_column": item.get("dimension_key"),
+                "fact_column": item.get("fact_key"),
+                "cardinality": item.get("cardinality"),
+                "target_unique": item.get("target_key_unique"),
+            }
+    if not links:
+        links = {item["dimension"]: item for item in report.get("star_links", [])}
+    count = len(dimensions)
+    if count == 1:
+        positions = [(78, 50)]
+    elif count == 2:
+        positions = [(22, 50), (78, 50)]
+    elif count == 3:
+        positions = [(22, 50), (78, 50), (50, 82)]
+    elif count == 4:
+        positions = [(50, 18), (22, 50), (78, 50), (50, 82)]
+    else:
+        positions = [
+            (round(50 + 36 * math.cos((2 * math.pi * index / count) - math.pi / 2), 2),
+             round(50 + 36 * math.sin((2 * math.pi * index / count) - math.pi / 2), 2))
+            for index in range(count)
+        ]
+
+    links_svg = []
+    fact_key = ", ".join(fact_specs[0].get("business_key", [])) if fact_specs else "none detected"
+    fact_fks = ", ".join(fact_specs[0].get("foreign_keys", [])) if fact_specs else "none detected"
     cards = [
-        "<div class='star-center'>"
+        "<div class='star-center star-node' style='left:50%;top:50%;'>"
         f"<strong>{escape(fact)}</strong><span>FACT TABLE</span>"
-        f"<small>Measures: {escape(measures)}</small>"
+        f"<small>Grain: {escape(str(fact_specs[0].get('grain', report.get('fact_grain', '')) if fact_specs else report.get('fact_grain', '')))}<br>Business key: {escape(fact_key)}<br>FKs: {escape(fact_fks)}<br>Measures: {escape(measures)}</small>"
         "</div>"
     ]
     for index, dimension in enumerate(dimensions):
+        x, y = positions[index]
         link = links.get(dimension, {})
+        has_link = bool(link)
+        valid_target = has_link and link.get("target_unique") is not False and link.get("cardinality") == "one_to_many"
+        label = "1 -> many" if valid_target else ("key cleanup required" if has_link else "relationship issue")
+        if has_link:
+            line_class = "schema-link" if valid_target else "schema-link schema-link-warning"
+            links_svg.append(
+                f"<line class='{line_class}' x1='50' y1='50' x2='{x}' y2='{y}' />"
+                f"<text class='schema-link-label' x='{round((50 + x) / 2, 2)}' y='{round((50 + y) / 2 - 2, 2)}'>{escape(label)}</text>"
+            )
+        dimension_spec = next((item for item in dimension_specs if item.get("display_name") == dimension), {})
+        warning = "<b class='schema-warning'>Non-unique target key</b>" if has_link and not valid_target else ""
+        attrs = ", ".join(dimension_spec.get("attributes", [])) or ", ".join(report.get("dimension_attributes", {}).get(dimension, [])) or "none detected"
+        dimension_key = dimension_spec.get("key") or link.get("dimension_column", "key")
+        derived = "DERIVED DIMENSION" if dimension_spec.get("derived") else "DIMENSION TABLE"
         cards.append(
-            f"<div class='star-dimension star-dimension-{index % 4}'>"
-            f"<strong>{escape(dimension)}</strong><span>DIMENSION TABLE</span>"
-            f"<small>{escape(str(link.get('dimension_column', 'key')))}</small>"
-            f"<em>fact join: {escape(str(link.get('fact_column', 'join key')))}</em>"
+            f"<div class='star-dimension star-node {'star-node-warning' if has_link and not valid_target else ''}' style='left:{x}%;top:{y}%;'>"
+            f"<strong>{escape(dimension)}</strong><span>{derived}</span>"
+            f"<small>Key: {escape(str(dimension_key))}<br>Attributes: {escape(attrs)}</small>"
+            f"<em>{escape(label)}; fact join: {escape(str(link.get('fact_column', 'join key')))}</em>{warning}"
             "</div>"
         )
     if not dimensions:
         cards.append("<p class='muted'>No dimension table was confidently identified.</p>")
-    return "<div class='star-schema-diagram'>" + "".join(cards) + "</div>"
+    notes = []
+    for item in contract.get("relationships", []):
+        dimension = dimension_by_id.get(item.get("from"), {}).get("display_name", item.get("from", "dimension"))
+        fact_name = next((spec.get("display_name") for spec in fact_specs if spec.get("id") == item.get("to")), fact)
+        status = "validated 1 -> many" if item.get("status") == "valid" else "key cleanup required"
+        notes.append(f"{dimension} -> {fact_name}: {status}; null FKs {item.get('null_fk_count', 0):,}; orphan rows {item.get('orphan_count', 0):,}.")
+    if fact_specs:
+        notes.insert(0, f"Fact grain: {fact_specs[0].get('grain', report.get('fact_grain', 'not identified'))}")
+    legend = (
+        "<div class='schema-legend' aria-label='Schema legend'>"
+        "<b>Legend:</b> solid connector = validated 1 -> many; dashed connector = target key cleanup required; "
+        "warning text = relationship issue."
+        "</div>"
+    )
+    notes_html = "<div class='schema-notes'><h3>Modeling notes</h3>" + _list(notes or ["No validated relationship-backed star schema was identified."]) + "</div>"
+    relationship_text = "<ul class='schema-accessibility'>" + "".join(
+        f"<li>{escape(str(dimension_by_id.get(item.get('from'), {}).get('display_name', item.get('from'))))} {escape(str(item.get('dimension_key')))} {escape(str(item.get('cardinality')))} {escape(str(item.get('to')))} {escape(str(item.get('fact_key')))}</li>"
+        for item in contract.get("relationships", [])
+    ) + "</ul>"
+    return (
+        "<div class='star-schema-diagram'>"
+        "<svg class='star-schema-links' viewBox='0 0 100 100' aria-label='Star schema relationships' role='img'>"
+        + "".join(links_svg)
+        + "</svg>"
+        + "".join(cards)
+        + "</div>" + legend + notes_html + relationship_text
+    )

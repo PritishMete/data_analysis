@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
 import re
 import time
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +33,22 @@ from data_cleaner import clean_dataframe
 from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
 from common.excel_context import ExcelContextError, scan_workbook
 from common.detail_analysis import analyze_dataset_collection, load_dataset_tables
+from common.customer_cleaning import clean_customer_dimension
+from common.product_cleaning import clean_product_dimension
+from common.order_cleaning import clean_order_fact
+from common.date_dimension import create_date_dimension
+from common.business_analysis import analyze_clean_model
+from common.dashboard import build_dashboard_from_tables
 from common.detail_analysis_agent import enrich_detail_analysis
+from common.chat_reasoning import (
+    ALLOWED_OPERATIONS,
+    ALLOWED_ROLES,
+    ChatAnalysisPlan,
+    build_answer_blueprint,
+    compose_analyst_answer,
+    deterministic_chat_plan,
+    validate_chat_plan,
+)
 from common.transformations import TransformationEngine, TransformationHistory, transformation_names
 
 logger = logging.getLogger(__name__)
@@ -163,6 +180,27 @@ app = FastAPI()
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "data-analysis-api"}
+
+
+@app.get("/v1/build-info")
+async def build_info():
+    """Expose non-sensitive runtime identity for diagnosing stale deployments."""
+    bundle = Path(__file__).resolve().parent / "frontend" / "flutter_detail" / "main.dart.js"
+    if bundle.is_file():
+        frontend_build_id = hashlib.sha256(bundle.read_bytes()).hexdigest()[:12]
+        build_timestamp = datetime.fromtimestamp(
+            bundle.stat().st_mtime,
+            tz=timezone.utc,
+        ).isoformat()
+    else:
+        frontend_build_id = os.getenv("FRONTEND_BUILD_ID", "unbuilt")
+        build_timestamp = None
+    return {
+        "backend_commit": os.getenv("BUILD_GIT_SHA", "working-tree"),
+        "backend_git_sha": os.getenv("BUILD_GIT_SHA", "working-tree"),
+        "frontend_build_id": frontend_build_id,
+        "build_timestamp": build_timestamp,
+    }
 
 # Allow Flutter/Web requests.
 # NOTE (security fix): `allow_origins=["*"]` combined with
@@ -1761,11 +1799,14 @@ async def excel_context(
         return {"success": False, "error": f"Excel context failed: {exc}"}
 
 
-async def _detail_analysis_response(files: list[UploadFile], source_platform: str | None = None):
+async def _detail_analysis_response(files: list[UploadFile] | None, source_platform: str | None = None):
     tables: dict[str, pd.DataFrame] = {}
     ignored_files: list[str] = []
+    rejected_files: list[str] = []
     supported_suffixes = {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}
     try:
+        if not files:
+            return {"success": False, "error": "No files submitted for detail analysis."}
         for file in files:
             filename = file.filename or "dataset.csv"
             file_path = Path(filename)
@@ -1776,17 +1817,33 @@ async def _detail_analysis_response(files: list[UploadFile], source_platform: st
                 continue
             raw = await file.read()
             loaded = load_dataset_tables(raw, filename)
+            non_empty = False
             for name, frame in loaded.items():
+                if frame.empty:
+                    continue
+                non_empty = True
                 table_name = name
                 suffix = 2
                 while table_name in tables:
                     table_name = f"{name}_{suffix}"
                     suffix += 1
                 tables[table_name] = frame
+            if not non_empty:
+                rejected_files.append(filename)
+        if not tables:
+            detail = []
+            if ignored_files:
+                detail.append(f"unsupported files: {', '.join(ignored_files)}")
+            if rejected_files:
+                detail.append(f"empty files: {', '.join(rejected_files)}")
+            suffix = f" ({'; '.join(detail)})" if detail else ""
+            return {"success": False, "error": f"Files were submitted but no supported, non-empty datasets were found{suffix}."}
         result = analyze_dataset_collection(tables)
         result["source_platform"] = source_platform or "web"
         result["ignored_files"] = ignored_files
+        result["rejected_files"] = rejected_files
         result = await enrich_detail_analysis(result)
+        result["analyst_answer"] = compose_analyst_answer(result)
         return {"success": True, **result}
     except (ValueError, ImportError) as exc:
         return {"success": False, "error": str(exc)}
@@ -1798,7 +1855,7 @@ async def _detail_analysis_response(files: list[UploadFile], source_platform: st
 
 @app.post("/v2/detail-analysis")
 async def detail_analysis(
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] | None = File(default=None),
     source_platform: str | None = Form(None),
 ):
     """Analyze multiple uploaded datasets together for model discovery."""
@@ -1831,17 +1888,252 @@ async def detail_analysis_path(path: str = Form(...)):
         result = analyze_dataset_collection(tables)
         result["source_platform"] = "local_path"
         result["path"] = str(requested)
-        return {"success": True, **(await enrich_detail_analysis(result))}
+        result = await enrich_detail_analysis(result)
+        result["analyst_answer"] = compose_analyst_answer(result)
+        return {"success": True, **result}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _safe_planner_query(value: object) -> str:
+    """Remove file/schema-shaped tokens before a planner request is logged or sent."""
+    if not isinstance(value, str) or len(value) > 1000:
+        raise ValueError("query must be a string of at most 1000 characters")
+    query = re.sub(r"\b[^\s/\\]+\.(?:csv|tsv|xlsx?|json)\b", "dataset_file", value, flags=re.IGNORECASE)
+    query = re.sub(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", "field_reference", query, flags=re.IGNORECASE)
+    return query
+
+
+def _safe_planner_payload(payload: object) -> tuple[str, set[str], list[str], dict[str, object]]:
+    if not isinstance(payload, dict):
+        raise ValueError("Planner request must be a JSON object")
+    allowed = {"query", "dataset_roles", "capabilities", "conversation_context"}
+    if set(payload) - allowed:
+        raise ValueError("Planner request contains unsupported fields")
+    query = _safe_planner_query(payload.get("query", ""))
+    raw_roles = payload.get("dataset_roles", [])
+    if not isinstance(raw_roles, list) or any(not isinstance(item, str) or item not in ALLOWED_ROLES for item in raw_roles):
+        raise ValueError("dataset_roles must contain only abstract allowlisted roles")
+    roles = set(raw_roles) or {"dataset"}
+    capabilities = payload.get("capabilities", [])
+    if not isinstance(capabilities, list) or any(item not in ALLOWED_OPERATIONS for item in capabilities):
+        raise ValueError("capabilities must contain only allowlisted operations")
+    context = payload.get("conversation_context", {})
+    if not isinstance(context, dict) or set(context) - {"last_intent", "last_dataset_role", "last_finding_types", "last_selected_finding_type"}:
+        raise ValueError("conversation_context contains unsupported fields")
+    return query, roles, list(capabilities), context
+
+
+@app.post("/v1/chat/plan")
+async def chat_plan(payload: dict):
+    """Plan a chat request without exposing datasets to a language model."""
+    try:
+        query, roles, capabilities, context = _safe_planner_payload(payload)
+        fallback = deterministic_chat_plan(query, roles, capabilities)
+        # The default remains local-only. A Gemini plan is opt-in and is still
+        # validated before it can influence execution.
+        planner = "deterministic_fallback"
+        plan = fallback
+        gemini_enabled = os.getenv("DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED", "false").casefold() == "true"
+        metadata_ai_allowed = os.getenv("DETAIL_ANALYSIS_ALLOW_METADATA_AI", "false").casefold() == "true"
+        if gemini_enabled and metadata_ai_allowed:
+            from ai_analyst import MODEL, _run_single_agent, LlmAgent
+            prompt = json.dumps({
+                "request": query,
+                "available_dataset_roles": sorted(roles),
+                "available_operations": capabilities,
+                "conversation_context": context,
+            }, sort_keys=True)
+            instruction = (
+                "Return strict JSON only with intent, dataset_scope, operations, comparison_scope, "
+                "response_mode, response_depth, mutation_requested, confidence. Use only supplied abstract roles and "
+                "operations. Never request code, SQL, Python, raw data, filenames, column names, or values."
+            )
+            agent = LlmAgent(name="chat_semantic_planner", model=MODEL, instruction=instruction, description="Metadata-only intent planner")
+            for attempt in range(2):
+                try:
+                    raw = await _run_single_agent(agent, "chat_semantic_planner", instruction + "\nMETADATA:\n" + prompt)
+                    candidate = json.loads(raw.strip().removeprefix("```").removesuffix("```").strip())
+                    plan = validate_chat_plan(candidate, roles, available_operations=set(capabilities))
+                    planner = "gemini"
+                    break
+                except Exception:
+                    if attempt == 1:
+                        plan = fallback
+        logger.debug("chat planner: planner=%s query=%s roles=%s operations=%s", planner, query, sorted(roles), capabilities)
+        return {"success": True, "plan": plan.to_dict(), "answer_blueprint": build_answer_blueprint(plan), "planner": planner, "privacy": {"metadata_only": True, "raw_data_sent": False}}
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
 
 @app.post("/powerbi/detail-analysis")
 async def powerbi_detail_analysis(
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] | None = File(default=None),
 ):
     """Power BI-compatible batch table profiling endpoint."""
     return await _detail_analysis_response(files, "power_bi")
+
+
+@app.post("/powerbi/customer-clean")
+async def powerbi_customer_clean(
+    files: list[UploadFile] | None = File(default=None),
+):
+    """Create an in-memory customer dimension without changing source files."""
+    if not files:
+        return {"success": False, "error": "No files submitted for customer cleaning."}
+    try:
+        tables: dict[str, pd.DataFrame] = {}
+        for upload in files:
+            raw = await upload.read()
+            for name, frame in load_dataset_tables(raw, upload.filename or "dataset.csv").items():
+                tables[name] = frame
+        result = clean_customer_dimension(tables)
+        return {"success": True, **result}
+    except Exception as exc:
+        return {"success": False, "error": f"Customer cleaning failed: {exc}"}
+
+
+@app.post("/powerbi/product-clean")
+async def powerbi_product_clean(files: list[UploadFile] | None = File(default=None)):
+    """Create an in-memory product dimension without changing source files."""
+    if not files:
+        return {"success": False, "error": "No files submitted for product cleaning."}
+    try:
+        tables: dict[str, pd.DataFrame] = {}
+        for upload in files:
+            raw = await upload.read()
+            tables.update(load_dataset_tables(raw, upload.filename or "dataset.csv"))
+        return {"success": True, **clean_product_dimension(tables)}
+    except Exception as exc:
+        return {"success": False, "error": f"Product cleaning failed: {exc}"}
+
+
+@app.post("/powerbi/order-clean")
+async def powerbi_order_clean(files: list[UploadFile] | None = File(default=None)):
+    """Create an in-memory fact table without changing source files."""
+    if not files:
+        return {"success": False, "error": "No files submitted for order cleaning."}
+    try:
+        import hashlib
+
+        tables: dict[str, pd.DataFrame] = {}
+        source_hashes: dict[str, str] = {}
+        for upload in files:
+            raw = await upload.read()
+            filename = upload.filename or "dataset.csv"
+            source_hashes[filename] = hashlib.sha256(raw).hexdigest()
+            tables.update(load_dataset_tables(raw, filename))
+        result = clean_order_fact(tables, source_hashes=source_hashes)
+        result["raw_source_hashes_after"] = dict(source_hashes)
+        result["raw_source_unchanged"] = result["raw_source_hashes"] == result["raw_source_hashes_after"]
+        return {"success": True, **result}
+    except Exception as exc:
+        return {"success": False, "error": f"Order cleaning failed: {exc}"}
+
+
+@app.post("/powerbi/date-dimension")
+async def powerbi_date_dimension(files: list[UploadFile] | None = File(default=None)):
+    """Build dim_date from the in-memory Prompt 4 cleaned fact."""
+    if not files:
+        return {"success": False, "error": "No files submitted for date dimension creation."}
+    try:
+        import hashlib
+
+        tables: dict[str, pd.DataFrame] = {}
+        source_hashes: dict[str, str] = {}
+        for upload in files:
+            raw = await upload.read()
+            filename = upload.filename or "dataset.csv"
+            source_hashes[filename] = hashlib.sha256(raw).hexdigest()
+            tables.update(load_dataset_tables(raw, filename))
+        fact_result = clean_order_fact(tables, source_hashes=source_hashes)
+        if fact_result.get("status") == "BLOCKED":
+            return {"success": False, "error": "Prompt 4 fact dependency is blocked.", "fact_result": fact_result}
+        result = create_date_dimension(fact_result)
+        result["raw_source_hashes"] = source_hashes
+        result["raw_source_hashes_after"] = dict(source_hashes)
+        result["raw_source_unchanged"] = source_hashes == result["raw_source_hashes_after"]
+        result["fact_cleaning_summary"] = fact_result.get("summary", {})
+        return {"success": True, **result}
+    except Exception as exc:
+        return {"success": False, "error": f"Date dimension creation failed: {exc}"}
+
+
+@app.post("/powerbi/business-analysis")
+async def powerbi_business_analysis(files: list[UploadFile] | None = File(default=None)):
+    """Run deterministic Chapter 6 analysis over the validated logical model."""
+    if not files:
+        return {"success": False, "error": "No files submitted for business analysis."}
+    try:
+        import hashlib
+
+        tables: dict[str, pd.DataFrame] = {}
+        source_hashes: dict[str, str] = {}
+        for upload in files:
+            raw = await upload.read()
+            filename = upload.filename or "dataset.csv"
+            source_hashes[filename] = hashlib.sha256(raw).hexdigest()
+            tables.update(load_dataset_tables(raw, filename))
+        from common.customer_cleaning import clean_customer_dimension
+        from common.product_cleaning import clean_product_dimension
+        from common.order_cleaning import clean_order_fact
+
+        fact_result = clean_order_fact(tables, source_hashes=source_hashes)
+        if fact_result.get("status") == "BLOCKED":
+            return {"success": False, "error": "Clean analytical model is required before Chapter 6.", "fact_result": fact_result}
+        customer_result = clean_customer_dimension(tables)
+        product_result = clean_product_dimension(tables)
+        date_result = create_date_dimension(fact_result)
+        region_name = next((name for name in tables if "region" in name.casefold()), None)
+        if not region_name:
+            return {"success": False, "error": "A validated region dimension is required before Chapter 6."}
+        model = {
+            "fact_orders": fact_result["cleaned_table"],
+            "dim_customer": customer_result["cleaned_table"],
+            "dim_product": product_result["cleaned_table"],
+            "dim_date": date_result.get("cleaned_table", {}),
+            "dim_region": {"name": "dim_region", "columns": [str(column) for column in tables[region_name].columns], "rows": tables[region_name].where(pd.notna(tables[region_name]), None).to_dict(orient="records")},
+            "fact_metadata": {"event_key": fact_result.get("event_key", {}).get("column"), "customer_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_customer"), None), "product_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_product"), None), "region_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == region_name), None)},
+        }
+        result = analyze_clean_model(model)
+        result["raw_source_hashes"] = source_hashes
+        result["raw_source_hashes_after"] = dict(source_hashes)
+        result["source_data_unchanged"] = source_hashes == result["raw_source_hashes_after"]
+        result["workflow_state"] = ["dim_customer", "dim_product", "dim_date", "dim_region", "fact_orders"]
+        return result
+    except Exception as exc:
+        return {"success": False, "error": f"Business analysis failed: {exc}"}
+
+
+@app.post("/powerbi/dashboard")
+async def powerbi_dashboard(
+    files: list[UploadFile] | None = File(default=None),
+    year: str | None = Form(default=None),
+    region: str | None = Form(default=None),
+    category: str | None = Form(default=None),
+):
+    """Return one consistently filtered dashboard context."""
+    if not files:
+        return {"success": False, "error": "No files submitted for dashboard creation."}
+    try:
+        import hashlib
+
+        tables: dict[str, pd.DataFrame] = {}
+        source_hashes: dict[str, str] = {}
+        for upload in files:
+            raw = await upload.read()
+            filename = upload.filename or "dataset.csv"
+            source_hashes[filename] = hashlib.sha256(raw).hexdigest()
+            tables.update(load_dataset_tables(raw, filename))
+        result = build_dashboard_from_tables(tables, {"year": year, "region": region, "category": category}, source_hashes=source_hashes)
+        result["source_hashes_after"] = dict(source_hashes)
+        result["source_data_unchanged"] = source_hashes == result.get("source_hashes_after")
+        return result
+    except Exception as exc:
+        return {"success": False, "error": f"Dashboard creation failed: {exc}"}
+
 
 # ---------------------------------------------------------
 # Root Route
@@ -1895,7 +2187,14 @@ app.include_router(memory_engine_router)
 app.include_router(secure_excel_router)
 
 try:
-    app.mount("/ui", StaticFiles(directory="frontend", html=True), name="frontend")
+    # Prefer the dedicated Flutter Detail Analysis build when it exists.
+    # Keep the HTML console as a local fallback until the Dart build is made.
+    detail_ui = Path("frontend") / "flutter_detail"
+    app.mount(
+        "/ui",
+        StaticFiles(directory=str(detail_ui if detail_ui.is_dir() else Path("frontend")), html=True),
+        name="frontend",
+    )
 except Exception:
     # Optional local-only frontend. The API still works if the directory is absent.
     pass

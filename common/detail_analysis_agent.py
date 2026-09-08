@@ -29,6 +29,8 @@ def _metadata_payload(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             columns.append({
                 "column_id": column_alias,
                 "dtype": entry.get("dtype"),
+                "physical_dtype": entry.get("physical_dtype"),
+                "logical_type": entry.get("logical_type"),
                 "role": entry.get("role"),
                 "non_null": entry.get("non_null"),
                 "missing": entry.get("missing"),
@@ -61,6 +63,10 @@ def _metadata_payload(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             "target_table": next((key for key, value in aliases.items() if value == relationship["target_table"]), relationship["target_table"]),
             "target_column": next((key for key, value in aliases.items() if value == relationship["target_column"]), relationship["target_column"]),
             "confidence": relationship.get("confidence"),
+            "cardinality": relationship.get("cardinality"),
+            "source_nulls": relationship.get("source_nulls"),
+            "orphan_rows": relationship.get("orphan_rows"),
+            "non_null_referential_coverage": relationship.get("non_null_referential_coverage"),
         })
     recommendation = result.get("model_recommendation", {})
     payload = {
