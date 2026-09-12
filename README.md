@@ -1,106 +1,79 @@
-# InsightFlow Secure Excel Mode
+# 📊 InsightFlow — Privacy-First Excel Analytics Assistant
 
-This project has been updated to support an Excel-only, privacy-first workflow.
-The default path keeps the workbook, schema, row values, and all column
-semantics local to the backend process.
+> A Flutter + Python analytics product that turns natural-language questions into controlled Excel analysis while keeping workbook data local by default.
 
-Operational query-history and export helpers in this repository are for local
-inspection, reporting, and bridge validation only. The canonical fine-tuning
-corpus now lives in the student repository.
+## Overview
 
-## 1. How the architecture works
+InsightFlow was built around a practical analytics problem: business users often have the data they need inside Excel, but getting from a workbook to a reliable answer still requires manual filtering, formulas, cleanup, charting, or analyst support.
 
-The secure pipeline is:
+The product aims to make that workflow more direct:
 
-1. Excel file upload
-2. Local Python processing
-3. Local workbook scanning with `openpyxl`
-4. Local schema and semantic role detection
-5. Local anonymization of columns to `c1`, `c2`, `c3`, ...
-6. Local natural-language parsing into a structured query
-7. Optional remote AI only for anonymized, controlled JSON if explicitly enabled
-8. Local validation
-9. Local execution against the original pandas DataFrame
-10. Local response rendering
+**upload or open data → understand the schema → ask a question → validate the requested operation → execute locally → return a usable result**
 
-## 2. What data stays local
+The current architecture uses a **Flutter frontend** and a **Python/FastAPI analytics backend**, with privacy controls designed so workbook values and business identifiers do not need to leave the local execution environment.
 
-The following never need to leave the machine:
+## Product Goals
 
-- actual column names
-- row values
-- cell values
+- Let users work with Excel data through natural-language requests.
+- Keep raw workbook content local by default.
+- Convert user intent into controlled, inspectable operations.
+- Detect semantic roles and data relationships before analysis.
+- Support filtering, grouping, aggregation, cleaning, categorization and reporting.
+- Help users understand multi-table data through Detail Analysis and star-schema candidates.
+- Prevent arbitrary model-generated Python from being executed against user data.
+
+## Privacy-First Architecture
+
+The secure Excel path follows this flow:
+
+```text
+Excel workbook
+      │
+      ▼
+Local workbook scan
+      │
+      ├── schema detection
+      ├── semantic-role inference
+      └── local column aliases (c1, c2, c3...)
+      │
+      ▼
+Natural-language request
+      │
+      ▼
+Structured query / plan
+      │
+      ▼
+Validation
+      │
+      ▼
+Local execution on Pandas DataFrame
+      │
+      ▼
+Result / report / workbook output
+```
+
+By default, the secure workflow does not require raw workbook content to be sent to a remote LLM.
+
+## What Stays Local
+
+The secure path is designed to keep these values on the user's machine:
+
+- cell and row values
+- original column names
 - filenames
 - sheet names
-- business names
-- customer names
-- restaurant names
+- customer or business names
 - addresses
-- emails
+- email addresses
 - phone numbers
 - URLs
-- IDs
-- any identifiable business information
+- IDs and other business identifiers
 
-The original pandas DataFrame stays in memory inside the backend session store.
+The original Pandas DataFrame remains inside the backend session used for local execution.
 
-## 3. What, if anything, is sent to the remote LLM
+## Controlled Query Planning
 
-By default, nothing is sent to a remote LLM.
-
-If remote AI is ever enabled through configuration, the payload must be restricted
-to anonymized metadata and controlled query JSON only. The privacy guard blocks
-payloads that contain obvious PII or raw workbook content.
-
-## 4. How column anonymization works
-
-Each Excel column is mapped locally to an internal ID:
-
-- `c1`
-- `c2`
-- `c3`
-- `c4`
-- ...
-
-That mapping is stored only in the backend session and never exposed to a remote model.
-
-## 5. How semantic roles are detected
-
-The backend infers a local semantic role for each column using:
-
-- column-name hints
-- dtype hints
-- value-shape heuristics
-- uniqueness patterns
-
-Supported roles include:
-
-- `identifier`
-- `entity_name`
-- `geographic_area`
-- `rating_metric`
-- `date`
-- `numeric_metric`
-- `currency_metric`
-- `boolean_capability`
-- `category`
-- `email`
-- `phone`
-- `address`
-- `url`
-- `description`
-- `status`
-- `count`
-- `percentage`
-- `unknown`
-
-Domain-specific roles such as `restaurant_entity`, `delivery_capability`, and
-`table_booking_capability` are also detected locally.
-
-## 6. How queries are converted into structured commands
-
-Natural-language queries are parsed locally into a controlled JSON structure
-containing:
+Natural-language requests are translated into a constrained structure containing fields such as:
 
 - `operation`
 - `conditions`
@@ -123,88 +96,148 @@ Example:
 }
 ```
 
-## 7. How local execution works
+The backend validates the plan, maps internal column IDs back to the local DataFrame and executes predefined operations. It does **not** treat arbitrary AI-generated Python as an execution path.
 
-The backend validates the structured query, maps `cN` IDs back to the local
-DataFrame columns, and executes only predefined operations such as filtering,
-sorting, counting, grouping, aggregation, and reporting.
+## Schema Intelligence
 
-No arbitrary Python from an LLM is executed.
+InsightFlow performs local schema inspection and semantic-role detection using:
 
-## 8. How to run the backend
+- column-name hints
+- data types
+- value-shape heuristics
+- uniqueness patterns
 
-Use the bundled Python runtime or your own Python environment.
+Supported roles include identifiers, entity names, geography, dates, ratings, numeric and currency measures, booleans, categories, emails, phones, URLs, status fields and free text.
+
+## Detail Analysis
+
+Detail Analysis is designed for workbook and multi-table understanding rather than only single-table profiling.
+
+It can inspect multiple worksheets or uploaded tables and surface:
+
+- candidate keys
+- fact-table candidates
+- dimension-table candidates
+- relationship candidates
+- observed value overlap
+- star-schema suggestions
+- data-quality observations
+
+These are analytical/modeling candidates and should still be validated against the real business grain.
+
+## Core Capabilities
+
+### Query & Analysis
+- filtering and multi-condition filtering
+- sorting
+- grouping and aggregation
+- entity/value discovery
+- statistics
+- reports and charts
+- sheet creation and result writing
+
+### Data Preparation
+- missing-value handling
+- duplicate handling
+- outlier-related workflows
+- categorization and normalization
+- semantic role detection
+- guarded range binning
+
+### Modeling
+- multi-table profiling
+- relationship discovery
+- fact/dimension suggestions
+- star-schema visualization
+
+## Technology Stack
+
+### Frontend
+- Flutter
+- Dart
+- Flutter Web
+- Office.js integration for Excel-hosted workbook operations
+
+### Backend & Analytics
+- Python
+- FastAPI
+- Pandas
+- OpenPyXL
+- local session-based execution
+
+### AI / Reasoning Layer
+- controlled structured planning
+- optional remote reasoning only when explicitly enabled
+- privacy guardrails around outbound payloads
+
+## Development Workflow
+
+InsightFlow is developed from explicit product requirements, analytical rules, privacy constraints and acceptance criteria.
+
+**Codex is used as an engineering accelerator** for implementation, debugging, refactoring and test-driven iteration. Product behavior, architecture, privacy boundaries and validation rules are defined deliberately rather than delegated to an unconstrained code-generation process.
+
+## Run the Backend
 
 ```bash
 python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-Key endpoints:
+Useful endpoints include:
 
-- `GET /ping`
-- `GET /powerbi/ping`
-- `GET /powerbi/transform/list`
-- `GET /excel/ping`
-- `POST /excel/session`
-- `POST /excel/query`
-- `POST /excel/interpret`
-- `POST /excel/detail-analysis` — profile every non-empty worksheet together
-- `POST /v2/detail-analysis` — compare multiple uploaded CSV/Excel/JSON tables
-- `POST /v2/detail-analysis/path` — local-folder analysis when explicitly enabled
-- `POST /powerbi/detail-analysis` — Power BI-compatible multi-table upload
+```text
+GET  /health
+GET  /privacy
+GET  /excel/ping
+POST /excel/session
+POST /excel/query
+POST /excel/interpret
+POST /excel/detail-analysis
+POST /v2/detail-analysis
+POST /v2/detail-analysis/path
+POST /powerbi/detail-analysis
+```
 
-## 9. How to configure the API
+## Privacy Configuration
 
-Configuration is environment-variable driven.
+For the privacy-preserving deployment mode:
 
-Useful variables:
+```text
+INSIGHTFLOW_PRIVACY_MODE=local_only
+SECURE_EXCEL_REMOTE_AI=false
+```
 
-- `SECURE_EXCEL_REMOTE_AI=false`
-- `SECURE_EXCEL_REMOTE_AI_PROVIDER=gemini`
-- `SECURE_EXCEL_MAX_PREVIEW_ROWS=25`
+`local_only` is the intended safe production configuration for deployments that must not process workbook data remotely.
 
-If `SECURE_EXCEL_REMOTE_AI` is left at the default `false`, the secure Excel
-path remains local-only.
+## Local Folder Analysis
 
-## Detail Analysis Across Tables
-
-The normal scan describes one selected table. Use Detail Analysis when you
-need a model-level view across multiple tables or worksheets. It compares
-candidate keys and observed value overlap, then reports fact-table,
-dimension-table, relationship, and star-schema candidates. These are still
-modeling hypotheses until the business grain is confirmed.
-
-For a local folder path, enable the path endpoint only on a local backend:
+Local folder-path analysis should only be enabled on a trusted local backend:
 
 ```powershell
 $env:DETAIL_ANALYSIS_PATHS_ENABLED = "true"
 $env:DETAIL_ANALYSIS_ALLOWED_ROOTS = "C:\datasets"
 ```
 
-Hosted web browsers cannot grant a server access to `C:\datasets`; use the
-folder picker, which uploads the selected dataset files. Power BI connectors
-can post multiple exported tables to `/powerbi/detail-analysis`. Large files
-should use the local backend or connector path so the workbook does not need
-to be opened in Excel.
+A hosted browser cannot directly grant a remote server access to arbitrary local filesystem paths; use the local backend or supported file-selection workflow instead.
 
-## 10. How to disable remote AI completely
+## Security Principles
 
-Leave `SECURE_EXCEL_REMOTE_AI=false`.
+- Keep workbook contents local unless remote processing is intentionally enabled.
+- Do not send raw business data to external models by default.
+- Validate all structured operations before execution.
+- Do not execute arbitrary generated Python against workbook data.
+- Do not log sensitive workbook contents or business identifiers.
+- Keep API credentials and private configuration outside source control.
 
-That keeps the secure Excel routes local-only and prevents outbound remote
-planning calls.
+## Portfolio Case Study
 
-## Files added for the secure path
+https://pritish-mete.onrender.com/projects/showcase/project.html?id=6
 
-- [main.py](./main.py)
-- [secure_excel/privacy_guard.py](./secure_excel/privacy_guard.py)
-- [secure_excel/semantic_roles.py](./secure_excel/semantic_roles.py)
-- [secure_excel/query_parser.py](./secure_excel/query_parser.py)
-- [secure_excel/query_validator.py](./secure_excel/query_validator.py)
-- [secure_excel/executor.py](./secure_excel/executor.py)
-- [secure_excel/service.py](./secure_excel/service.py)
-- [secure_excel/routes.py](./secure_excel/routes.py)
-- [frontend/index.html](./frontend/index.html)
-- [frontend/app.js](./frontend/app.js)
-- [frontend/styles.css](./frontend/styles.css)
+## Repository
 
+https://github.com/PritishMete/data_analysis
+
+## Author
+
+**Pritish Mete**
+
+GitHub: https://github.com/PritishMete
