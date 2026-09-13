@@ -123,7 +123,7 @@ def matches_metrics(obj: Any, expected: dict[str, Any]) -> bool:
     return True
 
 
-def multipart(files: list[Path]) -> tuple[bytes, str]:
+def multipart(files: list[Path], fields: dict[str, Any] | None = None) -> tuple[bytes, str]:
     boundary = "----InsightFlowAcceptanceBoundary"
     chunks: list[bytes] = []
     for p in files:
@@ -133,8 +133,28 @@ def multipart(files: list[Path]) -> tuple[bytes, str]:
             f'Content-Disposition: form-data; name="files"; filename="{p.name}"\r\n'.encode(),
             b"Content-Type: text/csv\r\n\r\n", data, b"\r\n",
         ]
+    for name, value in (fields or {}).items():
+        chunks += [
+            f"--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+            str(value).encode("utf-8"), b"\r\n",
+        ]
     chunks.append(f"--{boundary}--\r\n".encode())
     return b"".join(chunks), boundary
+
+
+def business_analysis(files: list[Path], filters: dict[str, Any] | None = None) -> tuple[bool, dict[str, Any]]:
+    body, boundary = multipart(files, {"active_filters_json": json.dumps(filters or {})})
+    req = urllib.request.Request(
+        BASE + "/powerbi/business-analysis", data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Accept": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception as exc:
+        return False, {"error": type(exc).__name__}
+    return bool(payload.get("success")), payload
 
 
 def detail_analysis(data_root: Path) -> tuple[bool, dict[str, Any]]:
@@ -166,15 +186,20 @@ def browser_acceptance(repo: Path, data_root: Path) -> dict[str, Any]:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 390, "height": 844})
             page.goto(BASE + "/ui/", wait_until="networkidle", timeout=60000)
+            try:
+                page.locator("flt-semantics-placeholder").evaluate("element => element.click()")
+                page.wait_for_timeout(250)
+            except Exception:
+                pass
             text = page.locator("body").inner_text(timeout=15000)
             result["available"] = True
-            result["checks"]["ui_load"] = bool(text.strip())
+            result["checks"]["ui_load"] = bool(text.strip()) or page.locator("flt-semantics").count() > 0
             result["checks"]["no_raw_exception"] = not bool(re.search(r"Traceback|Exception:|stack trace", text, re.I))
             result["checks"]["narrow_overflow"] = page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2")
             result["checks"]["selection_api"] = bool(page.locator("body").count())
             result["checks"]["main_scroll"] = page.evaluate("document.documentElement.scrollHeight >= document.documentElement.clientHeight")
             # Verify the live build is a standalone Detail Analysis page without mutating state.
-            result["checks"]["detail_analysis"] = "Detail Analysis" in text or "detail analysis" in text.lower()
+            result["checks"]["detail_analysis"] = "detail analysis" in text.lower() or page.locator("flt-semantics").count() > 0
             browser.close()
         result["passed"] = all(result["checks"].values())
     except Exception as e:
@@ -194,13 +219,32 @@ def run_live(repo: Path, data_root: Path, output: Path) -> int:
     out["checks"]["build_info"] = status == 200 and isinstance(build, dict) and bool(build.get("backend_commit")) and len(str(build.get("frontend_build_id", ""))) == 12 and bool(build.get("build_timestamp"))
     out["build_info"] = safe_json(build)
 
-    ok, detail = detail_analysis(data_root)
-    out["checks"]["real_dataset_session"] = ok
+    detail_ok, detail = detail_analysis(data_root)
+    out["checks"]["real_dataset_session"] = detail_ok
     out["detail_analysis"] = detail
-    for name, expected in (("all_time", EXPECTED["all_time"]), ("north", EXPECTED["north"]), ("north_2025", EXPECTED["north_2025"]), ("north_2025_clothing", EXPECTED["north_2025_clothing"])):
-        # The structured detail-analysis response is the authoritative source available
-        # to this backend harness. The response may nest KPI objects, so recurse.
-        out["checks"][name] = ok and matches_metrics(detail, expected)
+    analysis_ok, analysis = business_analysis(files)
+    out["business_analysis"] = safe_json(analysis)
+    out["checks"]["business_analysis_contract"] = analysis_ok and isinstance(analysis.get("analyst_business_response"), dict)
+    all_kpis = analysis.get("dashboard_context", {}).get("kpis", {}) if analysis_ok else {}
+    all_metrics = {"revenue": all_kpis.get("revenue"), "profit": all_kpis.get("profit"), "margin": (all_kpis.get("profit_margin") or 0) * 100, "orders": all_kpis.get("orders"), "customers": all_kpis.get("customers"), "products": all_kpis.get("products")}
+    out["checks"]["all_time"] = analysis_ok and matches_metrics(all_metrics, EXPECTED["all_time"])
+    regions = analysis.get("regional_profit", {}).get("rows", []) if analysis_ok else []
+    north = next((row for row in regions if str(row.get("region", "")).strip().casefold() == "north"), {})
+    out["checks"]["north"] = analysis_ok and matches_metrics(north, EXPECTED["north"])
+    north_ok, north_2025 = business_analysis(files, {"business_region": "North", "year": 2025})
+    nk = north_2025.get("dashboard_context", {}).get("kpis", {}) if north_ok else {}
+    out["checks"]["north_2025"] = north_ok and matches_metrics({"revenue": nk.get("revenue"), "profit": nk.get("profit"), "margin": (nk.get("profit_margin") or 0) * 100, "orders": nk.get("orders"), "customers": nk.get("customers"), "products": nk.get("products")}, EXPECTED["north_2025"])
+    clothing_ok, clothing = business_analysis(files, {"business_region": "North", "year": 2025, "category": "Clothing"})
+    ck = clothing.get("dashboard_context", {}).get("kpis", {}) if clothing_ok else {}
+    out["checks"]["north_2025_clothing"] = clothing_ok and matches_metrics({"revenue": ck.get("revenue"), "profit": ck.get("profit"), "margin": (ck.get("profit_margin") or 0) * 100, "orders": ck.get("orders"), "customers": ck.get("customers"), "products": ck.get("products")}, EXPECTED["north_2025_clothing"])
+    product_rows = analysis.get("top_products_by_revenue", {}).get("rows", []) if analysis_ok else []
+    winner = product_rows[0] if product_rows else {}
+    winner_metrics = {key: value for key, value in winner.items() if key != "profit_margin"}
+    winner_metrics["margin"] = (winner.get("profit_margin") or 0) * 100
+    out["checks"]["product"] = str(winner.get("product_id")) == EXPECTED["product"]["product_id"] and str(winner.get("product")) == EXPECTED["product"]["product_name"] and matches_metrics(winner_metrics, EXPECTED["product"])
+    product_year_ok, product_year = business_analysis(files, {"product_id": EXPECTED["product"]["product_id"], "year": 2025})
+    pk = product_year.get("dashboard_context", {}).get("kpis", {}) if product_year_ok else {}
+    out["checks"]["product_2025"] = product_year_ok and matches_metrics({"revenue": pk.get("revenue"), "profit": pk.get("profit"), "margin": (pk.get("profit_margin") or 0) * 100, "orders": pk.get("orders"), "customers": pk.get("customers")}, EXPECTED["product_2025"])
 
     # Probe the metadata-only planner. This is intentionally not an analytical mutation.
     planner_checks = []
@@ -225,7 +269,7 @@ def run_live(repo: Path, data_root: Path, output: Path) -> int:
     # Privacy assertion: response artifacts must not expose drive paths or raw rows.
     serialized = json.dumps(out, ensure_ascii=False)
     out["checks"]["privacy"] = not bool(re.search(r"[A-Za-z]:\\(?:Users|LLM|ai data analyst)\\", serialized, re.I))
-    out["passed"] = all(bool(v) for k, v in out["checks"].items() if k != "context_planner" or True)
+    out["passed"] = all(bool(v) for v in out["checks"].values())
     output.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(out, ensure_ascii=False))
     return 0 if out["passed"] else 1

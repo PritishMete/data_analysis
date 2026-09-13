@@ -57,7 +57,7 @@ if ($owners.Count -gt 0) {
   exit 1
 }
 
-$proc = Start-Process -FilePath $Python.Source -ArgumentList '-m','uvicorn','main:app','--host','127.0.0.1','--port',$Port -WorkingDirectory $RepoRoot -PassThru
+$proc = Start-Process -FilePath $Python.Source -ArgumentList '-m','uvicorn','main:app','--app-dir',$RepoRoot,'--host','127.0.0.1','--port',$Port -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden
 
 $ready = $false
 for ($i = 0; $i -lt 30; $i++) {

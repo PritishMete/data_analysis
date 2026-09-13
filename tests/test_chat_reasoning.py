@@ -237,3 +237,20 @@ def test_structured_response_contract_preserves_examples_and_scope():
     assert structured["response_type"] == "analyst_quality_response"
     assert structured["confirmed_issues"][0]["examples"]["rows"]
     assert structured["copy_text"]
+
+
+@pytest.mark.parametrize("query", [
+    "Which region is the most profitable?",
+    "do quantum banana clustering",
+    "show dashboard",
+])
+def test_chat_plan_endpoint_uses_valid_deterministic_fallback(query):
+    response = TestClient(app).post(
+        "/v1/chat/plan",
+        json={"query": query, "dataset_roles": ["dataset"], "capabilities": []},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["plan"]["intent"] in {"business_analysis", "unknown", "dashboard"}
+    assert body["privacy"]["raw_data_sent"] is False

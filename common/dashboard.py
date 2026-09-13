@@ -54,15 +54,30 @@ def build_dashboard(model: dict[str, Any], filters: dict[str, Any] | None = None
 
     raw_filters = filters or {}
     selected_year = int(raw_filters["year"]) if raw_filters.get("year") not in (None, "", "All") else None
-    selected_region = str(raw_filters["region"]) if raw_filters.get("region") not in (None, "", "All") else None
+    raw_region = raw_filters.get("region")
+    selected_region = (
+        [str(value) for value in raw_region if value not in (None, "", "All")]
+        if isinstance(raw_region, list)
+        else str(raw_region) if raw_region not in (None, "", "All") else None
+    )
     selected_category = str(raw_filters["category"]) if raw_filters.get("category") not in (None, "", "All") else None
+    selected_product = str(raw_filters["product"]) if raw_filters.get("product") not in (None, "", "All") else None
+    selected_product_id = str(raw_filters["product_id"]) if raw_filters.get("product_id") not in (None, "", "All") else None
     context = pd.Series(True, index=fact.index)
     if selected_year is not None:
         context &= valid_dates & parsed.dt.year.eq(selected_year)
     if selected_region is not None:
-        context &= region_join[region_label].map(_norm).eq(_norm(selected_region))
+        if isinstance(selected_region, list):
+            normalized_regions = {_norm(value) for value in selected_region}
+            context &= region_join[region_label].map(_norm).isin(normalized_regions)
+        else:
+            context &= region_join[region_label].map(_norm).eq(_norm(selected_region))
     if selected_category is not None:
         context &= product_join[category].map(_norm).eq(_norm(selected_category)) if category else False
+    if selected_product is not None:
+        context &= product_join[product_label].map(_norm).eq(_norm(selected_product))
+    if selected_product_id is not None:
+        context &= product_join[product_dim_key].map(_norm).eq(_norm(selected_product_id))
     filtered = fact.loc[context].copy()
     filtered_product = product_join.loc[context].copy()
     filtered_region = region_join.loc[context].copy()
@@ -106,10 +121,10 @@ def build_dashboard(model: dict[str, Any], filters: dict[str, Any] | None = None
     return {
         "success": True, "status": "READY", "dashboard_metadata": {"title": "Vibe Analysis - Sales Performance Dashboard", "model": ["fact_orders", "dim_customer", "dim_product", "dim_date", "dim_region"], "region_field": region_label, "region_grain": "Business region display label; region keys sharing a label are intentionally aggregated."},
         "available_filters": {"year": available_years, "region": available_regions, "category": available_categories},
-        "active_filters": {"year": selected_year, "region": selected_region, "category": selected_category},
-        "filter_summary": "All data" if not any((selected_year, selected_region, selected_category)) else "Showing: " + " • ".join(str(value) for value in (selected_year or "All", selected_region or "All", selected_category or "All")),
+        "active_filters": {key: value for key, value in {"year": selected_year, "region": selected_region, "category": selected_category, "product": selected_product, "product_id": selected_product_id}.items() if value is not None},
+        "filter_summary": "All data" if not any((selected_year, selected_region, selected_category, selected_product, selected_product_id)) else "Showing: " + " • ".join(", ".join(selected_region) if isinstance(selected_region, list) else str(value) for value in (selected_year or "All", selected_region or "All", selected_category or "All", selected_product or selected_product_id or "All")),
         "empty": empty,
-        "kpis": {"revenue": total_revenue, "profit": total_profit, "orders": orders, "customers": customer_count or 0, "profit_margin": total_profit / total_revenue if total_revenue else None, "return_rate": return_rows / orders if return_rows is not None and orders else None},
+        "kpis": {"revenue": total_revenue, "profit": total_profit, "orders": orders, "customers": customer_count or 0, "products": int(product_join.loc[context & product_join[product_dim_key].notna(), product_dim_key].map(_norm).nunique()), "profit_margin": total_profit / total_revenue if total_revenue else None, "return_rate": return_rows / orders if return_rows is not None and orders else None},
         "monthly_trend": _rows(monthly.rename(columns={"__year": "year", "__month": "month"})),
         "revenue_by_category": _rows(product_group.groupby("category", dropna=False, sort=True).agg(revenue=("revenue", "sum"), profit=("profit", "sum"), orders=("orders", "sum")).reset_index().sort_values(["revenue", "category"], ascending=[False, True], kind="mergesort")) if category else [],
         "profit_by_region": _rows(region_group),

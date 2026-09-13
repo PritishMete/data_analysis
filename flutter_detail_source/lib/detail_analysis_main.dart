@@ -21,6 +21,7 @@ import 'tech_background.dart';
 import 'widgets/analyst_quality_message.dart';
 import 'widgets/analyst_chart.dart';
 import 'widgets/analyst_suggestions.dart';
+import 'widgets/system_status_button.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -423,13 +424,16 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
         _runningMessage = 'Summarizing this analysis session…';
       });
       try {
-        final summary = await _conversationService.summary(_conversationSessionId);
+        final summary = await _conversationService.summary(
+          _conversationSessionId,
+        );
         if (!mounted) return;
         setState(() {
           _runningMessage = null;
           _chatHistory.add(
             _ChatMessage.assistant(
-              summary['summary']?.toString() ?? 'Here is the current analysis summary.',
+              summary['summary']?.toString() ??
+                  'Here is the current analysis summary.',
               sessionSummary: summary,
             ),
           );
@@ -478,7 +482,9 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     }
 
     final previousRoute = _lastRoute;
-    final previousAnalyticalContext = Map<String, dynamic>.from(_analyticalContext);
+    final previousAnalyticalContext = Map<String, dynamic>.from(
+      _analyticalContext,
+    );
     final localFollowUp = _resolveLocalFollowUp(query);
     if (localFollowUp != null && localFollowUp['kind'] == 'why') {
       final finding = localFollowUp['finding'] as Map<String, dynamic>;
@@ -672,10 +678,11 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     DetailAnalysisRoute route,
   ) => resolveBusinessFiltersFromContext(_analyticalContext, query);
 
-  bool _isSessionSummaryQuery(String query) => RegExp(
-    r'\b(summarize|summary|analysed|analyzed|history|current scope|looking at now)\b',
-    caseSensitive: false,
-  ).hasMatch(query) &&
+  bool _isSessionSummaryQuery(String query) =>
+      RegExp(
+        r'\b(summarize|summary|analysed|analyzed|history|current scope|looking at now)\b',
+        caseSensitive: false,
+      ).hasMatch(query) &&
       RegExp(
         r'\b(analysis|session|scope|so far|history|we|current)\b',
         caseSensitive: false,
@@ -685,7 +692,8 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     final parts = <String>[];
     final summary = meta['summary']?.toString().trim();
     if (summary != null && summary.isNotEmpty) parts.add(summary);
-    for (final section in (meta['sections'] as List? ?? const []).whereType<Map>()) {
+    for (final section
+        in (meta['sections'] as List? ?? const []).whereType<Map>()) {
       final title = section['title']?.toString().trim();
       final items = (section['items'] as List? ?? const [])
           .map((item) => item.toString().trim())
@@ -702,7 +710,9 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     if (examples.isNotEmpty) {
       parts.add('Examples\n${examples.map((item) => '• $item').join('\n')}');
     }
-    return parts.isEmpty ? 'InsightFlow help is available locally.' : parts.join('\n\n');
+    return parts.isEmpty
+        ? 'InsightFlow help is available locally.'
+        : parts.join('\n\n');
   }
 
   Future<void> _recordConversationSuccess(
@@ -725,12 +735,16 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     }
     final normalized = query.toLowerCase();
     final response = result['analyst_business_response'];
-    final responseType = response is Map ? response['response_type']?.toString() : null;
+    final responseType = response is Map
+        ? response['response_type']?.toString()
+        : null;
     final update = <String, dynamic>{
       'query': query,
       'current_scope': filters.isEmpty
           ? 'global'
-          : filters.entries.map((entry) => '${entry.key}=${entry.value}').join(', '),
+          : filters.entries
+                .map((entry) => '${entry.key}=${entry.value}')
+                .join(', '),
       'active_filters': filters,
       'selected_entity': selectedEntity,
       'selected_entity_type': selectedEntityType,
@@ -739,7 +753,8 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
       'time_scope': _analyticalContext['time_scope'] == null
           ? <String, dynamic>{}
           : {'year': _analyticalContext['time_scope']},
-      'reset_scope': normalized.contains('reset') ||
+      'reset_scope':
+          normalized.contains('reset') ||
           (normalized.contains('overall') && normalized.contains('company')),
       'analysis': {
         'type': responseType ?? route.subIntent ?? route.intent.name,
@@ -751,7 +766,9 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
       },
     };
     if (result['comparison_context'] is Map) {
-      final comparison = Map<String, dynamic>.from(result['comparison_context'] as Map);
+      final comparison = Map<String, dynamic>.from(
+        result['comparison_context'] as Map,
+      );
       final entities = comparison['entities'];
       if (entities is List) update['comparison_entities'] = entities;
     }
@@ -774,12 +791,14 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     DetailAnalysisRoute route,
     Map<String, dynamic> result,
   ) async {
-    String intent = route.subIntent?.startsWith('data_quality:') == true ||
+    String intent =
+        route.subIntent?.startsWith('data_quality:') == true ||
             route.intent == DetailAnalysisIntent.customerDataQuality
         ? 'data_quality_analysis'
         : 'business_analysis';
     final business = result['analyst_business_response'];
-    if (business is Map && business['response_type'] == 'analyst_comparison_response') {
+    if (business is Map &&
+        business['response_type'] == 'analyst_comparison_response') {
       intent = 'comparison';
     }
     final selected = _analyticalContext['selected_entity'];
@@ -795,7 +814,9 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
         'current_metric': _analyticalContext['metric'],
     };
     if (result['comparison_context'] is Map) {
-      final comparison = Map<String, dynamic>.from(result['comparison_context'] as Map);
+      final comparison = Map<String, dynamic>.from(
+        result['comparison_context'] as Map,
+      );
       if (comparison['entities'] is List) {
         context['comparison_entities'] = comparison['entities'];
       }
@@ -842,8 +863,12 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
         'filters': result['active_filters'] is Map
             ? Map<String, dynamic>.from(result['active_filters'] as Map)
             : const <String, dynamic>{},
-        'selected_insight': Map<String, dynamic>.from(result['insight_context'] as Map),
-        'insight_context': Map<String, dynamic>.from(result['insight_context'] as Map),
+        'selected_insight': Map<String, dynamic>.from(
+          result['insight_context'] as Map,
+        ),
+        'insight_context': Map<String, dynamic>.from(
+          result['insight_context'] as Map,
+        ),
       };
       return;
     }
@@ -1473,12 +1498,13 @@ h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{
       DetailAnalysisIntent.dateDimension => _DateDimensionSummary(
         result: result,
       ),
-      DetailAnalysisIntent.businessAnalysis => result['report'] is Map
-          ? _ReportSummary(result: result)
-          : _BusinessAnalysisSummary(
-              result: result,
-              subIntent: message.subIntent,
-            ),
+      DetailAnalysisIntent.businessAnalysis =>
+        result['report'] is Map
+            ? _ReportSummary(result: result)
+            : _BusinessAnalysisSummary(
+                result: result,
+                subIntent: message.subIntent,
+              ),
       DetailAnalysisIntent.customerDataQuality => _analystQualityWidget(
         result,
         scope: 'customer',
@@ -2016,6 +2042,12 @@ h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{
             ),
           ],
         ),
+        const Spacer(),
+        Semantics(
+          label: 'System status and diagnostics',
+          button: true,
+          child: const SystemStatusButton(),
+        ),
       ],
     );
   }
@@ -2231,15 +2263,11 @@ class _DatasetSessionBar extends StatelessWidget {
   final VoidCallback onChange;
 
   @override
-  Widget build(BuildContext context) {
-    final ready = files.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 15, 14, 13),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .04),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child: Row(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final ready = files.isNotEmpty;
+      final compact = constraints.maxWidth < 520;
+      final title = Row(
         children: [
           Icon(
             ready ? Icons.folder_copy_rounded : Icons.upload_file_rounded,
@@ -2252,28 +2280,77 @@ class _DatasetSessionBar extends StatelessWidget {
               ready
                   ? '${files.length} dataset${files.length == 1 ? '' : 's'} ready'
                   : 'Upload datasets to start',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             ),
           ),
-          if (ready)
-            Text(
-              files.map((file) => file.name).join('  •  '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: CupertinoColors.secondaryLabel.resolveFrom(context),
-              ),
-            ),
-          const SizedBox(width: 8),
           TextButton(
             onPressed: onChange,
             child: Text(ready ? 'Change' : 'Choose files'),
           ),
         ],
-      ),
-    );
-  }
+      );
+      final filenames = Text(
+        files.map((file) => file.name).join('  •  '),
+        maxLines: compact ? 2 : 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+        ),
+      );
+      return Container(
+        padding: const EdgeInsets.fromLTRB(18, 15, 14, 13),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .04),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  title,
+                  if (ready) ...[
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 30),
+                      child: filenames,
+                    ),
+                  ],
+                ],
+              )
+            : Row(
+                children: [
+                  Icon(
+                    ready
+                        ? Icons.folder_copy_rounded
+                        : Icons.upload_file_rounded,
+                    color: TechColors.borderActive,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    ready
+                        ? '${files.length} dataset${files.length == 1 ? '' : 's'} ready'
+                        : 'Upload datasets to start',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (ready) Expanded(child: filenames),
+                  TextButton(
+                    onPressed: onChange,
+                    child: Text(ready ? 'Change' : 'Choose files'),
+                  ),
+                ],
+              ),
+      );
+    },
+  );
 }
 
 class _EmptyChat extends StatelessWidget {
@@ -2445,23 +2522,33 @@ class _ReportSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final report = Map<String, dynamic>.from(result['report'] as Map);
     final scope = report['scope'] is Map ? report['scope'] as Map : const {};
-    final filename = result['filename']?.toString() ?? 'Vibe_Analysis_Report.pdf';
+    final filename =
+        result['filename']?.toString() ?? 'Vibe_Analysis_Report.pdf';
     final url = result['download_url']?.toString();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('REPORT GENERATED', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 8),
-      Text('Type: ${result['report_type'] ?? 'detailed'}'),
-      Text('Scope: ${scope.isEmpty ? 'All validated data' : scope}'),
-      Text('Filename: $filename'),
-      if (url != null) ...[
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: () => web.window.open(Uri.parse('http://127.0.0.1:8000$url').toString(), '_blank'),
-          icon: const Icon(Icons.open_in_new),
-          label: const Text('Open PDF'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'REPORT GENERATED',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
+        const SizedBox(height: 8),
+        Text('Type: ${result['report_type'] ?? 'detailed'}'),
+        Text('Scope: ${scope.isEmpty ? 'All validated data' : scope}'),
+        Text('Filename: $filename'),
+        if (url != null) ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => web.window.open(
+              Uri.parse('http://127.0.0.1:8000$url').toString(),
+              '_blank',
+            ),
+            icon: const Icon(Icons.open_in_new),
+            label: const Text('Open PDF'),
+          ),
+        ],
       ],
-    ]);
+    );
   }
 }
 
@@ -2502,13 +2589,35 @@ class _BusinessAnalysisSummary extends StatelessWidget {
 
     if (model['response_type'] == 'analyst_insight_response') {
       lines.addAll(['', 'KEY INSIGHTS']);
-      final filters = model['active_filters'] is Map ? Map<String, dynamic>.from(model['active_filters'] as Map) : const <String, dynamic>{};
-      if (filters.isNotEmpty) lines.add('Scope: ${filters.entries.map((entry) => '${entry.key}=${entry.value}').join(', ')}');
-      for (var index = 0; index < (model['insights'] as List? ?? const []).length; index++) {
-        final insight = Map<String, dynamic>.from((model['insights'] as List)[index] as Map);
-        lines.addAll(['', '${index + 1}. ${insight['title']}', insight['summary'].toString(), 'Evidence: ${(insight['evidence'] as List? ?? const []).join('; ')}']);
+      final filters = model['active_filters'] is Map
+          ? Map<String, dynamic>.from(model['active_filters'] as Map)
+          : const <String, dynamic>{};
+      if (filters.isNotEmpty)
+        lines.add(
+          'Scope: ${filters.entries.map((entry) => '${entry.key}=${entry.value}').join(', ')}',
+        );
+      for (
+        var index = 0;
+        index < (model['insights'] as List? ?? const []).length;
+        index++
+      ) {
+        final insight = Map<String, dynamic>.from(
+          (model['insights'] as List)[index] as Map,
+        );
+        lines.addAll([
+          '',
+          '${index + 1}. ${insight['title']}',
+          insight['summary'].toString(),
+          'Evidence: ${(insight['evidence'] as List? ?? const []).join('; ')}',
+        ]);
       }
-      lines.addAll(['', 'RECOMMENDATIONS', ...((model['recommendations'] as List? ?? const []).map((value) => '- $value'))]);
+      lines.addAll([
+        '',
+        'RECOMMENDATIONS',
+        ...((model['recommendations'] as List? ?? const []).map(
+          (value) => '- $value',
+        )),
+      ]);
       return lines.join('\n').trim();
     }
 
@@ -2695,37 +2804,69 @@ class _BusinessAnalysisSummary extends StatelessWidget {
     final chartSpec = model['chart_spec'] is Map
         ? Map<String, dynamic>.from(model['chart_spec'] as Map)
         : null;
-    if (chartSpec != null && (chartSpec['rows'] as List? ?? const []).isNotEmpty) {
+    if (chartSpec != null &&
+        (chartSpec['rows'] as List? ?? const []).isNotEmpty) {
       children.add(AnalystChart(spec: chartSpec));
     }
     if (model['response_type'] == 'analyst_insight_response') {
-      final filters = model['active_filters'] is Map ? Map<String, dynamic>.from(model['active_filters'] as Map) : const <String, dynamic>{};
-      final insightItems = (model['insights'] as List? ?? const []).whereType<Map>().toList();
+      final filters = model['active_filters'] is Map
+          ? Map<String, dynamic>.from(model['active_filters'] as Map)
+          : const <String, dynamic>{};
+      final insightItems = (model['insights'] as List? ?? const [])
+          .whereType<Map>()
+          .toList();
       children.addAll([
         const SizedBox(height: 10),
-        const Text('KEY INSIGHTS', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-        if (filters.isNotEmpty) Text('Scope: ${filters.entries.map((entry) => '${entry.key} = ${entry.value}').join(' • ')}'),
+        const Text(
+          'KEY INSIGHTS',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        if (filters.isNotEmpty)
+          Text(
+            'Scope: ${filters.entries.map((entry) => '${entry.key} = ${entry.value}').join(' • ')}',
+          ),
         ...List<Widget>.generate(insightItems.length, (index) {
           final insight = Map<String, dynamic>.from(insightItems[index]);
           return Padding(
             padding: const EdgeInsets.only(top: 10),
             child: Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: .035), borderRadius: BorderRadius.circular(12)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${index + 1}. ${insight['title'] ?? 'Insight'}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text(insight['summary']?.toString() ?? ''),
-                const SizedBox(height: 6),
-                ...((insight['evidence'] as List? ?? const []).map((value) => Text('• $value', style: const TextStyle(fontSize: 12)))),
-              ]),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .035),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${index + 1}. ${insight['title'] ?? 'Insight'}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(insight['summary']?.toString() ?? ''),
+                  const SizedBox(height: 6),
+                  ...((insight['evidence'] as List? ?? const []).map(
+                    (value) =>
+                        Text('• $value', style: const TextStyle(fontSize: 12)),
+                  )),
+                ],
+              ),
             ),
           );
         }),
-        if (insightItems.isEmpty) Text(model['message']?.toString() ?? 'Not enough evidence for reliable insight discovery in this scope.'),
+        if (insightItems.isEmpty)
+          Text(
+            model['message']?.toString() ??
+                'Not enough evidence for reliable insight discovery in this scope.',
+          ),
         const SizedBox(height: 10),
-        const Text('RECOMMENDATIONS', style: TextStyle(fontWeight: FontWeight.w700)),
-        ...((model['recommendations'] as List? ?? const []).map((value) => Text('• $value'))),
+        const Text(
+          'RECOMMENDATIONS',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        ...((model['recommendations'] as List? ?? const []).map(
+          (value) => Text('• $value'),
+        )),
       ]);
     } else if (model['response_type'] == 'analyst_comparison_response') {
       final scope = model['comparison_scope'] is Map

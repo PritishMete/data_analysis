@@ -4,6 +4,7 @@ import re
 import time
 import logging
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 try:
     from dotenv import load_dotenv
@@ -2062,7 +2063,13 @@ async def powerbi_date_dimension(files: list[UploadFile] | None = File(default=N
 
 
 @app.post("/powerbi/business-analysis")
-async def powerbi_business_analysis(files: list[UploadFile] | None = File(default=None)):
+async def powerbi_business_analysis(
+    files: list[UploadFile] | None = File(default=None),
+    active_filters_json: str | None = Form(default=None),
+    query: str | None = Form(default=None),
+    context_json: str | None = Form(default=None),
+    predicate_json: str | None = Form(default=None),
+):
     """Run deterministic Chapter 6 analysis over the validated logical model."""
     if not files:
         return {"success": False, "error": "No files submitted for business analysis."}
@@ -2098,6 +2105,205 @@ async def powerbi_business_analysis(files: list[UploadFile] | None = File(defaul
             "fact_metadata": {"event_key": fact_result.get("event_key", {}).get("column"), "customer_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_customer"), None), "product_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_product"), None), "region_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == region_name), None)},
         }
         result = analyze_clean_model(model)
+        if not result.get("success"):
+            return result
+
+        # The chatbot's visible analyst card expects a structured response and
+        # its follow-up context is supplied as metadata-only multipart fields.
+        try:
+            requested_filters = json.loads(active_filters_json or "{}")
+            if not isinstance(requested_filters, dict):
+                requested_filters = {}
+        except (TypeError, ValueError):
+            requested_filters = {}
+        region_label_field = next((column for column in tables[region_name].columns if str(column).casefold() == "region"), None)
+        known_region_labels = sorted(
+            {str(value).strip() for value in tables[region_name][region_label_field].dropna().tolist()},
+            key=lambda value: (-len(value), value.casefold()),
+        ) if region_label_field else []
+        mentioned_regions = [
+            value for value in known_region_labels
+            if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", query or "", re.IGNORECASE)
+        ]
+        dashboard_filters = {
+            "year": requested_filters.get("year") or (re.search(r"\b(20\d{2})\b", query or "").group(1) if query and re.search(r"\b20\d{2}\b", query) else None),
+            "region": requested_filters.get("business_region", requested_filters.get("region")),
+            "category": requested_filters.get("category"),
+            "product": requested_filters.get("product"),
+            "product_id": requested_filters.get("product_id"),
+        }
+        from common.dashboard import build_dashboard
+
+        explicit_comparison = bool(query and re.search(r"\bcompare\b", query, re.IGNORECASE)) and len(mentioned_regions) >= 2
+        explicit_region_or = bool(query and re.search(r"\bOR\b", query, re.IGNORECASE)) and len(mentioned_regions) >= 2
+        if explicit_comparison or explicit_region_or:
+            dashboard_filters["region"] = mentioned_regions
+            requested_filters["business_region"] = mentioned_regions
+        elif (
+            query
+            and re.search(r"\bthen\b", query, re.IGNORECASE)
+            and re.search(r"most profitable region", query, re.IGNORECASE)
+            and not dashboard_filters.get("region")
+        ):
+            unfiltered = build_dashboard(model)
+            selected_region = unfiltered.get("insights", {}).get("highest_profit_region")
+            if selected_region:
+                dashboard_filters["region"] = selected_region
+                requested_filters["business_region"] = selected_region
+
+        dashboard = build_dashboard(model, dashboard_filters)
+        if dashboard.get("success"):
+            dashboard_active = dashboard.get("active_filters", {})
+            active_filters = {
+                key: value for key, value in {
+                    "year": dashboard_active.get("year"),
+                    "business_region": dashboard_active.get("region"),
+                    "category": dashboard_active.get("category"),
+                    "product": dashboard_active.get("product"),
+                    "product_id": dashboard_active.get("product_id"),
+                }.items() if value is not None
+            }
+            kpis = dashboard["kpis"]
+            regions = dashboard.get("profit_by_region", [])
+            products = dashboard.get("top_products", [])
+            months = dashboard.get("monthly_trend", [])
+            fmt = lambda value: f"{float(value):,.2f}"
+            result["active_filters"] = active_filters
+            result["regional_profit"] = {
+                "question": "Which business regions have the highest profit?",
+                "method": "Aggregate validated fact rows by the region dimension's business-region label and sort profit descending with label tie-breaker.",
+                "rows": regions,
+                "interpretation": f"{dashboard['insights']['highest_profit_region']} has the highest observed business-region profit." if dashboard.get("insights", {}).get("highest_profit_region") else "No region profit ranking is available in this scope.",
+                "reconciliation": result.get("regional_profit", {}).get("reconciliation", {}),
+                "caveat": "Region labels can represent multiple physical region keys; measures are aggregated by the displayed business-region label.",
+            }
+            result["business_region_profit"] = result["regional_profit"]
+            product_table = model["dim_product"]
+            product_label_column = next((column for column in product_table["columns"] if column.casefold() in {"product", "product_name", "name"}), None)
+            region_label_column = next((column for column in model["dim_region"]["columns"] if column.casefold() == "region"), None)
+            category_column = next((column for column in product_table["columns"] if column.casefold() == "category"), None)
+            result["filter_options"] = {
+                "business_region": sorted({str(row[region_label_column]).strip() for row in model["dim_region"]["rows"] if region_label_column and row.get(region_label_column) is not None}),
+                "category": sorted({str(row[category_column]).strip() for row in product_table["rows"] if category_column and row.get(category_column) is not None}),
+                "product": sorted({str(row[product_label_column]).strip() for row in product_table["rows"] if product_label_column and row.get(product_label_column) is not None}),
+            }
+            result["analyst_business_response"] = {
+                "response_type": "analyst_business_response",
+                "intro": dashboard.get("filter_summary", "All data") + ". Metrics are calculated from the validated local analytical model.",
+                "active_filters": active_filters,
+                "kpis": [
+                    {"label": "Revenue", "value": fmt(kpis["revenue"])},
+                    {"label": "Profit", "value": fmt(kpis["profit"])},
+                    {"label": "Profit margin", "value": f"{(kpis['profit_margin'] or 0) * 100:.2f}%"},
+                    {"label": "Orders", "value": f"{kpis['orders']:,}"},
+                    {"label": "Customers", "value": f"{kpis['customers']:,}"},
+                    {"label": "Products", "value": f"{kpis['products']:,}"},
+                ],
+                "key_insights": [
+                    f"{dashboard['insights']['highest_profit_region']} has the highest profit in the selected scope."
+                    if dashboard.get("insights", {}).get("highest_profit_region") else "No region profit ranking is available in this scope.",
+                    f"{dashboard['insights']['top_product']} leads product revenue in the selected scope."
+                    if dashboard.get("insights", {}).get("top_product") else "No named product ranking is available in this scope.",
+                ],
+                "tables": {
+                    "business_regions": {"title": "Profit by region", "columns": ["rank", "region", "revenue", "profit", "orders", "profit_margin"], "rows": regions},
+                    "top_products": {"title": "Top products by revenue", "columns": ["rank", "product", "category", "revenue", "profit", "orders", "profit_margin"], "rows": products},
+                    "monthly": {"title": "Monthly revenue and profit", "columns": ["year", "month", "month_name", "month_key", "revenue", "profit", "profit_margin", "orders"], "rows": months},
+                    "watchlist": {"title": "High-revenue / low-margin watchlist", "columns": [], "rows": []},
+                },
+                "trend_summary": {
+                    "period": f"{months[0]['month_key']} to {months[-1]['month_key']}" if months else "No valid-date months in this scope",
+                    "highest_revenue": max(months, key=lambda row: row["revenue"])["month_key"] if months else "n/a",
+                    "highest_profit": max(months, key=lambda row: row["profit"])["month_key"] if months else "n/a",
+                    "lowest_profit": min(months, key=lambda row: row["profit"])["month_key"] if months else "n/a",
+                },
+                "monthly_trend_insights": [],
+                "caveats": dashboard.get("caveats", []),
+                "recommendations": ["Confirm the analytical scope and review the regional, product, and monthly evidence before drawing conclusions."],
+            }
+            if explicit_comparison:
+                comparison_rows = []
+                for region_value in mentioned_regions:
+                    scoped_filters = {**dashboard_filters, "region": region_value}
+                    scoped = build_dashboard(model, scoped_filters)
+                    scoped_kpis = scoped.get("kpis", {})
+                    comparison_rows.append({
+                        "region": region_value,
+                        "revenue": scoped_kpis.get("revenue"),
+                        "profit": scoped_kpis.get("profit"),
+                        "profit_margin": scoped_kpis.get("profit_margin"),
+                        "orders": scoped_kpis.get("orders"),
+                        "customers": scoped_kpis.get("customers"),
+                        "products": scoped_kpis.get("products"),
+                    })
+                comparison_columns = ["region", "revenue", "profit", "profit_margin", "orders", "customers", "products"]
+                result["analyst_business_response"].update({
+                    "response_type": "analyst_comparison_response",
+                    "comparison_scope": {
+                        "grain": "business_region",
+                        "entities": mentioned_regions,
+                        "time_scope": dashboard_active.get("year"),
+                    },
+                    "comparison": {"columns": comparison_columns, "rows": comparison_rows},
+                    "explanation": "Each region is evaluated independently at the same selected year/category scope using the validated business-region labels.",
+                })
+                result["comparison_context"] = {
+                    "filters": active_filters,
+                    "entities": mentioned_regions,
+                    "grain": "business_region",
+                    "time_scope": dashboard_active.get("year"),
+                }
+            result["dashboard_context"] = dashboard
+            if query and re.search(r"\b(?:generate|create|current)\b.*\breport\b|\breport\b.*\b(?:generate|create)\b", query, re.IGNORECASE):
+                from uuid import uuid4
+                from xml.sax.saxutils import escape
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter
+                from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+                query_text = query.casefold().replace("-", "_")
+                report_type = next((kind for kind in ("comparison", "filtered", "executive", "detailed", "context_inherited") if kind in query_text), "detailed")
+                report_scope = active_filters or {"scope": "all data"}
+                report_token = uuid4().hex
+                report_filename = f"insightflow-{report_type}-{report_token}.pdf"
+                report_root = Path(tempfile.gettempdir()) / "insightflow_reports"
+                report_root.mkdir(parents=True, exist_ok=True)
+                report_path = report_root / report_filename
+                styles = getSampleStyleSheet()
+                document = SimpleDocTemplate(str(report_path), pagesize=letter, title="Business Analysis Report")
+                story = [Paragraph("Business Analysis Report", styles["Title"]), Spacer(1, 12)]
+                story.append(Paragraph(f"Report type: {escape(report_type.title())}", styles["Normal"]))
+                story.append(Paragraph(f"Scope: {escape(', '.join(f'{key}={value}' for key, value in report_scope.items()))}", styles["Normal"]))
+                story.append(Spacer(1, 12))
+                kpi_rows = [["Metric", "Observed value"]] + [
+                    [
+                        item["label"],
+                        f"INR {item['value']}"
+                        if item["label"].casefold() in {"revenue", "profit"}
+                        else item["value"],
+                    ]
+                    for item in result["analyst_business_response"]["kpis"]
+                ]
+                kpi_table = Table(kpi_rows, repeatRows=1)
+                kpi_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17324D")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), .4, colors.grey), ("PADDING", (0, 0), (-1, -1), 6)]))
+                story.extend([kpi_table, Spacer(1, 12), Paragraph("Key observations", styles["Heading2"])])
+                story.extend(Paragraph(f"• {escape(text)}", styles["BodyText"]) for text in result["analyst_business_response"]["key_insights"])
+                document.build(story)
+                report_meta = {"filename": report_filename, "report_type": report_type, "scope": report_scope}
+                result["report"] = report_meta
+                result["report_type"] = report_type
+                result["filename"] = report_filename
+                result["download_url"] = f"/powerbi/reports/{report_filename}"
+        else:
+            result["analyst_business_response"] = {
+                "response_type": "analyst_business_response",
+                "intro": result.get("analysis_summary", {}).get("profit_leader", "Business performance analysis"),
+                "active_filters": {}, "kpis": [], "key_insights": [],
+                "tables": {}, "trend_summary": {}, "monthly_trend_insights": [],
+                "caveats": [dashboard.get("error", "Filtered metrics unavailable.")],
+                "recommendations": [],
+            }
         result["raw_source_hashes"] = source_hashes
         result["raw_source_hashes_after"] = dict(source_hashes)
         result["source_data_unchanged"] = source_hashes == result["raw_source_hashes_after"]
@@ -2105,6 +2311,17 @@ async def powerbi_business_analysis(files: list[UploadFile] | None = File(defaul
         return result
     except Exception as exc:
         return {"success": False, "error": f"Business analysis failed: {exc}"}
+
+
+@app.get("/powerbi/reports/{filename}")
+async def download_powerbi_report(filename: str):
+    """Serve only generated local PDF reports by their opaque filename."""
+    if not re.fullmatch(r"insightflow-[a-z_]+-[0-9a-f]{32}\.pdf", filename):
+        return JSONResponse(status_code=404, content={"success": False, "error": "Report not found."})
+    report_path = Path(tempfile.gettempdir()) / "insightflow_reports" / filename
+    if not report_path.is_file():
+        return JSONResponse(status_code=404, content={"success": False, "error": "Report not found."})
+    return FileResponse(report_path, media_type="application/pdf", filename=filename)
 
 
 @app.post("/powerbi/dashboard")

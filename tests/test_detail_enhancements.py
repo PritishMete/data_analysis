@@ -334,7 +334,7 @@ def test_dashboard_filters_share_one_and_context_and_handle_empty_results():
     assert combined["kpis"]["orders"] == 1
     assert combined["reconciliation"]["all_reconciled"] is True
     assert empty["empty"] is True
-    assert empty["kpis"] == {"revenue": 0.0, "profit": 0.0, "orders": 0, "customers": 0, "profit_margin": None, "return_rate": None}
+    assert empty["kpis"] == {"revenue": 0.0, "profit": 0.0, "orders": 0, "customers": 0, "products": 0, "profit_margin": None, "return_rate": None}
     assert all_data["monthly_trend"][0]["month_key"] == "2025-01"
 
 

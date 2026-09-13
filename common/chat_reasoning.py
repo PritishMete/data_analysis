@@ -54,7 +54,7 @@ class ChatAnalysisPlan:
     intent: str
     dataset_scope: tuple[str, ...]
     operations: tuple[str, ...]
-    comparison_scope: tuple[str, ...]
+    comparison_scope: tuple[str, ...] = ()
     response_mode: str = "analyst_explanation"
     response_depth: str = "standard"
     mutation_requested: bool = False
