@@ -116,11 +116,16 @@ async def create_session(
 
 @router.post("/excel/query")
 async def query(session_id: str | None = Form(None), text: str = Form(...)):
-    # Meta questions remain side conversations and intentionally do not mutate
-    # the analytical state. Analytical Excel queries are recorded only after
-    # a successful execution, so a failed query leaves prior context untouched.
+    # Meta and session-summary turns are side conversations and intentionally
+    # do not mutate analytical state. Failed operations also leave prior state intact.
     result = execute_query(session_id, text)
-    if session_id and result.get("response_type") != "assistant_meta" and result.get("success", True):
+    response_type = result.get("response_type")
+    if (
+        session_id
+        and response_type not in {"assistant_meta", "session_summary"}
+        and result.get("success", True)
+        and not result.get("error")
+    ):
         operation = result.get("query", {}).get("operation") if isinstance(result.get("query"), dict) else None
         STORE.record_success(str(session_id), {
             "query": text,
