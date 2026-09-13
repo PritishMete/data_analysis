@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'system_build_id.dart';
+
 class SystemDiagnosticsService {
   SystemDiagnosticsService({http.Client? client, Uri? baseUri})
       : _client = client ?? http.Client(),
@@ -11,8 +13,9 @@ class SystemDiagnosticsService {
   final Uri _baseUri;
 
   Future<Map<String, dynamic>> check({String? servedBuildId}) async {
+    final buildId = servedBuildId ?? detailAnalysisBuildId();
     final uri = _baseUri.resolve('/v1/system/diagnostics').replace(
-      queryParameters: servedBuildId == null ? null : {'detail_analysis_build_id': servedBuildId},
+      queryParameters: buildId.isEmpty ? null : {'detail_analysis_build_id': buildId},
     );
     final response = await _client.get(uri).timeout(const Duration(seconds: 5));
     if (response.statusCode < 200 || response.statusCode >= 300) {
