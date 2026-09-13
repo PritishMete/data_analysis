@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
+import re
 
 HISTORY_LIMIT = 20
 RECENT_SUGGESTION_LIMIT = 12
@@ -118,6 +119,22 @@ class ConversationStateStore:
 
 
 STORE = ConversationStateStore()
+
+
+def looks_like_session_summary(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(text or "").casefold()).strip()
+    phrases = (
+        "summarize our analysis",
+        "summarise our analysis",
+        "what have we analyzed",
+        "what have we analysed",
+        "what is the current scope",
+        "what are we looking at now",
+        "analysis history",
+        "summarize this analysis",
+        "summarise this analysis",
+    )
+    return any(phrase in normalized for phrase in phrases)
 
 
 def _suggestion(id_: str, label: str, query: str, reason: str, priority: int, category: str) -> dict[str, Any]:
