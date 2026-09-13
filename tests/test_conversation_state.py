@@ -1,4 +1,4 @@
-from common.conversation_state import STORE, build_session_summary, generate_suggestions
+from common.conversation_state import STORE, build_session_summary, generate_suggestions, looks_like_session_summary
 
 
 def _sid(name: str) -> str:
@@ -55,6 +55,13 @@ def test_session_summary_and_report_history():
     assert summary["selected_entity"] == "North"
     assert summary["generated_reports"][0]["filename"] == "Vibe_Analysis_North_2025.pdf"
     assert summary["privacy"]["external_ai_used"] is False
+
+
+def test_session_summary_intent_variants():
+    assert looks_like_session_summary("Summarize our analysis so far")
+    assert looks_like_session_summary("What have we analyzed?")
+    assert looks_like_session_summary("What is the current scope?")
+    assert not looks_like_session_summary("Show revenue by region")
 
 
 def test_reset_keeps_history_but_clears_active_scope():
