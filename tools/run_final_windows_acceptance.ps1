@@ -40,11 +40,11 @@ function Native([string]$Exe,[string[]]$CommandArgs,[string]$Cwd,[hashtable]$Env
 }
 function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 function Owners([int]$p){try{@(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop|Select-Object -ExpandProperty OwningProcess -Unique)}catch{@()}}
-function IsInsight([int]$pid){$p=Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue;return $null -ne $p -and $p.CommandLine -and $p.CommandLine -match 'uvicorn' -and $p.CommandLine -match 'main:app' -and $p.CommandLine -match [regex]::Escape($RepoRoot)}
+function IsInsight([int]$ownerProcessId){$p=Get-CimInstance Win32_Process -Filter "ProcessId=$ownerProcessId" -ErrorAction SilentlyContinue;return $null -ne $p -and $p.CommandLine -and $p.CommandLine -match 'uvicorn' -and $p.CommandLine -match 'main:app' -and $p.CommandLine -match [regex]::Escape($RepoRoot)}
 function GetDiag(){try{Invoke-RestMethod -Uri "$Base/v1/system/diagnostics" -TimeoutSec 5}catch{$null}}
 function WaitHealthy(){for($i=0;$i-lt 60;$i++){Start-Sleep -Milliseconds 500;$d=GetDiag;if($d -and $d.overall_status -eq 'healthy'){return $true}};return $false}
 function StartBackend(){
-  $o=Owners $Port;if($o.Count){foreach($pid in $o){if(-not(IsInsight $pid)){throw "Exit 2: port $Port is occupied by an unrelated process PID $pid; no process was killed."}};throw "Verified InsightFlow already owns port $Port; use safe restart tooling."}
+  $o=Owners $Port;if($o.Count){foreach($ownerProcessId in $o){if(-not(IsInsight $ownerProcessId)){throw "Exit 2: port $Port is occupied by an unrelated process PID $ownerProcessId; no process was killed."}};$restart=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\restart_insightflow.ps1')) $RepoRoot;if($restart.code -ne 0 -or -not(WaitHealthy)){throw 'Could not safely restart the existing verified InsightFlow backend.'};return}
   $log=Join-Path $Artifacts 'final_windows_backend.log';$err=Join-Path $Artifacts 'final_windows_backend_error.log';Remove-Item $log,$err -Force -ErrorAction SilentlyContinue
   $p=Start-Process python -ArgumentList '-m','uvicorn','main:app','--app-dir',$RepoRoot -WorkingDirectory $RepoRoot -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
   Set-Content (Join-Path $Artifacts 'final_windows_backend.pid') $p.Id
