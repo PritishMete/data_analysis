@@ -1,0 +1,38 @@
+name: Apply Flutter Conversation UI Patch
+
+on:
+  push:
+    branches: [flutter-detail-analysis]
+    paths:
+      - 'tools/patch_flutter_conversation_ui.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: flutter-detail-analysis
+          fetch-depth: 0
+
+      - name: Apply deterministic source patch
+        run: python tools/patch_flutter_conversation_ui.py
+
+      - name: Verify patch changed only expected Flutter source
+        run: |
+          git diff --check
+          git status --short
+          test -n "$(git status --short flutter_detail_source/lib/detail_analysis_main.dart)"
+
+      - name: Commit patched Flutter integration
+        run: |
+          git config user.name "InsightFlow Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add flutter_detail_source/lib/detail_analysis_main.dart
+          git commit -m "Integrate context-aware follow-ups and session state UI"
+          git push origin HEAD:flutter-detail-analysis
