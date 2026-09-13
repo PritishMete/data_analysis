@@ -14,11 +14,13 @@ import 'app_colors.dart';
 import 'core/services/powerbi_detail_analysis_service.dart';
 import 'core/services/business_analysis_context.dart';
 import 'core/services/chat_reasoning_service.dart';
+import 'core/services/conversation_state_service.dart';
 import 'detail_analysis_router.dart';
 import 'star_schema_view.dart';
 import 'tech_background.dart';
 import 'widgets/analyst_quality_message.dart';
 import 'widgets/analyst_chart.dart';
+import 'widgets/analyst_suggestions.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -320,6 +322,9 @@ class DetailAnalysisPage extends StatefulWidget {
 class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
   final _service = PowerBiDetailAnalysisService();
   final _reasoningService = ChatReasoningService();
+  final _conversationService = ConversationStateService();
+  final String _conversationSessionId =
+      'detail-${DateTime.now().microsecondsSinceEpoch}';
   List<PlatformFile> _files = [];
   Map<String, dynamic>? _result;
   String? _error;
@@ -352,11 +357,13 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
   String? _runningMessage;
   DetailAnalysisRoute? _lastRoute;
   Map<String, dynamic> _analyticalContext = const <String, dynamic>{};
+  List<Map<String, dynamic>> _nextSuggestions = const <Map<String, dynamic>>[];
 
   @override
   void dispose() {
     _chatController.dispose();
     _chatScrollController.dispose();
+    _conversationService.dispose();
     super.dispose();
   }
 
@@ -390,7 +397,13 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
       _lastFindings = [];
       _lastSelectedFindingId = null;
       _analyticalContext = const <String, dynamic>{};
+      _nextSuggestions = const <Map<String, dynamic>>[];
     });
+    try {
+      await _conversationService.reset(_conversationSessionId);
+    } catch (_) {
+      // Local analytical state remains authoritative if the state helper is unavailable.
+    }
     _chatHistory.add(
       _ChatMessage.assistant(
         'Your datasets are ready. What would you like to analyze?',
@@ -401,8 +414,71 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
 
   Future<void> _sendMessage() async {
     final query = _chatController.text.trim();
-    if (query.isEmpty || _files.isEmpty || _runningMessage != null) return;
+    if (query.isEmpty || _runningMessage != null) return;
     _chatController.clear();
+
+    if (_isSessionSummaryQuery(query)) {
+      setState(() {
+        _chatHistory.add(_ChatMessage.user(query));
+        _runningMessage = 'Summarizing this analysis session…';
+      });
+      try {
+        final summary = await _conversationService.summary(_conversationSessionId);
+        if (!mounted) return;
+        setState(() {
+          _runningMessage = null;
+          _chatHistory.add(
+            _ChatMessage.assistant(
+              summary['summary']?.toString() ?? 'Here is the current analysis summary.',
+              sessionSummary: summary,
+            ),
+          );
+        });
+        _scrollChatToEnd();
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _runningMessage = null;
+          _chatHistory.add(
+            _ChatMessage.assistant(
+              'I could not summarize this session right now. Your current analytical context was not changed.',
+            ),
+          );
+        });
+      }
+      return;
+    }
+
+    try {
+      final meta = await _conversationService.meta(query);
+      if (meta['handled'] == true) {
+        if (!mounted) return;
+        setState(() {
+          _chatHistory.add(_ChatMessage.user(query));
+          _chatHistory.add(_ChatMessage.assistant(_metaResponseText(meta)));
+        });
+        _scrollChatToEnd();
+        return;
+      }
+    } catch (_) {
+      // Meta routing is an optional local fast path; normal analysis can continue.
+    }
+
+    if (_files.isEmpty) {
+      setState(() {
+        _chatHistory.add(_ChatMessage.user(query));
+        _chatHistory.add(
+          _ChatMessage.assistant(
+            'Upload one or more datasets to run analytical questions. You can still ask who I am, who created InsightFlow, what I can do, or how privacy works.',
+          ),
+        );
+      });
+      _scrollChatToEnd();
+      return;
+    }
+
+    final previousRoute = _lastRoute;
+    final previousAnalyticalContext = Map<String, dynamic>.from(_analyticalContext);
     final localFollowUp = _resolveLocalFollowUp(query);
     if (localFollowUp != null && localFollowUp['kind'] == 'why') {
       final finding = localFollowUp['finding'] as Map<String, dynamic>;
@@ -442,7 +518,6 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
         // The local deterministic router remains the offline fallback.
       }
     }
-    _lastRoute = route;
     setState(() {
       _chatHistory.add(_ChatMessage.user(query));
       _runningMessage = _loadingLabel(route);
@@ -515,6 +590,7 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
           return;
       }
       if (mounted) {
+        _lastRoute = route;
         final structuredQuality =
             route.subIntent?.startsWith('data_quality:') == true;
         final attachResult = shouldAttachDetailAnalysisResult(
@@ -522,6 +598,19 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
           _isFullReportQuery(query),
           isStructuredQuality: structuredQuality,
         );
+        List<Map<String, dynamic>> suggestions = const <Map<String, dynamic>>[];
+        try {
+          await _recordConversationSuccess(
+            query,
+            route,
+            result,
+            activeBusinessFilters,
+          );
+          suggestions = await _loadContextSuggestions(route, result);
+        } catch (_) {
+          // Suggestions/history are enhancements and must never fail the analysis itself.
+        }
+        _nextSuggestions = suggestions;
         setState(() {
           _runningMessage = null;
           _chatHistory.add(
@@ -555,12 +644,16 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
                         activeBusinessFilters.isNotEmpty
                   ? 'filtered_business_performance'
                   : route.subIntent,
+              suggestions: suggestions,
             ),
           );
         });
         _scrollChatToEnd();
       }
     } catch (_) {
+      _lastRoute = previousRoute;
+      _analyticalContext = previousAnalyticalContext;
+      _nextSuggestions = const <Map<String, dynamic>>[];
       if (mounted) {
         setState(() {
           _runningMessage = null;
@@ -578,6 +671,150 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     String query,
     DetailAnalysisRoute route,
   ) => resolveBusinessFiltersFromContext(_analyticalContext, query);
+
+  bool _isSessionSummaryQuery(String query) => RegExp(
+    r'\b(summarize|summary|analysed|analyzed|history|current scope|looking at now)\b',
+    caseSensitive: false,
+  ).hasMatch(query) &&
+      RegExp(
+        r'\b(analysis|session|scope|so far|history|we|current)\b',
+        caseSensitive: false,
+      ).hasMatch(query);
+
+  String _metaResponseText(Map<String, dynamic> meta) {
+    final parts = <String>[];
+    final summary = meta['summary']?.toString().trim();
+    if (summary != null && summary.isNotEmpty) parts.add(summary);
+    for (final section in (meta['sections'] as List? ?? const []).whereType<Map>()) {
+      final title = section['title']?.toString().trim();
+      final items = (section['items'] as List? ?? const [])
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+      if (title != null && title.isNotEmpty && items.isNotEmpty) {
+        parts.add('$title\n${items.map((item) => '• $item').join('\n')}');
+      }
+    }
+    final examples = (meta['examples'] as List? ?? const [])
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (examples.isNotEmpty) {
+      parts.add('Examples\n${examples.map((item) => '• $item').join('\n')}');
+    }
+    return parts.isEmpty ? 'InsightFlow help is available locally.' : parts.join('\n\n');
+  }
+
+  Future<void> _recordConversationSuccess(
+    String query,
+    DetailAnalysisRoute route,
+    Map<String, dynamic> result,
+    Map<String, dynamic> activeBusinessFilters,
+  ) async {
+    final filters = _analyticalContext['filters'] is Map
+        ? Map<String, dynamic>.from(_analyticalContext['filters'] as Map)
+        : Map<String, dynamic>.from(activeBusinessFilters);
+    final selected = _analyticalContext['selected_entity'];
+    String? selectedEntity;
+    String? selectedEntityType;
+    if (selected is Map) {
+      selectedEntity = selected['display_value']?.toString();
+      selectedEntityType = selected['role']?.toString();
+    } else if (selected != null) {
+      selectedEntity = selected.toString();
+    }
+    final normalized = query.toLowerCase();
+    final response = result['analyst_business_response'];
+    final responseType = response is Map ? response['response_type']?.toString() : null;
+    final update = <String, dynamic>{
+      'query': query,
+      'current_scope': filters.isEmpty
+          ? 'global'
+          : filters.entries.map((entry) => '${entry.key}=${entry.value}').join(', '),
+      'active_filters': filters,
+      'selected_entity': selectedEntity,
+      'selected_entity_type': selectedEntityType,
+      'current_metric': _analyticalContext['metric']?.toString(),
+      'current_grain': _analyticalContext['grain']?.toString(),
+      'time_scope': _analyticalContext['time_scope'] == null
+          ? <String, dynamic>{}
+          : {'year': _analyticalContext['time_scope']},
+      'reset_scope': normalized.contains('reset') ||
+          (normalized.contains('overall') && normalized.contains('company')),
+      'analysis': {
+        'type': responseType ?? route.subIntent ?? route.intent.name,
+        'scope': filters.isEmpty ? 'global' : filters.toString(),
+        'grain': _analyticalContext['grain'],
+        'metric': _analyticalContext['metric'],
+        'selected_entity': selectedEntity,
+        'summary': _resultLabel(route),
+      },
+    };
+    if (result['comparison_context'] is Map) {
+      final comparison = Map<String, dynamic>.from(result['comparison_context'] as Map);
+      final entities = comparison['entities'];
+      if (entities is List) update['comparison_entities'] = entities;
+    }
+    if (result['report'] is Map) {
+      final report = Map<String, dynamic>.from(result['report'] as Map);
+      update['report'] = {
+        'filename': result['filename'] ?? report['filename'],
+        'report_type': result['report_type'] ?? report['report_type'],
+        'scope': report['scope']?.toString(),
+        'generated_at': report['generated_at'],
+      };
+    }
+    await _conversationService.update(
+      sessionId: _conversationSessionId,
+      update: update,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadContextSuggestions(
+    DetailAnalysisRoute route,
+    Map<String, dynamic> result,
+  ) async {
+    String intent = route.subIntent?.startsWith('data_quality:') == true ||
+            route.intent == DetailAnalysisIntent.customerDataQuality
+        ? 'data_quality_analysis'
+        : 'business_analysis';
+    final business = result['analyst_business_response'];
+    if (business is Map && business['response_type'] == 'analyst_comparison_response') {
+      intent = 'comparison';
+    }
+    final selected = _analyticalContext['selected_entity'];
+    final context = <String, dynamic>{
+      'intent': intent,
+      if (selected is Map) ...{
+        'selected_entity': selected['display_value'],
+        'selected_entity_type': selected['role'],
+      },
+      if (_analyticalContext['grain'] != null)
+        'current_grain': _analyticalContext['grain'],
+      if (_analyticalContext['metric'] != null)
+        'current_metric': _analyticalContext['metric'],
+    };
+    if (result['comparison_context'] is Map) {
+      final comparison = Map<String, dynamic>.from(result['comparison_context'] as Map);
+      if (comparison['entities'] is List) {
+        context['comparison_entities'] = comparison['entities'];
+      }
+    }
+    final response = await _conversationService.suggestions(
+      sessionId: _conversationSessionId,
+      context: context,
+    );
+    return (response['suggestions'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+
+  void _sendSuggestedQuery(String query) {
+    if (_runningMessage != null || query.trim().isEmpty) return;
+    _chatController.text = query.trim();
+    _sendMessage();
+  }
 
   void _updateAnalyticalContext(
     String query,
@@ -1176,6 +1413,7 @@ h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{
           : _ChatMessageView(
               message: _chatHistory[index],
               resultBuilder: _buildResultWidget,
+              onSuggestionSelected: _sendSuggestedQuery,
             ),
     );
   }
@@ -1188,14 +1426,14 @@ h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{
         Expanded(
           child: TextField(
             controller: _chatController,
-            enabled: ready && _runningMessage == null,
+            enabled: _runningMessage == null,
             minLines: 1,
             maxLines: 4,
             onSubmitted: (_) => _sendMessage(),
             decoration: InputDecoration(
               hintText: ready
                   ? 'Ask about your data…'
-                  : 'Upload datasets to begin…',
+                  : 'Ask about InsightFlow or upload datasets to analyze…',
               filled: true,
               fillColor: Colors.white.withValues(alpha: .07),
               border: OutlineInputBorder(
@@ -1207,7 +1445,7 @@ h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{
         ),
         const SizedBox(width: 10),
         IconButton.filled(
-          onPressed: ready && _runningMessage == null ? _sendMessage : null,
+          onPressed: _runningMessage == null ? _sendMessage : null,
           icon: const Icon(Icons.send_rounded),
         ),
       ],
@@ -1790,6 +2028,8 @@ class _ChatMessage {
     this.result,
     this.intent,
     this.subIntent,
+    this.suggestions = const <Map<String, dynamic>>[],
+    this.sessionSummary,
   });
   const _ChatMessage.user(String text) : this(text: text, user: true);
   const _ChatMessage.assistant(
@@ -1797,12 +2037,16 @@ class _ChatMessage {
     Map<String, dynamic>? result,
     DetailAnalysisIntent? intent,
     String? subIntent,
+    List<Map<String, dynamic>> suggestions = const <Map<String, dynamic>>[],
+    Map<String, dynamic>? sessionSummary,
   }) : this(
          text: text,
          user: false,
          result: result,
          intent: intent,
          subIntent: subIntent,
+         suggestions: suggestions,
+         sessionSummary: sessionSummary,
        );
 
   final String text;
@@ -1810,12 +2054,19 @@ class _ChatMessage {
   final Map<String, dynamic>? result;
   final DetailAnalysisIntent? intent;
   final String? subIntent;
+  final List<Map<String, dynamic>> suggestions;
+  final Map<String, dynamic>? sessionSummary;
 }
 
 class _ChatMessageView extends StatefulWidget {
-  const _ChatMessageView({required this.message, required this.resultBuilder});
+  const _ChatMessageView({
+    required this.message,
+    required this.resultBuilder,
+    required this.onSuggestionSelected,
+  });
   final _ChatMessage message;
   final Widget Function(BuildContext, _ChatMessage) resultBuilder;
+  final ValueChanged<String> onSuggestionSelected;
 
   @override
   State<_ChatMessageView> createState() => _ChatMessageViewState();
@@ -1930,6 +2181,13 @@ class _ChatMessageViewState extends State<_ChatMessageView> {
                   ? SelectionArea(child: widget.resultBuilder(context, message))
                   : widget.resultBuilder(context, message),
             ],
+            if (message.sessionSummary != null)
+              AnalystSessionSummary(summary: message.sessionSummary!),
+            if (!message.user && message.suggestions.isNotEmpty)
+              AnalystSuggestions(
+                suggestions: message.suggestions,
+                onSelected: widget.onSuggestionSelected,
+              ),
           ],
         ),
       ),
