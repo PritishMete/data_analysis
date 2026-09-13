@@ -5,6 +5,7 @@ on:
     branches: [flutter-detail-analysis]
     paths:
       - 'tools/patch_flutter_conversation_ui.py'
+      - '.github/workflows/apply-flutter-conversation-patch.yml'
   workflow_dispatch:
 
 permissions:
