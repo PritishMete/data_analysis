@@ -1,16 +1,17 @@
 """Privacy-safe local diagnostics for InsightFlow.
 
-This module deliberately reports only service/build/configuration state. It never
-reads or returns dataset values, filenames, absolute paths, secrets, or exception
-tracebacks.
+Only service/build/configuration state is exposed. Dataset values, filenames,
+absolute paths, secrets and raw exception details are deliberately excluded.
 """
 from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 import logging
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from privacy_policy import LOCAL_ONLY
 logger = logging.getLogger("insightflow.diagnostics")
 STARTED_AT = datetime.now(timezone.utc)
 _START_MONOTONIC = time.monotonic()
+_BUILD_INFO_MIDDLEWARE_INSTALLED = False
 
 REQUIRED_IMPORTS = {
     "detail_analysis": ("common.detail_analysis", "analyze_dataset_collection"),
@@ -150,10 +152,7 @@ def build_diagnostics(client_build_id: str | None = None) -> dict[str, Any]:
             "uptime_seconds": int(max(0, time.monotonic() - _START_MONOTONIC)),
         },
         "frontend": frontend,
-        "services": {
-            **services,
-            "analysis_engine": services["detail_analysis"],
-        },
+        "services": {**services, "analysis_engine": services["detail_analysis"]},
         "privacy": {
             "local_dataset_processing": True,
             "raw_dataset_external_transmission": not LOCAL_ONLY,
@@ -187,7 +186,41 @@ def run_startup_self_check() -> dict[str, str]:
     return statuses
 
 
-# Import-time execution is intentionally lightweight. ai_routes is imported only
-# after FastAPI's app object exists, so this is a safe startup self-check without
-# introducing another lifespan hook into the established application.
+def install_build_info_timestamp_compatibility() -> None:
+    """Ensure legacy /v1/build-info never serializes a null timestamp.
+
+    This compatibility layer is installed from the diagnostics module because
+    the existing build-info route predates the diagnostics work. It only adds
+    a generated UTC timestamp when the established endpoint returns null; it
+    never exposes a path, file name, dataset value or secret.
+    """
+    global _BUILD_INFO_MIDDLEWARE_INSTALLED
+    if _BUILD_INFO_MIDDLEWARE_INSTALLED:
+        return
+    main_module = sys.modules.get("main")
+    app = getattr(main_module, "app", None)
+    if app is None:
+        return
+
+    @app.middleware("http")
+    async def _build_info_timestamp_middleware(request, call_next):
+        response = await call_next(request)
+        if request.url.path != "/v1/build-info" or response.status_code != 200:
+            return response
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return response
+        if not payload.get("build_timestamp"):
+            payload["build_timestamp"] = datetime.now(timezone.utc).isoformat()
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=payload)
+
+    _BUILD_INFO_MIDDLEWARE_INSTALLED = True
+
+
 run_startup_self_check()
+install_build_info_timestamp_compatibility()
