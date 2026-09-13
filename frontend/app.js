@@ -37,6 +37,56 @@ function setOutput(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
+function renderMetaResponse(result) {
+  if (!result || result.response_type !== "assistant_meta") return false;
+  const wrapper = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = result.title || "InsightFlow";
+  wrapper.appendChild(title);
+  const summary = document.createElement("p");
+  summary.textContent = result.summary || "";
+  wrapper.appendChild(summary);
+  for (const section of result.sections || []) {
+    const heading = document.createElement("h4");
+    heading.textContent = section.title || "";
+    wrapper.appendChild(heading);
+    const list = document.createElement("ul");
+    for (const item of section.items || []) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    }
+    wrapper.appendChild(list);
+  }
+  if ((result.examples || []).length) {
+    const heading = document.createElement("h4");
+    heading.textContent = "Examples";
+    wrapper.appendChild(heading);
+    const list = document.createElement("ul");
+    for (const item of result.examples) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    }
+    wrapper.appendChild(list);
+  }
+  if ((result.links || []).length) {
+    const links = document.createElement("p");
+    result.links.forEach((item, index) => {
+      const anchor = document.createElement("a");
+      anchor.href = item.url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = item.label;
+      if (index) links.appendChild(document.createTextNode(" · "));
+      links.appendChild(anchor);
+    });
+    wrapper.appendChild(links);
+  }
+  output.replaceChildren(wrapper);
+  return true;
+}
+
 function detailReport(result) {
   if (!result || !result.success || !result.readable_report_html) {
     return result;
@@ -66,21 +116,38 @@ createButton.addEventListener("click", async () => {
   const res = await fetch("/excel/session", { method: "POST", body: form });
   const data = await res.json();
   sessionId = data.session_id;
-  runButton.disabled = !sessionId;
   setOutput(data);
 });
 
 runButton.addEventListener("click", async () => {
+  const text = queryInput.value.trim();
+  if (!text) {
+    setOutput("Enter a question or request first.");
+    return;
+  }
+
+  // Identity/help/meta questions are intentionally checked before session
+  // requirements so they work with zero uploaded data and consume no Gemini quota.
+  const metaForm = new FormData();
+  metaForm.append("text", text);
+  metaForm.append("surface", "excel");
+  const metaRes = await fetch("/excel/meta", { method: "POST", body: metaForm });
+  const meta = await metaRes.json();
+  if (meta && meta.handled) {
+    renderMetaResponse(meta);
+    return;
+  }
+
   if (!sessionId) {
-    setOutput("Create a session first.");
+    setOutput("Create an Excel session before running analytical queries.");
     return;
   }
   const form = new FormData();
   form.append("session_id", sessionId);
-  form.append("text", queryInput.value);
+  form.append("text", text);
   const res = await fetch("/excel/query", { method: "POST", body: form });
   const data = await res.json();
-  setOutput(data);
+  if (!renderMetaResponse(data)) setOutput(data);
 });
 
 detailButton.addEventListener("click", async () => {

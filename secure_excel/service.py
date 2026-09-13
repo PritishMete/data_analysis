@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from common.assistant_identity import resolve_assistant_meta
 from common.excel_context import scan_workbook
 from .config import CONFIG
 from .executor import execute_structured_query
@@ -51,8 +52,22 @@ def load_excel_session(
     }
 
 
-def interpret_query(session_id: str, text: str) -> dict[str, Any]:
-    session = SESSION_STORE.get(session_id)
+def _require_session(session_id: str | None) -> str:
+    value = str(session_id or "").strip()
+    if not value:
+        raise ValueError("Create an Excel session before running analytical queries.")
+    return value
+
+
+def interpret_query(session_id: str | None, text: str) -> dict[str, Any]:
+    meta = resolve_assistant_meta(text, surface="excel")
+    if meta is not None:
+        return meta
+    try:
+        session_key = _require_session(session_id)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    session = SESSION_STORE.get(session_key)
     parsed = parse_query(text, session.schema)
     validated = validate_structured_query(parsed, session.schema)
     assert_safe_remote_payload({
@@ -62,8 +77,15 @@ def interpret_query(session_id: str, text: str) -> dict[str, Any]:
     return validated
 
 
-def execute_query(session_id: str, text: str) -> dict[str, Any]:
-    session = SESSION_STORE.get(session_id)
+def execute_query(session_id: str | None, text: str) -> dict[str, Any]:
+    meta = resolve_assistant_meta(text, surface="excel")
+    if meta is not None:
+        return meta
+    try:
+        session_key = _require_session(session_id)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    session = SESSION_STORE.get(session_key)
     parsed = parse_query(text, session.schema)
     validated = validate_structured_query(parsed, session.schema)
     result = execute_structured_query(session.dataframe, session.schema, validated)
@@ -77,7 +99,7 @@ def execute_query(session_id: str, text: str) -> dict[str, Any]:
         )
     )
     return {
-        "session_id": session_id,
+        "session_id": session_key,
         "query": validated,
         "schema": anonymized_schema_summary(session.schema),
         **result,
@@ -111,4 +133,3 @@ def list_supported_transforms() -> dict[str, Any]:
         ],
         "remote_ai_enabled": CONFIG.remote_ai_enabled,
     }
-

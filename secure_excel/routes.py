@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, Form, UploadFile
 
 from .service import execute_query, list_supported_transforms, load_excel_session, interpret_query
+from common.assistant_identity import assistant_meta_or_not_handled
 from common.detail_analysis import analyze_dataset_collection, load_dataset_tables
 
 
@@ -14,6 +15,12 @@ router = APIRouter(prefix="/excel", tags=["secure-excel"])
 @router.get("/ping")
 def ping() -> dict[str, str]:
     return {"status": "ok", "mode": "secure-excel"}
+
+
+@router.post("/meta")
+async def assistant_meta(text: str = Form(...), surface: str = Form("excel")):
+    """Resolve static InsightFlow identity/help questions without a workbook/session."""
+    return assistant_meta_or_not_handled(text, surface=surface)
 
 
 @router.post("/session")
@@ -34,7 +41,7 @@ async def create_session(
 
 
 @router.post("/query")
-async def query(session_id: str = Form(...), text: str = Form(...)):
+async def query(session_id: str | None = Form(None), text: str = Form(...)):
     return execute_query(session_id, text)
 
 
@@ -50,7 +57,7 @@ async def detail_analysis(file: UploadFile = File(...)):
 
 
 @router.post("/interpret")
-async def interpret(session_id: str = Form(...), text: str = Form(...)):
+async def interpret(session_id: str | None = Form(None), text: str = Form(...)):
     return interpret_query(session_id, text)
 
 
