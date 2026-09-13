@@ -12,9 +12,15 @@ $Diagnostics = "$Base/v1/system/diagnostics"
 $Ui = "$Base/ui/"
 
 function Get-Diagnostics {
+  try { return Invoke-RestMethod -Uri $Diagnostics -Method Get -TimeoutSec 3 }
+  catch { return $null }
+}
+
+function Get-PortOwners([int]$TargetPort) {
   try {
-    return Invoke-RestMethod -Uri $Diagnostics -Method Get -TimeoutSec 3
-  } catch { return $null }
+    $connections = Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction Stop
+    return @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
+  } catch { return @() }
 }
 
 $current = Get-Diagnostics
@@ -32,7 +38,25 @@ if ($null -ne $current) {
   exit 1
 }
 
-$commandLine = "python -m uvicorn main:app"
+$owners = Get-PortOwners $Port
+if ($owners.Count -gt 0) {
+  $verifiedInsightFlow = $false
+  foreach ($pid in $owners) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue
+    if ($process -and $process.CommandLine -and $process.CommandLine -match 'uvicorn' -and $process.CommandLine -match 'main:app' -and $process.CommandLine -match [regex]::Escape($RepoRoot)) {
+      $verifiedInsightFlow = $true
+    }
+  }
+  if (-not $verifiedInsightFlow) {
+    Write-Host ("Port {0} is occupied by an unverified process." -f $Port)
+    Write-Host 'No process was terminated. Choose another port or stop the verified owner manually.'
+    exit 1
+  }
+  Write-Host 'A verified InsightFlow process owns the port, but diagnostics are unavailable.'
+  Write-Host 'Use restart_insightflow.ps1 to recover it safely.'
+  exit 1
+}
+
 $proc = Start-Process -FilePath $Python.Source -ArgumentList '-m','uvicorn','main:app','--host','127.0.0.1','--port',$Port -WorkingDirectory $RepoRoot -PassThru
 
 $ready = $false
