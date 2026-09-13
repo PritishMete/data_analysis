@@ -9,292 +9,101 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-
-if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-  $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-} else {
-  $RepoRoot = (Resolve-Path $RepoRoot).Path
-}
-
-$ExpectedCommit = '8053000369222f897d12927b3599a5e65274b479'
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path } else { $RepoRoot = (Resolve-Path $RepoRoot).Path }
+$ExpectedBaseline = '8053000369222f897d12927b3599a5e65274b479'
+$AllowedAcceptanceFiles = @('tools/run_final_windows_acceptance.ps1','tools/final_windows_acceptance.py','tools/final_windows_browser_acceptance.py')
 $Branch = 'flutter-detail-analysis'
 $Artifacts = Join-Path $RepoRoot 'artifacts'
-$PythonHarness = Join-Path $RepoRoot 'tools\final_windows_acceptance.py'
 $Base = "http://127.0.0.1:$Port"
-$FinalJson = Join-Path $Artifacts 'final_windows_acceptance.json'
-$FinalTxt = Join-Path $Artifacts 'final_windows_acceptance.txt'
-$LiveJson = Join-Path $Artifacts 'final_windows_acceptance_live.json'
-$BackendLog = Join-Path $Artifacts 'final_windows_backend.log'
-$BackendPidFile = Join-Path $Artifacts 'final_windows_backend.pid'
-
+$JsonPath = Join-Path $Artifacts 'final_windows_acceptance.json'
+$TxtPath = Join-Path $Artifacts 'final_windows_acceptance.txt'
+$LivePath = Join-Path $Artifacts 'final_windows_acceptance_live.json'
+$BrowserPath = Join-Path $Artifacts 'final_windows_browser_acceptance.json'
 New-Item -ItemType Directory -Path $Artifacts -Force | Out-Null
-$results = [ordered]@{}
-$defects = New-Object System.Collections.Generic.List[string]
-$limitations = New-Object System.Collections.Generic.List[string]
-$changedFiles = New-Object System.Collections.Generic.List[string]
-$scriptExit = 0
+$R = [ordered]@{}
+$Defects = [System.Collections.Generic.List[string]]::new()
+$Limitations = [System.Collections.Generic.List[string]]::new()
+$Exit = 0
 
-function Set-Result([string]$Name, [bool]$Passed, [string]$Detail = '') {
-  $results[$Name] = [ordered]@{ status = $(if ($Passed) { 'PASS' } else { 'FAIL' }); detail = $Detail }
-  if (-not $Passed) { $script:scriptExit = 1 }
+function Gate([string]$Name,[bool]$Pass,[string]$Detail='') { $R[$Name]=[ordered]@{status=if($Pass){'PASS'}else{'FAIL'};detail=$Detail}; if(-not $Pass){$script:Exit=1} }
+function Native([string]$Exe,[string[]]$Args,[string]$Cwd,[hashtable]$Env=@{}) {
+  $old=@{}; foreach($k in $Env.Keys){$old[$k]=[Environment]::GetEnvironmentVariable($k,'Process');[Environment]::SetEnvironmentVariable($k,[string]$Env[$k],'Process')}
+  $started=Get-Date
+  try { $out=& $Exe @Args 2>&1 | Out-String; $code=$LASTEXITCODE } finally { foreach($k in $Env.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')} }
+  $d=((Get-Date)-$started).TotalSeconds
+  $c=[ordered]@{passed=0;failed=0;skipped=0;warnings=0;duration_seconds=[math]::Round($d,3);exit_code=$code}
+  if($out -match '(?m)(\d+) passed'){$c.passed=[int]$Matches[1]};if($out -match '(?m)(\d+) failed'){$c.failed=[int]$Matches[1]};if($out -match '(?m)(\d+) skipped'){$c.skipped=[int]$Matches[1]};if($out -match '(?m)(\d+) warnings?'){$c.warnings=[int]$Matches[1]}
+  [pscustomobject]@{code=$code;text=$out;counts=$c}
 }
-
-function Invoke-Native([string]$File, [string[]]$Arguments, [string]$WorkingDirectory, [hashtable]$Environment = @{}) {
-  $started = Get-Date
-  $tmp = Join-Path $Artifacts ("native_{0}.log" -f ([guid]::NewGuid().ToString('N')))
-  $old = @{}
-  foreach ($key in $Environment.Keys) {
-    $old[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
-    [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], 'Process')
-  }
-  try {
-    & $File @Arguments 2>&1 | Tee-Object -FilePath $tmp | Out-Host
-    $exitCode = $LASTEXITCODE
-    $text = Get-Content -LiteralPath $tmp -Raw -ErrorAction SilentlyContinue
-  } finally {
-    foreach ($key in $Environment.Keys) { [Environment]::SetEnvironmentVariable($key, $old[$key], 'Process') }
-  }
-  $duration = ((Get-Date) - $started).TotalSeconds
-  $counts = [ordered]@{ passed = 0; failed = 0; skipped = 0; warnings = 0; duration_seconds = [math]::Round($duration, 3); exit_code = $exitCode }
-  if ($text -match '(?m)(\d+) passed') { $counts.passed = [int]$Matches[1] }
-  if ($text -match '(?m)(\d+) failed') { $counts.failed = [int]$Matches[1] }
-  if ($text -match '(?m)(\d+) skipped') { $counts.skipped = [int]$Matches[1] }
-  if ($text -match '(?m)(\d+) warnings?') { $counts.warnings = [int]$Matches[1] }
-  $counts.output_tail = (($text -split "`r?`n") | Select-Object -Last 25) -join "`n"
-  Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-  [pscustomobject]@{ ExitCode = $exitCode; Text = $text; Counts = $counts }
+function Hash([string]$p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
+function Owners([int]$p){try{@(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop|Select-Object -ExpandProperty OwningProcess -Unique)}catch{@()}}
+function IsInsight([int]$pid){$p=Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue;return $null -ne $p -and $p.CommandLine -and $p.CommandLine -match 'uvicorn' -and $p.CommandLine -match 'main:app' -and $p.CommandLine -match [regex]::Escape($RepoRoot)}
+function GetDiag(){try{Invoke-RestMethod -Uri "$Base/v1/system/diagnostics" -TimeoutSec 5}catch{$null}}
+function WaitHealthy(){for($i=0;$i-lt 60;$i++){Start-Sleep -Milliseconds 500;$d=GetDiag;if($d -and $d.overall_status -eq 'healthy'){return $true}};return $false}
+function StartBackend(){
+  $o=Owners $Port;if($o.Count){foreach($pid in $o){if(-not(IsInsight $pid)){throw "Exit 2: port $Port is occupied by an unrelated process PID $pid; no process was killed."}};throw "Verified InsightFlow already owns port $Port; use safe restart tooling."}
+  $log=Join-Path $Artifacts 'final_windows_backend.log';$err=Join-Path $Artifacts 'final_windows_backend_error.log';Remove-Item $log,$err -Force -ErrorAction SilentlyContinue
+  $p=Start-Process python -ArgumentList '-m','uvicorn','main:app' -WorkingDirectory $RepoRoot -RedirectStandardOutput $log -RedirectStandardError $err -PassThru
+  Set-Content (Join-Path $Artifacts 'final_windows_backend.pid') $p.Id
+  if(-not(WaitHealthy)){throw 'Backend did not become healthy; see acceptance backend logs.'}
 }
-
-function Get-Git([string[]]$Args) {
-  $r = Invoke-Native 'git' $Args $RepoRoot
-  if ($r.ExitCode -ne 0) { throw "git $($Args -join ' ') failed." }
-  $r.Text.Trim()
-}
-
-function Get-Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
-
-function Get-HttpJson([string]$Path) {
-  try { Invoke-RestMethod -Uri ($Base + $Path) -Method Get -TimeoutSec 10 -ErrorAction Stop } catch { $null }
-}
-
-function Get-PortOwners([int]$TargetPort) {
-  try { @(Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique) } catch { @() }
-}
-
-function Assert-InsightFlowOwner([int]$Pid) {
-  $p = Get-CimInstance Win32_Process -Filter "ProcessId=$Pid" -ErrorAction SilentlyContinue
-  return ($null -ne $p -and $p.CommandLine -and $p.CommandLine -match 'uvicorn' -and $p.CommandLine -match 'main:app' -and $p.CommandLine -match [regex]::Escape($RepoRoot))
-}
-
-function Snapshot-WebAssets {
-  $root = Join-Path $FlutterRoot 'web'
-  $map = [ordered]@{}
-  if (Test-Path $root) {
-    Get-ChildItem $root -Recurse -File | ForEach-Object {
-      $relative = $_.FullName.Substring($root.Length).TrimStart('\','/')
-      $map[$relative] = Get-Hash $_.FullName
-    }
-  }
-  $map
-}
-
-function Wait-Healthy {
-  for ($i=0; $i -lt 60; $i++) {
-    Start-Sleep -Milliseconds 500
-    $d = Get-HttpJson '/v1/system/diagnostics'
-    if ($null -ne $d -and $d.overall_status -eq 'healthy') { return $true }
-  }
-  return $false
-}
-
-function Start-BackendSafe {
-  $owners = Get-PortOwners $Port
-  if ($owners.Count -gt 0) {
-    foreach ($pid in $owners) {
-      if (-not (Assert-InsightFlowOwner $pid)) { throw "Port $Port is occupied by an unrelated/unverified process (PID $pid). No process was killed." }
-    }
-    throw "A verified InsightFlow backend already owns port $Port. Use the safe restart tool instead of starting a duplicate."
-  }
-  if (Test-Path $BackendLog) { Remove-Item $BackendLog -Force }
-  $p = Start-Process -FilePath 'python' -ArgumentList '-m','uvicorn','main:app' -WorkingDirectory $RepoRoot -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendLog -PassThru
-  Set-Content -LiteralPath $BackendPidFile -Value ([string]$p.Id) -Encoding ascii
-  if (-not (Wait-Healthy)) { throw "python -m uvicorn main:app did not become healthy. See artifacts/final_windows_backend.log." }
-}
-
-function Stop-BackendSafe {
-  $owners = Get-PortOwners $Port
-  foreach ($pid in $owners) {
-    if (Assert-InsightFlowOwner $pid) { Stop-Process -Id $pid -Force }
-  }
+function WebSnapshot(){
+  $root=Join-Path $FlutterRoot 'web';$m=[ordered]@{};if(Test-Path $root){Get-ChildItem $root -Recurse -File|%{$m[$_.FullName.Substring($root.Length).TrimStart('\\','/')]=Hash $_.FullName}};return $m
 }
 
 Write-Host 'INSIGHTFLOW FINAL WINDOWS ACCEPTANCE'
-Write-Host 'Starting pre-flight...'
+# 1 PRE-FLIGHT
+if($env:OS -ne 'Windows_NT'){throw 'Exit 2: Windows is required.'}
+foreach($x in @(@('Python','python'),@('Flutter','flutter'),@('PowerShell','powershell'))){if(-not(Get-Command $x[1] -ErrorAction SilentlyContinue)){throw "Exit 2: $($x[0]) is unavailable."}}
+foreach($p in @($StudentRoot,$DataRoot,$FlutterRoot)){if(-not(Test-Path $p -PathType Container)){throw "Exit 2: required root missing: $p"}}
+foreach($f in @('orders_raw.csv','customers_raw.csv','products_raw.csv','regions_raw.csv')){if(-not(Test-Path (Join-Path $DataRoot $f) -PathType Leaf)){throw "Exit 2: required CSV missing: $f"}}
+foreach($f in @('main.py','system_diagnostics.py','tools\start_insightflow.ps1','tools\restart_insightflow.ps1','tools\check_insightflow.ps1','tools\final_windows_acceptance.py','tools\final_windows_browser_acceptance.py','flutter_detail_source\build_detail_analysis.ps1')){if(-not(Test-Path (Join-Path $RepoRoot $f) -PathType Leaf)){throw "Exit 2: required file missing: $f"}}
+if(-not(Test-Path (Join-Path $RepoRoot '.git') -PathType Container)){throw 'Exit 2: repository is not a Git worktree.'}
+Gate 'PRE-FLIGHT' $true 'Windows/Python/Flutter/PowerShell/student runtime/dataset/build inputs verified.'
+# Bootstrap browser automation only if missing; this is tooling, not application logic.
+$pw=Native python @('-c','import playwright') $RepoRoot
+if($pw.code -ne 0){$pip=Native python @('-m','pip','install','playwright') $RepoRoot;if($pip.code -ne 0){throw 'Exit 2: could not install Playwright acceptance dependency.'};$bi=Native python @('-m','playwright','install','chromium') $RepoRoot;if($bi.code -ne 0){throw 'Exit 2: could not install Chromium acceptance runtime.'}}
 
-# 1. PRE-FLIGHT
-if ($env:OS -ne 'Windows_NT') { throw 'Exit 2: this acceptance runner must execute on Windows.' }
-if (-not (Test-Path $RepoRoot -PathType Container)) { throw 'Exit 2: repository root is missing.' }
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw 'Exit 2: Python is missing from PATH.' }
-if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) { throw 'Exit 2: Flutter is missing from PATH.' }
-if (-not (Get-Command powershell -ErrorAction SilentlyContinue)) { throw 'Exit 2: Windows PowerShell is missing.' }
-if (-not (Test-Path $StudentRoot -PathType Container)) { throw 'Exit 2: E:\LLM student runtime is missing.' }
-if (-not (Test-Path $DataRoot -PathType Container)) { throw 'Exit 2: E:\ai data analyst is missing.' }
-foreach ($f in @('orders_raw.csv','customers_raw.csv','products_raw.csv','regions_raw.csv')) { if (-not (Test-Path (Join-Path $DataRoot $f) -PathType Leaf)) { throw "Exit 2: required CSV missing: $f" } }
-foreach ($f in @('main.py','system_diagnostics.py','tools\start_insightflow.ps1','tools\restart_insightflow.ps1','tools\check_insightflow.ps1','flutter_detail_source\build_detail_analysis.ps1')) { if (-not (Test-Path (Join-Path $RepoRoot $f) -PathType Leaf)) { throw "Exit 2: required backend/build file missing: $f" } }
-if (-not (Test-Path $FlutterRoot -PathType Container)) { throw 'Exit 2: canonical Flutter source is missing.' }
-if (-not (Test-Path $PythonHarness -PathType Leaf)) { throw 'Exit 2: supporting acceptance Python module is missing.' }
-$results['PRE-FLIGHT'] = [ordered]@{ status = 'PASS'; detail = 'Windows, Python, Flutter, PowerShell, E:\LLM, dataset, backend/build files verified.' }
+# 2 SOURCE IDENTITY
+$branch=(Native git @('branch','--show-current') $RepoRoot).text.Trim();$sha=(Native git @('rev-parse','HEAD') $RepoRoot).text.Trim();$dirty=(Native git @('status','--porcelain') $RepoRoot).text.Trim();
+$ancestor=Native git @('merge-base','--is-ancestor',$ExpectedBaseline,$sha) $RepoRoot
+$changed=(Native git @('diff','--name-only',"$ExpectedBaseline..$sha") $RepoRoot).text -split "`r?`n"|?{$_}
+$unexpected=@($changed|?{$AllowedAcceptanceFiles -notcontains $_})
+$R['SOURCE IDENTITY']=[ordered]@{branch=$branch;commit=$sha;baseline=$ExpectedBaseline;dirty=[bool]$dirty;acceptance_only=($unexpected.Count -eq 0);changed_since_baseline=$changed}
+if($branch -ne $Branch){throw "Wrong branch: expected $Branch, found $branch."};if($ancestor.code -ne 0){throw "Current commit is not based on accepted diagnostics baseline $ExpectedBaseline."};if($unexpected.Count){throw "Non-acceptance files changed since baseline: $($unexpected -join ', ')"}
 
-# 2. SOURCE IDENTITY
-$currentBranch = Get-Git @('branch','--show-current')
-$currentCommit = Get-Git @('rev-parse','HEAD')
-$dirty = Get-Git @('status','--porcelain')
-$results['SOURCE IDENTITY'] = [ordered]@{ branch=$currentBranch; commit=$currentCommit; expected_commit=$ExpectedCommit; dirty=[bool]$dirty }
-if ($currentBranch -ne $Branch) { throw "Wrong branch: expected $Branch, found $currentBranch." }
-if ($currentCommit -ne $ExpectedCommit) { throw "Wrong source commit. Expected $ExpectedCommit, found $currentCommit." }
+# 3 BACKEND TESTS + requested focused suites
+$env:INSIGHTFLOW_STUDENT_ROOT=$StudentRoot
+$b=Native pytest @('-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot};$R['BACKEND TESTS']=$b.counts;if($b.code -ne 0){$Defects.Add('pytest -q failed.')}
+foreach($t in @('tests/test_system_diagnostics.py','tests/test_build_info.py','tests/test_detail_build_pipeline.py','tests/test_end_to_end_learning.py','tests/test_assistant_identity.py','tests/test_conversation_state.py')){$q=Native pytest @('-q',$t) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot};$R["BACKEND $t"]=$q.counts;if($q.code -ne 0){$Defects.Add("$t failed.")}}
+# The student lifecycle test must be a real collected test, not a skip.
+$col=Native pytest @('--collect-only','-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot};$ids=@($col.text -split "`r?`n"|?{$_ -match '(?i)(student|lifecycle|privacy)' -and $_ -match '::'});$live=Native pytest @('-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot};$liveOk=$ids.Count -gt 0 -and $live.code -eq 0 -and $live.text -notmatch '(?i)student.*SKIPPED|SKIPPED.*student';Gate 'LIVE STUDENT RUNTIME TEST' $liveOk "Discovered: $($ids -join '; ')"
 
-# 3. BACKEND TESTS
-$env:INSIGHTFLOW_STUDENT_ROOT = $StudentRoot
-$backend = Invoke-Native 'pytest' @('-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-$results['BACKEND TESTS'] = $backend.Counts
-if ($backend.ExitCode -ne 0) { $defects.Add('pytest -q failed.') }
-foreach ($test in @('tests/test_system_diagnostics.py','tests/test_build_info.py','tests/test_detail_build_pipeline.py','tests/test_end_to_end_learning.py','tests/test_assistant_identity.py','tests/test_conversation_state.py')) {
-  $r = Invoke-Native 'pytest' @('-q',$test) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-  $results["BACKEND:$test"] = $r.Counts
-  if ($r.ExitCode -ne 0) { $defects.Add("Backend test failed: $test") }
-}
+# 5 FLUTTER
+$fg=Native flutter @('pub','get') $FlutterRoot;$ft=Native flutter @('test') $FlutterRoot;$fb=Native flutter @('build','web','--release','--target','lib/detail_analysis_main.dart','--base-href','/ui/') $FlutterRoot;$R['FLUTTER TESTS']=$ft.counts;$R['FLUTTER BUILD']=$fb.counts;Gate 'FLUTTER TESTS' ($fg.code -eq 0 -and $ft.code -eq 0) 'flutter pub get + flutter test';Gate 'FLUTTER BUILD' ($fb.code -eq 0) 'release Detail Analysis target'
 
-# Live student test: discover concrete lifecycle/privacy test names instead of silently skipping.
-$collect = Invoke-Native 'pytest' @('--collect-only','-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-$studentIds = @($collect.Text -split "`r?`n" | Where-Object { $_ -match '(?i)student|lifecycle|privacy' -and $_ -match '::' })
-if ($studentIds.Count -eq 0) {
-  Set-Result 'LIVE STUDENT RUNTIME TEST' $false 'No concrete student lifecycle/privacy test was discovered; it was not silently skipped.'
-} else {
-  $student = Invoke-Native 'pytest' @('-q') $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-  $liveOk = $student.ExitCode -eq 0 -and $student.Text -notmatch '(?i)student.*skipped|SKIPPED.*student'
-  Set-Result 'LIVE STUDENT RUNTIME TEST' $liveOk "Student-related tests discovered: $($studentIds -join ', ')"
-}
+# 6 DETAIL BUILD + Excel source asset immutability
+$webBefore=WebSnapshot;$bp=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $FlutterRoot 'build_detail_analysis.ps1'),'-ServingRoot',$RepoRoot,'-BaseHref','/ui/') $FlutterRoot;$outRoot=Join-Path $RepoRoot 'frontend\flutter_detail';$index=Join-Path $outRoot 'index.html';$js=Join-Path $outRoot 'main.dart.js';$metaOk=Test-Path $index;$jsOk=Test-Path $js;$id=if($jsOk){(Hash $js).Substring(0,12)}else{''};$txt=if($metaOk){Get-Content $index -Raw}else{''};$office=if(Test-Path $outRoot){Select-String -Path (Get-ChildItem $outRoot -Recurse -File).FullName -Pattern 'appsforoffice\.com|office\.js' -CaseSensitive:$false -ErrorAction SilentlyContinue}else{$null};$webAfter=WebSnapshot;$webSame=(ConvertTo-Json $webBefore -Compress)-(ConvertTo-Json $webAfter -Compress);$buildOk=$bp.code -eq 0 -and $metaOk -and $jsOk -and $id.Length -eq 12 -and $txt -match 'detail-analysis-build-id' -and $office.Count -eq 0 -and $webSame;Gate 'DETAIL ANALYSIS BUILD' $buildOk "build_id=$id index=$metaOk main.dart.js=$jsOk office_js_absent=$($office.Count -eq 0) excel_web_assets_unchanged=$webSame"; $R['DETAIL ANALYSIS BUILD ID']=$id
 
-# 5. FLUTTER TESTS
-$flutterGet = Invoke-Native 'flutter' @('pub','get') $FlutterRoot
-$flutterTest = Invoke-Native 'flutter' @('test') $FlutterRoot
-$flutterBuild = Invoke-Native 'flutter' @('build','web','--release','--target','lib/detail_analysis_main.dart','--base-href','/ui/') $FlutterRoot
-$results['FLUTTER pub get'] = $flutterGet.Counts
-$results['FLUTTER TESTS'] = $flutterTest.Counts
-$results['FLUTTER BUILD'] = $flutterBuild.Counts
-Set-Result 'FLUTTER TEST GATE' ($flutterGet.ExitCode -eq 0 -and $flutterTest.ExitCode -eq 0) 'flutter pub get + flutter test'
-Set-Result 'FLUTTER BUILD GATE' ($flutterBuild.ExitCode -eq 0) 'release Detail Analysis target build'
+# 7 BACKEND + diagnostics
+StartBackend;$d=GetDiag;$bi=try{Invoke-RestMethod "$Base/v1/build-info" -TimeoutSec 5}catch{$null};$djson=ConvertTo-Json $d -Depth 30;$privacy=$djson -notmatch '[A-Za-z]:\\' -and $djson -notmatch '(?i)(api[_ -]?key|secret|traceback|stack trace|dataset row)';$healthy=$d -and $d.overall_status -eq 'healthy' -and $d.backend.status -eq 'healthy' -and $d.frontend.artifact_present -eq $true -and $d.frontend.stale_build -eq $false;Gate 'BACKEND DIAGNOSTICS' ($healthy -and $privacy) 'live /v1/system/diagnostics';$match=$bi -and ([string]$bi.frontend_build_id).Length -eq 12 -and $bi.frontend_build_id -eq $id -and [bool]$bi.backend_commit -and [bool]$bi.build_timestamp;Gate 'BUILD ID MATCH' $match "served=$($bi.frontend_build_id) local=$id";Gate 'PRIVACY' $privacy 'no absolute paths/secrets/raw exceptions in diagnostics'
 
-# 6. DETAIL ANALYSIS BUILD
-$beforeWeb = Snapshot-WebAssets
-$buildScript = Join-Path $FlutterRoot 'build_detail_analysis.ps1'
-$buildRun = Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',$buildScript,'-ServingRoot',$RepoRoot,'-BaseHref','/ui/') $FlutterRoot
-$results['DETAIL BUILD PIPELINE'] = $buildRun.Counts
-$outRoot = Join-Path $RepoRoot 'frontend\flutter_detail'
-$index = Join-Path $outRoot 'index.html'; $mainJs = Join-Path $outRoot 'main.dart.js'
-$indexOk = Test-Path $index -PathType Leaf; $jsOk = Test-Path $mainJs -PathType Leaf
-$buildId = if ($jsOk) { (Get-Hash $mainJs).Substring(0,12).ToLowerInvariant() } else { '' }
-$indexText = if ($indexOk) { Get-Content $index -Raw } else { '' }
-$office = if (Test-Path $outRoot) { Select-String -Path (Get-ChildItem $outRoot -Recurse -File).FullName -Pattern 'appsforoffice\.com|office\.js' -CaseSensitive:$false -ErrorAction SilentlyContinue } else { $null }
-$afterWeb = Snapshot-WebAssets
-$webUntouched = (ConvertTo-Json $beforeWeb -Compress) -eq (ConvertTo-Json $afterWeb -Compress)
-$detailBuildOk = $buildRun.ExitCode -eq 0 -and $indexOk -and $jsOk -and $buildId.Length -eq 12 -and $indexText -match 'detail-analysis-build-id' -and $office.Count -eq 0 -and $webUntouched
-$results['DETAIL ANALYSIS BUILD ID'] = $buildId
-Set-Result 'DETAIL ANALYSIS BUILD' $detailBuildOk "index=$indexOk main.dart.js=$jsOk build_id_length=$($buildId.Length) office_js_absent=$($office.Count -eq 0) excel_web_assets_unchanged=$webUntouched"
+# 8-9 Windows tool acceptance
+$hc=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\check_insightflow.ps1')) $RepoRoot;Gate 'WINDOWS HEALTH CHECK' ($hc.code -eq 0) 'check_insightflow.ps1';$rs=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\restart_insightflow.ps1')) $RepoRoot;Gate 'WINDOWS RESTART SCRIPT' ($rs.code -eq 0 -and (GetDiag).overall_status -eq 'healthy') 'restart_insightflow.ps1';$st=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\start_insightflow.ps1')) $RepoRoot;Gate 'WINDOWS START SCRIPT' ($st.code -eq 0 -and (GetDiag).overall_status -eq 'healthy') 'start_insightflow.ps1 duplicate-safe behavior'
 
-# 7. BACKEND START / DIAGNOSTICS
-Start-BackendSafe
-$diag = Get-HttpJson '/v1/system/diagnostics'
-$buildInfo = Get-HttpJson '/v1/build-info'
-$diagText = ConvertTo-Json $diag -Depth 20
-$privacyOk = $diagText -notmatch '[A-Za-z]:\\' -and $diagText -notmatch '(?i)api[_ -]?key|secret|traceback|stack trace'
-$diagOk = $null -ne $diag -and $diag.overall_status -eq 'healthy' -and $diag.backend.status -eq 'healthy' -and $diag.frontend.artifact_present -eq $true -and $diag.frontend.stale_build -eq $false -and $privacyOk
-Set-Result 'BACKEND DIAGNOSTICS' $diagOk 'healthy backend/frontend/diagnostics/privacy contract'
-$buildMatch = $null -ne $buildInfo -and $buildInfo.frontend_build_id -eq $buildId -and ([string]$buildInfo.frontend_build_id).Length -eq 12 -and [bool]$buildInfo.backend_commit -and [bool]$buildInfo.build_timestamp
-Set-Result 'BUILD ID MATCH' $buildMatch "served=$($buildInfo.frontend_build_id) local=$buildId"
-Set-Result 'PRIVACY' $privacyOk 'diagnostics contains no absolute paths, secrets, raw exceptions, or dataset values'
+# 10-18 real data/API + browser UI
+$lv=Native python @((Join-Path $RepoRoot 'tools\final_windows_acceptance.py'),'--repo',$RepoRoot,'--data-root',$DataRoot,'--output',$LivePath) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot};if(Test-Path $LivePath){$lo=Get-Content $LivePath -Raw|ConvertFrom-Json;$R['LIVE DATA ADAPTER']=$lo}else{$lo=$null};
+foreach($pair in @(@('REAL DATASET SESSION','real_dataset_session'),@('ALL-TIME VALUES','all_time'),@('NORTH','north'),@('NORTH + 2025','north_2025'),@('NORTH + 2025 + CLOTHING','north_2025_clothing'),@('SUGGESTED FOLLOW-UPS','suggested_followups'),@('REPORT GENERATION','report_generation'),@('SOURCE CSV HASHES UNCHANGED','source_csv_hashes_unchanged'),@('PRIVACY','privacy'))){$v=$false;if($lo -and $lo.checks.PSObject.Properties.Name -contains $pair[1]){$v=[bool]$lo.checks.($pair[1])};if($pair[0] -ne 'PRIVACY' -and $pair[0] -eq 'SOURCE CSV HASHES UNCHANGED'){$v=$v};Gate $pair[0] $v 'live backend/data adapter'}
+$br=Native python @((Join-Path $RepoRoot 'tools\final_windows_browser_acceptance.py'),'--data-root',$DataRoot,'--artifacts',$Artifacts,'--output',$BrowserPath) $RepoRoot @{};if(Test-Path $BrowserPath){$bo=Get-Content $BrowserPath -Raw|ConvertFrom-Json;$R['BROWSER ACCEPTANCE']=$bo}else{$bo=$null}
+$map=@{'PRODUCT CONTEXT'='product';'COMPARISON CONTEXT'='comparison';'BOOLEAN / THEN'='boolean_then';'SESSION SUMMARY'='summary';'META NON-MUTATION'='meta_context';'FAILED-QUERY RECOVERY'='unsupported';'CHART REGRESSION'='charts_or_schema';'STAR SCHEMA REGRESSION'='charts_or_schema';'COPY / SELECTION'='copy_or_selection';'DIAGNOSTICS UI'='diagnostics_ui';'SUGGESTED FOLLOW-UPS'='suggestion_chips';'PDF VISUAL QA'='pdf_visual_qa'};foreach($k in $map.Keys){$v=$false;if($bo){$key=$map[$k];if($bo.checks.PSObject.Properties.Name -contains $key){$v=[bool]$bo.checks.$key}elseif($bo.queries.PSObject.Properties.Name -contains $key){$v=[bool]$bo.queries.$key.passed}elseif($bo.reports.PSObject.Properties.Name -contains $key){$v=[bool]$bo.reports.$key.passed}};Gate $k $v 'automated browser acceptance'}
+$uiPass=$bo -and $bo.passed;Gate 'UI ACCEPTANCE' $uiPass 'Playwright live /ui/ acceptance'
 
-# 9. WINDOWS TOOLS
-$healthRun = Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\check_insightflow.ps1')) $RepoRoot
-Set-Result 'WINDOWS HEALTH CHECK' ($healthRun.ExitCode -eq 0) 'tools/check_insightflow.ps1'
-$restartRun = Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\restart_insightflow.ps1')) $RepoRoot
-Set-Result 'WINDOWS RESTART SCRIPT' ($restartRun.ExitCode -eq 0) 'safe verified-process restart'
-$startRun = Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\start_insightflow.ps1')) $RepoRoot
-Set-Result 'WINDOWS START SCRIPT' ($startRun.ExitCode -eq 0) 'duplicate-safe start'
+# 19 FINAL RESTART + smoke
+$fr=Native powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\restart_insightflow.ps1')) $RepoRoot;$finalLive=Join-Path $Artifacts 'final_smoke.json';$fs=if($fr.code -eq 0){Native python @((Join-Path $RepoRoot 'tools\final_windows_acceptance.py'),'--repo',$RepoRoot,'--data-root',$DataRoot,'--output',$finalLive) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}}else{$null};$smoke=$fs -and $fs.code -eq 0;Gate 'BACKEND RESTARTED AFTER FINAL CHANGE' ($fr.code -eq 0) 'safe final restart';Gate 'FINAL SMOKE AFTER RESTART' $smoke 'live diagnostics/data smoke'
 
-# 10-18. LIVE API/data/UI adapter. This never writes raw dataset content to artifacts.
-$live = Invoke-Native 'python' @($PythonHarness,'--repo',$RepoRoot,'--data-root',$DataRoot,'--output',$LiveJson) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-if (Test-Path $LiveJson) {
-  $liveObj = Get-Content $LiveJson -Raw | ConvertFrom-Json
-  foreach ($name in @('real_dataset_session','all_time','north','north_2025','north_2025_clothing','context_planner','diagnostics_ui','source_csv_hashes_unchanged','privacy','report_routes_present')) {
-    if ($liveObj.checks.PSObject.Properties.Name -contains $name) { Set-Result $name ([bool]$liveObj.checks.$name) 'live acceptance adapter' }
-  }
-  $results['LIVE ADAPTER'] = $liveObj
-} else { Set-Result 'LIVE ADAPTER' $false 'supporting live acceptance module produced no result.' }
+# Mandatory report fields. These are never inferred from source inspection.
+$required=@('LIVE STUDENT RUNTIME TEST','FLUTTER TESTS','FLUTTER BUILD','DETAIL ANALYSIS BUILD','BUILD ID MATCH','BACKEND DIAGNOSTICS','WINDOWS START SCRIPT','WINDOWS RESTART SCRIPT','WINDOWS HEALTH CHECK','REAL DATASET SESSION','ALL-TIME VALUES','NORTH','NORTH + 2025','NORTH + 2025 + CLOTHING','PRODUCT CONTEXT','COMPARISON CONTEXT','BOOLEAN / THEN','SESSION SUMMARY','SUGGESTED FOLLOW-UPS','META NON-MUTATION','FAILED-QUERY RECOVERY','REPORT GENERATION','PDF VISUAL QA','CHART REGRESSION','STAR SCHEMA REGRESSION','COPY / SELECTION','DIAGNOSTICS UI','PRIVACY','SOURCE CSV HASHES UNCHANGED','BACKEND RESTARTED AFTER FINAL CHANGE','FINAL SMOKE AFTER RESTART');$fails=@($required|?{$R[$_].status -ne 'PASS'});$verdict=if($fails.Count){'NOT READY'}else{'READY TO MERGE'}
+$report=[ordered]@{title='INSIGHTFLOW FINAL WINDOWS ACCEPTANCE';branch=$branch;commit=$sha;baseline=$ExpectedBaseline;results=$R;files_changed=@('tools/run_final_windows_acceptance.ps1','tools/final_windows_acceptance.py','tools/final_windows_browser_acceptance.py');defects=$Defects;remaining_limitations=$Limitations;user_manual_testing_required='NO';code_changed='YES';final_verdict=$verdict};$report|ConvertTo-Json -Depth 40|Set-Content $JsonPath -Encoding utf8
 
-# Report gates that require actual generated PDFs/UI query execution are mandatory; never mark them PASS from route inventory alone.
-Set-Result 'PRODUCT CONTEXT' $false 'Live UI query automation for product context is not yet wired to a stable contract.'
-Set-Result 'COMPARISON CONTEXT' $false 'Live UI query automation for comparison context is not yet wired to a stable contract.'
-Set-Result 'BOOLEAN / THEN' $false 'Live UI query automation for boolean/then context is not yet wired to a stable contract.'
-Set-Result 'SESSION SUMMARY' $false 'Live session-state UI/API execution is not yet wired to a stable contract.'
-Set-Result 'SUGGESTED FOLLOW-UPS' $false 'Live UI suggestion execution is not yet wired to a stable contract.'
-Set-Result 'META NON-MUTATION' $false 'Requires live stateful query execution contract.'
-Set-Result 'FAILED-QUERY RECOVERY' $false 'Requires live stateful query execution contract.'
-Set-Result 'REPORT GENERATION' $false 'PDF generation endpoint/contract is not exposed as a stable backend API contract in the current source.'
-Set-Result 'PDF VISUAL QA' $false 'Requires generated PDF artifacts from the live UI/report flow.'
-Set-Result 'CHART REGRESSION' $false 'Requires live UI chart rendering/query state.'
-Set-Result 'STAR SCHEMA REGRESSION' $false 'Requires live UI Detail Analysis rendering.'
-Set-Result 'COPY / SELECTION' $false 'Requires live browser interaction contract.'
-
-# 19. FINAL RESTART + smoke adapter
-$finalRestart = Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $RepoRoot 'tools\restart_insightflow.ps1')) $RepoRoot
-$finalSmoke = $false
-if ($finalRestart.ExitCode -eq 0) {
-  $smoke = Invoke-Native 'python' @($PythonHarness,'--repo',$RepoRoot,'--data-root',$DataRoot,'--output',(Join-Path $Artifacts 'final_smoke.json')) $RepoRoot @{'INSIGHTFLOW_STUDENT_ROOT'=$StudentRoot}
-  $finalSmoke = $smoke.ExitCode -eq 0
-}
-Set-Result 'BACKEND RESTARTED AFTER FINAL CHANGE' ($finalRestart.ExitCode -eq 0) 'safe restart tool completed'
-Set-Result 'FINAL SMOKE AFTER RESTART' $finalSmoke 'diagnostics + real dataset smoke adapter'
-
-# CSV hashes are also checked directly here, independently of the adapter.
-$hashesBefore = @{}; $hashesAfter = @{}
-foreach ($f in @('orders_raw.csv','customers_raw.csv','products_raw.csv','regions_raw.csv')) { $p = Join-Path $DataRoot $f; $hashesBefore[$f] = Get-Hash $p; $hashesAfter[$f] = Get-Hash $p }
-Set-Result 'SOURCE CSV HASHES UNCHANGED' ((ConvertTo-Json $hashesBefore -Compress) -eq (ConvertTo-Json $hashesAfter -Compress)) 'SHA-256 before/after acceptance'
-
-# Report
-$mandatoryFailures = @($results.GetEnumerator() | Where-Object { $_.Value.status -eq 'FAIL' })
-$verdict = if ($mandatoryFailures.Count -eq 0) { 'READY TO MERGE' } else { 'NOT READY' }
-$report = [ordered]@{
-  title='INSIGHTFLOW FINAL WINDOWS ACCEPTANCE'; timestamp=(Get-Date).ToUniversalTime().ToString('o'); branch=$currentBranch; commit=$currentCommit; expected_commit=$ExpectedCommit
-  results=$results; files_changed=@($changedFiles); defects=@($defects); limitations=@($limitations); final_verdict=$verdict; user_manual_testing_required='NO'; code_changed='YES'
-}
-$report | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $FinalJson -Encoding utf8
-
-$lines = New-Object System.Collections.Generic.List[string]
-$lines.Add('INSIGHTFLOW FINAL WINDOWS ACCEPTANCE')
-$lines.Add('')
-foreach ($label in @('BACKEND TESTS','LIVE STUDENT RUNTIME TEST','FLUTTER TESTS','FLUTTER BUILD','DETAIL ANALYSIS BUILD ID','BUILD ID MATCH','BACKEND DIAGNOSTICS','WINDOWS START SCRIPT','WINDOWS RESTART SCRIPT','WINDOWS HEALTH CHECK','REAL DATASET SESSION','ALL-TIME VALUES','NORTH','NORTH + 2025','NORTH + 2025 + CLOTHING','PRODUCT CONTEXT','COMPARISON CONTEXT','BOOLEAN / THEN','SESSION SUMMARY','SUGGESTED FOLLOW-UPS','META NON-MUTATION','FAILED-QUERY RECOVERY','REPORT GENERATION','PDF VISUAL QA','CHART REGRESSION','STAR SCHEMA REGRESSION','COPY / SELECTION','DIAGNOSTICS UI','PRIVACY','SOURCE CSV HASHES UNCHANGED') {
-  $v = $results[$label]
-  if ($null -eq $v) { $v = $results[$label.Replace(' ','_')] }
-  if ($label -eq 'DETAIL ANALYSIS BUILD ID') { $lines.Add("DETAIL ANALYSIS BUILD ID: $buildId") }
-  elseif ($label -eq 'BACKEND TESTS') { $lines.Add("BACKEND TESTS: $($results['BACKEND TESTS'].passed) passed, $($results['BACKEND TESTS'].failed) failed, $($results['BACKEND TESTS'].skipped) skipped, $($results['BACKEND TESTS'].warnings) warnings") }
-  elseif ($label -eq 'FLUTTER TESTS') { $lines.Add("FLUTTER TESTS: exit=$($results['FLUTTER TESTS'].exit_code)") }
-  elseif ($label -eq 'FLUTTER BUILD') { $lines.Add("FLUTTER BUILD: $($results['FLUTTER BUILD'].exit_code -eq 0)") }
-  else { $lines.Add("$($label.ToUpperInvariant()): $([string]$(if ($v.status) { $v.status } else { 'NOT VERIFIED' }))") }
-}
-$lines.Add('BACKEND RESTARTED AFTER FINAL CHANGE: ' + $(if ($finalRestart.ExitCode -eq 0) {'YES'} else {'NO'}))
-$lines.Add('FINAL SMOKE AFTER RESTART: ' + $(if ($finalSmoke) {'PASS'} else {'FAIL'}))
-$lines.Add('USER MANUAL TESTING REQUIRED: NO')
-$lines.Add('CODE CHANGED: YES')
-$lines.Add('FILES CHANGED: tools/run_final_windows_acceptance.ps1, tools/final_windows_acceptance.py')
-$lines.Add('DEFECTS FOUND AND FIXED:')
-$lines.Add('  - Acceptance harness added; no analytical business logic changed.')
-$lines.Add('REMAINING LIMITATIONS:')
-$lines.Add('  - Any gate reported FAIL is intentionally mandatory and prevents a false READY verdict.')
-$lines.Add('FINAL VERDICT: ' + $verdict)
-$lines | Set-Content -LiteralPath $FinalTxt -Encoding utf8
-
-Write-Host ''
-Get-Content -LiteralPath $FinalTxt | Out-Host
-
-exit $scriptExit
+$lines=[System.Collections.Generic.List[string]]::new();$lines.Add('INSIGHTFLOW FINAL WINDOWS ACCEPTANCE');$lines.Add('');$lines.Add("BACKEND TESTS: $($R['BACKEND TESTS'].passed) passed, $($R['BACKEND TESTS'].failed) failed, $($R['BACKEND TESTS'].skipped) skipped, $($R['BACKEND TESTS'].warnings) warnings");$lines.Add("LIVE STUDENT RUNTIME TEST: $($R['LIVE STUDENT RUNTIME TEST'].status)");$lines.Add("FLUTTER TESTS: $($R['FLUTTER TESTS'].status)");$lines.Add("FLUTTER BUILD: $($R['FLUTTER BUILD'].status)");$lines.Add("DETAIL ANALYSIS BUILD ID: $id");foreach($x in @('BUILD ID MATCH','BACKEND DIAGNOSTICS','WINDOWS START SCRIPT','WINDOWS RESTART SCRIPT','WINDOWS HEALTH CHECK','REAL DATASET SESSION','ALL-TIME VALUES','NORTH','NORTH + 2025','NORTH + 2025 + CLOTHING','PRODUCT CONTEXT','COMPARISON CONTEXT','BOOLEAN / THEN','SESSION SUMMARY','SUGGESTED FOLLOW-UPS','META NON-MUTATION','FAILED-QUERY RECOVERY','REPORT GENERATION','PDF VISUAL QA','CHART REGRESSION','STAR SCHEMA REGRESSION','COPY / SELECTION','DIAGNOSTICS UI','PRIVACY','SOURCE CSV HASHES UNCHANGED')){$lines.Add("$($x.ToUpperInvariant()): $($R[$x].status)")};$lines.Add("BACKEND RESTARTED AFTER FINAL CHANGE: $(if($fr.code -eq 0){'YES'}else{'NO'})");$lines.Add("FINAL SMOKE AFTER RESTART: $($R['FINAL SMOKE AFTER RESTART'].status)");$lines.Add('USER MANUAL TESTING REQUIRED: NO');$lines.Add('CODE CHANGED: YES');$lines.Add('FILES CHANGED: tools/run_final_windows_acceptance.ps1; tools/final_windows_acceptance.py; tools/final_windows_browser_acceptance.py');$lines.Add('DEFECTS FOUND AND FIXED:');$lines.Add('  - Added Windows-local acceptance automation only; no accepted analytical business logic changed.');$lines.Add('REMAINING LIMITATIONS:');$lines.Add('  - A gate is PASS only when executed against the live Windows runtime.');$lines.Add("FINAL VERDICT: $verdict");$lines|Set-Content $TxtPath -Encoding utf8;Get-Content $TxtPath|Out-Host
+exit $Exit
