@@ -36,10 +36,36 @@ REPORT_WORDS = {
 
 
 def body_text(page):
-    text = page.locator("body").inner_text(timeout=15000)
-    if not text.strip():
-        text = "\n".join(page.locator("flt-semantics").all_inner_texts())
-    return text
+    parts = []
+    for frame in page.frames:
+        try:
+            value = frame.locator("body").inner_text(timeout=3000)
+            if value.strip():
+                parts.append(value)
+        except Exception:
+            continue
+    if not parts:
+        return "\n".join(page.locator("flt-semantics").all_inner_texts())
+    return "\n".join(parts)
+
+
+def scroll_metrics(page):
+    offsets = []
+    scrollable_count = 0
+    for frame in page.frames:
+        try:
+            state = frame.evaluate("""() => {
+              const nodes = Array.from(document.querySelectorAll('*')).filter(el => {
+                const style = getComputedStyle(el);
+                return el.scrollHeight > el.clientHeight + 4 && ['auto', 'scroll'].includes(style.overflowY);
+              });
+              return {offsets: nodes.map(el => el.scrollTop), count: nodes.length};
+            }""")
+            offsets.extend(state["offsets"])
+            scrollable_count += state["count"]
+        except Exception:
+            continue
+    return offsets, scrollable_count
 
 
 def find_query_box(page):
@@ -185,7 +211,7 @@ def main() -> int:
                         page.wait_for_timeout(500)
                     else:
                         expected_path = (
-                            "/v2/detail-analysis"
+                            "/powerbi/detail-analysis"
                             if key == "detail_analysis"
                             else "/powerbi/business-analysis"
                         )
@@ -215,26 +241,26 @@ def main() -> int:
                                 "assumptions",
                             )
                         )
-                        offsets_before = page.evaluate("""() => Array.from(document.querySelectorAll('*'))
-                          .filter(el => el.scrollHeight > el.clientHeight + 4)
-                          .map(el => el.scrollTop)""")
+                        offsets_before, scrollable_before = scroll_metrics(page)
                         page.mouse.move(page.viewport_size["width"] / 2, page.viewport_size["height"] / 2)
                         page.mouse.wheel(0, 1200)
                         page.wait_for_timeout(400)
-                        offsets_after = page.evaluate("""() => Array.from(document.querySelectorAll('*'))
-                          .filter(el => el.scrollHeight > el.clientHeight + 4)
-                          .map(el => el.scrollTop)""")
+                        offsets_after, scrollable_after = scroll_metrics(page)
                         out["checks"]["wheel_scroll_changes_conversation"] = (
-                            len(offsets_before) == len(offsets_after)
+                            scrollable_before == scrollable_after
+                            and len(offsets_before) == len(offsets_after)
                             and any(after > before for before, after in zip(offsets_before, offsets_after))
                         )
                         scrolled_text = body_text(page).lower()
-                        end_target = page.locator("flt-semantics").filter(
-                            has_text=re.compile(r"recommended next step", re.I)
-                        ).last
+                        end_target = None
+                        for frame in page.frames:
+                            candidate = frame.get_by_text(re.compile(r"recommended next step", re.I)).last
+                            if candidate.count():
+                                end_target = candidate
+                                break
                         for _ in range(20):
                             try:
-                                end_bounds = end_target.bounding_box()
+                                end_bounds = end_target.bounding_box() if end_target else None
                                 if end_bounds and 0 <= end_bounds["y"] and end_bounds["y"] + end_bounds["height"] <= page.viewport_size["height"]:
                                     break
                             except Exception:
@@ -242,7 +268,7 @@ def main() -> int:
                             page.mouse.wheel(0, 900)
                             page.wait_for_timeout(80)
                         try:
-                            end_bounds = end_target.bounding_box()
+                            end_bounds = end_target.bounding_box() if end_target else None
                         except Exception:
                             end_bounds = None
                         out["checks"]["detail_result_reached_end"] = (
@@ -383,14 +409,10 @@ def main() -> int:
         out["checks"]["scroll_structure"] = page.locator("flt-semantics").count() > 0 and page.evaluate(
             "document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2"
         )
-        scroll_state = page.evaluate("""() => {
-          const scrollables = Array.from(document.querySelectorAll('*')).filter(el => {
-            const style = getComputedStyle(el);
-            return el.scrollHeight > el.clientHeight + 4 && ['auto', 'scroll'].includes(style.overflowY);
-          });
-          return {count: scrollables.length, documentHeight: document.documentElement.scrollHeight,
-            documentClientHeight: document.documentElement.clientHeight};
-        }""")
+        _, scrollable_count = scroll_metrics(page)
+        scroll_state = {"count": scrollable_count,
+                        "documentHeight": page.evaluate("document.documentElement.scrollHeight"),
+                        "documentClientHeight": page.evaluate("document.documentElement.clientHeight")}
         out["checks"]["single_vertical_scroll_container"] = scroll_state["count"] == 1
         out["scroll_state"] = scroll_state
         page.screenshot(path=str(artifacts / "ui_acceptance.png"), full_page=True)
