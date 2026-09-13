@@ -17,6 +17,17 @@ class ConversationStateService {
 
   Uri _uri(String path) => _baseUri.resolve(path);
 
+  Future<Map<String, dynamic>> meta(String text) async {
+    final response = await _client
+        .post(
+          _uri('/v1/assistant/meta'),
+          headers: const {'content-type': 'application/x-www-form-urlencoded'},
+          body: {'text': text, 'surface': 'detail_analysis'},
+        )
+        .timeout(const Duration(seconds: 15));
+    return _decode(response, 'Could not answer this InsightFlow help question.');
+  }
+
   Future<Map<String, dynamic>> suggestions({
     required String sessionId,
     Map<String, dynamic> context = const <String, dynamic>{},
