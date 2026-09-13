@@ -1,4 +1,4 @@
-"""FastAPI routes for the secure Excel-only path."""
+"""FastAPI routes for the secure Excel path and shared local meta/help routing."""
 
 from __future__ import annotations
 
@@ -9,21 +9,24 @@ from common.assistant_identity import assistant_meta_or_not_handled
 from common.detail_analysis import analyze_dataset_collection, load_dataset_tables
 
 
-router = APIRouter(prefix="/excel", tags=["secure-excel"])
+# Keep legacy /excel/* URLs stable while also exposing one surface-neutral
+# meta endpoint that both Excel and Detail Analysis can call before data exists.
+router = APIRouter(tags=["secure-excel"])
 
 
-@router.get("/ping")
+@router.get("/excel/ping")
 def ping() -> dict[str, str]:
     return {"status": "ok", "mode": "secure-excel"}
 
 
-@router.post("/meta")
-async def assistant_meta(text: str = Form(...), surface: str = Form("excel")):
-    """Resolve static InsightFlow identity/help questions without a workbook/session."""
+@router.post("/v1/assistant/meta")
+@router.post("/excel/meta")
+async def assistant_meta(text: str = Form(...), surface: str = Form("detail_analysis")):
+    """Resolve static InsightFlow identity/help questions locally, with no dataset/session."""
     return assistant_meta_or_not_handled(text, surface=surface)
 
 
-@router.post("/session")
+@router.post("/excel/session")
 async def create_session(
     file: UploadFile = File(...),
     sheet_name: str | None = Form(None),
@@ -40,12 +43,12 @@ async def create_session(
     )
 
 
-@router.post("/query")
+@router.post("/excel/query")
 async def query(session_id: str | None = Form(None), text: str = Form(...)):
     return execute_query(session_id, text)
 
 
-@router.post("/detail-analysis")
+@router.post("/excel/detail-analysis")
 async def detail_analysis(file: UploadFile = File(...)):
     """Analyze every non-empty worksheet in one workbook together."""
     raw = await file.read()
@@ -56,21 +59,21 @@ async def detail_analysis(file: UploadFile = File(...)):
         return {"success": False, "error": str(exc)}
 
 
-@router.post("/interpret")
+@router.post("/excel/interpret")
 async def interpret(session_id: str | None = Form(None), text: str = Form(...)):
     return interpret_query(session_id, text)
 
 
-@router.get("/transform/list")
+@router.get("/excel/transform/list")
 def transform_list():
     return list_supported_transforms()
 
 
-@router.get("/powerbi/ping")
+@router.get("/excel/powerbi/ping")
 def powerbi_ping():
     return {"status": "ok", "powerbi": "unmodified"}
 
 
-@router.get("/powerbi/transform/list")
+@router.get("/excel/powerbi/transform/list")
 def powerbi_transform_list():
     return list_supported_transforms()
