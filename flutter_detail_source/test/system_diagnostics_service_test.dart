@@ -31,7 +31,7 @@ void main() {
   test('backend failure becomes a clean diagnostics error', () async {
     final client = MockClient((_) async => http.Response('offline', 503));
     final service = SystemDiagnosticsService(client: client);
-    expect(() => service.check(), throwsException);
+    await expectLater(service.check(), throwsException);
     service.dispose();
   });
 }
