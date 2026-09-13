@@ -50,7 +50,7 @@ function StartBackend(){
   if(-not(WaitHealthy)){throw 'Backend did not become healthy; see acceptance backend logs.'}
 }
 function WebSnapshot(){
-  $root=Join-Path $FlutterRoot 'web';$m=[ordered]@{};if(Test-Path $root){Get-ChildItem $root -Recurse -File|%{$m[$_.FullName.Substring($root.Length).TrimStart('\\','/')]=Hash $_.FullName}};return $m
+  $root=Join-Path $FlutterRoot 'web';$m=[ordered]@{};if(Test-Path $root){Get-ChildItem $root -Recurse -File|%{$relative=$_.FullName.Substring($root.Length).TrimStart([char[]]@('\','/'));$m[$relative]=Hash $_.FullName}};return $m
 }
 
 Write-Host 'INSIGHTFLOW FINAL WINDOWS ACCEPTANCE'
