@@ -40,6 +40,10 @@ def _frontend_root() -> Path:
     return _repo_root() / "frontend" / "flutter_detail"
 
 
+def _flutter_source_root() -> Path:
+    return _repo_root() / "flutter_detail_source"
+
+
 def _frontend_build_files() -> tuple[Path, Path, Path]:
     root = _frontend_root()
     return root / "index.html", root / "main.dart.js", root / "flutter_bootstrap.js"
@@ -56,6 +60,32 @@ def _hash_build(bundle: Path) -> str | None:
         return digest.hexdigest()[:12].lower()
     except OSError:
         return None
+
+
+def _source_fallback_build_id() -> str:
+    """Return a stable 12-character ID when no generated Flutter bundle exists.
+
+    The fingerprint contains only repository-relative Flutter source names and
+    file contents. It is deterministic for the same source tree and contains
+    no paths, timestamps, machine/user identity or dataset information.
+    """
+    root = _flutter_source_root()
+    digest = hashlib.sha256()
+    try:
+        if root.is_dir():
+            files = sorted(path for path in root.rglob("*") if path.is_file())
+            for path in files:
+                relative = path.relative_to(root).as_posix().encode("utf-8")
+                digest.update(len(relative).to_bytes(8, "big"))
+                digest.update(relative)
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+        else:
+            digest.update(b"flutter_detail_source:missing")
+    except OSError:
+        digest.update(b"flutter_detail_source:unreadable")
+    return digest.hexdigest()[:12].lower()
 
 
 def _read_meta_build_id(index: Path) -> str | None:
@@ -84,7 +114,8 @@ def _frontend_status(client_build_id: str | None) -> dict[str, Any]:
     if not files_ok:
         return {
             "status": "unavailable",
-            "detail_analysis_build_id": _read_meta_build_id(index) or "unknown",
+            "artifact_present": False,
+            "detail_analysis_build_id": _read_meta_build_id(index) or _source_fallback_build_id(),
             "expected_build_id": os.getenv("INSIGHTFLOW_EXPECTED_FRONTEND_BUILD_ID") or "unavailable",
             "stale_build": False,
         }
@@ -95,6 +126,7 @@ def _frontend_status(client_build_id: str | None) -> dict[str, Any]:
     stale = bool(expected and served != expected)
     return {
         "status": "stale" if stale else "healthy",
+        "artifact_present": True,
         "detail_analysis_build_id": served,
         "expected_build_id": expected or "unavailable",
         "stale_build": stale,
@@ -187,13 +219,7 @@ def run_startup_self_check() -> dict[str, str]:
 
 
 def install_build_info_timestamp_compatibility() -> None:
-    """Ensure legacy /v1/build-info never serializes a null timestamp.
-
-    This compatibility layer is installed from the diagnostics module because
-    the existing build-info route predates the diagnostics work. It only adds
-    a generated UTC timestamp when the established endpoint returns null; it
-    never exposes a path, file name, dataset value or secret.
-    """
+    """Ensure legacy /v1/build-info has a valid timestamp and build ID."""
     global _BUILD_INFO_MIDDLEWARE_INSTALLED
     if _BUILD_INFO_MIDDLEWARE_INSTALLED:
         return
@@ -214,6 +240,8 @@ def install_build_info_timestamp_compatibility() -> None:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return response
+        if not payload.get("frontend_build_id") or payload.get("frontend_build_id") == "unbuilt":
+            payload["frontend_build_id"] = _source_fallback_build_id()
         if not payload.get("build_timestamp"):
             payload["build_timestamp"] = datetime.now(timezone.utc).isoformat()
         from fastapi.responses import JSONResponse
