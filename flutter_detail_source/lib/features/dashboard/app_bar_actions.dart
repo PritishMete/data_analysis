@@ -23,7 +23,12 @@ class DataSourceToggle extends StatelessWidget {
         ? uploaded != null
         : (state.useActiveSelection || state.selectedSourceSheet != null);
 
-    if (!hasSource) return const SizedBox.shrink();
+    if (!hasSource) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        child: Align(alignment: Alignment.centerRight, child: SystemStatusButton()),
+      );
+    }
 
     final String label = state.dataSourceMode == DataSourceMode.uploadedFile && uploaded != null
         ? '${uploaded.fileName} · ${uploaded.dataRowCount} rows'
