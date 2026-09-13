@@ -17,6 +17,7 @@ from memory import (
     log_command, get_recent_commands, get_command_stats,
     save_alias, resolve_alias, get_all_aliases, log_correction,
 )
+from system_diagnostics import build_diagnostics
 
 ai_router = APIRouter()
 
@@ -47,6 +48,12 @@ class AliasRequest(BaseModel):
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@ai_router.get("/v1/system/diagnostics")
+async def system_diagnostics(detail_analysis_build_id: str | None = None):
+    """Return stable, privacy-safe local runtime/build diagnostics."""
+    return build_diagnostics(detail_analysis_build_id)
+
 
 @ai_router.post("/parse_command")
 async def parse_command_endpoint(req: CommandRequest):
