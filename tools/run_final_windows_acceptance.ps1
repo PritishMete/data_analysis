@@ -26,11 +26,12 @@ $Limitations = [System.Collections.Generic.List[string]]::new()
 $Exit = 0
 
 function Gate([string]$Name,[bool]$Pass,[string]$Detail='') { $R[$Name]=[ordered]@{status=if($Pass){'PASS'}else{'FAIL'};detail=$Detail}; if(-not $Pass){$script:Exit=1} }
-function Native([string]$Exe,[string[]]$Args,[string]$Cwd,[hashtable]$Env=@{}) {
+function Native([string]$Exe,[string[]]$CommandArgs,[string]$Cwd,[hashtable]$Env=@{}) {
   $old=@{}; foreach($k in $Env.Keys){$old[$k]=[Environment]::GetEnvironmentVariable($k,'Process');[Environment]::SetEnvironmentVariable($k,[string]$Env[$k],'Process')}
   $started=Get-Date
   $previousErrorActionPreference=$ErrorActionPreference
-  try { $ErrorActionPreference='Continue';$out=& $Exe @Args 2>&1 | Out-String; $code=$LASTEXITCODE } finally { $ErrorActionPreference=$previousErrorActionPreference;foreach($k in $Env.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')} }
+  Push-Location $Cwd
+  try { $ErrorActionPreference='Continue';$out=& $Exe @CommandArgs 2>&1 | Out-String; $code=$LASTEXITCODE } finally { $ErrorActionPreference=$previousErrorActionPreference;Pop-Location;foreach($k in $Env.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')} }
   $d=((Get-Date)-$started).TotalSeconds
   $c=[ordered]@{passed=0;failed=0;skipped=0;warnings=0;duration_seconds=[math]::Round($d,3);exit_code=$code}
   if($out -match '(?m)(\d+) passed'){$c.passed=[int]$Matches[1]};if($out -match '(?m)(\d+) failed'){$c.failed=[int]$Matches[1]};if($out -match '(?m)(\d+) skipped'){$c.skipped=[int]$Matches[1]};if($out -match '(?m)(\d+) warnings?'){$c.warnings=[int]$Matches[1]}
