@@ -29,7 +29,8 @@ function Gate([string]$Name,[bool]$Pass,[string]$Detail='') { $R[$Name]=[ordered
 function Native([string]$Exe,[string[]]$Args,[string]$Cwd,[hashtable]$Env=@{}) {
   $old=@{}; foreach($k in $Env.Keys){$old[$k]=[Environment]::GetEnvironmentVariable($k,'Process');[Environment]::SetEnvironmentVariable($k,[string]$Env[$k],'Process')}
   $started=Get-Date
-  try { $out=& $Exe @Args 2>&1 | Out-String; $code=$LASTEXITCODE } finally { foreach($k in $Env.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')} }
+  $previousErrorActionPreference=$ErrorActionPreference
+  try { $ErrorActionPreference='Continue';$out=& $Exe @Args 2>&1 | Out-String; $code=$LASTEXITCODE } finally { $ErrorActionPreference=$previousErrorActionPreference;foreach($k in $Env.Keys){[Environment]::SetEnvironmentVariable($k,$old[$k],'Process')} }
   $d=((Get-Date)-$started).TotalSeconds
   $c=[ordered]@{passed=0;failed=0;skipped=0;warnings=0;duration_seconds=[math]::Round($d,3);exit_code=$code}
   if($out -match '(?m)(\d+) passed'){$c.passed=[int]$Matches[1]};if($out -match '(?m)(\d+) failed'){$c.failed=[int]$Matches[1]};if($out -match '(?m)(\d+) skipped'){$c.skipped=[int]$Matches[1]};if($out -match '(?m)(\d+) warnings?'){$c.warnings=[int]$Matches[1]}
