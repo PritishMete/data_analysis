@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from common.assistant_identity import resolve_assistant_meta
+from common.conversation_state import build_session_summary, looks_like_session_summary
 from common.excel_context import scan_workbook
 from .config import CONFIG
 from .executor import execute_structured_query
@@ -59,10 +60,22 @@ def _require_session(session_id: str | None) -> str:
     return value
 
 
-def interpret_query(session_id: str | None, text: str) -> dict[str, Any]:
+def _local_side_conversation(session_id: str | None, text: str) -> dict[str, Any] | None:
     meta = resolve_assistant_meta(text, surface="excel")
     if meta is not None:
         return meta
+    if looks_like_session_summary(text):
+        try:
+            return build_session_summary(_require_session(session_id))
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+    return None
+
+
+def interpret_query(session_id: str | None, text: str) -> dict[str, Any]:
+    local = _local_side_conversation(session_id, text)
+    if local is not None:
+        return local
     try:
         session_key = _require_session(session_id)
     except ValueError as exc:
@@ -78,9 +91,9 @@ def interpret_query(session_id: str | None, text: str) -> dict[str, Any]:
 
 
 def execute_query(session_id: str | None, text: str) -> dict[str, Any]:
-    meta = resolve_assistant_meta(text, surface="excel")
-    if meta is not None:
-        return meta
+    local = _local_side_conversation(session_id, text)
+    if local is not None:
+        return local
     try:
         session_key = _require_session(session_id)
     except ValueError as exc:
