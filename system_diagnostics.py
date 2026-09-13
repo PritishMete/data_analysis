@@ -185,3 +185,9 @@ def run_startup_self_check() -> dict[str, str]:
     else:
         logger.warning("[InsightFlow] Ready with degraded services; run /v1/system/diagnostics for recovery guidance.")
     return statuses
+
+
+# Import-time execution is intentionally lightweight. ai_routes is imported only
+# after FastAPI's app object exists, so this is a safe startup self-check without
+# introducing another lifespan hook into the established application.
+run_startup_self_check()
