@@ -10,3 +10,13 @@ training_data.json
 .venv/
 venv/
 env/
+
+# Nested Flutter Detail Analysis source caches and generated outputs.
+flutter_detail_source/.dart_tool/
+flutter_detail_source/build/
+flutter_detail_source/.idea/
+flutter_detail_source/.vscode/
+flutter_detail_source/*.iml
+flutter_detail_source/.flutter-plugins-dependencies
+flutter_detail_source/.pub-cache/
+flutter_detail_source/.pub/
