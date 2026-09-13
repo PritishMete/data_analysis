@@ -7,6 +7,32 @@ import 'package:http/testing.dart';
 import '../lib/core/services/conversation_state_service.dart';
 
 void main() {
+  test('meta questions use local assistant endpoint without dataset state', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        jsonEncode({
+          'success': true,
+          'handled': true,
+          'response_type': 'assistant_meta',
+          'intent': 'creator',
+          'summary': 'InsightFlow was created by Pritish Mete.',
+        }),
+        200,
+      );
+    });
+    final service = ConversationStateService(client: client);
+
+    final result = await service.meta('Who made you?');
+
+    expect(captured.url.path, '/v1/assistant/meta');
+    expect(captured.bodyFields['surface'], 'detail_analysis');
+    expect(captured.bodyFields['text'], 'Who made you?');
+    expect(result['handled'], isTrue);
+    expect(result['summary'], contains('Pritish Mete'));
+  });
+
   test('suggestions call local structured endpoint', () async {
     late http.Request captured;
     final client = MockClient((request) async {
