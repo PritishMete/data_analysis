@@ -42,7 +42,27 @@ class _TechAnimatedBackgroundState extends State<TechAnimatedBackground>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 22),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotionPreference();
+  }
+
+  @override
+  void didUpdateWidget(covariant TechAnimatedBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncMotionPreference();
+  }
+
+  void _syncMotionPreference() {
+    if (GlassAccessibilityData.of(context).reduceMotion) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override

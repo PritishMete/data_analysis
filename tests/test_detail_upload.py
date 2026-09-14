@@ -244,6 +244,17 @@ def test_powerbi_business_query_handles_region_comparison_or_and_then_scope():
     assert then_result["active_filters"]["business_region"] == "North"
     assert then_result["dashboard_context"]["kpis"]["revenue"] == 160.0
 
+    inherited_then_result = client.post(
+        "/powerbi/business-analysis",
+        data={
+            "query": "Find the most profitable region, then show its 2025 performance, then limit it to Clothing",
+            "active_filters_json": '{"business_region":["North","South"],"year":2025,"category":"Clothing"}',
+        },
+        files=files,
+    ).json()
+    assert inherited_then_result["active_filters"]["business_region"] == "North"
+    assert inherited_then_result["dashboard_context"]["kpis"]["revenue"] == 160.0
+
 
 def test_powerbi_dashboard_returns_filterable_kpis_and_preserves_sources():
     response = TestClient(app).post(

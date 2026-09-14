@@ -5,6 +5,7 @@ import time
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,10 @@ from common.transformations import TransformationEngine, TransformationHistory, 
 logger = logging.getLogger(__name__)
 
 _LEARNING_EVENT_TASKS: set[asyncio.Task[Any]] = set()
+_BUSINESS_MODEL_CACHE: tuple[tuple[tuple[str, str], ...], dict[str, Any]] | None = None
+_BUSINESS_MODEL_CACHE_LOCK = threading.Lock()
+_BUSINESS_MODEL_WARMUP_THREADS: set[threading.Thread] = set()
+_BUSINESS_MODEL_WARMUP_THREADS_LOCK = threading.Lock()
 
 from common.json_safe import to_json_safe
 
@@ -74,6 +79,87 @@ def json_safe(obj: Any) -> Any:
 
 
 from common.response_envelope import smart_query_envelope
+
+
+def _business_analysis_model(
+    tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    with _BUSINESS_MODEL_CACHE_LOCK:
+        return _business_analysis_model_locked(tables, source_hashes)
+
+
+def _business_analysis_model_locked(
+    tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Reuse the deterministic cleaned model for identical local source files."""
+    global _BUSINESS_MODEL_CACHE
+    cache_key = tuple(sorted(source_hashes.items()))
+    if _BUSINESS_MODEL_CACHE is not None and _BUSINESS_MODEL_CACHE[0] == cache_key:
+        return _BUSINESS_MODEL_CACHE[1], None
+
+    fact_result = clean_order_fact(tables, source_hashes=source_hashes)
+    if fact_result.get("status") == "BLOCKED":
+        return None, {
+            "success": False,
+            "error": "Clean analytical model is required before Chapter 6.",
+            "fact_result": fact_result,
+        }
+    customer_result = clean_customer_dimension(tables)
+    product_result = clean_product_dimension(tables)
+    date_result = create_date_dimension(fact_result)
+    region_name = next((name for name in tables if "region" in name.casefold()), None)
+    if not region_name:
+        return None, {
+            "success": False,
+            "error": "A validated region dimension is required before Chapter 6.",
+        }
+
+    model = {
+        "fact_orders": fact_result["cleaned_table"],
+        "dim_customer": customer_result["cleaned_table"],
+        "dim_product": product_result["cleaned_table"],
+        "dim_date": date_result.get("cleaned_table", {}),
+        "dim_region": {
+            "name": "dim_region",
+            "columns": [str(column) for column in tables[region_name].columns],
+            "rows": tables[region_name].where(pd.notna(tables[region_name]), None).to_dict(orient="records"),
+        },
+        "fact_metadata": {
+            "event_key": fact_result.get("event_key", {}).get("column"),
+            "customer_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_customer"), None),
+            "product_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_product"), None),
+            "region_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == region_name), None),
+        },
+    }
+    _BUSINESS_MODEL_CACHE = (cache_key, model)
+    return model, None
+
+
+def _warm_business_analysis_model(
+    tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
+) -> None:
+    try:
+        _business_analysis_model(tables, source_hashes)
+    except Exception:
+        logger.debug("Business-model cache warm-up did not complete", exc_info=True)
+    finally:
+        current = threading.current_thread()
+        with _BUSINESS_MODEL_WARMUP_THREADS_LOCK:
+            _BUSINESS_MODEL_WARMUP_THREADS.discard(current)
+
+
+def _schedule_business_analysis_model_warmup(
+    tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
+) -> None:
+    thread = threading.Thread(
+        target=_warm_business_analysis_model,
+        args=(tables, dict(source_hashes)),
+        name="insightflow-business-model-warmup",
+        daemon=True,
+    )
+    with _BUSINESS_MODEL_WARMUP_THREADS_LOCK:
+        _BUSINESS_MODEL_WARMUP_THREADS.add(thread)
+    thread.start()
 
 
 def smart_query_error_response(
@@ -1802,6 +1888,7 @@ async def excel_context(
 
 async def _detail_analysis_response(files: list[UploadFile] | None, source_platform: str | None = None):
     tables: dict[str, pd.DataFrame] = {}
+    source_hashes: dict[str, str] = {}
     ignored_files: list[str] = []
     rejected_files: list[str] = []
     supported_suffixes = {".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".json"}
@@ -1817,6 +1904,7 @@ async def _detail_analysis_response(files: list[UploadFile] | None, source_platf
                 ignored_files.append(filename)
                 continue
             raw = await file.read()
+            source_hashes[filename] = hashlib.sha256(raw).hexdigest()
             loaded = load_dataset_tables(raw, filename)
             non_empty = False
             for name, frame in loaded.items():
@@ -1845,6 +1933,8 @@ async def _detail_analysis_response(files: list[UploadFile] | None, source_platf
         result["rejected_files"] = rejected_files
         result = await enrich_detail_analysis(result)
         result["analyst_answer"] = compose_analyst_answer(result)
+        if source_platform == "power_bi":
+            _schedule_business_analysis_model_warmup(tables, source_hashes)
         return {"success": True, **result}
     except (ValueError, ImportError) as exc:
         return {"success": False, "error": str(exc)}
@@ -2083,27 +2173,14 @@ async def powerbi_business_analysis(
             filename = upload.filename or "dataset.csv"
             source_hashes[filename] = hashlib.sha256(raw).hexdigest()
             tables.update(load_dataset_tables(raw, filename))
-        from common.customer_cleaning import clean_customer_dimension
-        from common.product_cleaning import clean_product_dimension
-        from common.order_cleaning import clean_order_fact
-
-        fact_result = clean_order_fact(tables, source_hashes=source_hashes)
-        if fact_result.get("status") == "BLOCKED":
-            return {"success": False, "error": "Clean analytical model is required before Chapter 6.", "fact_result": fact_result}
-        customer_result = clean_customer_dimension(tables)
-        product_result = clean_product_dimension(tables)
-        date_result = create_date_dimension(fact_result)
+        model, model_error = await asyncio.to_thread(
+            _business_analysis_model, tables, source_hashes
+        )
+        if model is None:
+            return model_error or {"success": False, "error": "Business model is unavailable."}
         region_name = next((name for name in tables if "region" in name.casefold()), None)
         if not region_name:
             return {"success": False, "error": "A validated region dimension is required before Chapter 6."}
-        model = {
-            "fact_orders": fact_result["cleaned_table"],
-            "dim_customer": customer_result["cleaned_table"],
-            "dim_product": product_result["cleaned_table"],
-            "dim_date": date_result.get("cleaned_table", {}),
-            "dim_region": {"name": "dim_region", "columns": [str(column) for column in tables[region_name].columns], "rows": tables[region_name].where(pd.notna(tables[region_name]), None).to_dict(orient="records")},
-            "fact_metadata": {"event_key": fact_result.get("event_key", {}).get("column"), "customer_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_customer"), None), "product_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == "dim_product"), None), "region_key": next((item["source_column"] for item in fact_result.get("relationships", []) if item["target_table"] == region_name), None)},
-        }
         result = analyze_clean_model(model)
         if not result.get("success"):
             return result
@@ -2143,7 +2220,6 @@ async def powerbi_business_analysis(
             query
             and re.search(r"\bthen\b", query, re.IGNORECASE)
             and re.search(r"most profitable region", query, re.IGNORECASE)
-            and not dashboard_filters.get("region")
         ):
             unfiltered = build_dashboard(model)
             selected_region = unfiltered.get("insights", {}).get("highest_profit_region")

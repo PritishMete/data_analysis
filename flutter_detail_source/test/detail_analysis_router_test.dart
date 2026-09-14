@@ -86,6 +86,11 @@ void main() {
     );
     expect(replacement.intent, DetailAnalysisIntent.businessAnalysis);
     expect(replacement.subIntent, 'regional_profit');
+
+    final overall = routeDetailAnalysisMessage(
+      'Show overall company performance',
+    );
+    expect(overall.intent, DetailAnalysisIntent.businessAnalysis);
   });
 
   test('routes automatic insight questions to the local business workflow', () {
@@ -122,6 +127,29 @@ void main() {
     );
     expect(year.intent, DetailAnalysisIntent.businessAnalysis);
     expect(year.subIntent, 'top_products');
+  });
+
+  test('routes Boolean filter expressions through active business context', () {
+    final regional = routeDetailAnalysisMessage(
+      'Which region is the most profitable?',
+    );
+
+    for (final query in [
+      'North OR South',
+      '2025 AND (North OR South) AND Clothing',
+    ]) {
+      final route = routeDetailAnalysisMessage(
+        query,
+        previousRoute: regional,
+      );
+      expect(route.intent, DetailAnalysisIntent.businessAnalysis);
+      expect(route.subIntent, 'regional_profit');
+    }
+
+    expect(
+      routeDetailAnalysisMessage('North OR South').intent,
+      DetailAnalysisIntent.unknown,
+    );
   });
 
   test('routes natural language profiling requests locally', () {

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import '../../src/renderer/shaders.dart';
 import '../../src/renderer/liquid_glass_renderer.dart';
 
 import 'inherited_liquid_glass.dart';
@@ -142,17 +143,8 @@ class LightweightLiquidGlass extends StatefulWidget {
   static Future<void> preWarm() async {
     if (_cachedProgram != null || _isPreparing) return;
     _isPreparing = true;
-    const path = 'packages/liquid_glass_widgets/shaders/lightweight_glass.frag';
-    const testPath = 'shaders/lightweight_glass.frag';
-
     try {
-      ui.FragmentProgram program;
-      try {
-        program = await ui.FragmentProgram.fromAsset(path);
-      } catch (_) {
-        // Fallback for unit tests where package prefix may not be resolved
-        program = await ui.FragmentProgram.fromAsset(testPath);
-      }
+      final program = await ui.FragmentProgram.fromAsset(ShaderKeys.lightweight);
       // Allocate the dummy image only after program load succeeds — avoids
       // leaking a GPU allocation when the shader fails to compile.
       final recorder = ui.PictureRecorder();

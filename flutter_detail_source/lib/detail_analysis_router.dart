@@ -95,6 +95,10 @@ DetailAnalysisRoute routeDetailAnalysisMessage(
   final isBusinessRequest =
       isInsightRequest ||
       isReportRequest ||
+      (text.contains('performance') &&
+          (text.contains('overall') ||
+              text.contains('company') ||
+              text.contains('business'))) ||
       text.contains('compare ') ||
       text.contains('which one') ||
       (text.contains('why ') && text.contains(' than ')) ||
@@ -197,6 +201,13 @@ DetailAnalysisRoute routeDetailAnalysisMessage(
     );
   }
   final followUpScope = _datasetScope(words);
+  if (previousRoute?.intent == DetailAnalysisIntent.businessAnalysis &&
+      words.any(const {'and', 'or'}.contains)) {
+    return DetailAnalysisRoute(
+      DetailAnalysisIntent.businessAnalysis,
+      subIntent: previousRoute?.subIntent,
+    );
+  }
   if (previousRoute?.intent == DetailAnalysisIntent.businessAnalysis &&
       (words.any(
             const {

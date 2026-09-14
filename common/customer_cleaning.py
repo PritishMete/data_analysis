@@ -41,28 +41,42 @@ def _clean_one(name: str, frame: pd.DataFrame, profile: dict[str, Any]) -> tuple
             "requires_review": 0,
             "audit_trail": [],
         }
-    non_null = frame[frame[key].notna()].copy()
+    non_null = frame[frame[key].notna()].copy().reset_index(drop=True)
     null_key_rows = int(frame[key].isna().sum())
     exact_extra = int(frame.duplicated(keep="first").sum())
-    clean_groups: list[pd.DataFrame] = []
+    non_key = [column for column in frame.columns if column != key]
+    normalized_key = non_null[key].astype(str).map(lambda value: " ".join(value.casefold().split()))
+    first_rows = non_null.groupby(normalized_key, sort=False, dropna=True).head(1)
+    duplicate_normalized_keys = normalized_key[
+        normalized_key.duplicated(keep=False)
+    ].drop_duplicates()
+    conflicting_normalized_keys: set[str] = set()
     identical_groups = conflicting_groups = 0
     review_examples: list[dict[str, Any]] = []
-    normalized_key = non_null[key].astype(str).map(lambda value: " ".join(value.casefold().split()))
-    for value, group in non_null.groupby(normalized_key, sort=False, dropna=True):
-        non_key = [column for column in frame.columns if column != key]
+    for value in duplicate_normalized_keys:
+        group = non_null.loc[normalized_key.eq(value)]
         if group[non_key].drop_duplicates().shape[0] == 1:
-            clean_groups.append(group.iloc[[0]])
-            if len(group) > 1:
-                identical_groups += 1
+            identical_groups += 1
         else:
             conflicting_groups += 1
+            conflicting_normalized_keys.add(str(value))
             if len(review_examples) < 8:
                 review_examples.append({"key": str(value), "rows": int(len(group)), "classification": "CONFLICTING KEY DUPLICATE"})
-    cleaned = pd.concat(clean_groups, ignore_index=True) if clean_groups else frame.iloc[0:0].copy()
+
+    first_normalized_keys = normalized_key.loc[first_rows.index]
+    cleaned = first_rows.loc[~first_normalized_keys.isin(conflicting_normalized_keys)].copy().reset_index(drop=True)
+    duplicate_raw_keys = non_null.loc[
+        non_null[key].duplicated(keep=False), key
+    ].drop_duplicates()
+    conflicting_raw_key_rows = 0
+    for value in duplicate_raw_keys:
+        group = non_null.loc[non_null[key].eq(value)]
+        if group[non_key].drop_duplicates().shape[0] > 1:
+            conflicting_raw_key_rows += len(group)
     audit = [
         {"rule": "Collapse exact duplicate rows", "affected_rows": exact_extra, "affected_key_groups": 0, "rationale": "Complete row equality makes the extra copy redundant.", "outcome": "Redundant copies removed from cleaned result."},
         {"rule": "Safe collapse of identical key duplicates", "affected_rows": max(0, int(len(non_null) - len(cleaned)) - exact_extra), "affected_key_groups": identical_groups, "rationale": "Same business key and identical non-key attributes.", "outcome": "One deterministic representative retained per key."},
-        {"rule": "Exclude conflicting key duplicates", "affected_rows": int(sum(len(group) for _, group in non_null.groupby(key, sort=False, dropna=True) if group[[column for column in frame.columns if column != key]].drop_duplicates().shape[0] > 1)), "affected_key_groups": conflicting_groups, "rationale": "Business intent cannot be proven without selecting an arbitrary record.", "outcome": "Requires review; no conflicting record was silently chosen."},
+        {"rule": "Exclude conflicting key duplicates", "affected_rows": int(conflicting_raw_key_rows), "affected_key_groups": conflicting_groups, "rationale": "Business intent cannot be proven without selecting an arbitrary record.", "outcome": "Requires review; no conflicting record was silently chosen."},
         {"rule": "Exclude null business keys", "affected_rows": null_key_rows, "affected_key_groups": 0, "rationale": "IDs are not invented during diagnostic cleaning.", "outcome": "Excluded from dimension and reported for review."},
     ]
     final_duplicates = int(cleaned.duplicated(subset=[key], keep=False).sum())

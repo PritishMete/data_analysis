@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import '../../src/renderer/shaders.dart';
 import '../../src/renderer/liquid_glass_renderer.dart';
 
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
@@ -92,18 +93,10 @@ class GlassEffect extends StatefulWidget {
   static Future<void> preWarm() async {
     if (_cachedProgram != null || _isPreparing) return;
     _isPreparing = true;
-    const path =
-        'packages/liquid_glass_widgets/shaders/interactive_indicator.frag';
-    const testPath = 'shaders/interactive_indicator.frag';
-
     try {
-      ui.FragmentProgram program;
-      try {
-        program = await ui.FragmentProgram.fromAsset(path);
-      } catch (_) {
-        // Fallback for unit tests where package prefix may not be resolved
-        program = await ui.FragmentProgram.fromAsset(testPath);
-      }
+      final program = await ui.FragmentProgram.fromAsset(
+        ShaderKeys.interactiveIndicator,
+      );
       _cachedProgram = program;
 
       // Create a 1x1 transparent dummy image to satisfy sampler index 0.

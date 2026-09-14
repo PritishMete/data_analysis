@@ -16,6 +16,8 @@ import 'core/services/business_analysis_context.dart';
 import 'core/services/chat_reasoning_service.dart';
 import 'core/services/conversation_state_service.dart';
 import 'detail_analysis_router.dart';
+import 'embedded_report_scroll.dart';
+import 'test_motion_mode.dart';
 import 'star_schema_view.dart';
 import 'tech_background.dart';
 import 'widgets/analyst_quality_message.dart';
@@ -23,14 +25,19 @@ import 'widgets/analyst_chart.dart';
 import 'widgets/analyst_suggestions.dart';
 import 'widgets/system_status_button.dart';
 
+@JS('Object.is')
+external JSBoolean _sameJsObject(JSAny? left, JSAny? right);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
-  runApp(const DetailAnalysisApp());
+  runApp(DetailAnalysisApp(testMode: isDetailAnalysisTestMode(Uri.base)));
 }
 
 class DetailAnalysisApp extends StatelessWidget {
-  const DetailAnalysisApp({super.key});
+  const DetailAnalysisApp({super.key, this.testMode = false});
+
+  final bool testMode;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +60,11 @@ class DetailAnalysisApp extends StatelessWidget {
       ),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+        builder: (context, child) => applyDetailAnalysisTestMotionMode(
+          context,
+          enabled: testMode,
+          child: child ?? const SizedBox.shrink(),
+        ),
         theme: ThemeData(
           brightness: Brightness.dark,
           useMaterial3: true,
@@ -331,6 +343,7 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
   String? _error;
   bool _loading = false;
   int _reportVersion = 0;
+  final List<JSAny> _reportFrameSources = <JSAny>[];
   String? _reportHtml;
   String? _reportBeforeSchema;
   String? _reportAfterSchema;
@@ -359,9 +372,64 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
   DetailAnalysisRoute? _lastRoute;
   Map<String, dynamic> _analyticalContext = const <String, dynamic>{};
   List<Map<String, dynamic>> _nextSuggestions = const <Map<String, dynamic>>[];
+  late final JSFunction _reportMessageListener = _handleReportMessage.toJS;
+
+  @override
+  void initState() {
+    super.initState();
+    web.window.addEventListener('message', _reportMessageListener);
+  }
+
+  void _handleReportMessage(web.Event event) {
+    final messageEvent = event as web.MessageEvent;
+    final testMode = isDetailAnalysisTestMode(Uri.base);
+    if (testMode) print('[DETAIL_REPORT_WHEEL] received');
+    final source = messageEvent.source;
+    final sourceRegistered =
+        source != null &&
+        _reportFrameSources.any(
+          (registered) => _sameJsObject(source, registered).toDart,
+        );
+    final stringPayload = messageEvent.data.isA<JSString>();
+    if (testMode) {
+      print(
+        '[DETAIL_REPORT_WHEEL] source=$sourceRegistered '
+        'registered=${_reportFrameSources.length} string=$stringPayload',
+      );
+    }
+    if (messageEvent.source == null || !sourceRegistered || !stringPayload) {
+      return;
+    }
+
+    final delta = parseEmbeddedReportScrollDelta(
+      (messageEvent.data as JSString).toDart,
+      _conversationSessionId,
+    );
+    final attached = _chatScrollController.hasClients;
+    if (testMode) {
+      print('[DETAIL_REPORT_WHEEL] delta=${delta != null} attached=$attached');
+    }
+    if (delta == null || !attached) return;
+
+    final position = _chatScrollController.position;
+    final currentOffset = position.pixels;
+    final nextOffset = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (testMode) {
+      print(
+        '[DETAIL_REPORT_WHEEL] scroll=${currentOffset != nextOffset} '
+        'extent=${position.maxScrollExtent - position.minScrollExtent}',
+      );
+    }
+    _chatScrollController.jumpTo(nextOffset);
+  }
 
   @override
   void dispose() {
+    web.window.removeEventListener('message', _reportMessageListener);
+    _reportFrameSources.clear();
     _chatController.dispose();
     _chatScrollController.dispose();
     _conversationService.dispose();
@@ -1207,6 +1275,13 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
         ..style.height = '100%'
         ..style.overflow = 'hidden';
       void resizeFrame(web.Event _) {
+        final frameSource = frame.contentWindow;
+        if (frameSource != null &&
+            !_reportFrameSources.any(
+              (registered) => _sameJsObject(frameSource, registered).toDart,
+            )) {
+          _reportFrameSources.add(frameSource);
+        }
         final body = frame.contentDocument?.body;
         if (!mounted || body == null) return;
         final height = (body.scrollHeight + 16).toDouble();
@@ -1228,7 +1303,8 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
     return (html.substring(0, startIndex), html.substring(endIndex));
   }
 
-  String _reportDocument(String html) => '''
+  String _reportDocument(String html) =>
+      '''
 <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 html,body{overflow:hidden}body{margin:0;padding:8px;background:#0b1020;color:#e3e6ed;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;line-height:1.45}
@@ -1236,7 +1312,14 @@ h1{color:#00e5ff;font-size:25px}h2{color:#66e7ff;font-size:18px;border-bottom:1p
 h3{color:#a8b8d8;font-size:15px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #26334d;padding:7px;text-align:left;vertical-align:top}th{background:#14213a;color:#00e5ff}td{background:#0f172a}.muted{color:#9aa8c0}
 .star-schema-diagram{position:relative;min-height:470px;overflow:hidden;border:1px solid #26334d;border-radius:14px;background:linear-gradient(145deg,#0f172a,#082f49)}.star-schema-links{position:absolute;inset:0;width:100%;height:100%;z-index:0}.schema-link{stroke:#7dd3fc;stroke-width:.55;stroke-dasharray:none}.schema-link-warning{stroke:#fbbf24;stroke-dasharray:2 1}.schema-link-label{fill:#b8c5d9;font-size:2.6px;text-anchor:middle}.star-node{position:absolute;z-index:1;transform:translate(-50%,-50%);width:210px;min-height:78px;padding:13px;border:1px solid #7dd3fc;border-radius:10px;background:#0f172a;box-shadow:0 8px 24px #02061799}.star-center{border-color:#00e5ff;background:#0e749066}.star-node span{display:block;color:#7dd3fc;font-size:10px;letter-spacing:.08em}.star-node small,.star-node em{display:block;margin-top:7px;color:#cbd5e1;font-size:11px;line-height:1.35}.star-node-warning{border-color:#fbbf24}.schema-warning{display:block;margin-top:7px;color:#fbbf24;font-size:10px}
 @media(max-width:720px){.star-schema-diagram{display:flex;flex-direction:column;gap:12px;min-height:0;padding:14px}.star-schema-links{display:none}.star-node,.star-center{position:relative;left:auto!important;top:auto!important;transform:none;width:100%}.star-center{order:-1}}
-</style></head><body>$html</body></html>''';
+</style></head><body>$html<script>
+window.addEventListener('wheel', event => {
+  if (!window.frameElement) return;
+  event.preventDefault();
+  parent.postMessage('detail-analysis-scroll|$_conversationSessionId|'
+      + event.deltaY, '*');
+}, {passive: false});
+</script></body></html>''';
 
   /* duplicate migration helpers retained in the earlier state section
   Future<void> _sendMessage() async {

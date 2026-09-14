@@ -95,6 +95,19 @@ foreach ($required in @($indexPath, $mainJsPath, $bootstrapPath)) {
   }
 }
 
+$requiredShaders = @(
+  'lightweight_glass.frag',
+  'interactive_indicator.frag',
+  'liquid_glass_geometry_blended.frag',
+  'liquid_glass_final_render.frag'
+)
+foreach ($shader in $requiredShaders) {
+  $shaderPath = Join-Path $OutputRoot "assets\shaders\$shader"
+  if (-not (Test-Path -LiteralPath $shaderPath -PathType Leaf)) {
+    throw "Standalone Detail Analysis build is missing compiled shader asset: $shaderPath"
+  }
+}
+
 $standaloneFiles = Get-ChildItem -LiteralPath $OutputRoot -Recurse -File
 $officeMatch = Select-String -Path $standaloneFiles.FullName -Pattern 'appsforoffice\.com|office\.js' -CaseSensitive:$false -SimpleMatch:$false -ErrorAction SilentlyContinue
 if ($officeMatch) {

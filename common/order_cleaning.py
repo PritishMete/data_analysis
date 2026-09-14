@@ -115,9 +115,13 @@ def clean_order_fact(tables: dict[str, pd.DataFrame], source_hashes: dict[str, s
     conflicting_groups = []
     if event_key in cleaned:
         non_key = [column for column in cleaned.columns if column != event_key]
-        for value, group in cleaned.groupby(event_key, dropna=False, sort=False):
-            if pd.isna(value) or len(group) < 2:
-                continue
+        duplicate_values = cleaned.loc[
+            cleaned[event_key].notna()
+            & cleaned[event_key].duplicated(keep=False),
+            event_key,
+        ].drop_duplicates()
+        for value in duplicate_values:
+            group = cleaned.loc[cleaned[event_key].eq(value)]
             if group[non_key].drop_duplicates().shape[0] > 1:
                 conflicting_groups.append({"event_key": str(value), "rows": int(len(group)), "classification": "CONFLICTING EVENT KEY", "outcome": "REQUIRES REVIEW"})
 
