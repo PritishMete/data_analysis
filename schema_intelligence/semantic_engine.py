@@ -17,8 +17,6 @@ SEMANTIC_ROLES = {
     "sentiment_text",
 }
 
-# Ontology aliases add business meaning on top of the existing local Excel
-# semantic detector. They are not dataset-specific routing rules.
 _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
     "transaction_date": ("order", "purchase", "transaction", "sale", "invoice", "booking", "sold"),
     "delivery_date": ("delivery", "delivered", "fulfilment", "fulfillment", "shipping", "shipped"),
@@ -138,13 +136,7 @@ class SemanticSchema:
 
 
 class SemanticSchemaEngine:
-    """Shared adapter over existing Excel and schema-intelligence detectors.
-
-    No second value-pattern detector is introduced here. Existing local
-    semantic_roles.py performs Excel value/name inference; the registered
-    schema-intelligence rules contribute key/currency/date/category evidence.
-    This layer only normalizes their outputs into one ontology for consumers.
-    """
+    """Shared adapter over existing Excel and schema-intelligence detectors."""
 
     def infer(self, df: pd.DataFrame, dataset_id: str = "local") -> SemanticSchema:
         fields: list[SemanticField] = []
@@ -162,7 +154,7 @@ class SemanticSchemaEngine:
             shape = _safe_shape(series)
             business, business_conf, business_tokens = _business_role(name, mapped_role)
             business_role = _role_from_business(business, physical)
-            if mapped_role in {None, "categorical", "entity"} and business_role is not None:
+            if mapped_role in {None, "categorical", "entity", "numeric_measure"} and business_role is not None:
                 mapped_role = business_role
             if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
 
@@ -175,6 +167,8 @@ class SemanticSchemaEngine:
             cardinality = int(shape["unique_count"])
             uniqueness = round(cardinality / row_count, 6) if row_count else 0.0
             candidate_key = bool(row_count and cardinality == row_count and series.notna().all()) or existing_role == "identifier"
+            if candidate_key and existing_role == "identifier":
+                mapped_role = "identifier"
             relationship_potential = candidate_key or mapped_role == "identifier"
             analytical_role = (
                 "dimension" if mapped_role in {"categorical", "ordinal", "entity", "geography", "country", "region", "state", "city", "status"}
