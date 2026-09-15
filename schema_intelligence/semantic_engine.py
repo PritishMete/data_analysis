@@ -153,21 +153,22 @@ class SemanticSchemaEngine:
             physical = _physical_type(series)
             shape = _safe_shape(series)
             business, business_conf, business_tokens = _business_role(name, mapped_role)
-            business_role = _role_from_business(business, physical)
-            if mapped_role in {None, "categorical", "entity", "numeric_measure", "geography"} and business_role is not None:
-                mapped_role = business_role
+            role_from_business = _role_from_business(business, physical)
+            if mapped_role in {None, "categorical", "entity", "numeric_measure", "geography"} and role_from_business is not None:
+                mapped_role = role_from_business
             if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
 
             rule_conf = float(winning.confidence) if winning else 0.0
             excel_conf = float(excel.get("confidence") or 0.0)
-            confidence = max(rule_conf, excel_conf, business_conf if business_role else business_conf * 0.8)
+            confidence = max(rule_conf, excel_conf, business_conf if business else business_conf * 0.8)
             if physical == "boolean": confidence = max(confidence, 0.9)
             if physical == "datetime" and mapped_role in {"date", "datetime"}: confidence = max(confidence, 0.95)
 
             cardinality = int(shape["unique_count"])
             uniqueness = round(cardinality / row_count, 6) if row_count else 0.0
             candidate_key = bool(row_count and cardinality == row_count and series.notna().all()) or existing_role == "identifier"
-            if candidate_key and existing_role == "identifier":
+            key_named = bool(_tokens(name).intersection({"id", "key", "identifier"}))
+            if candidate_key and (existing_role == "identifier" or key_named):
                 mapped_role = "identifier"
             relationship_potential = candidate_key or mapped_role == "identifier"
             analytical_role = (
