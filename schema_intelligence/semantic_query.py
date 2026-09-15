@@ -138,7 +138,13 @@ class SemanticQueryPlanner:
             tokens = set(re.findall(r"[a-z0-9]+", field.name.casefold()))
             if field.business_role:
                 tokens.update(field.business_role.replace("_", " ").split())
-            score = sum(1 for token in tokens if len(token) > 2 and re.search(rf"\b{re.escape(token)}s?\b", query))
+            score = 0
+            for token in tokens:
+                if len(token) <= 2:
+                    continue
+                pattern = rf"\b(?:{re.escape(token)}|{re.escape(token[:-1] + 'ies') if token.endswith('y') else re.escape(token + 's')})\b"
+                if re.search(pattern, query):
+                    score += 1
             if score:
                 scored.append((score, field.confidence, field.name))
         return [item[2] for item in sorted(scored, key=lambda x: (x[0], x[1]), reverse=True)[:2]]
