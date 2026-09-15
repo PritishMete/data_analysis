@@ -71,6 +71,8 @@ def _business_role(column_name: str, inferred_role: str | None) -> tuple[str | N
     tokens = _tokens(column_name)
     matches = []
     for concept, aliases in _BUSINESS_CONCEPTS.items():
+        if concept.endswith("_date") and inferred_role not in {"date", "datetime"}:
+            continue
         hit = sorted(tokens.intersection(aliases))
         if hit: matches.append((concept, len(hit), hit))
     if not matches: return None, 0.0, []
