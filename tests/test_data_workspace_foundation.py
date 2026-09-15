@@ -2,7 +2,8 @@ import pandas as pd
 
 from schema_intelligence.semantic_engine import SemanticSchemaEngine
 from schema_intelligence.semantic_query import SemanticQueryPlanner
-from data_workspace.models import CorrectionPlanner, DataWorkspaceLineage, TransformationPlan, TransformationStep
+from data_workspace.corrections import CorrectionPlanner
+from data_workspace.models import DataWorkspaceLineage, TransformationPlan, TransformationStep
 
 
 def test_semantic_schema_handles_multiple_date_namings_without_values_leaking():
