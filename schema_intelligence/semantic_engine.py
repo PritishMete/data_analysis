@@ -18,7 +18,7 @@ SEMANTIC_ROLES = {
 }
 
 _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
-    "transaction_date": ("order", "purchase", "transaction", "sale", "invoice", "booking", "sold"),
+    "transaction_date": ("order", "purchase", "purchased", "transaction", "sale", "invoice", "booking", "sold"),
     "delivery_date": ("delivery", "delivered", "fulfilment", "fulfillment", "shipping", "shipped"),
     "signup_date": ("signup", "registration", "registered", "joined"),
     "birth_date": ("birth", "birthday", "dob"),
@@ -161,7 +161,7 @@ class SemanticSchemaEngine:
             rule_conf = float(winning.confidence) if winning else 0.0
             excel_conf = float(excel.get("confidence") or 0.0)
             confidence = max(rule_conf, excel_conf, business_conf if business else business_conf * 0.8)
-            if physical == "boolean": confidence = max(confidence, 0.9)
+            if physical == "boolean" and mapped_role is None: confidence = max(confidence, 0.9)
             if physical == "datetime" and mapped_role in {"date", "datetime"}: confidence = max(confidence, 0.95)
 
             cardinality = int(shape["unique_count"])
