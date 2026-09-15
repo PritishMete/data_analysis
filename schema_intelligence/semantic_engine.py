@@ -160,7 +160,10 @@ class SemanticSchemaEngine:
             shape = _safe_shape(series)
             business, business_conf, business_tokens = _business_role(name, mapped_role)
             role_from_business = _role_from_business(business, physical)
-            if mapped_role in {None, "categorical", "entity", "numeric_measure", "geography"} and role_from_business is not None:
+            if mapped_role in {
+                None, "categorical", "entity", "numeric_measure", "geography",
+                "percentage", "rating", "count", "quantity", "duration",
+            } and role_from_business is not None:
                 mapped_role = role_from_business
             if role_from_business == "status":
                 mapped_role = "status"
