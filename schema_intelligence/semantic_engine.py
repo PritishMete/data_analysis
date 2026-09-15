@@ -156,6 +156,8 @@ class SemanticSchemaEngine:
             role_from_business = _role_from_business(business, physical)
             if mapped_role in {None, "categorical", "entity", "numeric_measure", "geography"} and role_from_business is not None:
                 mapped_role = role_from_business
+            if role_from_business == "status":
+                mapped_role = "status"
             if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
 
             rule_conf = float(winning.confidence) if winning else 0.0
