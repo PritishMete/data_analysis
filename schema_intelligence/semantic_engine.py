@@ -8,6 +8,7 @@ import pandas as pd
 
 from schema_intelligence.contracts import ColumnContext
 from schema_intelligence.registry import run_column_rules
+from secure_excel.semantic_roles import detect_column_role
 
 SEMANTIC_ROLES = {
     "identifier", "entity", "categorical", "ordinal", "boolean", "numeric_measure",
@@ -16,11 +17,12 @@ SEMANTIC_ROLES = {
     "sentiment_text",
 }
 
-# Ontology aliases are semantic evidence, not dataset-specific routing.
+# Ontology aliases add business meaning on top of the existing local Excel
+# semantic detector. They are not dataset-specific routing rules.
 _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
     "transaction_date": ("order", "purchase", "transaction", "sale", "invoice", "booking", "sold"),
     "delivery_date": ("delivery", "delivered", "fulfilment", "fulfillment", "shipping", "shipped"),
-    "signup_date": ("signup", "sign", "registration", "registered", "joined"),
+    "signup_date": ("signup", "registration", "registered", "joined"),
     "birth_date": ("birth", "birthday", "dob"),
     "customer": ("customer", "client", "buyer", "account"),
     "product": ("product", "item", "sku"),
@@ -40,10 +42,13 @@ _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
     "geography": ("geography", "location", "address", "latitude", "longitude", "postal", "zip"),
 }
 
-_ROLE_MAP = {
+_EXISTING_ROLE_MAP = {
     "primary_key": "identifier", "foreign_key": "identifier", "foreign_key_candidate": "identifier",
-    "currency": "currency_measure", "percentage": "percentage", "date": "date",
-    "category": "categorical", "email": "entity", "phone": "entity",
+    "restaurant_entity": "entity", "customer_entity": "entity", "product_entity": "entity",
+    "supplier_entity": "entity", "employee_entity": "entity", "entity_name": "entity",
+    "geographic_area": "geography", "currency_metric": "currency_measure", "numeric_metric": "numeric_measure",
+    "rating_metric": "rating", "boolean_capability": "boolean", "category": "categorical",
+    "description": "free_text", "date": "date", "percentage": "percentage", "count": "count",
 }
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -62,31 +67,19 @@ def _physical_type(series: pd.Series) -> str:
     return str(series.dtype)
 
 
-def _value_shape_evidence(series: pd.Series) -> dict[str, Any]:
-    non_null = series.dropna()
-    unique = int(non_null.nunique())
-    row_count = int(len(series))
-    return {
-        "non_null_count": int(len(non_null)),
-        "missing_count": int(series.isna().sum()),
-        "unique_count": unique,
-        "cardinality_ratio": round(unique / row_count, 6) if row_count else 0.0,
-    }
-
-
 def _business_role(column_name: str, inferred_role: str | None) -> tuple[str | None, float, list[str]]:
     tokens = _tokens(column_name)
-    matches: list[tuple[str, int, list[str]]] = []
+    matches = []
     for concept, aliases in _BUSINESS_CONCEPTS.items():
         hit = sorted(tokens.intersection(aliases))
         if hit: matches.append((concept, len(hit), hit))
     if not matches: return None, 0.0, []
     matches.sort(key=lambda item: item[1], reverse=True)
     concept, score, evidence = matches[0]
-    base = 0.72 if score == 1 else 0.88
-    if inferred_role in {"date", "datetime"} and concept.endswith("_date"): base += 0.08
-    if inferred_role in {"currency_measure", "numeric_measure"} and concept in {"revenue", "cost", "profit", "discount"}: base += 0.06
-    return concept, min(0.99, base), evidence
+    confidence = 0.72 if score == 1 else 0.88
+    if inferred_role in {"date", "datetime"} and concept.endswith("_date"): confidence += 0.08
+    if inferred_role in {"currency_measure", "numeric_measure"} and concept in {"revenue", "cost", "profit", "discount"}: confidence += 0.06
+    return concept, min(0.99, confidence), evidence
 
 
 def _role_from_business(concept: str | None, physical: str) -> str | None:
@@ -96,6 +89,18 @@ def _role_from_business(concept: str | None, physical: str) -> str | None:
     if concept == "quantity": return "quantity" if physical in {"integer", "float", "numeric"} else "categorical"
     if concept == "rating": return "rating" if physical in {"integer", "float", "numeric"} else "categorical"
     return None
+
+
+def _safe_shape(series: pd.Series) -> dict[str, Any]:
+    non_null = series.dropna()
+    count = int(len(series))
+    unique = int(non_null.nunique())
+    return {
+        "non_null_count": int(len(non_null)),
+        "missing_count": int(series.isna().sum()),
+        "unique_count": unique,
+        "cardinality_ratio": round(unique / count, 6) if count else 0.0,
+    }
 
 
 @dataclass(frozen=True)
@@ -131,7 +136,13 @@ class SemanticSchema:
 
 
 class SemanticSchemaEngine:
-    """Shared semantic layer composed over the existing registered rules."""
+    """Shared adapter over existing Excel and schema-intelligence detectors.
+
+    No second value-pattern detector is introduced here. Existing local
+    semantic_roles.py performs Excel value/name inference; the registered
+    schema-intelligence rules contribute key/currency/date/category evidence.
+    This layer only normalizes their outputs into one ontology for consumers.
+    """
 
     def infer(self, df: pd.DataFrame, dataset_id: str = "local") -> SemanticSchema:
         fields: list[SemanticField] = []
@@ -139,36 +150,36 @@ class SemanticSchemaEngine:
         for raw_name in df.columns:
             name = str(raw_name)
             series = df[raw_name]
+            excel = detect_column_role(name, series)
             context = ColumnContext(dataset_id=dataset_id, column_name=name, series=series, dataframe=df, row_count=row_count)
             candidates = run_column_rules(context)
             winning = candidates[0] if candidates else None
-            mapped_role = _ROLE_MAP.get(winning.role, winning.role if winning and winning.role in SEMANTIC_ROLES else None)
+            existing_role = excel.get("role")
+            mapped_role = _EXISTING_ROLE_MAP.get(existing_role, existing_role if existing_role in SEMANTIC_ROLES else None)
             physical = _physical_type(series)
-            shape = _value_shape_evidence(series)
-            if mapped_role is None and pd.api.types.is_bool_dtype(series): mapped_role = "boolean"
-            elif mapped_role is None and pd.api.types.is_numeric_dtype(series): mapped_role = "numeric_measure"
-            elif mapped_role is None and pd.api.types.is_string_dtype(series):
-                mapped_role = "categorical" if shape["cardinality_ratio"] <= 0.02 and shape["unique_count"] <= 50 else "free_text"
-            if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
-
+            shape = _safe_shape(series)
             business, business_conf, business_tokens = _business_role(name, mapped_role)
             business_role = _role_from_business(business, physical)
-            if mapped_role is None and business_role is not None: mapped_role = business_role
+            if mapped_role in {None, "categorical", "entity"} and business_role is not None:
+                mapped_role = business_role
+            if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
+
             rule_conf = float(winning.confidence) if winning else 0.0
-            confidence = max(rule_conf, business_conf * 0.8 if business else 0.0)
-            if mapped_role in {"boolean", "numeric_measure", "datetime"} and physical == mapped_role: confidence = max(confidence, 0.9)
-            if business_role is not None: confidence = max(confidence, business_conf)
+            excel_conf = float(excel.get("confidence") or 0.0)
+            confidence = max(rule_conf, excel_conf, business_conf if business_role else business_conf * 0.8)
+            if physical == "boolean": confidence = max(confidence, 0.9)
+            if physical == "datetime" and mapped_role in {"date", "datetime"}: confidence = max(confidence, 0.95)
 
             cardinality = int(shape["unique_count"])
             uniqueness = round(cardinality / row_count, 6) if row_count else 0.0
-            candidate_key = bool(row_count and cardinality == row_count and series.notna().all())
+            candidate_key = bool(row_count and cardinality == row_count and series.notna().all()) or existing_role == "identifier"
             relationship_potential = candidate_key or mapped_role == "identifier"
             analytical_role = (
                 "dimension" if mapped_role in {"categorical", "ordinal", "entity", "geography", "country", "region", "state", "city", "status"}
                 else "measure" if mapped_role in {"numeric_measure", "currency_measure", "percentage", "rating", "count", "quantity", "duration"}
                 else "time" if mapped_role in {"date", "datetime"} else None
             )
-            evidence_categories = ["dtype", "cardinality"]
+            evidence_categories = ["dtype", "cardinality", "existing_excel_semantic_detector"]
             if winning: evidence_categories.append("registered_rule")
             if business: evidence_categories.append("semantic_tokens")
             fields.append(SemanticField(
@@ -177,6 +188,13 @@ class SemanticSchemaEngine:
                 candidate_key=candidate_key, relationship_potential=relationship_potential,
                 analytical_role=analytical_role, confidence=round(min(1.0, confidence), 4),
                 evidence_categories=evidence_categories,
-                evidence={"rule": winning.rule_name if winning else None, "rule_evidence": winning.evidence if winning else {}, "shape": shape, "business_tokens": business_tokens},
+                evidence={
+                    "existing_role": existing_role,
+                    "existing_evidence": excel.get("evidence", []),
+                    "registered_rule": winning.rule_name if winning else None,
+                    "registered_rule_evidence": winning.evidence if winning else {},
+                    "shape": shape,
+                    "business_tokens": business_tokens,
+                },
             ))
         return SemanticSchema(fields=fields, row_count=row_count)
