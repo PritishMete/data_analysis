@@ -33,7 +33,7 @@ _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
     "quantity": ("quantity", "qty", "units", "volume"),
     "duration": ("duration", "elapsed", "latency", "seconds", "minutes", "hours", "days"),
     "rating": ("rating", "score", "stars", "review"),
-    "status": ("status", "state", "stage", "condition"),
+    "status": ("status", "stage", "condition"),
     "country": ("country", "nation"),
     "region": ("region", "territory", "area"),
     "state": ("state", "province"),
@@ -154,7 +154,7 @@ class SemanticSchemaEngine:
             shape = _safe_shape(series)
             business, business_conf, business_tokens = _business_role(name, mapped_role)
             business_role = _role_from_business(business, physical)
-            if mapped_role in {None, "categorical", "entity", "numeric_measure"} and business_role is not None:
+            if mapped_role in {None, "categorical", "entity", "numeric_measure", "geography"} and business_role is not None:
                 mapped_role = business_role
             if mapped_role == "date" and physical == "datetime": mapped_role = "datetime"
 
