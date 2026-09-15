@@ -160,6 +160,30 @@ def test_generic_query_plans_expose_required_semantic_structure():
     assert "Region" in plans[5].dimensions
 
 
+def test_loss_intent_resolves_profit_measure_and_negative_predicate_generically():
+    df = pd.DataFrame({
+        "Brand Name": ["A", "B"],
+        "Supplier Name": ["V1", "V2"],
+        "Product Label": ["P1", "P2"],
+        "Category Name": ["C1", "C2"],
+        "Sales Total": [100.0, 200.0],
+        "Net Earnings": [10.0, -5.0],
+    })
+    schema = SemanticSchemaEngine().infer(df)
+    planner = SemanticQueryPlanner()
+
+    for query, dimension in (
+        ("brands making losses", "Brand Name"),
+        ("vendors operating at a loss", "Supplier Name"),
+        ("products with negative profit", "Product Label"),
+        ("loss-making categories", "Category Name"),
+    ):
+        plan = planner.plan(query, schema)
+        assert plan.metric == "Net Earnings", (query, plan.metric)
+        assert dimension in plan.dimensions, (query, plan.dimensions)
+        assert plan.filters == [{"field": "Net Earnings", "operator": "less_than", "value": 0}]
+
+
 def test_semantic_safe_output_contains_metadata_not_cell_values():
     df = pd.DataFrame({
         "Customer Name": ["PRIVATE_A", "PRIVATE_B"],
