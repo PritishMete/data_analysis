@@ -70,15 +70,29 @@ def _physical_type(series: pd.Series) -> str:
 
 def _business_role(column_name: str, inferred_role: str | None) -> tuple[str | None, float, list[str]]:
     tokens = _tokens(column_name)
+    preferred = {
+        "identifier": {"customer", "product", "vendor"},
+        "entity": {"customer", "product", "brand", "vendor"},
+        "percentage": {"percentage"},
+        "quantity": {"quantity"},
+        "count": {"count"},
+        "duration": {"duration"},
+        "rating": {"rating"},
+        "status": {"status"},
+        "date": {"transaction_date", "delivery_date", "signup_date", "birth_date"},
+        "datetime": {"transaction_date", "delivery_date", "signup_date", "birth_date"},
+    }
     matches = []
     for concept, aliases in _BUSINESS_CONCEPTS.items():
         if concept.endswith("_date") and inferred_role not in {"date", "datetime"}:
             continue
         hit = sorted(tokens.intersection(aliases))
-        if hit: matches.append((concept, len(hit), hit))
+        if hit:
+            compatibility = 1 if concept in preferred.get(inferred_role or "", set()) else 0
+            matches.append((concept, len(hit), compatibility, hit))
     if not matches: return None, 0.0, []
-    matches.sort(key=lambda item: item[1], reverse=True)
-    concept, score, evidence = matches[0]
+    matches.sort(key=lambda item: (item[1], item[2]), reverse=True)
+    concept, score, _, evidence = matches[0]
     confidence = 0.72 if score == 1 else 0.88
     if inferred_role in {"date", "datetime"} and concept.endswith("_date"): confidence += 0.08
     if inferred_role in {"currency_measure", "numeric_measure"} and concept in {"revenue", "cost", "profit", "discount"}: confidence += 0.06
