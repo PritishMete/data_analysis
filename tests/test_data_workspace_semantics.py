@@ -50,7 +50,7 @@ def test_generic_ontology_coverage():
         "Customer Rating": "rating",
         "Units Sold": "quantity",
         "Order Count": "count",
-        "Duration Minutes": "numeric_measure",
+        "Duration Minutes": "duration",
         "Review Commentary": "free_text",
         "Event Timestamp": "datetime",
     }
