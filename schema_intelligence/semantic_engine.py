@@ -30,6 +30,7 @@ _BUSINESS_CONCEPTS: dict[str, tuple[str, ...]] = {
     "cost": ("cost", "expense", "spend"),
     "profit": ("profit", "margin", "earnings"),
     "discount": ("discount", "rebate"),
+    "percentage": ("percentage", "percent", "pct", "rate"),
     "quantity": ("quantity", "qty", "units", "volume"),
     "duration": ("duration", "elapsed", "latency", "seconds", "minutes", "hours", "days"),
     "rating": ("rating", "score", "stars", "review"),
@@ -85,6 +86,7 @@ def _role_from_business(concept: str | None, physical: str) -> str | None:
     if concept in {"country", "region", "state", "city", "geography"}: return concept
     if concept in {"customer", "product", "brand", "vendor"}: return "entity"
     if concept == "status": return "status"
+    if concept == "percentage": return "percentage" if physical in {"integer", "float", "numeric"} else "categorical"
     if concept == "quantity": return "quantity" if physical in {"integer", "float", "numeric"} else "categorical"
     if concept == "duration": return "duration" if physical in {"integer", "float", "numeric"} else "categorical"
     if concept == "rating": return "rating" if physical in {"integer", "float", "numeric"} else "categorical"
