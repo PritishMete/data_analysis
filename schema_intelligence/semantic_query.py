@@ -10,6 +10,7 @@ from schema_intelligence.semantic_engine import SemanticField, SemanticSchema
 
 _MONTHS = {m.casefold(): i for i, m in enumerate(("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1)}
 _MONTHS.update({m.casefold(): i for i, m in enumerate(("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1)})
+_LOSS_TERMS = ("loss", "losses", "losing", "loss-making", "lossmaking", "negative")
 
 @dataclass(frozen=True)
 class SemanticQueryPlan:
@@ -50,7 +51,7 @@ class SemanticQueryPlanner:
         aggregation = "sum" if metric and intent in {"aggregation", "ranking", "comparison", "trend"} else None
         if metric:
             mf = next((f for f in fields if f.name == metric), None)
-            if mf and mf.business_role == "profit" and any(w in query for w in ("loss", "losing", "negative")):
+            if mf and mf.business_role == "profit" and any(w in query for w in _LOSS_TERMS):
                 filters = [{"field": metric, "operator": "less_than", "value": 0}]
             else:
                 filters = []
@@ -112,6 +113,7 @@ class SemanticQueryPlanner:
     @staticmethod
     def _resolve_metric(query: str, fields: list[SemanticField]) -> str | None:
         measures = [f for f in fields if f.analytical_role == "measure" and f.semantic_role not in {"rating", "count"}]
+        loss_query = any(term in query for term in _LOSS_TERMS)
         scored: list[tuple[int, float, str]] = []
         for field in measures:
             score = 0
@@ -119,6 +121,8 @@ class SemanticQueryPlanner:
                 aliases = {field.business_role.replace("_", " "), field.business_role}
                 if any(alias in query for alias in aliases):
                     score += 5
+                if loss_query and field.business_role == "profit":
+                    score += 8
             if field.name.casefold() in query:
                 score += 3
             score += int(field.confidence * 2)
