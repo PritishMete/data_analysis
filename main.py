@@ -2202,10 +2202,32 @@ async def powerbi_business_analysis(
             value for value in known_region_labels
             if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", query or "", re.IGNORECASE)
         ]
+        product_table_for_filters = model.get("dim_product", {})
+        product_category_column_for_filters = next(
+            (
+                column for column in product_table_for_filters.get("columns", [])
+                if str(column).casefold() == "category"
+            ),
+            None,
+        )
+        known_category_labels = sorted(
+            {
+                str(row[product_category_column_for_filters]).strip()
+                for row in product_table_for_filters.get("rows", [])
+                if product_category_column_for_filters
+                and row.get(product_category_column_for_filters) is not None
+                and str(row[product_category_column_for_filters]).strip()
+            },
+            key=lambda value: (-len(value), value.casefold()),
+        )
+        mentioned_categories = [
+            value for value in known_category_labels
+            if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", query or "", re.IGNORECASE)
+        ]
         dashboard_filters = {
             "year": requested_filters.get("year") or (re.search(r"\b(20\d{2})\b", query or "").group(1) if query and re.search(r"\b20\d{2}\b", query) else None),
             "region": requested_filters.get("business_region", requested_filters.get("region")),
-            "category": requested_filters.get("category"),
+            "category": requested_filters.get("category") or (mentioned_categories[0] if len(mentioned_categories) == 1 else None),
             "product": requested_filters.get("product"),
             "product_id": requested_filters.get("product_id"),
         }

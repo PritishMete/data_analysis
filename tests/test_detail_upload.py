@@ -221,24 +221,36 @@ def test_context_inherited_report_filename_is_downloadable():
 
 def test_powerbi_business_query_handles_region_comparison_or_and_then_scope():
     files = [
-        _csv("orders.csv", "order_id,order_date,customer_id,product_id,region_id,quantity,sales_amount,profit\nO1,2025-01-01,C1,P1,R1,1,100,40\nO2,2025-01-02,C1,P1,R2,1,60,20\nO3,2025-01-03,C1,P1,R3,1,50,10\n"),
+        _csv("orders.csv", "order_id,order_date,customer_id,product_id,region_id,quantity,sales_amount,profit\nO1,2025-01-01,C1,P1,R1,1,100,40\nO2,2025-01-02,C1,P1,R2,1,60,20\nO3,2025-01-03,C1,P1,R3,1,50,10\nO4,2025-01-04,C1,P2,R1,1,500,200\nO5,2024-01-05,C1,P1,R1,1,700,300\n"),
         _csv("customers.csv", "customer_id\nC1\n"),
-        _csv("products.csv", "product_id,product_name,category\nP1,Alpha,Clothing\n"),
+        _csv("products.csv", "product_id,product_name,category\nP1,Alpha,Clothing\nP2,Beta,Electronics\n"),
         _csv("regions.csv", "region_id,region\nR1,North\nR2,North\nR3,South\n"),
     ]
     client = TestClient(app)
     compared = client.post("/powerbi/business-analysis", data={"query": "Compare North and South in 2025."}, files=files).json()
     assert compared["analyst_business_response"]["response_type"] == "analyst_comparison_response"
-    assert compared["analyst_business_response"]["comparison"]["rows"][0]["profit"] == 60.0
+    assert compared["analyst_business_response"]["comparison"]["rows"][0]["profit"] == 260.0
     assert compared["comparison_context"]["entities"] == ["North", "South"]
 
     combined = client.post("/powerbi/business-analysis", data={"query": "North OR South"}, files=files).json()
-    assert combined["dashboard_context"]["kpis"]["revenue"] == 210.0
+    assert combined["dashboard_context"]["kpis"]["revenue"] == 1410.0
     assert combined["active_filters"]["business_region"] == ["North", "South"]
+
+    text_scoped_combined = client.post(
+        "/powerbi/business-analysis",
+        data={"query": "2025 AND (North OR South) AND Clothing"},
+        files=files,
+    ).json()
+    assert text_scoped_combined["active_filters"] == {
+        "year": 2025,
+        "business_region": ["North", "South"],
+        "category": "Clothing",
+    }
+    assert text_scoped_combined["dashboard_context"]["kpis"]["revenue"] == 210.0
 
     then_result = client.post(
         "/powerbi/business-analysis",
-        data={"query": "Find the most profitable region, then show its 2025 performance, then limit it to Clothing", "active_filters_json": '{"year":2025,"category":"Clothing"}'},
+        data={"query": "Find the most profitable region, then show its 2025 performance, then limit it to Clothing"},
         files=files,
     ).json()
     assert then_result["active_filters"]["business_region"] == "North"
