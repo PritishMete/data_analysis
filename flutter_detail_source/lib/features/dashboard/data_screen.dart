@@ -19,6 +19,7 @@ import '../../core/interop/excel_interop.dart';
 import '../../core/interop/office_host.dart';
 import '../../core/services/file_upload_handler.dart';
 import '../../core/services/local_pipeline_service.dart';
+import '../../core/services/secure_excel_local_service.dart';
 import '../../core/security/outbound_privacy_guard.dart';
 import '../../core/security/privacy_mode.dart';
 import '../../models/transformation_result.dart';
@@ -2714,6 +2715,76 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                 }
               : parsed,
         );
+        return;
+      }
+      if (secureLocalOnly && SecureExcelLocalService.supportsQuery(userText)) {
+        final String? jsonString = await _fetchSourceData();
+        if (jsonString == null || jsonString.isEmpty) {
+          throw "No data found. Select a range or load a file first.";
+        }
+        final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
+        if (rawRows.isEmpty || rawRows.first is! List) {
+          throw "Unnrecognised data shape — expected a 2D array from Excel or file.";
+        }
+        final rows = rawRows
+            .whereType<List<dynamic>>()
+            .where((r) => r.any((c) => c != null && c.toString().trim().isNotEmpty))
+            .toList();
+        final localResult = await SecureExcelLocalService.execute(
+          sourceRows: rows,
+          query: userText,
+        );
+        if (localResult['success'] != true) {
+          throw localResult['error']?.toString() ??
+              'Local secure Excel analysis failed.';
+        }
+        final operation = localResult['operation'] is Map
+            ? Map<String, dynamic>.from(localResult['operation'] as Map)
+            : <String, dynamic>{};
+        final action = operation['action']?.toString() ?? 'unknown';
+        if (action == 'quality_check' && operation['source_mutated'] == true) {
+          throw 'Local quality check unexpectedly reported source mutation.';
+        }
+
+        if (action == 'group') {
+          final columns = operation['columns'] is List
+              ? List<dynamic>.from(operation['columns'])
+              : <dynamic>[];
+          final resultRows = operation['rows'] is List
+              ? List<dynamic>.from(operation['rows'])
+              : <dynamic>[];
+          final tableText = _formatSqlResultAsText(columns, resultRows);
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": "${localResult['message'] ?? 'Here is what I found:'}\n\n$tableText",
+            });
+          });
+        } else {
+          final missing = operation['missing_by_column'] is Map
+              ? Map<String, dynamic>.from(operation['missing_by_column'] as Map)
+              : <String, dynamic>{};
+          final duplicate = operation['duplicate_identifier'] is Map
+              ? Map<String, dynamic>.from(operation['duplicate_identifier'] as Map)
+              : <String, dynamic>{};
+          final duplicateValues = duplicate['values'] is List
+              ? List<dynamic>.from(duplicate['values'])
+              : <dynamic>[];
+          final missingText = missing.isEmpty
+              ? 'Missing values: none'
+              : 'Missing values: ${missing.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
+          final duplicateText = duplicate['status'] == 'ok'
+              ? 'Duplicate ${duplicate['column'] ?? 'identifier'} values: ${duplicateValues.isEmpty ? 'none' : duplicateValues.join(', ')}\nDuplicate identifier rows: ${duplicate['duplicate_row_count'] ?? 0}'
+              : 'Duplicate identifier check: ${duplicate['status'] ?? 'not available'}';
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": "${localResult['message'] ?? 'Completed the data quality check locally.'}\n\n$missingText\n$duplicateText\nSource mutated: No",
+            });
+          });
+        }
         return;
       }
       if (secureLocalOnly) {
