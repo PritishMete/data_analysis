@@ -34,8 +34,8 @@
     price: ['price', 'unit price', 'sale price', 'selling price'],
     revenue: ['revenue', 'total revenue', 'revenue amount', 'revenue generated', 'generated revenue', 'gross revenue', 'net revenue'],
     sales: ['sales', 'total sales', 'sales amount', 'sale amount', 'total sales amount', 'sales revenue', 'sales generated'],
-    quantity: ['quantity', 'qty', 'units sold', 'units', 'number sold'],
-    unitPrice: ['unit price', 'selling price', 'sale price', 'price per unit']
+    quantity: ['quantity', 'qty', 'quantity sold', 'units sold', 'units', 'number sold'],
+    unitPrice: ['unit price', 'unit selling price', 'selling unit price', 'selling price', 'sale price', 'price per unit']
   };
 
   function directResolve(headers, requested, allowedAliases) {
