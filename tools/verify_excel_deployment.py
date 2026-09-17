@@ -21,6 +21,12 @@ REQUIRED_INDEX_SNIPPETS = (
     'meta name="detail-analysis-build-id"',
 )
 
+REQUIRED_MAIN_SNIPPETS = (
+    "http://127.0.0.1:8000",
+    "quality_check",
+    "source_mutated",
+)
+
 
 def _assert_build(root: Path, expected_commit: str) -> None:
     index = root / "index.html"
@@ -36,11 +42,15 @@ def _assert_build(root: Path, expected_commit: str) -> None:
         if snippet not in index_text:
             raise AssertionError(f"index.html missing required Excel asset: {snippet}")
 
-    marker = f'<meta name="detail-analysis-build-id" content="{expected_commit}">' 
+    marker = f'<meta name="detail-analysis-build-id" content="{expected_commit}">'
     if marker not in index_text:
         raise AssertionError("deployment marker does not match the intended source commit")
 
     main_text = main_js.read_text(encoding="utf-8", errors="ignore")
+    for snippet in REQUIRED_MAIN_SNIPPETS:
+        if snippet not in main_text:
+            raise AssertionError(f"deployed Flutter bundle is missing secure Excel marker: {snippet}")
+
     if "(?i)\\bout\\s+of\\b" in main_text:
         raise AssertionError("deployed main.dart.js still contains the unsupported Dart regex flag")
 
@@ -61,7 +71,7 @@ def _assert_live(base_url: str, expected_commit: str) -> None:
         if snippet not in index_text:
             raise AssertionError(f"live taskpane missing required Excel asset reference: {snippet}")
 
-    marker = f'<meta name="detail-analysis-build-id" content="{expected_commit}">' 
+    marker = f'<meta name="detail-analysis-build-id" content="{expected_commit}">'
     if marker not in index_text:
         raise AssertionError("live taskpane is not serving the intended source commit")
 
@@ -70,6 +80,9 @@ def _assert_live(base_url: str, expected_commit: str) -> None:
         raise AssertionError("live Flutter bootstrap does not reference main.dart.js")
 
     main_text = _fetch(base + "main.dart.js")
+    for snippet in REQUIRED_MAIN_SNIPPETS:
+        if snippet not in main_text:
+            raise AssertionError(f"live Flutter bundle is missing secure Excel marker: {snippet}")
     if "(?i)\\bout\\s+of\\b" in main_text:
         raise AssertionError("live main.dart.js still contains the unsupported Dart regex flag")
 
@@ -104,7 +117,7 @@ def main() -> int:
     for attempt in range(1, max(args.retries, 1) + 1):
         try:
             _assert_live(args.url, args.expected_commit)
-            print(f"Live Excel taskpane contract passed for {args.expected_commit}")
+            print(f"Live Excel taskpane contract passed for {expected_commit}")
             return 0
         except (AssertionError, OSError, URLError) as exc:
             last_error = exc
