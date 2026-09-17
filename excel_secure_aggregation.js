@@ -12,7 +12,25 @@
   function revenueIntent(text){return /\b(?:revenue|sales|sale)\b/.test(normalize(text));}
   function isRevenueSemanticHeader(name){const n=normalize(name);if(!n)return false;if(semanticAliases.revenue.includes(n)||semanticAliases.sales.includes(n))return true;if(/\brevenue\b/.test(n))return true;if(/^sales?$/.test(n))return true;if(/\bsales?\b.*\b(?:amount|total|revenue|generated)\b/.test(n))return true;if(/\b(?:amount|total|revenue|generated)\b.*\bsales?\b/.test(n))return true;return false;}
   function revenueFamily(name){const n=normalize(name);if(/\brevenue\b/.test(n))return'revenue';if(/\bsales?\b/.test(n)&&!/\b(?:price|rating|score|vote|votes)\b/.test(n))return'sales';return null;}
-  function resolveRevenue(headers,requested,query){const wanted=normalize(requested),list=infos(headers),intent=/\brevenue\b/.test(normalize(query||requested))?'revenue':'sales',candidates=list.filter(x=>isRevenueSemanticHeader(x.name)&&revenueFamily(x.name)===intent),exact=list.filter(x=>x.n===wanted||x.c===compact(wanted)),exactSemantic=exact.filter(x=>isRevenueSemanticHeader(x.name)&&revenueFamily(x.name)===intent);if(exactSemantic.length===1)return{index:exactSemantic[0].i,requested,candidates:exactSemantic};if(exactSemantic.length>1||candidates.length>1)return{index:-1,requested,candidates};const phraseHits=wanted?list.filter(x=>x.n.includes(wanted)||wanted.includes(x.n)):[],phraseRevenueHits=phraseHits.filter(x=>isRevenueSemanticHeader(x.name)&&revenueFamily(x.name)===intent);if(phraseRevenueHits.length===1)return{index:phraseRevenueHits[0].i,requested,candidates:phraseRevenueHits};if(phraseRevenueHits.length>1)return{index:-1,requested,candidates:phraseRevenueHits};if(candidates.length===1)return{index:candidates[0].i,requested,candidates};return{index:-1,requested,candidates:[]};}
+  function resolveRevenue(headers,requested,query){
+    const wanted=normalize(requested), list=infos(headers), intent=/\brevenue\b/.test(normalize(query||requested))?'revenue':'sales';
+    const semantic=list.filter(x=>isRevenueSemanticHeader(x.name));
+    const preferred=semantic.filter(x=>revenueFamily(x.name)===intent);
+    const equivalent=semantic.filter(x=>intent==='revenue' ? /\bsales?\b.*\bamount\b|\bamount\b.*\bsales?\b|\bsales?\s+revenue\b/.test(x.n) : /\brevenue\b/.test(x.n));
+    const exact=list.filter(x=>x.n===wanted||x.c===compact(wanted));
+    const exactSemantic=exact.filter(x=>isRevenueSemanticHeader(x.name));
+    if(exactSemantic.length===1)return{index:exactSemantic[0].i,requested,candidates:exactSemantic};
+    if(exactSemantic.length>1)return{index:-1,requested,candidates:exactSemantic};
+    if(preferred.length===1)return{index:preferred[0].i,requested,candidates:preferred};
+    if(preferred.length>1)return{index:-1,requested,candidates:preferred};
+    if(equivalent.length===1)return{index:equivalent[0].i,requested,candidates:equivalent};
+    if(equivalent.length>1)return{index:-1,requested,candidates:equivalent};
+    const phraseHits=wanted?list.filter(x=>x.n.includes(wanted)||wanted.includes(x.n)):[];
+    const phraseRevenueHits=phraseHits.filter(x=>isRevenueSemanticHeader(x.name));
+    if(phraseRevenueHits.length===1)return{index:phraseRevenueHits[0].i,requested,candidates:phraseRevenueHits};
+    if(phraseRevenueHits.length>1)return{index:-1,requested,candidates:phraseRevenueHits};
+    return{index:-1,requested,candidates:[]};
+  }
   function resolveMeasure(headers,requested,query){if(revenueIntent(query)||revenueIntent(requested))return resolveRevenue(headers,requested,query);const wanted=normalize(requested);if(/\brating\b/.test(wanted))return directResolve(headers,'rating',semanticAliases.rating);if(/\bprice\b/.test(wanted))return directResolve(headers,'price',semanticAliases.price);return directResolve(headers,requested);}
   function semanticInputCandidates(headers,aliases){return infos(headers).filter(x=>aliases.includes(x.n));}
   function resolveDerivedRevenueInputs(headers){const quantities=semanticInputCandidates(headers,semanticAliases.quantity);const prices=semanticInputCandidates(headers,semanticAliases.unitPrice);const quantity=quantities.length===1?{index:quantities[0].i,name:quantities[0].name,candidates:quantities}:{index:-1,name:null,candidates:quantities};const unitPrice=prices.length===1?{index:prices[0].i,name:prices[0].name,candidates:prices}:{index:-1,name:null,candidates:prices};return{quantity,unitPrice};}
