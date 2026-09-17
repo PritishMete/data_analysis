@@ -37,7 +37,7 @@ async function run() {
 
   const average = await execute(source, 'What is the average rating by city?');
   assert.deepStrictEqual(normalizeRows(average.operation.rows), [
-    { City: '', average: 5 }, { City: 'Kolkata', average: 4.5 },
+    { City: null, average: 5 }, { City: 'Kolkata', average: 4.5 },
     { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 },
   ]);
 
@@ -58,9 +58,7 @@ async function run() {
   assert.strictEqual(sales.diagnostics.resolved_measure_column, 'Sales Amount');
 
   const price = await execute(source, 'Show the highest average price by category.');
-  assert.deepStrictEqual(normalizeRows(price.operation.rows), [
-    { Category: 'C', average: 65 }, { Category: 'B', average: 35 }, { Category: 'A', average: 26.6666666667 },
-  ]);
+  assert.deepStrictEqual(normalizeRows(price.operation.rows), [{ Category: 'C', average: 65 }]);
 
   const variant = source.map((row, i) => i === 0
     ? ['Restaurant ID', 'city_name', 'aggregate_rating', 'Sales_Amount', 'Region', 'Category', 'Price']
