@@ -73,7 +73,7 @@
     else if (/\b(?:average|avg|mean)\b/.test(q)) mode = 'average';
     else if (/\b(?:minimum|min|lowest)\b/.test(q)) mode = 'min';
     else if (/\b(?:maximum|max|highest)\b/.test(q)) mode = 'max';
-    const explicitN = q.match(/\b(?:top|bottom)\s+(\d+)\b");
+    const explicitN = q.match(/\b(?:top|bottom)\s+(\d+)\b/);
     const direction = /\b(?:bottom|lowest|min|minimum)\b/.test(q) ? 'asc' : 'desc';
     const limit = explicitN ? Number(explicitN[1]) : null;
     let groupText = '';
