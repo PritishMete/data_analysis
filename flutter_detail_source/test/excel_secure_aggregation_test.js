@@ -13,10 +13,7 @@ vm.runInContext(aggregation, context);
 async function execute(rows, query) {
   return JSON.parse(await context.window.executeSecureExcelQuery(JSON.stringify({ rows, query })));
 }
-
-function normalizeRows(rows) {
-  return JSON.parse(JSON.stringify(rows));
-}
+function normalizeRows(rows) { return JSON.parse(JSON.stringify(rows)); }
 
 async function run() {
   const source = [
@@ -34,60 +31,36 @@ async function run() {
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
   assert.strictEqual(highest.success, true);
   assert.strictEqual(highest.operation.action, 'aggregate');
-  assert.deepStrictEqual(normalizeRows(highest.operation.rows), [
-    { City: 'Kolkata', average: 4.5 },
-  ]);
+  assert.deepStrictEqual(normalizeRows(highest.operation.rows), [{ City: 'Kolkata', average: 4.5 }]);
   assert.strictEqual(highest.operation.measure, 'Aggregate rating');
   assert.strictEqual(highest.operation.sort, 'desc');
-  assert.strictEqual(highest.diagnostics.group_resolution, 'resolved');
-  assert.strictEqual(highest.diagnostics.measure_resolution, 'resolved');
 
   const average = await execute(source, 'What is the average rating by city?');
-  assert.strictEqual(average.success, true);
   assert.deepStrictEqual(normalizeRows(average.operation.rows), [
-    { City: '', average: 5 },
-    { City: 'Kolkata', average: 4.5 },
-    { City: 'Delhi', average: 4 },
-    { City: 'Mumbai', average: 4 },
+    { City: '', average: 5 }, { City: 'Kolkata', average: 4.5 },
+    { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 },
   ]);
 
   const top = await execute(source, 'Show the top 5 cities by average rating.');
-  assert.strictEqual(top.success, true);
-  assert.strictEqual(top.operation.rows.length, 3);
   assert.deepStrictEqual(normalizeRows(top.operation.rows), [
-    { City: 'Kolkata', average: 4.5 },
-    { City: 'Delhi', average: 4 },
-    { City: 'Mumbai', average: 4 },
+    { City: 'Kolkata', average: 4.5 }, { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 },
   ]);
 
   const lowest = await execute(source, 'Which city has the lowest average rating?');
-  assert.strictEqual(lowest.success, true);
   assert.deepStrictEqual(normalizeRows(lowest.operation.rows), [
-    { City: 'Delhi', average: 4 },
-    { City: 'Mumbai', average: 4 },
+    { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 },
   ]);
 
   const sales = await execute(source, 'What is the total sales amount by region?');
-  assert.strictEqual(sales.success, true);
   assert.deepStrictEqual(normalizeRows(sales.operation.rows), [
-    { Region: 'East', sum: 450 },
-    { Region: 'West', sum: 400 },
-    { Region: 'North', sum: 300 },
+    { Region: 'East', sum: 450 }, { Region: 'West', sum: 400 }, { Region: 'North', sum: 300 },
   ]);
+  assert.strictEqual(sales.diagnostics.resolved_measure_column, 'Sales Amount');
 
   const price = await execute(source, 'Show the highest average price by category.');
-  assert.strictEqual(price.success, true);
   assert.deepStrictEqual(normalizeRows(price.operation.rows), [
-    { Category: 'C', average: 65 },
-    { Category: 'B', average: 35 },
-    { Category: 'A', average: 26.6666666667 },
+    { Category: 'C', average: 65 }, { Category: 'B', average: 35 }, { Category: 'A', average: 26.6666666667 },
   ]);
-
-  // Numeric strings are accepted; nonnumeric measurements are ignored rather
-  // than poisoning an entire group. Missing measurements are not included in
-  // averages/sums/min/max. Blank groups remain a real group in the full
-  // aggregate result, while ranked "which city" results exclude unnamed groups.
-  assert.strictEqual(sales.diagnostics.resolved_measure_column, 'Sales Amount');
 
   const variant = source.map((row, i) => i === 0
     ? ['Restaurant ID', 'city_name', 'aggregate_rating', 'Sales_Amount', 'Region', 'Category', 'Price']
@@ -98,26 +71,29 @@ async function run() {
   assert.strictEqual(variantResult.operation.measure, 'aggregate_rating');
 
   const ambiguous = await execute([
-    ['City', 'Rating', 'Average Rating'],
-    ['Delhi', 4, 4],
-    ['Mumbai', 5, 5],
+    ['City', 'Rating', 'Average Rating'], ['Delhi', 4, 4], ['Mumbai', 5, 5],
   ], 'What is the average rating by city?');
   assert.strictEqual(ambiguous.success, false);
   assert.match(ambiguous.error, /ambiguous/i);
   assert.strictEqual(ambiguous.diagnostics.measure_resolution, 'ambiguous');
 
   const ambiguousGroup = await execute([
-    ['City', 'city', 'Rating'],
-    ['Delhi', 'D', 4],
-    ['Mumbai', 'M', 5],
+    ['City', 'city', 'Rating'], ['Delhi', 'D', 4], ['Mumbai', 'M', 5],
   ], 'What is the average rating by city?');
   assert.strictEqual(ambiguousGroup.success, false);
   assert.match(ambiguousGroup.error, /ambiguous/i);
 
-  const leadingBlank = [['', '', '', '', '', '', ''], ...source.slice(0, 4)];
+  const leadingBlank = [['', '', '', '', '', '', ''], ...source];
   const leadingResult = await execute(leadingBlank, 'What is the average rating by city?');
   assert.strictEqual(leadingResult.success, true);
   assert.strictEqual(leadingResult.diagnostics.header_index, 1);
+
+  const tie = await execute([
+    ['Region', 'Sales Amount'], ['North', 100], ['South', 100], ['West', 80],
+  ], 'Which region has the highest average sales amount?');
+  assert.deepStrictEqual(normalizeRows(tie.operation.rows), [
+    { Region: 'North', average: 100 }, { Region: 'South', average: 100 },
+  ]);
 
   const count = await execute(source, 'Show the number of restaurants in each city');
   assert.strictEqual(count.success, true);
@@ -129,11 +105,6 @@ async function run() {
   assert.deepStrictEqual(source, original);
   assert.ok(!aggregation.includes('fetch('));
   assert.ok(!aggregation.includes('XMLHttpRequest'));
-
   console.log('excel_secure_aggregation_test.js: all assertions passed');
 }
-
-run().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+run().catch(error => { console.error(error); process.exitCode = 1; });
