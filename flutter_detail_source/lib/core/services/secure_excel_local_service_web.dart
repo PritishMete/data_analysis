@@ -49,7 +49,20 @@ class SecureExcelLocalService {
       });
       final response = await _executeSecureExcelQuery(encoded.toJS).toDart;
       final decoded = jsonDecode(response.toDart);
-      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map<String, dynamic>) {
+        final diagnostics = decoded['diagnostics'];
+        if (diagnostics is Map) {
+          debugPrint(
+            '[SECURE EXCEL SCHEMA] rows=${diagnostics['data_rows'] ?? sourceRows.length - 1} '
+            'columns=${diagnostics['input_columns'] ?? sourceRows.first.length} '
+            'headers=${diagnostics['header_count'] ?? sourceRows.first.length} '
+            'headerIndex=${diagnostics['header_index'] ?? 0} '
+            'group=${diagnostics['group_resolution'] ?? 'n/a'} '
+            'identifier=${diagnostics['identifier_resolution'] ?? 'n/a'}',
+          );
+        }
+        return decoded;
+      }
       return {
         'success': false,
         'route': 'operation',
