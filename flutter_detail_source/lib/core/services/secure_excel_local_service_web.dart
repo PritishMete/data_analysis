@@ -20,7 +20,13 @@ class SecureExcelLocalService {
     if (hasCheckVerb && (hasMissing || hasDuplicate) && (hasMissing || hasIdentifierReference)) return true;
     final hasCount = RegExp(r'\b(?:count|how many|number of)\b').hasMatch(lower);
     final hasGrouping = RegExp(r'\b(?:each|per|by|group(?:ed)?\s+by)\b').hasMatch(lower);
-    return hasCount && hasGrouping;
+    if (hasCount && hasGrouping) return true;
+
+    // Generic grouped analytics are handled by the same taskpane-local JS
+    // engine. No data-dependent or restaurant-specific wording is required.
+    final hasAggregation = RegExp(r'\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom)\b').hasMatch(lower);
+    final hasAnalyticGrouping = RegExp(r'\b(?:by|per|each|group(?:ed)?\s+by|which|what)\b').hasMatch(lower);
+    return hasAggregation && hasAnalyticGrouping;
   }
 
   static Future<Map<String, dynamic>> execute({
@@ -58,6 +64,8 @@ class SecureExcelLocalService {
             'headers=${diagnostics['header_count'] ?? sourceRows.first.length} '
             'headerIndex=${diagnostics['header_index'] ?? 0} '
             'group=${diagnostics['group_resolution'] ?? 'n/a'} '
+            'measure=${diagnostics['measure_resolution'] ?? 'n/a'} '
+            'aggregation=${diagnostics['aggregation_resolution'] ?? 'n/a'} '
             'identifier=${diagnostics['identifier_resolution'] ?? 'n/a'}',
           );
         }
