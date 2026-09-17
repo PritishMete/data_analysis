@@ -33,7 +33,7 @@ async function run() {
   assert.strictEqual(revenue.operation.action, 'aggregate');
   assert.strictEqual(revenue.operation.measure, 'Revenue Generated');
   assert.deepStrictEqual(clone(revenue.operation.rows), [
-    { City: null, sum: 4000 }, { City: 'Mumbai', sum: 4000 },
+    { City: 'Mumbai', sum: 4000 }, { City: null, sum: 4000 },
     { City: 'Delhi', sum: 3000 }, { City: 'Kolkata', sum: 500 },
   ]);
   assert.strictEqual(revenue.diagnostics.resolved_measure_column, 'Revenue Generated');
