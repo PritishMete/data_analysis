@@ -46,6 +46,9 @@ jobs:
       - name: Taskpane-local secure query tests
         run: node test/excel_secure_query_test.js
 
+      - name: Worksheet schema bridge tests
+        run: node test/excel_schema_bridge_test.js
+
       - name: Build Excel-enabled Flutter web app
         run: flutter build web --release --base-href /data_analysis/
 
