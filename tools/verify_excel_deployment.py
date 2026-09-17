@@ -117,7 +117,7 @@ def main() -> int:
     for attempt in range(1, max(args.retries, 1) + 1):
         try:
             _assert_live(args.url, args.expected_commit)
-            print(f"Live Excel taskpane contract passed for {expected_commit}")
+            print(f"Live Excel taskpane contract passed for {args.expected_commit}")
             return 0
         except (AssertionError, OSError, URLError) as exc:
             last_error = exc
