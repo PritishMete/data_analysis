@@ -167,7 +167,9 @@
         .replace(/\b(?:highest|lowest|maximum|minimum)\s+/, '').replace(/\b(?:average|avg|mean|sum|total|count)\b\s*/, '').trim();
     } else {
       const has = q.match(/\b(?:has|have|with)\s+(.+?)(?:\?|$)/);
-      if (has) measureText = has[1].replace(/^(the|a|an)\s+/, '').trim();
+      if (has) measureText = has[1].replace(/^(the|a|an)\s+/, '')
+        .replace(/\b(?:highest|lowest|maximum|minimum)\b\s*/, '')
+        .replace(/\b(?:average|avg|mean|sum|total|count)\b\s*/, '').trim();
     }
     return { mode, direction, limit, groupText, measureText };
   }
