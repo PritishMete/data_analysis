@@ -4070,7 +4070,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Excel/CSV rating cells are often exported as strings such as
       // `4.1/5`, `4.1 out of 5`, `Rated 4.1`, or `4,1`. Extract the first
       // meaningful numeric value so numeric comparisons work consistently.
-      s = s.replaceAll(RegExp(r'(?i)\bout\s+of\b'), '/');
+      s = s.replaceAll(
+        RegExp(r'\bout\s+of\b', caseSensitive: false),
+        '/',
+      );
       s = s.replaceAll(RegExp(r'[₹$€£\s]'), '');
       if (s.contains(',') && !s.contains('.'))
         s = s.replaceAll(',', '.');

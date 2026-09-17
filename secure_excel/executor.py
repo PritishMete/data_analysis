@@ -24,6 +24,26 @@ def _resolve_role(schema: dict[str, Any], column_id: str) -> str:
     raise KeyError(f"Unknown column_id {column_id!r}")
 
 
+def _json_safe_value(value: Any) -> Any:
+    if value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+def _json_safe_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    records = df.to_dict(orient="records")
+    return [
+        {str(key): _json_safe_value(value) for key, value in row.items()}
+        for row in records
+    ]
+
+
 def _to_bool_series(series: pd.Series) -> pd.Series:
     normalized = series.astype(str).str.strip().str.lower()
     truthy = {"true", "1", "yes", "y", "available", "open", "on", "enabled"}
@@ -74,10 +94,10 @@ def _apply_condition(df: pd.DataFrame, schema: dict[str, Any], condition: dict[s
 
 
 def _preview_df(df: pd.DataFrame, limit: int = 25) -> dict[str, Any]:
-    preview = df.head(limit).where(pd.notna(df.head(limit)), None)
+    preview = df.head(limit)
     return {
         "columns": [str(col) for col in df.columns],
-        "rows": preview.to_dict(orient="records"),
+        "rows": _json_safe_records(preview),
         "row_count": int(len(df)),
     }
 
@@ -194,12 +214,10 @@ def execute_structured_query(df: pd.DataFrame, schema: dict[str, Any], query: di
                     for alias, (column, func) in agg_map.items()
                 })
                 computed = computed.reset_index()
-                computed = computed.where(pd.notna(computed), None)
-                rows = computed.to_dict(orient="records")
+                rows = _json_safe_records(computed)
             else:
                 computed = grouped.size().reset_index(name="count")
-                computed = computed.where(pd.notna(computed), None)
-                rows = computed.to_dict(orient="records")
+                rows = _json_safe_records(computed)
             return {
                 "operation": operation,
                 "result": {

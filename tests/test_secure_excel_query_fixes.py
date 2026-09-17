@@ -1,5 +1,8 @@
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
+
+from main import app
 
 from secure_excel.executor import execute_structured_query
 from secure_excel.query_parser import parse_query
@@ -31,6 +34,81 @@ def test_restaurant_count_by_city_is_generic_group_count():
         "Mumbai": 1,
         "Kolkata": 1,
     }
+
+
+def test_restaurant_count_by_city_serializes_blank_city_as_null():
+    df = pd.DataFrame(
+        {
+            "Restaurant ID": [1, 2, 3, 4],
+            "City": ["Delhi", None, "Mumbai", "Kolkata"],
+            "Restaurant Name": ["A", "B", "C", "D"],
+        }
+    )
+    schema = _schema(df)
+    query = validate_structured_query(
+        parse_query("Show the number of restaurants in each city", schema),
+        schema,
+    )
+    result = execute_structured_query(df, schema, query)
+
+    rows = result["result"]["rows"]
+    assert any(row["City"] is None and row["count"] == 1 for row in rows)
+
+
+def test_excel_query_api_handles_group_count_and_quality_check_without_remote_cleaning(tmp_path):
+    workbook = tmp_path / "restaurants.xlsx"
+    pd.DataFrame(
+        {
+            "Restaurant ID": [101, 102, 102, 103],
+            "City": ["Delhi", None, "Mumbai", "Kolkata"],
+            "Restaurant Name": ["A", "B", "C", "D"],
+        }
+    ).to_excel(workbook, sheet_name="Restaurants", index=False)
+
+    client = TestClient(app)
+    with workbook.open("rb") as handle:
+        session_response = client.post(
+            "/excel/session",
+            data={"sheet_name": "Restaurants"},
+            files={
+                "file": (
+                    "restaurants.xlsx",
+                    handle,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    count_response = client.post(
+        "/excel/query",
+        data={
+            "session_id": session_id,
+            "text": "Show the number of restaurants in each city",
+        },
+    )
+    assert count_response.status_code == 200
+    count_body = count_response.json()
+    assert count_body["query"]["operation"] == "group"
+    assert any(
+        row["City"] is None and row["count"] == 1
+        for row in count_body["result"]["rows"]
+    )
+
+    quality_response = client.post(
+        "/excel/query",
+        data={
+            "session_id": session_id,
+            "text": "Check for missing values and duplicate restaurant IDs",
+        },
+    )
+    assert quality_response.status_code == 200
+    quality_body = quality_response.json()
+    assert quality_body["query"]["operation"] == "quality_check"
+    assert quality_body["result"]["missing_by_column"] == {"City": 1}
+    assert quality_body["result"]["duplicate_identifier"]["duplicate_row_count"] == 2
+    assert quality_body["result"]["source_mutated"] is False
 
 
 @pytest.mark.parametrize(
