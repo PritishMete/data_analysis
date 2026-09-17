@@ -100,21 +100,21 @@
   function resolveRevenue(headers, requested) {
     const wanted = normalize(requested);
     const list = infos(headers);
+    const candidates = list.filter(x => isRevenueSemanticHeader(x.name));
     const exact = list.filter(x => x.n === wanted || x.c === compact(wanted));
-    if (exact.length === 1 && revenueIntent(wanted) && isRevenueSemanticHeader(exact[0].name)) return { index: exact[0].i, requested, candidates: exact };
-    if (exact.length > 1) return { index: -1, requested, candidates: exact.filter(x => isRevenueSemanticHeader(x.name)) };
+    const exactSemantic = exact.filter(x => isRevenueSemanticHeader(x.name));
+    if (exactSemantic.length === 1 && candidates.length === 1) return { index: exactSemantic[0].i, requested, candidates: exactSemantic };
+    if (exactSemantic.length > 1 || candidates.length > 1) return { index: -1, requested, candidates };
 
     // Natural-language extraction may produce a phrase rather than the exact
     // header text. Prefer a unique header that contains the requested semantic
     // phrase before considering the broader revenue/sales candidate set.
     const phraseHits = wanted ? list.filter(x => x.n.includes(wanted) || wanted.includes(x.n)) : [];
     const phraseRevenueHits = phraseHits.filter(x => isRevenueSemanticHeader(x.name));
-    if (phraseRevenueHits.length === 1) return { index: phraseRevenueHits[0].i, requested, candidates: phraseRevenueHits };
-    if (phraseRevenueHits.length > 1) return { index: -1, requested, candidates: phraseRevenueHits };
+    if (phraseRevenueHits.length === 1 && candidates.length === 1) return { index: phraseRevenueHits[0].i, requested, candidates: phraseRevenueHits };
+    if (phraseRevenueHits.length > 1 || candidates.length > 1) return { index: -1, requested, candidates: phraseRevenueHits.length > 1 ? phraseRevenueHits : candidates };
 
-    const candidates = list.filter(x => isRevenueSemanticHeader(x.name));
     if (candidates.length === 1) return { index: candidates[0].i, requested, candidates };
-    if (candidates.length > 1) return { index: -1, requested, candidates };
     return { index: -1, requested, candidates: [] };
   }
 
