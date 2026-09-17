@@ -88,6 +88,7 @@
     let mode = 'average';
     if (/\b(?:sum|total)\b/.test(q)) mode = 'sum';
     else if (/\bcount\b|\bhow many\b/.test(q)) mode = 'count';
+    else if (/\b(?:average|avg|mean)\b/.test(q)) mode = 'average';
     else if (/\b(?:minimum|min|lowest)\b/.test(q)) mode = 'min';
     else if (/\b(?:maximum|max|highest)\b/.test(q)) mode = 'max';
     const explicitN = q.match(/\b(?:top|bottom)\s+(\d+)\b/);
