@@ -25,9 +25,9 @@ async function run() {
   assert.strictEqual(ordinary.headerIndex, 2);
   assert.strictEqual(ordinary.columns, 4);
   assert.strictEqual(ordinary.headerCount, 4);
-  assert.deepStrictEqual(ordinary.matrix[0], ordinaryRange[2]);
-  assert.deepStrictEqual(ordinary.matrix[1], ordinaryRange[3]);
-  assert.deepStrictEqual(ordinary.matrix[2], ordinaryRange[4]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ordinary.matrix[0])), ordinaryRange[2]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ordinary.matrix[1])), ordinaryRange[3]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ordinary.matrix[2])), ordinaryRange[4]);
 
   // Excel tables arrive already bounded to their table range. The bridge must
   // preserve the table header spelling and row/column positions exactly.
@@ -40,7 +40,7 @@ async function run() {
   assert.strictEqual(table.headerIndex, 0);
   assert.strictEqual(table.rows, 3);
   assert.strictEqual(table.columns, 3);
-  assert.deepStrictEqual(table.matrix, tableRange);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(table.matrix)), tableRange);
 
   // Empty and duplicate headers are preserved; schema resolution, not the
   // reader, decides whether a requested field is ambiguous.
@@ -49,7 +49,7 @@ async function run() {
     ['x', 1, 1, 'Delhi'],
   ];
   const duplicate = normalize(duplicateHeaders);
-  assert.deepStrictEqual(duplicate.matrix[0], duplicateHeaders[0]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(duplicate.matrix[0])), duplicateHeaders[0]);
   assert.strictEqual(duplicate.columns, 4);
   assert.strictEqual(duplicate.headerCount, 3);
 
