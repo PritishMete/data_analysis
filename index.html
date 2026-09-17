@@ -3,7 +3,7 @@
 <head>
   <base href="/data_analysis/">
   <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="11df77c3566a55efb84a10f9bf2bd7326879688e">
+  <meta name="detail-analysis-build-id" content="244cce46501a34b1257e2314eabc3a92353914ce">
   <title>electric_ai_app</title>
 
   <!-- Office.js MUST come first -->
@@ -15,13 +15,11 @@
   <script src="excel_helper.js"></script>
   <script src="excel_schema_bridge.js"></script>
   <script src="excel_secure_query.js"></script>
+  <script src="excel_secure_aggregation.js"></script>
   <script src="excel_quality_report_generator.js"></script>
 </head>
 <body>
 <script>
-  // ── History patch ────────────────────────────────────────────────────────────
-  // Office.js hijacks window.history; Flutter also tries to use it.
-  // Replace the whole object with a no-op stub so neither side crashes.
   function patchHistory() {
     var noop = function () {};
     var fakeHistory = {
@@ -46,28 +44,17 @@
     } catch (e) {}
   }
 
-  // Patch before Office.js runs
   patchHistory();
 
-  // ── Office bootstrap ─────────────────────────────────────────────────────────
   Office.onReady(function (info) {
-    // Patch again — Office.js may restore history during init
     patchHistory();
-
-    // Signal excel_helper.js that Office APIs are now safe to call
     if (typeof window._onOfficeReady === "function") {
       window._onOfficeReady();
     }
 
     console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
-
-    // Flag read by lib/core/interop/office_host_web.dart. info.host is only
-    // truthy when Office.js has actually attached to a real Office host
-    // (Excel, Word, etc.) — it stays undefined/null when the page loads in
-    // a plain browser tab, which is how we distinguish the two at runtime.
     window.__isOfficeHost = !!(info && info.host);
 
-    // ── Load Flutter only AFTER Office is ready ──────────────────────────────
     var script = document.createElement("script");
     script.src = "flutter_bootstrap.js";
     script.onload = function () {
