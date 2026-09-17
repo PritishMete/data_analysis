@@ -46,8 +46,11 @@ async function run() {
   ]);
 
   const salesPhrase = await execute(source, 'What is the total sales by region?');
-  assert.strictEqual(salesPhrase.success, false, 'Sales must not silently choose between Sales Amount and Revenue Generated.');
-  assert.match(salesPhrase.error, /ambiguous/i);
+  assert.strictEqual(salesPhrase.success, true, 'Sales intent should prefer the sales semantic family over revenue.');
+  assert.strictEqual(salesPhrase.operation.measure, 'Sales Amount');
+  assert.deepStrictEqual(clone(salesPhrase.operation.rows), [
+    { Region: 'East', sum: 450 }, { Region: 'West', sum: 400 }, { Region: 'North', sum: 300 },
+  ]);
 
   const missingNumeric = await execute([
     ['City', 'Revenue'], ['Delhi', '100'], ['Delhi', 'bad'], ['Mumbai', ''], ['Mumbai', 200], ['Kolkata', null],
