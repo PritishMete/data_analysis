@@ -1,10 +1,13 @@
 // Extension of the existing secure Excel taskpane engine for generic analytical
-// aggregations. It runs after excel_secure_query.js and delegates all existing
-// grouped-count/quality requests to that engine; only aggregation requests are
-// handled here. No network or workbook mutation is performed.
+// aggregations. It runs after excel_secure_query.js and delegates existing
+// grouped-count/quality requests to that engine. No network or workbook mutation.
 (function () {
   const previousExecute = window.executeSecureExcelQuery;
-  function normalize(value) { return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' '); }
+
+  function normalize(value) {
+    return String(value ?? '').normalize('NFKC').toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  }
   function compact(value) { return normalize(value).replace(/\s+/g, ''); }
   function blank(value) { return value === null || value === undefined || String(value).trim() === ''; }
   function prepare(matrix) {
@@ -12,21 +15,34 @@
     const first = matrix.findIndex(r => Array.isArray(r) && r.some(v => !blank(v)));
     if (first < 0) return { headers: [], rows: [], headerIndex: -1 };
     const width = Math.max(0, ...matrix.slice(first).filter(Array.isArray).map(r => r.length));
-    const rows = matrix.slice(first).filter(Array.isArray).map(r => { const out = Array.from(r); while (out.length < width) out.push(''); return out.slice(0, width); });
+    const rows = matrix.slice(first).filter(Array.isArray).map(r => {
+      const out = Array.from(r); while (out.length < width) out.push(''); return out.slice(0, width);
+    });
     if (rows.length < 2 || width === 0) return { headers: [], rows: [], headerIndex: -1 };
     return { headers: rows[0].map(v => String(v ?? '').trim()), rows: rows.slice(1).filter(r => !r.every(blank)), headerIndex: first };
   }
-  function infos(headers) { return headers.map((name, i) => ({ i, name, n: normalize(name), c: compact(name) })).filter(x => x.name); }
+  function infos(headers) {
+    return headers.map((name, i) => ({ i, name, n: normalize(name), c: compact(name) })).filter(x => x.name);
+  }
 
-  function resolve(headers, requested) {
+  const semanticAliases = {
+    city: ['city', 'city name', 'town', 'municipality', 'locality'],
+    region: ['region', 'region name', 'state', 'state name', 'province', 'area'],
+    country: ['country', 'country name', 'nation'],
+    category: ['category', 'category name', 'type', 'class', 'classification'],
+    rating: ['rating', 'average rating', 'aggregate rating', 'score', 'rating score'],
+    price: ['price', 'unit price', 'sale price', 'selling price'],
+    revenue: ['revenue', 'total revenue', 'revenue amount', 'revenue generated', 'generated revenue'],
+    sales: ['sales', 'total sales', 'sales amount', 'sale amount', 'total sales amount'],
+    quantity: ['quantity', 'qty', 'units sold', 'units', 'number sold'],
+    unitPrice: ['unit price', 'selling price', 'sale price', 'price per unit']
+  };
+
+  function directResolve(headers, requested, allowedAliases) {
     const wanted = normalize(requested);
     if (!wanted) return { index: -1, requested: '', candidates: [] };
     const list = infos(headers);
-    let hits = list.filter(x => x.n === wanted);
-    if (hits.length === 1) return { index: hits[0].i, requested, candidates: hits };
-    if (hits.length > 1) return { index: -1, requested, candidates: hits };
-    const wantedCompact = compact(wanted);
-    hits = list.filter(x => x.c === wantedCompact);
+    let hits = list.filter(x => x.n === wanted || x.c === compact(wanted));
     if (hits.length === 1) return { index: hits[0].i, requested, candidates: hits };
     if (hits.length > 1) return { index: -1, requested, candidates: hits };
     const variants = new Set([wanted]);
@@ -35,36 +51,87 @@
     hits = list.filter(x => variants.has(x.n));
     if (hits.length === 1) return { index: hits[0].i, requested, candidates: hits };
     if (hits.length > 1) return { index: -1, requested, candidates: hits };
+    if (allowedAliases) {
+      hits = list.filter(x => allowedAliases.includes(x.n));
+      if (hits.length === 1) return { index: hits[0].i, requested, candidates: hits };
+      if (hits.length > 1) return { index: -1, requested, candidates: hits };
+    }
+    return { index: -1, requested, candidates: [] };
+  }
 
-    const aliases = {
-      city: ['city', 'city name', 'city_name', 'town', 'municipality', 'locality'],
-      region: ['region', 'region name', 'state', 'state name', 'province', 'area'],
-      country: ['country', 'country name', 'nation'],
-      category: ['category', 'category name', 'type', 'class', 'classification'],
-      price: ['price', 'unit price', 'sale price', 'selling price', 'amount'],
-      amount: ['amount', 'sales amount', 'sale amount', 'total amount', 'value', 'revenue', 'sales'],
-      rating: ['rating', 'average rating', 'aggregate rating', 'score', 'rating score'],
-    };
-    for (const key of Object.keys(aliases)) {
-      if (variants.has(key) || aliases[key].some(alias => variants.has(alias))) {
-        hits = list.filter(x => aliases[key].includes(x.n));
-        if (hits.length === 1) return { index: hits[0].i, requested, candidates: hits };
-        if (hits.length > 1) return { index: -1, requested, candidates: hits };
+  function resolveGroup(headers, requested) {
+    const wanted = normalize(requested);
+    for (const key of Object.keys(semanticAliases)) {
+      if (key === 'revenue' || key === 'sales' || key === 'quantity' || key === 'unitPrice') continue;
+      if (wanted === key || semanticAliases[key].includes(wanted)) {
+        return directResolve(headers, wanted, semanticAliases[key]);
       }
     }
-
+    const direct = directResolve(headers, requested);
+    if (direct.index >= 0 || direct.candidates.length > 1) return direct;
     const stop = new Set(['the','a','an','of','by','per','each','has','have','with','for','restaurant','restaurants','value','values','column','field']);
     const tokens = wanted.split(' ').filter(t => t.length >= 2 && !stop.has(t));
-    const scored = list.map(x => { const xt = new Set(x.n.split(' ')); let score = 0; for (const t of tokens) if (xt.has(t)) score += 3; for (const t of tokens) if (x.n.includes(t)) score += 1; return { ...x, score }; }).filter(x => x.score > 0).sort((a,b) => b.score - a.score);
+    const scored = infos(headers).map(x => {
+      const xt = new Set(x.n.split(' ')); let score = 0;
+      for (const t of tokens) if (xt.has(t)) score += 3;
+      for (const t of tokens) if (x.n.includes(t)) score += 1;
+      return { ...x, score };
+    }).filter(x => x.score > 0).sort((a,b) => b.score - a.score);
     if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score)) return { index: scored[0].i, requested, candidates: [scored[0]] };
-    if (scored.length) return { index: -1, requested, candidates: scored.filter(x => x.score === scored[0].score) };
+    return { index: -1, requested, candidates: scored.length ? scored.filter(x => x.score === scored[0].score) : [] };
+  }
+
+  function revenueIntent(text) {
+    const q = normalize(text);
+    return /\b(?:revenue|sales|sale)\b/.test(q);
+  }
+
+  // Revenue/sales resolution is deliberately restricted to revenue/sales
+  // semantics. It must never fall through to price, rating, votes, or score.
+  function resolveRevenue(headers, requested) {
+    const wanted = normalize(requested);
+    const revenueWords = /\b(?:revenue|sales|sale)\b/.test(wanted);
+    const list = infos(headers);
+    const candidates = list.filter(x =>
+      semanticAliases.revenue.includes(x.n) || semanticAliases.sales.includes(x.n) ||
+      /(?:^| )(?:revenue|sales|sale)(?: |$)/.test(x.n) ||
+      /(?:revenue|sales|sale)(?:amount|total|generated)/.test(x.c)
+    );
+    const exact = list.filter(x => x.n === wanted || x.c === compact(wanted));
+    if (exact.length === 1 && revenueWords) return { index: exact[0].i, requested, candidates: exact };
+    if (exact.length > 1) return { index: -1, requested, candidates: exact };
+    if (candidates.length === 1) return { index: candidates[0].i, requested, candidates: candidates };
+    if (candidates.length > 1) {
+      // Prefer a literal revenue header for a revenue request only when there
+      // is no competing revenue/sales semantic column. Otherwise report ambiguity.
+      const literalRevenue = candidates.filter(x => /\brevenue\b/.test(x.n));
+      if (/\brevenue\b/.test(wanted) && literalRevenue.length === 1 && candidates.length === 1) return { index: literalRevenue[0].i, requested, candidates: literalRevenue };
+      return { index: -1, requested, candidates };
+    }
     return { index: -1, requested, candidates: [] };
+  }
+
+  function resolveMeasure(headers, requested, query) {
+    if (revenueIntent(query) || revenueIntent(requested)) return resolveRevenue(headers, requested);
+    const wanted = normalize(requested);
+    for (const key of ['rating','price']) {
+      if (wanted === key || semanticAliases[key].includes(wanted)) return directResolve(headers, wanted, semanticAliases[key]);
+    }
+    return directResolve(headers, requested);
+  }
+
+  function resolveDerivedRevenueInputs(headers) {
+    const quantity = directResolve(headers, 'quantity', semanticAliases.quantity);
+    const unitPrice = directResolve(headers, 'unit price', semanticAliases.unitPrice);
+    return { quantity, unitPrice };
   }
 
   function looksLikeAggregation(query) {
     const q = normalize(query);
-    return /\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom)\b/.test(q) && /\b(?:by|per|each|group(?:ed)?\s+by|which|what)\b/.test(q);
+    return /\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom)\b/.test(q) &&
+      /\b(?:by|per|each|group(?:ed)?\s+by|which|what)\b/.test(q);
   }
+
   function parse(query) {
     const q = normalize(query);
     let mode = 'average';
@@ -85,45 +152,121 @@
     groupText = groupText.replace(/^(the|a|an)\s+/, '').trim();
     let measureText = '';
     if (ranked) measureText = ranked[2].trim().replace(/\b(?:highest|lowest|maximum|minimum)\s+/, '').replace(/\b(?:average|avg|mean|sum|total|count)\b\s*/, '').trim();
-    else if (by) { const beforeBy = q.slice(0, by.index).trim(); measureText = beforeBy.replace(/^which\s+.+?\s+(?:has|have)\s+/, '').replace(/^what\s+is\s+/, '').replace(/^(show|calculate|give|find|report)\s+/, '').replace(/\b(?:top|bottom)\s+\d+\s+/, '').replace(/\b(?:highest|lowest|maximum|minimum)\s+/, '').replace(/\b(?:average|avg|mean|sum|total|count)\b\s*/, '').trim(); }
-    else { const has = q.match(/\b(?:has|have|with)\s+(.+?)(?:\?|$)/); if (has) measureText = has[1].replace(/^(the|a|an)\s+/, '').trim(); }
+    else if (by) {
+      const beforeBy = q.slice(0, by.index).trim();
+      measureText = beforeBy.replace(/^which\s+.+?\s+(?:has|have)\s+/, '').replace(/^what\s+is\s+/, '')
+        .replace(/^(show|calculate|give|find|report)\s+/, '').replace(/\b(?:top|bottom)\s+\d+\s+/, '')
+        .replace(/\b(?:highest|lowest|maximum|minimum)\s+/, '').replace(/\b(?:average|avg|mean|sum|total|count)\b\s*/, '').trim();
+    } else {
+      const has = q.match(/\b(?:has|have|with)\s+(.+?)(?:\?|$)/);
+      if (has) measureText = has[1].replace(/^(the|a|an)\s+/, '').trim();
+    }
     return { mode, direction, limit, groupText, measureText };
   }
-  function numeric(value) { if (typeof value === 'number' && Number.isFinite(value)) return value; if (typeof value !== 'string') return null; const cleaned = value.trim().replace(/,/g, ''); if (!cleaned) return null; const n = Number(cleaned); return Number.isFinite(n) ? n : null; }
+
+  function numeric(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string') return null;
+    const cleaned = value.trim().replace(/,/g, ''); if (!cleaned) return null;
+    const n = Number(cleaned); return Number.isFinite(n) ? n : null;
+  }
+
+  function revenueUnavailable(diagnostics, derived) {
+    const reason = 'Revenue cannot be calculated from this worksheet because it has no revenue or sales-amount column and no sufficient transaction data.';
+    diagnostics.revenue_resolution = 'unavailable';
+    diagnostics.derived_revenue = false;
+    diagnostics.revenue_inputs = {
+      quantity: derived.quantity.index >= 0 ? derived.quantity.name : null,
+      unit_price: derived.unitPrice.index >= 0 ? derived.unitPrice.name : null
+    };
+    return { success:false, route:'operation', operation:{action:'aggregate', aggregation:'sum'}, error:reason, local_secure:true, diagnostics, source_mutated:false };
+  }
 
   function aggregate(matrix, query) {
     const prepared = prepare(matrix);
-    const diagnostics = { input_rows: Array.isArray(matrix) ? matrix.length : 0, input_columns: Array.isArray(matrix) ? Math.max(0, ...matrix.filter(Array.isArray).map(r => r.length)) : 0, header_index: prepared.headerIndex, header_count: prepared.headers.filter(Boolean).length, data_rows: prepared.rows.length, aggregation_resolution: 'pending', source_mutated: false };
+    const diagnostics = {
+      input_rows: Array.isArray(matrix) ? matrix.length : 0,
+      input_columns: Array.isArray(matrix) ? Math.max(0, ...matrix.filter(Array.isArray).map(r => r.length)) : 0,
+      header_index: prepared.headerIndex, header_count: prepared.headers.filter(Boolean).length,
+      data_rows: prepared.rows.length, aggregation_resolution: 'pending', source_mutated: false
+    };
     if (!prepared.headers.length || !prepared.rows.length) return { success:false, route:'operation', error:'Dataset is empty or no worksheet header/data row could be resolved.', local_secure:true, diagnostics, source_mutated:false };
     const spec = parse(query);
-    const group = resolve(prepared.headers, spec.groupText);
+    const group = resolveGroup(prepared.headers, spec.groupText);
     diagnostics.group_requested = spec.groupText;
     diagnostics.group_resolution = group.index >= 0 ? 'resolved' : (group.candidates.length > 1 ? 'ambiguous' : 'not_found');
-    if (group.index < 0) { const detail = group.candidates.length > 1 ? `Grouping column "${spec.groupText}" is ambiguous; candidates: ${group.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve grouping column "${spec.groupText || 'requested field'}" from the current worksheet schema.`; return { success:false, route:'operation', operation:{action:'aggregate', candidates:group.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false }; }
+    if (group.index < 0) {
+      const detail = group.candidates.length > 1 ? `Grouping column "${spec.groupText}" is ambiguous; candidates: ${group.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve grouping column "${spec.groupText || 'requested field'}" from the current worksheet schema.`;
+      return { success:false, route:'operation', operation:{action:'aggregate', candidates:group.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false };
+    }
     diagnostics.resolved_group_column = prepared.headers[group.index];
-    let measure = { index: -1, requested: spec.measureText, candidates: [] };
+
+    let measure = { index:-1, requested:spec.measureText, candidates:[] };
+    let derivedRevenue = false;
+    let derivedInputs = { quantity:{index:-1}, unitPrice:{index:-1} };
     if (spec.mode !== 'count') {
-      measure = resolve(prepared.headers, spec.measureText);
+      measure = resolveMeasure(prepared.headers, spec.measureText, query);
       diagnostics.measure_resolution = measure.index >= 0 ? 'resolved' : (measure.candidates.length > 1 ? 'ambiguous' : 'not_found');
       diagnostics.measure_requested = spec.measureText;
-      if (measure.index < 0) { const detail = measure.candidates.length > 1 ? `Measurement column "${spec.measureText}" is ambiguous; candidates: ${measure.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve measurement column "${spec.measureText || 'requested field'}" from the current worksheet schema.`; return { success:false, route:'operation', operation:{action:'aggregate', candidates:measure.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false }; }
-      diagnostics.resolved_measure_column = prepared.headers[measure.index];
+      if (measure.index < 0 && revenueIntent(query)) {
+        derivedInputs = resolveDerivedRevenueInputs(prepared.headers);
+        if (derivedInputs.quantity.index >= 0 && derivedInputs.unitPrice.index >= 0) {
+          derivedRevenue = true;
+          diagnostics.revenue_resolution = 'derived';
+          diagnostics.derived_revenue = true;
+          diagnostics.revenue_inputs = { quantity: prepared.headers[derivedInputs.quantity.index], unit_price: prepared.headers[derivedInputs.unitPrice.index] };
+        } else if (measure.candidates.length === 0) return revenueUnavailable(diagnostics, derivedInputs);
+      }
+      if (measure.index < 0 && !derivedRevenue) {
+        const detail = measure.candidates.length > 1 ? `Measurement column "${spec.measureText}" is ambiguous; candidates: ${measure.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve measurement column "${spec.measureText || 'requested field'}" from the current worksheet schema.`;
+        return { success:false, route:'operation', operation:{action:'aggregate', candidates:measure.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false };
+      }
+      if (measure.index >= 0) diagnostics.resolved_measure_column = prepared.headers[measure.index];
     } else diagnostics.measure_resolution = 'not_required';
+
     const groups = new Map();
-    for (const row of prepared.rows) { const key = blank(row[group.index]) ? null : row[group.index]; const mapKey = key === null ? '__NULL__' : `${typeof key}:${String(key)}`; if (!groups.has(mapKey)) groups.set(mapKey, { key, values: [], count: 0 }); const bucket = groups.get(mapKey); bucket.count++; if (measure.index >= 0) { const n = numeric(row[measure.index]); if (n !== null) bucket.values.push(n); } }
+    for (const row of prepared.rows) {
+      const key = blank(row[group.index]) ? null : row[group.index];
+      const mapKey = key === null ? '__NULL__' : `${typeof key}:${String(key)}`;
+      if (!groups.has(mapKey)) groups.set(mapKey, { key, values: [], count: 0 });
+      const bucket = groups.get(mapKey); bucket.count++;
+      if (spec.mode !== 'count') {
+        let n = null;
+        if (derivedRevenue) {
+          const quantity = numeric(row[derivedInputs.quantity.index]);
+          const price = numeric(row[derivedInputs.unitPrice.index]);
+          if (quantity !== null && price !== null) n = quantity * price;
+        } else n = numeric(row[measure.index]);
+        if (n !== null) bucket.values.push(n);
+      }
+    }
     const output = [];
-    for (const bucket of groups.values()) { let value = bucket.count; if (spec.mode !== 'count') { if (!bucket.values.length) continue; if (spec.mode === 'sum') value = bucket.values.reduce((a,b)=>a+b,0); else if (spec.mode === 'min') value = Math.min(...bucket.values); else if (spec.mode === 'max') value = Math.max(...bucket.values); else value = bucket.values.reduce((a,b)=>a+b,0) / bucket.values.length; } output.push({ key: bucket.key, value, count: bucket.count, valid_measurements: bucket.values.length }); }
-    output.sort((a,b) => spec.direction === 'asc' ? a.value - b.value : b.value - a.value);
+    for (const bucket of groups.values()) {
+      let value = bucket.count;
+      if (spec.mode !== 'count') {
+        if (!bucket.values.length) continue;
+        if (spec.mode === 'sum') value = bucket.values.reduce((a,b)=>a+b,0);
+        else if (spec.mode === 'min') value = Math.min(...bucket.values);
+        else if (spec.mode === 'max') value = Math.max(...bucket.values);
+        else value = bucket.values.reduce((a,b)=>a+b,0) / bucket.values.length;
+      }
+      output.push({ key:bucket.key, value, count:bucket.count, valid_measurements:bucket.values.length });
+    }
+    output.sort((a,b) => spec.direction === 'asc' ? a.value-b.value : b.value-a.value);
     const namedOutput = output.filter(x => x.key !== null);
     let selected = output;
     if (spec.limit !== null) selected = namedOutput.slice(0, spec.limit);
-    else if (/\b(?:highest|lowest|max(?:imum)?|min(?:imum)?)\b/.test(normalize(query))) { if (namedOutput.length) { const best = namedOutput[0].value; selected = namedOutput.filter(x => x.value === best); } }
-    const aggregateLabel = spec.mode === 'average' ? 'average' : spec.mode;
-    const valueColumn = aggregateLabel;
-    const rows = selected.map(x => ({ [prepared.headers[group.index]]: x.key, [valueColumn]: Number.isInteger(x.value) ? x.value : Number(x.value.toFixed(10)) }));
-    const columns = [prepared.headers[group.index], valueColumn];
+    else if (/\b(?:highest|lowest|max(?:imum)?|min(?:imum)?)\b/.test(normalize(query)) && namedOutput.length) {
+      const best = namedOutput[0].value; selected = namedOutput.filter(x => x.value === best);
+    }
+    const label = spec.mode === 'average' ? 'average' : spec.mode;
+    const rows = selected.map(x => ({ [prepared.headers[group.index]]: x.key, [label]: Number.isInteger(x.value) ? x.value : Number(x.value.toFixed(10)) }));
+    const columns = [prepared.headers[group.index], label];
     diagnostics.aggregation_resolution = 'resolved'; diagnostics.group_count = output.length; diagnostics.named_group_count = namedOutput.length; diagnostics.returned_group_count = rows.length; diagnostics.operation = `${spec.mode}_by_group`;
-    return { success:true, route:'operation', operation:{ action:'aggregate', group_by:[prepared.headers[group.index]], measure:measure.index >= 0 ? prepared.headers[measure.index] : null, aggregation:spec.mode, sort:spec.direction, limit:spec.limit, columns, rows, row_count:rows.length, source_mutated:false }, message:`Calculated ${aggregateLabel} by ${prepared.headers[group.index]} locally (${rows.length} result groups).`, local_secure:true, diagnostics, source_mutated:false };
+    return {
+      success:true, route:'operation', operation:{ action:'aggregate', group_by:[prepared.headers[group.index]], measure: derivedRevenue ? null : (measure.index >= 0 ? prepared.headers[measure.index] : null), derived_measure: derivedRevenue ? 'quantity * unit price' : null, aggregation:spec.mode, sort:spec.direction, limit:spec.limit, columns, rows, row_count:rows.length, source_mutated:false },
+      message:`Calculated ${label} by ${prepared.headers[group.index]} locally (${rows.length} result groups).`, local_secure:true, diagnostics, source_mutated:false
+    };
   }
 
   window.executeSecureExcelQuery = async function (optionsJson) {
@@ -135,6 +278,8 @@
       if (existingGroupedCount) return previousExecute(optionsJson);
       if (looksLikeAggregation(query)) return JSON.stringify(aggregate(options && Array.isArray(options.rows) ? options.rows : [], query));
       return previousExecute(optionsJson);
-    } catch (error) { return JSON.stringify({ success:false, route:'operation', error:`Local Excel operation failed: ${error}`, local_secure:true, source_mutated:false }); }
+    } catch (error) {
+      return JSON.stringify({ success:false, route:'operation', error:`Local Excel operation failed: ${error}`, local_secure:true, source_mutated:false });
+    }
   };
 })();
