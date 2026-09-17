@@ -1,0 +1,106 @@
+name: Excel Add-in Build and Deploy
+
+on:
+  push:
+    branches: [feature/data-workspace]
+    paths:
+      - 'flutter_detail_source/**'
+      - 'tools/verify_excel_deployment.py'
+      - '.github/workflows/excel-addin-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+
+    steps:
+      - name: Checkout source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter tests
+        run: flutter test
+
+      - name: Build Excel-enabled Flutter web app
+        run: flutter build web --release --base-href /data_analysis/
+
+      - name: Stamp deployed source commit
+        working-directory: .
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          index = Path('flutter_detail_source/build/web/index.html')
+          text = index.read_text(encoding='utf-8')
+          marker = '__INSIGHTFLOW_BUILD_COMMIT__'
+          commit = os.environ['SOURCE_COMMIT']
+          if marker not in text:
+              raise SystemExit(f'missing {marker} in generated index.html')
+          index.write_text(text.replace(marker, commit), encoding='utf-8')
+          PY
+
+      - name: Verify build contract
+        working-directory: .
+        run: |
+          python tools/verify_excel_deployment.py \
+            --directory flutter_detail_source/build/web \
+            --expected-commit "${{ github.sha }}"
+
+      - name: Publish build to gh-pages without force push
+        working-directory: .
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages:refs/remotes/origin/gh-pages
+          deploy_dir="$(mktemp -d)"
+          cleanup() {
+            git worktree remove --force "$deploy_dir" >/dev/null 2>&1 || true
+            rm -rf "$deploy_dir"
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$deploy_dir" origin/gh-pages
+          git -C "$deploy_dir" rm -r --ignore-unmatch .
+          find flutter_detail_source/build/web -mindepth 1 -maxdepth 1 -print0 | \
+            xargs -0 -I{} cp -a "{}" "$deploy_dir/"
+
+          git -C "$deploy_dir" add -A
+          if git -C "$deploy_dir" diff --cached --quiet; then
+            echo "No generated deployment changes."
+            exit 0
+          fi
+
+          git -C "$deploy_dir" -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Deploy Excel add-in ${SOURCE_COMMIT}"
+          git -C "$deploy_dir" push origin HEAD:gh-pages
+
+      - name: Verify live GitHub Pages taskpane
+        working-directory: .
+        run: |
+          python tools/verify_excel_deployment.py \
+            --url https://pritishmete.github.io/data_analysis/ \
+            --expected-commit "${{ github.sha }}" \
+            --retries 24 \
+            --delay 5
