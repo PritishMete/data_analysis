@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/data-workspace]
   pull_request:
     branches: [main]
   workflow_dispatch:
