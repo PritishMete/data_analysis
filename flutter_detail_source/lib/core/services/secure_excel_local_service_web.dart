@@ -22,6 +22,15 @@ class SecureExcelLocalService {
     final hasGrouping = RegExp(r'\b(?:each|per|by|group(?:ed)?\s+by)\b').hasMatch(lower);
     if (hasCount && hasGrouping) return true;
 
+    // Explicit synthetic/hypothetical worksheet requests are local write
+    // operations, not analytical queries. Keep them on the taskpane before
+    // the generic aggregation/remote rejection path.
+    final hasCreateVerb = RegExp(r'\b(?:create|add|generate|make|fill|populate)\b').hasMatch(lower);
+    final hasSyntheticIntent = RegExp(r'\b(?:hypothetical|hypothesis|synthetic|simulated|simulation|fake|sample)\b').hasMatch(lower) || RegExp(r'\bjust\s+fill\b').hasMatch(lower);
+    final hasColumnOrNumericTarget = RegExp(r'\b(?:column|field|numbers?|numeric|values?|amounts?)\b').hasMatch(lower);
+    final hasSyntheticDomain = RegExp(r'\b(?:revenue|sales?|amount|price|quantity|score|rating)\b').hasMatch(lower);
+    if (hasCreateVerb && hasSyntheticIntent && (hasColumnOrNumericTarget || hasSyntheticDomain)) return true;
+
     // Generic grouped analytics are handled by the same taskpane-local JS
     // engine. No data-dependent or restaurant-specific wording is required.
     final hasAggregation = RegExp(r'\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom)\b').hasMatch(lower);
