@@ -190,7 +190,15 @@ def detect_column_role(column_name: str, series: pd.Series) -> dict[str, Any]:
     confidence = name_score
     evidence: list[str] = []
 
-    if datetime_ratio >= 0.8:
+    # Identifier semantics must win over generic numeric semantics. Real-world
+    # Excel identifiers such as Restaurant ID and Outlet ID are frequently
+    # numeric, so waiting until the numeric branch would misclassify them.
+    identifier_name = name_role == "identifier" or bool(_name_tokens(column_name) & {"id", "identifier", "uid", "uuid"})
+    if identifier_name:
+        role = "identifier"
+        confidence = max(confidence, 0.95)
+        evidence.append("identifier-like column name")
+    elif datetime_ratio >= 0.8:
         role = "date"
         confidence = max(confidence, min(1.0, datetime_ratio))
         evidence.append("values parse as datetime")

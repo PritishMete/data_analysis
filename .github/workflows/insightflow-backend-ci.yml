@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/data-workspace]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,11 +26,13 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements-test.txt
+
+      - name: Run Data Workspace focused tests
+        run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
 
       - name: Run backend regression suite
         run: pytest -q

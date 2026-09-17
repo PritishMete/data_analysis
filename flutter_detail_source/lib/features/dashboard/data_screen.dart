@@ -19,6 +19,7 @@ import '../../core/interop/excel_interop.dart';
 import '../../core/interop/office_host.dart';
 import '../../core/services/file_upload_handler.dart';
 import '../../core/services/local_pipeline_service.dart';
+import '../../core/services/secure_excel_local_service.dart';
 import '../../core/security/outbound_privacy_guard.dart';
 import '../../core/security/privacy_mode.dart';
 import '../../models/transformation_result.dart';
@@ -1305,6 +1306,16 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }
   }
 
+  // Secure grouped-count and quality requests are claimed before the generic
+  // filter planner. Grouped analytics must never be interpreted as row filters.
+  Future<bool> _tryExecuteSecureExcelLocalQuery(String query) async {
+    if (!secureLocalOnly || !SecureExcelLocalService.supportsQuery(query)) {
+      return false;
+    }
+    await _executeSmartQuery(query);
+    return true;
+  }
+
   Future<bool> _tryExecuteLocalNaturalFilterQuery(String query) async {
     final text = query.trim();
     if (text.isEmpty) return false;
@@ -1511,6 +1522,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       r'\b(?:categorize|categorise|classification|classify|categorization|categorisation)\b',
       caseSensitive: false,
     ).hasMatch(lowerQuery);
+
+    // Secure worksheet analytics must win over generic filter interpretation.
+    final bool localSecureHandled = await _tryExecuteSecureExcelLocalQuery(query);
+    if (localSecureHandled) return;
 
     // Gemini is the primary natural-language planner. It receives only the
     // user query + detected column names; the workbook rows stay local. The
@@ -2714,6 +2729,107 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                 }
               : parsed,
         );
+        return;
+      }
+      if (secureLocalOnly && SecureExcelLocalService.supportsQuery(userText)) {
+        final String? jsonString = await _fetchSourceData();
+        if (jsonString == null || jsonString.isEmpty) {
+          throw "No data found. Select a range or load a file first.";
+        }
+        final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
+        if (rawRows.isEmpty || rawRows.first is! List) {
+          throw "Unnrecognised data shape — expected a 2D array from Excel or file.";
+        }
+        final rows = rawRows
+            .whereType<List<dynamic>>()
+            .where((r) => r.any((c) => c != null && c.toString().trim().isNotEmpty))
+            .toList();
+        final localResult = await SecureExcelLocalService.execute(
+          sourceRows: rows,
+          query: userText,
+        );
+        if (localResult['success'] != true) {
+          throw localResult['error']?.toString() ??
+              'Local secure Excel analysis failed.';
+        }
+        final operation = localResult['operation'] is Map
+            ? Map<String, dynamic>.from(localResult['operation'] as Map)
+            : <String, dynamic>{};
+        final action = operation['action']?.toString() ?? 'unknown';
+        if (action == 'quality_check' && operation['source_mutated'] == true) {
+          throw 'Local quality check unexpectedly reported source mutation.';
+        }
+
+        if (action == 'group') {
+          final columns = operation['columns'] is List
+              ? List<dynamic>.from(operation['columns'])
+              : <dynamic>[];
+          final resultRows = operation['rows'] is List
+              ? List<dynamic>.from(operation['rows'])
+              : <dynamic>[];
+          final tableText = _formatSqlResultAsText(columns, resultRows);
+          String sheetNote = "";
+          try {
+            final agentName = await suggestAgenticSheetName(
+              query: userText,
+              operation: "query_result",
+              context: {
+                "result_columns": columns.map((e) => e.toString()).toList(),
+              },
+            );
+            final sheetName = _sanitizeSheetName(
+              agentName ??
+                  _queryDerivedSheetName(userText, fallback: "Query_Result"),
+            );
+            final writeResult = await writeQueryResultToSheet(
+              json.encode({
+                "targetSheetName": sheetName,
+                "columns": columns,
+                "rows": resultRows,
+              }),
+            );
+            if (writeResult["success"] == true) {
+              sheetNote = "\n\n📄 Created and switched to sheet '$sheetName'.";
+              await refreshWorksheetNames();
+              await syncHeadersSilently();
+            } else {
+              sheetNote =
+                  "\n\n⚠️ Could not write results to a sheet: ${writeResult['error'] ?? 'unknown error'}";
+            }
+          } catch (e) {
+            sheetNote = "\n\n⚠️ Could not write results to a sheet: $e";
+          }
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": "${localResult['message'] ?? 'Here is what I found:'}\n\n$tableText$sheetNote",
+            });
+          });
+        } else {
+          final missing = operation['missing_by_column'] is Map
+              ? Map<String, dynamic>.from(operation['missing_by_column'] as Map)
+              : <String, dynamic>{};
+          final duplicate = operation['duplicate_identifier'] is Map
+              ? Map<String, dynamic>.from(operation['duplicate_identifier'] as Map)
+              : <String, dynamic>{};
+          final duplicateValues = duplicate['values'] is List
+              ? List<dynamic>.from(duplicate['values'])
+              : <dynamic>[];
+          final missingText = missing.isEmpty
+              ? 'Missing values: none'
+              : 'Missing values: ${missing.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
+          final duplicateText = duplicate['status'] == 'ok'
+              ? 'Duplicate ${duplicate['column'] ?? 'identifier'} values: ${duplicateValues.isEmpty ? 'none' : duplicateValues.join(', ')}\nDuplicate identifier rows: ${duplicate['duplicate_row_count'] ?? 0}'
+              : 'Duplicate identifier check: ${duplicate['status'] ?? 'not available'}';
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": "${localResult['message'] ?? 'Completed the data quality check locally.'}\n\n$missingText\n$duplicateText\nSource mutated: No",
+            });
+          });
+        }
         return;
       }
       if (secureLocalOnly) {
@@ -4070,7 +4186,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Excel/CSV rating cells are often exported as strings such as
       // `4.1/5`, `4.1 out of 5`, `Rated 4.1`, or `4,1`. Extract the first
       // meaningful numeric value so numeric comparisons work consistently.
-      s = s.replaceAll(RegExp(r'(?i)\bout\s+of\b'), '/');
+      s = s.replaceAll(
+        RegExp(r'\bout\s+of\b', caseSensitive: false),
+        '/',
+      );
       s = s.replaceAll(RegExp(r'[₹$€£\s]'), '');
       if (s.contains(',') && !s.contains('.'))
         s = s.replaceAll(',', '.');
