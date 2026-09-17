@@ -200,12 +200,13 @@
     }
 
     output.sort((a,b) => spec.direction === 'asc' ? a.value - b.value : b.value - a.value);
+    const namedOutput = output.filter(x => x.key !== null);
     let selected = output;
-    if (spec.limit !== null) selected = output.slice(0, spec.limit);
+    if (spec.limit !== null) selected = namedOutput.slice(0, spec.limit);
     else if (/\b(?:highest|lowest|max(?:imum)?|min(?:imum)?)\b/.test(normalize(query))) {
-      if (output.length) {
-        const best = output[0].value;
-        selected = output.filter(x => x.value === best);
+      if (namedOutput.length) {
+        const best = namedOutput[0].value;
+        selected = namedOutput.filter(x => x.value === best);
       }
     }
 
@@ -215,6 +216,7 @@
     const columns = [prepared.headers[group.index], valueColumn];
     diagnostics.aggregation_resolution = 'resolved';
     diagnostics.group_count = output.length;
+    diagnostics.named_group_count = namedOutput.length;
     diagnostics.returned_group_count = rows.length;
     diagnostics.operation = `${spec.mode}_by_group`;
     return {
