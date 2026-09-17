@@ -39,4 +39,9 @@ void main() {
       isFalse,
     );
   });
+
+  test('secure Excel local service is loopback-only', () {
+    expect(SecureExcelLocalService.baseUrl, 'http://127.0.0.1:8000');
+    expect(SecureExcelLocalService.baseUrl, isNot(contains('data-analysis-oajs.onrender.com')));
+  });
 }
