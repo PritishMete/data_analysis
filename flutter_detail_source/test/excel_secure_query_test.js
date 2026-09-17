@@ -39,9 +39,39 @@ async function run() {
       { City: 'Mumbai', count: 1 },
       { City: null, count: 2 },
     ]);
+    assert.strictEqual(result.diagnostics.group_resolution, 'resolved');
+    assert.strictEqual(result.diagnostics.resolved_group_column, 'City');
     assert.strictEqual(result.source_mutated, false);
     assert.ok(!JSON.stringify(result).includes('filter_rows'));
     assert.ok(!JSON.stringify(result).includes('Could not resolve filter column'));
+  }
+
+  // Header normalization: blank leading worksheet rows are not headers.
+  const leadingBlankRows = [
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ...rows,
+  ];
+  const leadingBlankResult = await execute(
+    leadingBlankRows,
+    'Show the number of restaurants in each city',
+  );
+  assert.strictEqual(leadingBlankResult.success, true);
+  assert.strictEqual(leadingBlankResult.diagnostics.header_index, 2);
+  assert.strictEqual(leadingBlankResult.diagnostics.header_count, 4);
+  assert.strictEqual(leadingBlankResult.operation.group_by[0], 'City');
+  assert.strictEqual(leadingBlankResult.source_mutated, false);
+
+  // Equivalent grouping headers are resolved without changing the original
+  // header spelling used in the result.
+  for (const header of ['City', 'city', 'City_Name', 'city name']) {
+    const matrix = rows.map((row, index) =>
+      index === 0 ? [row[0], row[1], header, row[3]] : row.slice(),
+    );
+    const result = await execute(matrix, 'Count restaurants by city');
+    assert.strictEqual(result.success, true, header);
+    assert.strictEqual(result.operation.group_by[0], header, header);
+    assert.strictEqual(result.operation.columns[0], header, header);
   }
 
   // Requested identifier resolution across realistic worksheet header forms.
@@ -64,6 +94,7 @@ async function run() {
     assert.strictEqual(result.operation.duplicate_identifier.column, header, header);
     assert.deepStrictEqual(result.operation.duplicate_identifier.values, [102], header);
     assert.strictEqual(result.operation.duplicate_identifier.duplicate_row_count, 2, header);
+    assert.strictEqual(result.diagnostics.identifier_resolution, 'resolved', header);
   }
 
   // Explicit compact identifier wording.
@@ -89,6 +120,7 @@ async function run() {
     ambiguous.operation.duplicate_identifier.candidates,
     ['Restaurant ID', 'restaurant_id'],
   );
+  assert.strictEqual(ambiguous.diagnostics.identifier_resolution, 'ambiguous');
 
   // Explicit requested identifier missing from the schema must be explained.
   const notFound = await execute(
@@ -105,6 +137,7 @@ async function run() {
   assert.ok(
     notFound.operation.duplicate_identifier.message.includes('restaurant id'),
   );
+  assert.strictEqual(notFound.diagnostics.identifier_resolution, 'not_found');
 
   // Read-only guarantee: input worksheet matrix is unchanged.
   assert.deepStrictEqual(rows, original);
