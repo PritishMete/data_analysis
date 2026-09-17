@@ -1306,6 +1306,16 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }
   }
 
+  // Secure grouped-count and quality requests are claimed before the generic
+  // filter planner. Grouped analytics must never be interpreted as row filters.
+  Future<bool> _tryExecuteSecureExcelLocalQuery(String query) async {
+    if (!secureLocalOnly || !SecureExcelLocalService.supportsQuery(query)) {
+      return false;
+    }
+    await _executeSmartQuery(query);
+    return true;
+  }
+
   Future<bool> _tryExecuteLocalNaturalFilterQuery(String query) async {
     final text = query.trim();
     if (text.isEmpty) return false;
@@ -1512,6 +1522,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       r'\b(?:categorize|categorise|classification|classify|categorization|categorisation)\b',
       caseSensitive: false,
     ).hasMatch(lowerQuery);
+
+    // Secure worksheet analytics must win over generic filter interpretation.
+    final bool localSecureHandled = await _tryExecuteSecureExcelLocalQuery(query);
+    if (localSecureHandled) return;
 
     // Gemini is the primary natural-language planner. It receives only the
     // user query + detected column names; the workbook rows stay local. The
@@ -2754,11 +2768,42 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               ? List<dynamic>.from(operation['rows'])
               : <dynamic>[];
           final tableText = _formatSqlResultAsText(columns, resultRows);
+          String sheetNote = "";
+          try {
+            final agentName = await suggestAgenticSheetName(
+              query: userText,
+              operation: "query_result",
+              context: {
+                "result_columns": columns.map((e) => e.toString()).toList(),
+              },
+            );
+            final sheetName = _sanitizeSheetName(
+              agentName ??
+                  _queryDerivedSheetName(userText, fallback: "Query_Result"),
+            );
+            final writeResult = await writeQueryResultToSheet(
+              json.encode({
+                "targetSheetName": sheetName,
+                "columns": columns,
+                "rows": resultRows,
+              }),
+            );
+            if (writeResult["success"] == true) {
+              sheetNote = "\n\n📄 Created and switched to sheet '$sheetName'.";
+              await refreshWorksheetNames();
+              await syncHeadersSilently();
+            } else {
+              sheetNote =
+                  "\n\n⚠️ Could not write results to a sheet: ${writeResult['error'] ?? 'unknown error'}";
+            }
+          } catch (e) {
+            sheetNote = "\n\n⚠️ Could not write results to a sheet: $e";
+          }
           setState(() {
             isSearchingChat = false;
             chatHistory.add({
               "sender": "system",
-              "text": "${localResult['message'] ?? 'Here is what I found:'}\n\n$tableText",
+              "text": "${localResult['message'] ?? 'Here is what I found:'}\n\n$tableText$sheetNote",
             });
           });
         } else {

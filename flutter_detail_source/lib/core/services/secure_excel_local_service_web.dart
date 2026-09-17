@@ -16,7 +16,8 @@ class SecureExcelLocalService {
     final hasCheckVerb = RegExp(r'\b(?:check|inspect|find|show|report|identify)\b').hasMatch(lower);
     final hasMissing = RegExp(r'\b(?:missing|null|blank|empty)\b').hasMatch(lower);
     final hasDuplicate = RegExp(r'\b(?:duplicate|duplicates|duplicated)\b').hasMatch(lower);
-    if (hasCheckVerb && hasMissing && hasDuplicate) return true;
+    final hasIdentifierReference = RegExp(r'\b(?:restaurant\s*ids?|restaurant[_ ]?identifier|duplicates?\s+[a-z0-9_]+\s+(?:values?|ids?))\b').hasMatch(lower);
+    if (hasCheckVerb && (hasMissing || hasDuplicate) && (hasMissing || hasIdentifierReference)) return true;
     final hasCount = RegExp(r'\b(?:count|how many|number of)\b').hasMatch(lower);
     final hasGrouping = RegExp(r'\b(?:each|per|by|group(?:ed)?\s+by)\b').hasMatch(lower);
     return hasCount && hasGrouping;
