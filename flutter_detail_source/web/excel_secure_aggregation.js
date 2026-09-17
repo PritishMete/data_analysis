@@ -235,6 +235,9 @@
     try {
       const options = typeof optionsJson === 'string' ? JSON.parse(optionsJson) : optionsJson;
       const query = String(options && options.query || '').trim();
+      const normalized = normalize(query);
+      const existingGroupedCount = /\b(?:count|how many|number of)\b/.test(normalized) && /\b(?:each|per|by|group(?:ed)?\s+by)\b/.test(normalized);
+      if (existingGroupedCount) return previousExecute(optionsJson);
       if (looksLikeAggregation(query)) return JSON.stringify(aggregate(options && Array.isArray(options.rows) ? options.rows : [], query));
       return previousExecute(optionsJson);
     } catch (error) {
