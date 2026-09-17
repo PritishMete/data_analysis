@@ -88,38 +88,39 @@
     if (!n) return false;
     if (semanticAliases.revenue.includes(n) || semanticAliases.sales.includes(n)) return true;
     if (/\brevenue\b/.test(n)) return true;
-    // "sales" is meaningful when used as the measure itself or with an
-    // amount/total/revenue/generated qualifier. Do not treat sale/sales price
-    // as revenue because it describes a price rather than realized sales.
     if (/^sales?$/.test(n)) return true;
     if (/\bsales?\b.*\b(?:amount|total|revenue|generated)\b/.test(n)) return true;
     if (/\b(?:amount|total|revenue|generated)\b.*\bsales?\b/.test(n)) return true;
     return false;
   }
 
-  function resolveRevenue(headers, requested) {
+  function revenueFamily(name) {
+    const n = normalize(name);
+    if (/\brevenue\b/.test(n)) return 'revenue';
+    if (/\bsales?\b/.test(n) && !/\b(?:price|rating|score|vote|votes)\b/.test(n)) return 'sales';
+    return null;
+  }
+
+  function resolveRevenue(headers, requested, query) {
     const wanted = normalize(requested);
     const list = infos(headers);
-    const candidates = list.filter(x => isRevenueSemanticHeader(x.name));
+    const intent = /\brevenue\b/.test(normalize(query || requested)) ? 'revenue' : 'sales';
+    const candidates = list.filter(x => isRevenueSemanticHeader(x.name) && revenueFamily(x.name) === intent);
     const exact = list.filter(x => x.n === wanted || x.c === compact(wanted));
-    const exactSemantic = exact.filter(x => isRevenueSemanticHeader(x.name));
-    if (exactSemantic.length === 1 && candidates.length === 1) return { index: exactSemantic[0].i, requested, candidates: exactSemantic };
+    const exactSemantic = exact.filter(x => isRevenueSemanticHeader(x.name) && revenueFamily(x.name) === intent);
+    if (exactSemantic.length === 1) return { index: exactSemantic[0].i, requested, candidates: exactSemantic };
     if (exactSemantic.length > 1 || candidates.length > 1) return { index: -1, requested, candidates };
 
-    // Natural-language extraction may produce a phrase rather than the exact
-    // header text. Prefer a unique header that contains the requested semantic
-    // phrase before considering the broader revenue/sales candidate set.
     const phraseHits = wanted ? list.filter(x => x.n.includes(wanted) || wanted.includes(x.n)) : [];
-    const phraseRevenueHits = phraseHits.filter(x => isRevenueSemanticHeader(x.name));
-    if (phraseRevenueHits.length === 1 && candidates.length === 1) return { index: phraseRevenueHits[0].i, requested, candidates: phraseRevenueHits };
-    if (phraseRevenueHits.length > 1 || candidates.length > 1) return { index: -1, requested, candidates: phraseRevenueHits.length > 1 ? phraseRevenueHits : candidates };
-
+    const phraseRevenueHits = phraseHits.filter(x => isRevenueSemanticHeader(x.name) && revenueFamily(x.name) === intent);
+    if (phraseRevenueHits.length === 1) return { index: phraseRevenueHits[0].i, requested, candidates: phraseRevenueHits };
+    if (phraseRevenueHits.length > 1) return { index: -1, requested, candidates: phraseRevenueHits };
     if (candidates.length === 1) return { index: candidates[0].i, requested, candidates };
     return { index: -1, requested, candidates: [] };
   }
 
   function resolveMeasure(headers, requested, query) {
-    if (revenueIntent(query) || revenueIntent(requested)) return resolveRevenue(headers, requested);
+    if (revenueIntent(query) || revenueIntent(requested)) return resolveRevenue(headers, requested, query);
     const wanted = normalize(requested);
     for (const key of ['rating','price']) {
       if (wanted === key || semanticAliases[key].includes(wanted)) return directResolve(headers, wanted, semanticAliases[key]);
