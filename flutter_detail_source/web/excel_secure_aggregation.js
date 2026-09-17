@@ -32,8 +32,8 @@
     category: ['category', 'category name', 'type', 'class', 'classification'],
     rating: ['rating', 'average rating', 'aggregate rating', 'score', 'rating score'],
     price: ['price', 'unit price', 'sale price', 'selling price'],
-    revenue: ['revenue', 'total revenue', 'revenue amount', 'revenue generated', 'generated revenue'],
-    sales: ['sales', 'total sales', 'sales amount', 'sale amount', 'total sales amount'],
+    revenue: ['revenue', 'total revenue', 'revenue amount', 'revenue generated', 'generated revenue', 'gross revenue', 'net revenue'],
+    sales: ['sales', 'total sales', 'sales amount', 'sale amount', 'total sales amount', 'sales revenue', 'sales generated'],
     quantity: ['quantity', 'qty', 'units sold', 'units', 'number sold'],
     unitPrice: ['unit price', 'selling price', 'sale price', 'price per unit']
   };
@@ -83,26 +83,36 @@
 
   // Revenue/sales resolution is deliberately restricted to revenue/sales
   // semantics. It must never fall through to price, rating, votes, or score.
+  function isRevenueSemanticHeader(name) {
+    const n = normalize(name);
+    if (!n) return false;
+    if (semanticAliases.revenue.includes(n) || semanticAliases.sales.includes(n)) return true;
+    if (/\brevenue\b/.test(n)) return true;
+    // "sales" is meaningful when used as the measure itself or with an
+    // amount/total/revenue/generated qualifier. Do not treat sale/sales price
+    // as revenue because it describes a price rather than realized sales.
+    if (/^sales?$/.test(n)) return true;
+    if (/\bsales?\b.*\b(?:amount|total|revenue|generated)\b/.test(n)) return true;
+    if (/\b(?:amount|total|revenue|generated)\b.*\bsales?\b/.test(n)) return true;
+    return false;
+  }
+
   function resolveRevenue(headers, requested) {
     const wanted = normalize(requested);
     const list = infos(headers);
     const exact = list.filter(x => x.n === wanted || x.c === compact(wanted));
-    if (exact.length === 1 && revenueIntent(wanted)) return { index: exact[0].i, requested, candidates: exact };
-    if (exact.length > 1) return { index: -1, requested, candidates: exact };
+    if (exact.length === 1 && revenueIntent(wanted) && isRevenueSemanticHeader(exact[0].name)) return { index: exact[0].i, requested, candidates: exact };
+    if (exact.length > 1) return { index: -1, requested, candidates: exact.filter(x => isRevenueSemanticHeader(x.name)) };
 
     // Natural-language extraction may produce a phrase rather than the exact
     // header text. Prefer a unique header that contains the requested semantic
     // phrase before considering the broader revenue/sales candidate set.
     const phraseHits = wanted ? list.filter(x => x.n.includes(wanted) || wanted.includes(x.n)) : [];
-    const phraseRevenueHits = phraseHits.filter(x => /(?:^| )(?:revenue|sales|sale)(?: |$)/.test(x.n) || /(?:revenue|sales|sale)/.test(x.c));
+    const phraseRevenueHits = phraseHits.filter(x => isRevenueSemanticHeader(x.name));
     if (phraseRevenueHits.length === 1) return { index: phraseRevenueHits[0].i, requested, candidates: phraseRevenueHits };
     if (phraseRevenueHits.length > 1) return { index: -1, requested, candidates: phraseRevenueHits };
 
-    const candidates = list.filter(x =>
-      semanticAliases.revenue.includes(x.n) || semanticAliases.sales.includes(x.n) ||
-      /(?:^| )(?:revenue|sales|sale)(?: |$)/.test(x.n) ||
-      /(?:revenue|sales|sale)(?:amount|total|generated)/.test(x.c)
-    );
+    const candidates = list.filter(x => isRevenueSemanticHeader(x.name));
     if (candidates.length === 1) return { index: candidates[0].i, requested, candidates };
     if (candidates.length > 1) return { index: -1, requested, candidates };
     return { index: -1, requested, candidates: [] };
@@ -183,7 +193,7 @@
     const group = resolveGroup(prepared.headers, spec.groupText);
     diagnostics.group_requested = spec.groupText; diagnostics.group_resolution = group.index >= 0 ? 'resolved' : (group.candidates.length > 1 ? 'ambiguous' : 'not_found');
     if (group.index < 0) {
-      const detail = group.candidates.length > 1 ? `Grouping column "${spec.groupText}" is ambiguous; candidates: ${group.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve grouping column "${spec.groupText || 'requested field'}" from the current worksheet schema.`;
+      const detail = group.candidates.length > 1 ? `Grouping column \"${spec.groupText}\" is ambiguous; candidates: ${group.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve grouping column \"${spec.groupText || 'requested field'}\" from the current worksheet schema.`;
       return { success:false, route:'operation', operation:{action:'aggregate', candidates:group.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false };
     }
     diagnostics.resolved_group_column = prepared.headers[group.index];
@@ -202,7 +212,7 @@
         } else if (measure.candidates.length === 0) return revenueUnavailable(diagnostics, derivedInputs);
       }
       if (measure.index < 0 && !derivedRevenue) {
-        const detail = measure.candidates.length > 1 ? `Measurement column "${spec.measureText}" is ambiguous; candidates: ${measure.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve measurement column "${spec.measureText || 'requested field'}" from the current worksheet schema.`;
+        const detail = measure.candidates.length > 1 ? `Measurement column \"${spec.measureText}\" is ambiguous; candidates: ${measure.candidates.map(x=>x.name).join(', ')}.` : `Could not resolve measurement column \"${spec.measureText || 'requested field'}\" from the current worksheet schema.`;
         return { success:false, route:'operation', operation:{action:'aggregate', candidates:measure.candidates.map(x=>x.name)}, error:detail, local_secure:true, diagnostics, source_mutated:false };
       }
       if (measure.index >= 0) diagnostics.resolved_measure_column = prepared.headers[measure.index];
