@@ -52,6 +52,9 @@ jobs:
       - name: Taskpane-local revenue safety tests
         run: node test/excel_secure_revenue_test.js
 
+      - name: Taskpane-local synthetic data tests
+        run: node test/excel_synthetic_data_test.js
+
       - name: Worksheet schema bridge tests
         run: node test/excel_schema_bridge_test.js
 
