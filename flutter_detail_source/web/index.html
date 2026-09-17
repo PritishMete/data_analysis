@@ -9,9 +9,11 @@
   <!-- Office.js MUST come first -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 
-  <!-- Local filter/condition engine must load before the Excel pipeline helper. -->
+  <!-- Local worksheet engines load before Flutter. Secure query execution is
+       entirely in-page and never posts workbook rows to a server. -->
   <script src="excel_data_processor.js"></script>
   <script src="excel_helper.js"></script>
+  <script src="excel_secure_query.js"></script>
   <script src="excel_quality_report_generator.js"></script>
 </head>
 <body>
