@@ -1,7 +1,7 @@
 """Verify the contract of the deployed Excel-enabled Flutter web build.
 
-This intentionally checks only public build assets and the deployment marker.
-It does not read workbook data or call the InsightFlow backend.
+This checks public build assets and the deployment marker only. It does not
+read workbook data or call the InsightFlow backend.
 """
 
 from __future__ import annotations
@@ -17,14 +17,15 @@ REQUIRED_INDEX_SNIPPETS = (
     'https://appsforoffice.microsoft.com/lib/1/hosted/office.js',
     'excel_data_processor.js',
     'excel_helper.js',
+    'excel_secure_query.js',
     'excel_quality_report_generator.js',
     'meta name="detail-analysis-build-id"',
 )
 
 REQUIRED_MAIN_SNIPPETS = (
-    "http://127.0.0.1:8000",
     "quality_check",
     "source_mutated",
+    "executeSecureExcelQuery",
 )
 
 
@@ -89,11 +90,19 @@ def _assert_live(base_url: str, expected_commit: str) -> None:
     for asset in (
         "excel_data_processor.js",
         "excel_helper.js",
+        "excel_secure_query.js",
         "excel_quality_report_generator.js",
     ):
         asset_text = _fetch(base + asset)
         if not asset_text.strip():
             raise AssertionError(f"live Excel helper asset is empty: {asset}")
+
+    secure_js = _fetch(base + "excel_secure_query.js")
+    if "fetch(" in secure_js or "XMLHttpRequest" in secure_js:
+        raise AssertionError("secure Excel query engine contains an external request primitive")
+    for snippet in ("quality_check", "group", "source_mutated"):
+        if snippet not in secure_js:
+            raise AssertionError(f"live secure query engine missing marker: {snippet}")
 
 
 def main() -> int:
