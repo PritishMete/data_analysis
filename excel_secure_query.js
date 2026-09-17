@@ -55,8 +55,9 @@ function _secureIdentifierResolution(headers, query) {
         if (named) requested = named[1].trim();
     }
     if (requested) {
-        const wanted = _secureNormalize(requested).replace(/\bids\b/g, "id");
-        const candidates = names.filter(x => x.n.replace(/\bids\b/g, "id") === wanted);
+        const compact = value => _secureNormalize(value).replace(/\s+/g, "").replace(/ids$/, "id");
+        const wanted = compact(requested);
+        const candidates = names.filter(x => compact(x.n) === wanted);
         return { index: candidates.length === 1 ? candidates[0].i : -1, requested, candidates };
     }
     const candidates = names.filter(x => /(^| )(restaurant )?(id|identifier)( |$)/.test(x.n));
