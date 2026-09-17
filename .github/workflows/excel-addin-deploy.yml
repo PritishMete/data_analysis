@@ -32,11 +32,19 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Flutter pub get
         run: flutter pub get
 
       - name: Flutter tests
         run: flutter test
+
+      - name: Taskpane-local secure query tests
+        run: node test/excel_secure_query_test.js
 
       - name: Build Excel-enabled Flutter web app
         run: flutter build web --release --base-href /data_analysis/
