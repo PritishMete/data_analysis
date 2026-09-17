@@ -49,6 +49,9 @@ jobs:
       - name: Taskpane-local aggregation tests
         run: node test/excel_secure_aggregation_test.js
 
+      - name: Taskpane-local revenue safety tests
+        run: node test/excel_secure_revenue_test.js
+
       - name: Worksheet schema bridge tests
         run: node test/excel_schema_bridge_test.js
 
