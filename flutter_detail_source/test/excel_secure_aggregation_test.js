@@ -25,14 +25,14 @@ async function run() {
   const original = clone(source);
 
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
-  assert.strictEqual(highest.success, true); assert.deepStrictEqual(clone(highest.operation.rows), [{ City: 'Kolkata', average: 4.5 }]);
+  assert.strictEqual(highest.success, true); assert.deepStrictEqual(clone(highest.operation.rows), [{ City: 'Kolkata', 'Average Aggregate rating': 4.5 }]);
   assert.strictEqual(highest.operation.measure, 'Aggregate rating');
   const average = await execute(source, 'What is the average rating by city?');
-  assert.deepStrictEqual(clone(average.operation.rows), [{ City: null, average: 5 }, { City: 'Kolkata', average: 4.5 }, { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 }]);
+  assert.deepStrictEqual(clone(average.operation.rows), [{ City: null, average: 5 }, { City: 'Kolkata', 'Average Aggregate rating': 4.5 }, { City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
   const top = await execute(source, 'Show the top 5 cities by average rating.');
-  assert.deepStrictEqual(clone(top.operation.rows), [{ City: 'Kolkata', average: 4.5 }, { City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 }]);
+  assert.deepStrictEqual(clone(top.operation.rows), [{ City: 'Kolkata', 'Average Aggregate rating': 4.5 }, { City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
   const lowest = await execute(source, 'Which city has the lowest average rating?');
-  assert.deepStrictEqual(clone(lowest.operation.rows), [{ City: 'Delhi', average: 4 }, { City: 'Mumbai', average: 4 }]);
+  assert.deepStrictEqual(clone(lowest.operation.rows), [{ City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
 
   const count = await execute(source, 'Show the number of restaurants in each city');
   assert.strictEqual(count.success, true); assert.strictEqual(count.operation.action, 'group');
@@ -44,18 +44,55 @@ async function run() {
     ['Pizza', 1200, 'Delhi'], ['Burger', 800, 'Mumbai'], ['Pizza', 300, 'Kolkata'],
     ['Pasta', 1500, 'Delhi'], ['Burger', 200, 'Kolkata'],
   ];
-  const productRevenue = await execute(productSource, 'Which products contribute the most to total revenue?');
+  const productSelection = await execute(productSource, 'Which products contribute the most to total revenue?');
+  assert.strictEqual(productSelection.success, true);
+  assert.strictEqual(productSelection.operation.action, 'rank_selection');
+  assert.strictEqual(productSelection.operation.sort, 'desc');
+  assert.strictEqual(productSelection.operation.available_count, 3);
+  const productRevenue = await execute(productSource, 'Which products contribute the most to total revenue? top 2');
   assert.strictEqual(productRevenue.success, true);
   assert.deepStrictEqual(clone(productRevenue.operation.rows), [
-    { Product: 'Pizza', sum: 1500 },
-    { Product: 'Pasta', sum: 1500 },
-    { Product: 'Burger', sum: 1000 },
+    { Product: 'Pizza', 'Total Revenue': 1500 },
+    { Product: 'Pasta', 'Total Revenue': 1500 },
+    { Product: 'Burger', 'Total Revenue': 1000 },
   ]);
   assert.strictEqual(productRevenue.operation.group_by[0], 'Product');
   assert.strictEqual(productRevenue.operation.measure, 'Revenue');
   assert.strictEqual(productRevenue.operation.aggregation, 'sum');
   assert.strictEqual(productRevenue.operation.sort, 'desc');
   assert.strictEqual(productRevenue.operation.hypothetical, false);
+
+  const bottomSelection = await execute(productSource, 'Which products contribute the least to total revenue?');
+  assert.strictEqual(bottomSelection.success, true);
+  assert.strictEqual(bottomSelection.operation.action, 'rank_selection');
+  assert.strictEqual(bottomSelection.operation.sort, 'asc');
+
+  const bottom10 = await execute(productSource, 'Show the bottom 10 products by revenue.');
+  assert.strictEqual(bottom10.success, true);
+  assert.strictEqual(bottom10.operation.limit, 10);
+  assert.deepStrictEqual(clone(bottom10.operation.rows), [
+    { Product: 'Burger', 'Total Revenue': 1000 },
+    { Product: 'Pasta', 'Total Revenue': 1500 },
+    { Product: 'Pizza', 'Total Revenue': 1500 },
+  ]);
+
+  const topFive = await execute(productSource, 'Show the top five products by revenue.');
+  assert.strictEqual(topFive.success, true);
+  assert.strictEqual(topFive.operation.limit, 5);
+
+  const custom20 = await execute(productSource, 'Show the top 20 products by revenue.');
+  assert.strictEqual(custom20.success, true);
+  assert.strictEqual(custom20.operation.rows.length, 3);
+
+  const allResults = await execute(productSource, 'Show the top all products by revenue.');
+  assert.strictEqual(allResults.success, true);
+  assert.strictEqual(allResults.operation.rows.length, 3);
+
+  const ties = [['Cuisine', 'Revenue'], ['Indian', 100], ['Chinese', 100], ['Italian', 50]];
+  const tiedTop = await execute(ties, 'Show the top 1 cuisines by revenue.');
+  assert.deepStrictEqual(clone(tiedTop.operation.rows), [{ Cuisine: 'Chinese', 'Total Revenue': 100 }]);
+  assert.match(tiedTop.diagnostics.tie_policy, /deterministically/i);
+  assert.deepStrictEqual(ties, [['Cuisine', 'Revenue'], ['Indian', 100], ['Chinese', 100], ['Italian', 50]]);
 
   const hypotheticalProductSource = [
     ['Product', 'Revenue (Hypothetical)'],
@@ -113,17 +150,17 @@ async function run() {
   const revenueOriginal = clone(revenueSource);
   const revenue = await execute(revenueSource, 'What is the total revenue generated by each city?');
   assert.strictEqual(revenue.success, true);
-  assert.deepStrictEqual(clone(revenue.operation.rows), [{ City: 'Mumbai', sum: 1250 }, { City: 'Delhi', sum: 300 }]);
+  assert.deepStrictEqual(clone(revenue.operation.rows), [{ City: 'Mumbai', 'Total Revenue': 1250 }, { City: 'Delhi', 'Total Revenue': 300 }]);
   assert.strictEqual(revenue.operation.measure, 'Revenue');
   assert.deepStrictEqual(revenueSource, revenueOriginal);
 
   const salesSource = [['City', 'Sales Amount'], ['Delhi', '100'], ['Delhi', 250], ['Mumbai', '1,000']];
   const sales = await execute(salesSource, 'What is the total sales amount by city?');
   assert.strictEqual(sales.success, true);
-  assert.deepStrictEqual(clone(sales.operation.rows), [{ City: 'Mumbai', sum: 1000 }, { City: 'Delhi', sum: 350 }]);
+  assert.deepStrictEqual(clone(sales.operation.rows), [{ City: 'Mumbai', 'Total Sales Amount': 1000 }, { City: 'Delhi', 'Total Sales Amount': 350 }]);
   const revenueFromSalesAmount = await execute(salesSource, 'What is the total revenue generated by each city?');
   assert.strictEqual(revenueFromSalesAmount.success, true);
-  assert.deepStrictEqual(clone(revenueFromSalesAmount.operation.rows), [{ City: 'Mumbai', sum: 1000 }, { City: 'Delhi', sum: 350 }]);
+  assert.deepStrictEqual(clone(revenueFromSalesAmount.operation.rows), [{ City: 'Mumbai', 'Total Sales Amount': 1000 }, { City: 'Delhi', 'Total Sales Amount': 350 }]);
 
   const derivedSource = [
     ['City', 'Quantity', 'Unit Price'],
@@ -132,7 +169,7 @@ async function run() {
   const derivedOriginal = clone(derivedSource);
   const derived = await execute(derivedSource, 'What is the total revenue generated by each city?');
   assert.strictEqual(derived.success, true);
-  assert.deepStrictEqual(clone(derived.operation.rows), [{ City: 'Delhi', sum: 350 }, { City: 'Mumbai', sum: 100 }]);
+  assert.deepStrictEqual(clone(derived.operation.rows), [{ City: 'Delhi', 'Total Revenue': 350 }, { City: 'Mumbai', 'Total Revenue': 100 }]);
   assert.strictEqual(derived.operation.derived_measure, 'quantity * unit price');
   assert.deepStrictEqual(derivedSource, derivedOriginal);
 
@@ -157,7 +194,7 @@ async function run() {
   const missingNumeric = [['City', 'Revenue'], ['Delhi', 100], ['Delhi', 'not available'], ['Mumbai', ''], ['Mumbai', '50']];
   const missingResult = await execute(missingNumeric, 'What is the total revenue generated by each city?');
   assert.strictEqual(missingResult.success, true);
-  assert.deepStrictEqual(clone(missingResult.operation.rows), [{ City: 'Delhi', sum: 100 }, { City: 'Mumbai', sum: 50 }]);
+  assert.deepStrictEqual(clone(missingResult.operation.rows), [{ City: 'Delhi', 'Total Revenue': 100 }, { City: 'Mumbai', 'Total Revenue': 50 }]);
 
   assert.ok(!aggregation.includes('fetch('));
   assert.ok(!aggregation.includes('XMLHttpRequest'));
