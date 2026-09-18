@@ -70,5 +70,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, isNull);
   });
-}
+  testWidgets('custom count rejects non-positive values and accepts a positive integer', (tester) async {
+    RankingLimitChoice? result;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: Builder(
+          builder: (context) => CupertinoButton(
+            onPressed: () async {
+              result = await RankingLimitDialog.show(
+                context: context,
+                descending: true,
+                groupingColumn: 'Cuisine',
+                availableCount: 4,
+              );
+            },
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
 
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '0');
+    await tester.tap(find.text('Use Custom'));
+    await tester.pump();
+    expect(find.text('Enter a positive integer.'), findsOneWidget);
+    expect(result, isNull);
+
+    await tester.enterText(find.byType(TextFormField), '37');
+    await tester.tap(find.text('Use Custom'));
+    await tester.pumpAndSettle();
+    expect(result?.limit, 37);
+    expect(result?.all, isFalse);
+  });
+}
