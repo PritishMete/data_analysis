@@ -88,13 +88,7 @@
       return { success: false, route: 'operation', error: 'Invalid synthetic-data range.', local_secure: true, source_mutated: false };
     }
 
-    const headers = sourceRows[0].map(v => String(v ?? '').trim());
-    const targetHeading = uniqueColumnHeading(headers, requested);
     const outputBase = String(options.outputSheetName || (revenue ? 'Hypothetical_Revenue' : 'Synthetic_Data')).trim();
-    const outputRows = sourceRows.map(row => Array.isArray(row) ? Array.from(row) : []);
-    outputRows[0].push(targetHeading);
-    const nextValue = generator({ min, max, format, seed });
-    for (let i = 1; i < outputRows.length; i++) outputRows[i].push(nextValue());
 
     try {
       const written = await Excel.run(async context => {
@@ -103,9 +97,28 @@
           ? workbook.worksheets.getItem(sourceSheetName)
           : workbook.worksheets.getActiveWorksheet();
         source.load('name');
+        const sourceRange = source.getUsedRange(true);
+        sourceRange.load('values');
         const sheets = workbook.worksheets;
         sheets.load('items/name');
         await context.sync();
+
+        // The synthetic output is a follow-up analysis source. Read the full
+        // used range of the source worksheet instead of the current selection
+        // so columns outside a selected range (for example Product) are not
+        // silently dropped from the hypothetical worksheet.
+        const workbookRows = Array.isArray(sourceRange.values)
+          ? sourceRange.values
+          : sourceRows;
+        if (!Array.isArray(workbookRows) || workbookRows.length < 2 || !Array.isArray(workbookRows[0])) {
+          throw new Error('The source worksheet does not contain a usable header and data range.');
+        }
+        const headers = workbookRows[0].map(v => String(v ?? '').trim());
+        const targetHeading = uniqueColumnHeading(headers, requested);
+        const outputRows = workbookRows.map(row => Array.isArray(row) ? Array.from(row) : []);
+        outputRows[0].push(targetHeading);
+        const nextValue = generator({ min, max, format, seed });
+        for (let i = 1; i < outputRows.length; i++) outputRows[i].push(nextValue());
 
         const existingNames = sheets.items.map(s => s.name);
         const existingOutputName = existingNames.find(name => String(name).toLowerCase() === outputBase.toLowerCase());
@@ -167,12 +180,12 @@
       return {
         success: true,
         route: 'operation',
-        operation: { action: 'synthetic_column', columns: [targetHeading], rows: [], hypothetical: revenue, synthetic: !revenue, created: !reused, already_exists: reused },
-        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + (reused ? ' ALREADY EXISTS: ' : ' CREATED: ') + written.sheetName + '. ' + targetHeading + ' contains locally generated values and is not actual business data.',
+        operation: { action: 'synthetic_column', columns: [written.column], rows: [], hypothetical: revenue, synthetic: !revenue, created: !reused, already_exists: reused },
+        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + (reused ? ' ALREADY EXISTS: ' : ' CREATED: ') + written.sheetName + '. ' + written.column + ' contains locally generated values and is not actual business data.',
         sheetName: written.sheetName,
         sourceSheetName: written.sourceSheetName,
         rowsWritten: written.rowsWritten,
-        generated_column: targetHeading,
+        generated_column: written.column,
         hypothetical: revenue,
         synthetic: !revenue,
         generation: { min, max, format, seed, distribution: 'uniform' },
