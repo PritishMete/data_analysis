@@ -64,6 +64,9 @@ jobs:
       - name: Native Excel chart tests
         run: node test/excel_native_chart_test.js
 
+      - name: Query-to-chart flow regression test
+        run: node test/excel_query_chart_flow_test.js
+
       - name: Build Excel-enabled Flutter web app
         run: flutter build web --release --base-href /data_analysis/
 
