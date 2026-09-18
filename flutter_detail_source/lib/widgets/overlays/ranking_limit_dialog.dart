@@ -33,8 +33,10 @@ class RankingLimitDialog {
       message:
           'Choose how many grouped results to display. ' + direction +
           ' results are ranked after aggregation. Equal-value ties use the group label as a deterministic tie-breaker, so the requested count is exact.',
-      content: StatefulBuilder(
-        builder: (dialogContext, setState) {
+      content: Material(
+        color: Colors.transparent,
+        child: StatefulBuilder(
+          builder: (dialogContext, setState) {
           final options = <int>[5, 10, 20];
           return Form(
             key: formKey,
@@ -94,7 +96,8 @@ class RankingLimitDialog {
               ],
             ),
           );
-        },
+          },
+        ),
       ),
       actions: [
         GlassDialogAction(label: 'Cancel', onPressed: () => Navigator.of(context).pop()),
