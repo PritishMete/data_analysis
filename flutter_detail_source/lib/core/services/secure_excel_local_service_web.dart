@@ -41,7 +41,7 @@ class SecureExcelLocalService {
 
     // Generic grouped analytics are handled by the same taskpane-local JS
     // engine. No data-dependent or restaurant-specific wording is required.
-    final hasAggregation = RegExp(r'\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom)\b').hasMatch(lower);
+    final hasAggregation = RegExp(r'\b(?:average|avg|mean|sum|total|count|minimum|min|maximum|max|highest|lowest|top|bottom|most|least|largest|smallest)\b').hasMatch(lower);
     final hasAnalyticGrouping = RegExp(r'\b(?:by|per|each|group(?:ed)?\s+by|which|what)\b').hasMatch(lower);
     return hasAggregation && hasAnalyticGrouping;
   }
