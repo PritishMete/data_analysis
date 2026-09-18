@@ -113,7 +113,7 @@
         range.values = outputRows;
 
         const idx = outputRows[0].length - 1;
-        range.getColumn(idx).format.autofitColumns();
+        out.getRangeByIndexes(0, idx, outputRows.length, 1).format.autofitColumns();
         out.getRangeByIndexes(1, idx, Math.max(1, outputRows.length - 1), 1).numberFormat = [[format === 'integer' ? '#,##0' : '#,##0.00']];
         out.getRangeByIndexes(0, idx, 1, 1).format.font.bold = true;
         out.getRangeByIndexes(0, 0, 1, outputRows[0].length).format.font.bold = true;
