@@ -5371,6 +5371,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      SecureExcelLocalService.registerDialogContext(() => context);
+    }
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
