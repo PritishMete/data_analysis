@@ -181,7 +181,7 @@
         success: true,
         route: 'operation',
         operation: { action: 'synthetic_column', columns: [written.column], rows: [], hypothetical: revenue, synthetic: !revenue, created: !reused, already_exists: reused },
-        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + (reused ? ' ALREADY EXISTS: ' : ' CREATED: ') + written.sheetName + '. ' + targetHeading + ' contains locally generated values and is not actual business data.',
+        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + (reused ? ' ALREADY EXISTS: ' : ' CREATED: ') + written.sheetName + '. ' + written.column + ' contains locally generated values and is not actual business data.',
         sheetName: written.sheetName,
         sourceSheetName: written.sourceSheetName,
         rowsWritten: written.rowsWritten,
