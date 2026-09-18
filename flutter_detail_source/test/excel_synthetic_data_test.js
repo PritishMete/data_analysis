@@ -4,10 +4,11 @@ const assert = require('assert');
 
 const synthetic = fs.readFileSync('web/excel_synthetic_data.js', 'utf8');
 const source = [['City', 'Restaurant ID'], ['Delhi', 1], ['Delhi', 2], ['Mumbai', 3]];
+const workbookSource = [['Product', 'City', 'Restaurant ID'], ['Pizza', 'Delhi', 1], ['Burger', 'Delhi', 2], ['Pasta', 'Mumbai', 3]];
 const original = JSON.parse(JSON.stringify(source));
 const sheets = [{ name: 'Restaurants', load() {} }];
 const createdWrites = [];
-const activeSheet = { name: 'Restaurants', load() {} };
+const activeSheet = { name: 'Restaurants', load() {}, getUsedRange() { return { values: workbookSource, load() {} }; } };
 const workbook = {
   worksheets: {
     items: sheets, load() {},
@@ -67,6 +68,7 @@ assert(!/\b(?:prompt|confirm|alert)\s*\(/.test(synthetic));
   assert.strictEqual(result.created, true);
   assert.strictEqual(result.already_exists, false);
   assert.deepStrictEqual(source, original);
+  assert.deepStrictEqual(sheets.find(s => s.name === 'Hypothetical_Revenue').__values[0], ['Product', 'City', 'Restaurant ID', 'Revenue (Hypothetical)']);
   assert.deepStrictEqual(createdWrites, ['Hypothetical_Revenue']);
   assert(sheets.some(s => String(s.name).startsWith('Hypothetical_Revenue')));
 
