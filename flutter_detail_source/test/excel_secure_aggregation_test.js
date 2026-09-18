@@ -115,8 +115,8 @@ async function run() {
   const restaurantHypothetical = await execute(restaurantHypotheticalSource, 'Which restaurants contribute the most to hypothetical revenue? top 5');
   assert.strictEqual(restaurantHypothetical.success, true);
   assert.deepStrictEqual(clone(restaurantHypothetical.operation.rows), [
-    { 'Restaurant Name': 'Cafe B', 'Total Hypothetical Revenue': 1400 },
     { 'Restaurant Name': 'Cafe A', 'Total Hypothetical Revenue': 1500 },
+    { 'Restaurant Name': 'Cafe B', 'Total Hypothetical Revenue': 1400 },
   ]);
   assert.strictEqual(restaurantHypothetical.operation.group_by[0], 'Restaurant Name');
   assert.strictEqual(restaurantHypothetical.operation.measure, 'Revenue (Hypothetical)');
