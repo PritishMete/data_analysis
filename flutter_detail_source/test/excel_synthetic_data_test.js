@@ -16,11 +16,17 @@ const workbook = {
     getItem(name) { const found = sheets.find(s => s.name === name); if (found) return found; throw new Error('missing worksheet'); },
     add(name) {
       const out = { name, getUsedRange() { return { values: this.__values || [], load() {} }; }, getRangeByIndexes() {
-        return {
-          values: null, numberFormat: null,
+        const range = {
+          numberFormat: null,
           format: { font: { bold: false }, autofitColumns() {} },
           getColumn() { return { format: { autofitColumns() {} } }; }
         };
+        Object.defineProperty(range, 'values', {
+          get() { return out.__values; },
+          set(value) { out.__values = value; },
+          configurable: true
+        });
+        return range;
       }, activate() {}, __values: null };
       sheets.push(out); createdWrites.push(name); return out;
     },
