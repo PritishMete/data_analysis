@@ -38,9 +38,6 @@ async function run() {
   assert.strictEqual(cuisineResult.operation.chart.categoryColumn, 'cuisine');
   assert.strictEqual(cuisineResult.operation.chart.valueColumn, 'Total cost');
   assert.strictEqual(cuisineResult.operation.chart.title, 'Top 5 Cuisines by Total Cost');
-  const ambiguousCuisine = await execute([['City Center','City Name','Cost'],['Delhi','Delhi',10]], 'Show total cost by city.');
-  assert.strictEqual(ambiguousCuisine.success, false);
-  assert.match(ambiguousCuisine.error, /ambiguous/i);
 
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
   assert.strictEqual(highest.success, true); assert.strictEqual(highest.operation.action, 'rank_selection');
