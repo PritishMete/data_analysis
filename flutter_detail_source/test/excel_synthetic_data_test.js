@@ -5,7 +5,7 @@ const assert = require('assert');
 const synthetic = fs.readFileSync('web/excel_synthetic_data.js', 'utf8');
 const source = [['City', 'Restaurant ID'], ['Delhi', 1], ['Delhi', 2], ['Mumbai', 3]];
 const original = JSON.parse(JSON.stringify(source));
-const sheets = [{ name: 'Restaurants' }];
+const sheets = [{ name: 'Restaurants', load() {} }];
 const createdWrites = [];
 const activeSheet = { name: 'Restaurants', load() {} };
 const workbook = {
@@ -55,7 +55,6 @@ assert(!/\b(?:prompt|confirm|alert)\s*\(/.test(synthetic));
     sourceSheetName: 'Restaurants', columnName: 'Revenue', min: 0, max: 1000,
     format: 'decimal', seed: 42, outputSheetName: 'Hypothetical_Revenue', revenue: true
   }));
-  console.log('SYNTH_RESULT_DEBUG', JSON.stringify(result));
   assert.strictEqual(result.success, true);
   assert.strictEqual(result.hypothetical, true);
   assert.strictEqual(result.source_mutated, false);
