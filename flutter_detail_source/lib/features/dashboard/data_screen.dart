@@ -31,6 +31,7 @@ import 'analyze_fab.dart';
 import 'execute_pipeline_fab.dart';
 import 'navigation_tabs.dart';
 import 'ai_report_model.dart';
+import '../../widgets/overlays/ranking_limit_dialog.dart';
 
 enum DataSourceMode { excel, uploadedFile, excelLive }
 
@@ -1304,6 +1305,42 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     } catch (_) {
       return null;
     }
+  }
+
+  String _applyRankingLimit(String query, RankingLimitChoice choice, bool descending) {
+    final suffix = choice.all ? ' all' : ' ' + (descending ? 'top ' : 'bottom ') + choice.limit.toString();
+    return query + suffix;
+  }
+
+  Future<bool> _handleRankingSelection({
+    required String originalQuery,
+    required Map<String, dynamic> operation,
+  }) async {
+    final groupBy = operation['group_by'] is List ? List<dynamic>.from(operation['group_by']) : <dynamic>[];
+    final groupingColumn = groupBy.isNotEmpty ? groupBy.first.toString() : 'results';
+    final availableCount = (operation['available_count'] as num?)?.toInt() ?? 0;
+    final descending = operation['sort']?.toString() != 'asc';
+    if (!mounted) return true;
+
+    final choice = await RankingLimitDialog.show(
+      context: context,
+      descending: descending,
+      groupingColumn: groupingColumn,
+      availableCount: availableCount,
+    );
+    if (!mounted) return true;
+    if (choice == null) {
+      setState(() {
+        isSearchingChat = false;
+        chatHistory.add({
+          'sender': 'system',
+          'text': 'Ranking cancelled. The original worksheet was not changed.',
+        });
+      });
+      return true;
+    }
+    await _executeSmartQuery(_applyRankingLimit(originalQuery, choice, descending));
+    return true;
   }
 
   // Secure grouped-count and quality requests are claimed before the generic
@@ -2756,6 +2793,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             ? Map<String, dynamic>.from(localResult['operation'] as Map)
             : <String, dynamic>{};
         final action = operation['action']?.toString() ?? 'unknown';
+        if (action == 'rank_selection') {
+          await _handleRankingSelection(
+            originalQuery: userText,
+            operation: operation,
+          );
+          return;
+        }
         if (action == 'quality_check' && operation['source_mutated'] == true) {
           throw 'Local quality check unexpectedly reported source mutation.';
         }
