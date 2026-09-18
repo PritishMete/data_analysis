@@ -74,6 +74,16 @@ class RankingLimitDialog {
                     closeWith(dialogContext, RankingLimitChoice.count(parsed));
                   },
                 ),
+                const SizedBox(height: 6),
+                GlassButton.custom(
+                  onTap: () {
+                    if (!(formKey.currentState?.validate() ?? false)) return;
+                    final parsed = int.parse(customController.text.trim());
+                    closeWith(dialogContext, RankingLimitChoice.count(parsed));
+                  },
+                  height: 44,
+                  child: const Text('Use Custom', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   availableCount == 0
