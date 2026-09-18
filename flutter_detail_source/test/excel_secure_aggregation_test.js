@@ -66,10 +66,38 @@ async function run() {
   assert.strictEqual(hypotheticalProductRevenue.operation.hypothetical, true);
   assert.match(hypotheticalProductRevenue.message, /HYPOTHETICAL REVENUE/i);
 
+  const restaurantHypotheticalSource = [
+    ['Restaurant Name', 'City', 'Revenue (Hypothetical)'],
+    ['Cafe A', 'Delhi', 900], ['Cafe B', 'Mumbai', 1400], ['Cafe A', 'Kolkata', 600],
+  ];
+  const restaurantHypothetical = await execute(restaurantHypotheticalSource, 'Which restaurants contribute the most to hypothetical revenue?');
+  assert.strictEqual(restaurantHypothetical.success, true);
+  assert.deepStrictEqual(clone(restaurantHypothetical.operation.rows), [
+    { 'Restaurant Name': 'Cafe B', sum: 1400 },
+    { 'Restaurant Name': 'Cafe A', sum: 1500 },
+  ]);
+  assert.strictEqual(restaurantHypothetical.operation.group_by[0], 'Restaurant Name');
+  assert.strictEqual(restaurantHypothetical.operation.measure, 'Revenue (Hypothetical)');
+  assert.strictEqual(restaurantHypothetical.operation.hypothetical, true);
+  assert.match(restaurantHypothetical.message, /HYPOTHETICAL REVENUE/i);
+
+  const restaurantIdHypothetical = [
+    ['Restaurant ID', 'Revenue (Hypothetical)'],
+    [101, 500], [202, 800], [101, 200],
+  ];
+  const restaurantIdResult = await execute(restaurantIdHypothetical, 'Which restaurants contribute the most to hypothetical revenue?');
+  assert.strictEqual(restaurantIdResult.success, true);
+  assert.deepStrictEqual(clone(restaurantIdResult.operation.rows), [
+    { 'Restaurant ID': 202, sum: 800 },
+    { 'Restaurant ID': 101, sum: 700 },
+  ]);
+  assert.strictEqual(restaurantIdResult.operation.group_by[0], 'Restaurant ID');
+  assert.strictEqual(restaurantIdResult.operation.hypothetical, true);
+
   const noProduct = [['City', 'Revenue'], ['Delhi', 100], ['Mumbai', 200]];
   const noProductResult = await execute(noProduct, 'Which products contribute the most to total revenue?');
   assert.strictEqual(noProductResult.success, false);
-  assert.match(noProductResult.error, /Could not resolve grouping column "products"/i);
+  assert.match(noProductResult.error, /does not contain product information/i);
   assert(!/requested field/i.test(noProductResult.error));
 
   const ambiguousProduct = [['Product', 'Product Name', 'Revenue'], ['Pizza', 'Pizza Classic', 100], ['Burger', 'Burger Deluxe', 200]];
