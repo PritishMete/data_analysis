@@ -107,7 +107,35 @@
         sheets.load('items/name');
         await context.sync();
 
-        const sheetName = uniqueSheetName(sheets.items.map(s => s.name), outputBase);
+        const existingNames = sheets.items.map(s => s.name);
+        const existingOutputName = existingNames.find(name => String(name).toLowerCase() === outputBase.toLowerCase());
+        if (existingOutputName) {
+          const existingOut = workbook.worksheets.getItem(existingOutputName);
+          const existingRange = existingOut.getUsedRange(true);
+          existingRange.load('values');
+          await context.sync();
+          const existingHeaders = Array.isArray(existingRange.values) && Array.isArray(existingRange.values[0])
+            ? existingRange.values[0].map(v => String(v ?? '').trim())
+            : [];
+          if (existingHeaders.some(h => h.toLowerCase() === targetHeading.toLowerCase())) {
+            existingOut.activate();
+            return {
+              sheetName: existingOutputName,
+              sourceSheetName: source.name,
+              rowsWritten: Math.max(0, existingRange.values.length - 1),
+              column: targetHeading,
+              created: false,
+              already_exists: true,
+            };
+          }
+          return {
+            conflict: true,
+            sheetName: existingOutputName,
+            error: `Output worksheet "${existingOutputName}" already exists but does not contain the requested generated column. No values were overwritten and no replacement sheet was created.`,
+          };
+        }
+
+        const sheetName = uniqueSheetName(existingNames, outputBase);
         const out = workbook.worksheets.add(sheetName);
         const range = out.getRangeByIndexes(0, 0, outputRows.length, outputRows[0].length);
         range.values = outputRows;
@@ -119,14 +147,28 @@
         out.getRangeByIndexes(0, 0, 1, outputRows[0].length).format.font.bold = true;
         out.activate();
         await context.sync();
-        return { sheetName, sourceSheetName: source.name, rowsWritten: outputRows.length - 1, column: targetHeading };
+        return { sheetName, sourceSheetName: source.name, rowsWritten: outputRows.length - 1, column: targetHeading, created: true, already_exists: false };
       });
 
+      if (written.conflict) {
+        return {
+          success: false,
+          route: 'operation',
+          operation: { action: 'synthetic_column', hypothetical: revenue, synthetic: !revenue },
+          error: written.error,
+          sheetName: written.sheetName,
+          local_secure: true,
+          source_mutated: false,
+          overwrite: false,
+          output_sheet_conflict: true
+        };
+      }
+      const reused = written.already_exists === true;
       return {
         success: true,
         route: 'operation',
-        operation: { action: 'synthetic_column', columns: [targetHeading], rows: [], hypothetical: revenue, synthetic: !revenue },
-        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + ' CREATED: ' + written.sheetName + '. ' + targetHeading + ' contains locally generated values and is not actual business data.',
+        operation: { action: 'synthetic_column', columns: [targetHeading], rows: [], hypothetical: revenue, synthetic: !revenue, created: !reused, already_exists: reused },
+        message: (revenue ? 'HYPOTHETICAL REVENUE' : 'SYNTHETIC DATA') + (reused ? ' ALREADY EXISTS: ' : ' CREATED: ') + written.sheetName + '. ' + targetHeading + ' contains locally generated values and is not actual business data.',
         sheetName: written.sheetName,
         sourceSheetName: written.sourceSheetName,
         rowsWritten: written.rowsWritten,
@@ -136,7 +178,9 @@
         generation: { min, max, format, seed, distribution: 'uniform' },
         local_secure: true,
         source_mutated: false,
-        overwrite: false
+        overwrite: false,
+        created: !reused,
+        already_exists: reused
       };
     } catch (error) {
       return { success: false, route: 'operation', error: String(error), local_secure: true, source_mutated: false };
