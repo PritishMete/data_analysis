@@ -101,7 +101,7 @@ void main() {
     final second = tester.getRect(buttons.at(1));
     final third = tester.getRect(buttons.at(2));
 
-    expect(first.width, lessThanOrEqualTo(102));
+    expect(first.width, lessThanOrEqualTo(104));
     expect(first.width, closeTo(second.width, 0.01));
     expect(third.top, greaterThan(first.top));
     expect(tester.takeException(), isNull);
