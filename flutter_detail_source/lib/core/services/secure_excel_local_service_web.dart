@@ -1,10 +1,17 @@
 import 'dart:convert';
 import 'dart:js_interop';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+
+import '../../core/interop/excel_interop_web.dart';
+import '../../widgets/overlays/synthetic_data_confirmation_dialog.dart';
 
 @JS('executeSecureExcelQuery')
 external JSPromise<JSString> _executeSecureExcelQuery(JSString optionsJson);
+
+@JS('executeSyntheticData')
+external JSPromise<JSString> _executeSyntheticData(JSString optionsJson);
 
 /// Secure Excel operations that execute entirely in the Office taskpane.
 /// No worksheet rows are sent to the Python backend or any remote service.
@@ -42,55 +49,52 @@ class SecureExcelLocalService {
     required List<List<dynamic>> sourceRows,
     required String query,
   }) async {
-    if (!kIsWeb) {
-      return {
-        'success': false,
-        'route': 'operation',
-        'error': 'Secure Excel worksheet operations require the Office web host.',
-      };
-    }
-    if (sourceRows.length < 2 || sourceRows.first.isEmpty) {
-      return {
-        'success': false,
-        'route': 'operation',
-        'error': 'Dataset is empty or has no header row.',
-      };
-    }
-
+    if (!kIsWeb) return {'success': false, 'route': 'operation', 'error': 'Secure Excel worksheet operations require the Office web host.'};
+    if (sourceRows.length < 2 || sourceRows.first.isEmpty) return {'success': false, 'route': 'operation', 'error': 'Dataset is empty or has no header row.'};
     try {
-      final encoded = jsonEncode({
-        'rows': sourceRows,
-        'query': query,
-      });
-      final response = await _executeSecureExcelQuery(encoded.toJS).toDart;
+      final lower = query.trim().toLowerCase();
+      final synthetic = RegExp(r'\b(?:create|add|generate|make|fill|populate)\b').hasMatch(lower) &&
+          (RegExp(r'\b(?:hypothetical|hypothesis|synthetic|simulated|simulation|fake|sample)\b').hasMatch(lower) || RegExp(r'\bjust\s+fill\b').hasMatch(lower)) &&
+          RegExp(r'\b(?:column|field|numbers?|numeric|values?|amounts?|revenue|sales?|amount|price|quantity|score|rating)\b').hasMatch(lower);
+      if (synthetic) return _executeSyntheticWithConfirmation(sourceRows: sourceRows, query: query);
+      final response = await _executeSecureExcelQuery(jsonEncode({'rows': sourceRows, 'query': query}).toJS).toDart;
       final decoded = jsonDecode(response.toDart);
-      if (decoded is Map<String, dynamic>) {
-        final diagnostics = decoded['diagnostics'];
-        if (diagnostics is Map) {
-          debugPrint(
-            '[SECURE EXCEL SCHEMA] rows=${diagnostics['data_rows'] ?? sourceRows.length - 1} '
-            'columns=${diagnostics['input_columns'] ?? sourceRows.first.length} '
-            'headers=${diagnostics['header_count'] ?? sourceRows.first.length} '
-            'headerIndex=${diagnostics['header_index'] ?? 0} '
-            'group=${diagnostics['group_resolution'] ?? 'n/a'} '
-            'measure=${diagnostics['measure_resolution'] ?? 'n/a'} '
-            'aggregation=${diagnostics['aggregation_resolution'] ?? 'n/a'} '
-            'identifier=${diagnostics['identifier_resolution'] ?? 'n/a'}',
-          );
-        }
-        return decoded;
-      }
-      return {
-        'success': false,
-        'route': 'operation',
-        'error': 'Local Excel engine returned an unexpected response.',
-      };
+      return decoded is Map<String, dynamic> ? decoded : {'success': false, 'route': 'operation', 'error': 'Local Excel engine returned an unexpected response.'};
     } catch (error) {
-      return {
-        'success': false,
-        'route': 'operation',
-        'error': 'Local Excel operation failed: $error',
-      };
+      return {'success': false, 'route': 'operation', 'error': 'Local Excel operation failed: $error'};
     }
+  }
+
+  static Future<Map<String, dynamic>> _executeSyntheticWithConfirmation({
+    required List<List<dynamic>> sourceRows,
+    required String query,
+  }) async {
+    final sourceSheet = await getActiveWorksheetName();
+    final normalized = query.toLowerCase();
+    final revenue = RegExp(r'\brevenue\b|\bsales?\s+(?:amount|revenue)\b').hasMatch(normalized);
+    final proposed = revenue ? 'Revenue' : (RegExp(r'\bsales?\b').hasMatch(normalized) ? 'Sales Amount' : 'Synthetic Value');
+    final result = await SyntheticDataConfirmationDialog.show(
+      context: _currentContext(),
+      sourceWorksheet: sourceSheet ?? 'Active worksheet',
+      proposedColumn: proposed,
+      defaultMin: 0,
+      defaultMax: revenue ? 100000 : 100,
+      defaultFormat: SyntheticNumberFormat.decimal,
+      proposedOutputWorksheet: revenue ? 'Hypothetical_Revenue' : 'Synthetic_Data',
+      existingColumn: sourceRows.first.any((v) => v?.toString().trim().toLowerCase() == proposed.toLowerCase()),
+    );
+    if (result == null) return {'success': false, 'route': 'operation', 'error': 'Synthetic data generation was cancelled before writing.', 'local_secure': true, 'source_mutated': false, 'cancelled': true};
+    final response = await _executeSyntheticData(jsonEncode({
+      'rows': sourceRows, 'query': query, 'sourceSheetName': sourceSheet,
+      'columnName': result.columnName, 'min': result.min, 'max': result.max,
+      'format': result.format == SyntheticNumberFormat.integer ? 'integer' : 'decimal',
+      'seed': result.seed, 'outputSheetName': result.outputWorksheet, 'revenue': revenue,
+    }).toJS).toDart;
+    final decoded = jsonDecode(response.toDart);
+    return decoded is Map<String, dynamic> ? decoded : {'success': false, 'route': 'operation', 'error': 'Synthetic Excel engine returned an unexpected response.'};
+  }
+
+  static BuildContext Function() _currentContext = () => throw StateError('SecureExcelLocalService dialog context has not been registered.');
+  static void registerDialogContext(BuildContext Function() contextProvider) => _currentContext = contextProvider;
   }
 }
