@@ -8,7 +8,7 @@ void main() {
   testWidgets('ranking selector exposes top options, all and custom input', (tester) async {
     RankingLimitChoice? result;
     await tester.pumpWidget(
-      CupertinoApp(
+      MaterialApp(
         home: Builder(
           builder: (context) => CupertinoButton(
             onPressed: () async {
@@ -45,7 +45,7 @@ void main() {
   testWidgets('bottom selector and cancellation do not modify the result choice', (tester) async {
     RankingLimitChoice? result;
     await tester.pumpWidget(
-      CupertinoApp(
+      MaterialApp(
         home: Builder(
           builder: (context) => CupertinoButton(
             onPressed: () async {
@@ -74,7 +74,7 @@ void main() {
   testWidgets('custom count rejects non-positive values and accepts a positive integer', (tester) async {
     RankingLimitChoice? result;
     await tester.pumpWidget(
-      CupertinoApp(
+      MaterialApp(
         home: Builder(
           builder: (context) => CupertinoButton(
             onPressed: () async {
