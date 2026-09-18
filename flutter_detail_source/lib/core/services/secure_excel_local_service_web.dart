@@ -6,12 +6,13 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/interop/excel_interop_web.dart';
 import '../../widgets/overlays/synthetic_data_confirmation_dialog.dart';
+import 'synthetic_data_result_decoder.dart';
 
 @JS('executeSecureExcelQuery')
 external JSPromise<JSString> _executeSecureExcelQuery(JSString optionsJson);
 
 @JS('executeSyntheticData')
-external JSPromise<JSString> _executeSyntheticData(JSString optionsJson);
+external JSPromise<JSAny?> _executeSyntheticData(JSString optionsJson);
 
 /// Secure Excel operations that execute entirely in the Office taskpane.
 /// No worksheet rows are sent to the Python backend or any remote service.
@@ -90,8 +91,7 @@ class SecureExcelLocalService {
       'format': result.format == SyntheticNumberFormat.integer ? 'integer' : 'decimal',
       'seed': result.seed, 'outputSheetName': result.outputWorksheet, 'revenue': revenue,
     }).toJS).toDart;
-    final decoded = jsonDecode(response.toDart);
-    return decoded is Map<String, dynamic> ? decoded : {'success': false, 'route': 'operation', 'error': 'Synthetic Excel engine returned an unexpected response.'};
+    return decodeSyntheticInteropValue(response.dartify());
   }
 
   static BuildContext Function() _currentContext = () => throw StateError('SecureExcelLocalService dialog context has not been registered.');

@@ -39,6 +39,45 @@ async function run() {
   const quality = await execute(source, 'Check for missing values and duplicate restaurant IDs');
   assert.strictEqual(quality.success, true); assert.strictEqual(quality.operation.action, 'quality_check');
 
+  const productSource = [
+    ['Product', 'Revenue', 'City'],
+    ['Pizza', 1200, 'Delhi'], ['Burger', 800, 'Mumbai'], ['Pizza', 300, 'Kolkata'],
+    ['Pasta', 1500, 'Delhi'], ['Burger', 200, 'Kolkata'],
+  ];
+  const productRevenue = await execute(productSource, 'Which products contribute the most to total revenue?');
+  assert.strictEqual(productRevenue.success, true);
+  assert.deepStrictEqual(clone(productRevenue.operation.rows), [
+    { Product: 'Pizza', sum: 1500 },
+    { Product: 'Pasta', sum: 1500 },
+    { Product: 'Burger', sum: 1000 },
+  ]);
+  assert.strictEqual(productRevenue.operation.group_by[0], 'Product');
+  assert.strictEqual(productRevenue.operation.measure, 'Revenue');
+  assert.strictEqual(productRevenue.operation.aggregation, 'sum');
+  assert.strictEqual(productRevenue.operation.sort, 'desc');
+  assert.strictEqual(productRevenue.operation.hypothetical, false);
+
+  const hypotheticalProductSource = [
+    ['Product', 'Revenue (Hypothetical)'],
+    ['Pizza', 1200], ['Burger', 800], ['Pizza', 300], ['Pasta', 1500],
+  ];
+  const hypotheticalProductRevenue = await execute(hypotheticalProductSource, 'Which products contribute the most to total revenue?');
+  assert.strictEqual(hypotheticalProductRevenue.success, true);
+  assert.strictEqual(hypotheticalProductRevenue.operation.hypothetical, true);
+  assert.match(hypotheticalProductRevenue.message, /HYPOTHETICAL REVENUE/i);
+
+  const noProduct = [['City', 'Revenue'], ['Delhi', 100], ['Mumbai', 200]];
+  const noProductResult = await execute(noProduct, 'Which products contribute the most to total revenue?');
+  assert.strictEqual(noProductResult.success, false);
+  assert.match(noProductResult.error, /Could not resolve grouping column "products"/i);
+  assert(!/requested field/i.test(noProductResult.error));
+
+  const ambiguousProduct = [['Product', 'Product Name', 'Revenue'], ['Pizza', 'Pizza Classic', 100], ['Burger', 'Burger Deluxe', 200]];
+  const ambiguousProductResult = await execute(ambiguousProduct, 'Which products contribute the most to total revenue?');
+  assert.strictEqual(ambiguousProductResult.success, false);
+  assert.match(ambiguousProductResult.error, /ambiguous/i);
+  assert.match(ambiguousProductResult.error, /Product/);
+
   const revenueSource = [
     ['City', 'Revenue', 'Aggregate rating', 'Votes'],
     ['Delhi', 100, 4.5, 20], ['Delhi', '200', 4.0, 10], ['Mumbai', '1,250', 3.9, 30], ['Kolkata', '', 4.2, 5],

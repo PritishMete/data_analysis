@@ -2760,7 +2760,30 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           throw 'Local quality check unexpectedly reported source mutation.';
         }
 
-        if (action == 'group') {
+        if (action == 'synthetic_column') {
+          final sheetName = localResult['sheetName']?.toString();
+          final columnName = localResult['generated_column']?.toString();
+          final hypothetical = localResult['hypothetical'] == true;
+          if (sheetName != null && sheetName.isNotEmpty) {
+            useActiveSelection = false;
+            selectedSourceSheet = sheetName;
+            activeSheetName = sheetName;
+          }
+          await refreshWorksheetNames();
+          await syncHeadersSilently();
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": "${localResult['message'] ?? 'Synthetic data was created successfully.'}"
+                  "\n\nWorksheet: \\$sheetName"
+                  "\nColumn: \\$columnName"
+                  "\nHypothetical: \\$hypothetical"
+                  "\nSource worksheet changed: No"
+                  "\nThe original worksheet remains unchanged. Retrying this request will reuse the existing protected output worksheet instead of creating a duplicate.",
+            });
+          });
+        } else if (action == 'group' || action == 'aggregate') {
           final columns = operation['columns'] is List
               ? List<dynamic>.from(operation['columns'])
               : <dynamic>[];

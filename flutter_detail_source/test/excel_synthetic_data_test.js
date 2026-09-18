@@ -6,21 +6,22 @@ const synthetic = fs.readFileSync('web/excel_synthetic_data.js', 'utf8');
 const source = [['City', 'Restaurant ID'], ['Delhi', 1], ['Delhi', 2], ['Mumbai', 3]];
 const original = JSON.parse(JSON.stringify(source));
 const sheets = [{ name: 'Restaurants' }];
+const createdWrites = [];
 const activeSheet = { name: 'Restaurants', load() {} };
 const workbook = {
   worksheets: {
     items: sheets, load() {},
     getActiveWorksheet() { return activeSheet; },
-    getItem(name) { if (name !== 'Restaurants') throw new Error('missing worksheet'); return activeSheet; },
+    getItem(name) { const found = sheets.find(s => s.name === name); if (found) return found; throw new Error('missing worksheet'); },
     add(name) {
-      const out = { name, getRangeByIndexes() {
+      const out = { name, getUsedRange() { return { values: [this.__values || []], load() {} }; }, getRangeByIndexes() {
         return {
           values: null, numberFormat: null,
           format: { font: { bold: false }, autofitColumns() {} },
           getColumn() { return { format: { autofitColumns() {} } }; }
         };
-      }, activate() {} };
-      sheets.push(out); return out;
+      }, activate() {}, __values: null };
+      sheets.push(out); createdWrites.push(name); return out;
     },
   },
 };
@@ -63,7 +64,34 @@ assert(!/\b(?:prompt|confirm|alert)\s*\(/.test(synthetic));
   assert.strictEqual(result.generation.max, 1000);
   assert.strictEqual(result.generation.seed, 42);
   assert.strictEqual(result.overwrite, false);
+  assert.strictEqual(result.created, true);
+  assert.strictEqual(result.already_exists, false);
   assert.deepStrictEqual(source, original);
+  assert.deepStrictEqual(createdWrites, ['Hypothetical_Revenue']);
   assert(sheets.some(s => String(s.name).startsWith('Hypothetical_Revenue')));
+
+  const existing = sheets.find(s => s.name === 'Hypothetical_Revenue');
+  existing.__values = [['City', 'Revenue (Hypothetical)'], ['Delhi', 100]];
+  const retry = await context.window.executeSyntheticData(JSON.stringify({
+    rows: source, query: 'ok create revenue column and just fill hypothesis numbers there',
+    sourceSheetName: 'Restaurants', columnName: 'Revenue', min: 0, max: 1000,
+    format: 'decimal', seed: 42, outputSheetName: 'Hypothetical_Revenue', revenue: true
+  }));
+  assert.strictEqual(retry.success, true);
+  assert.strictEqual(retry.already_exists, true);
+  assert.strictEqual(retry.created, false);
+  assert.strictEqual(retry.sheetName, 'Hypothetical_Revenue');
+  assert.deepStrictEqual(createdWrites, ['Hypothetical_Revenue']);
+
+  existing.__values = [['Unrelated', 'Data'], ['x', 1]];
+  const conflict = await context.window.executeSyntheticData(JSON.stringify({
+    rows: source, query: 'ok create revenue column and just fill hypothesis numbers there',
+    sourceSheetName: 'Restaurants', columnName: 'Revenue', min: 0, max: 1000,
+    format: 'decimal', seed: 42, outputSheetName: 'Hypothetical_Revenue', revenue: true
+  }));
+  assert.strictEqual(conflict.success, false);
+  assert.strictEqual(conflict.output_sheet_conflict, true);
+  assert.strictEqual(conflict.sheetName, 'Hypothetical_Revenue');
+  assert.deepStrictEqual(createdWrites, ['Hypothetical_Revenue']);
   console.log('excel_synthetic_data_test.js: all assertions passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
