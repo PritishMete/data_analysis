@@ -2776,9 +2776,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             chatHistory.add({
               "sender": "system",
               "text": "${localResult['message'] ?? 'Synthetic data was created successfully.'}"
-                  "\n\nWorksheet: \\$sheetName"
-                  "\nColumn: \\$columnName"
-                  "\nHypothetical: \\$hypothetical"
+                  "\n\nWorksheet: $sheetName"
+                  "\nColumn: $columnName"
+                  "\nHypothetical: $hypothetical"
                   "\nSource worksheet changed: No"
                   "\nThe original worksheet remains unchanged. Retrying this request will reuse the existing protected output worksheet instead of creating a duplicate.",
             });
