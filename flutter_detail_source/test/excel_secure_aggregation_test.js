@@ -97,7 +97,7 @@ async function run() {
     ['Product', 'Revenue (Hypothetical)'],
     ['Pizza', 1200], ['Burger', 800], ['Pizza', 300], ['Pasta', 1500],
   ];
-  const hypotheticalProductRevenue = await execute(hypotheticalProductSource, 'Which products contribute the most to total revenue?');
+  const hypotheticalProductRevenue = await execute(hypotheticalProductSource, 'Which products contribute the most to total revenue? top 5');
   assert.strictEqual(hypotheticalProductRevenue.success, true);
   assert.strictEqual(hypotheticalProductRevenue.operation.hypothetical, true);
   assert.match(hypotheticalProductRevenue.message, /HYPOTHETICAL REVENUE/i);
@@ -106,7 +106,7 @@ async function run() {
     ['Restaurant Name', 'City', 'Revenue (Hypothetical)'],
     ['Cafe A', 'Delhi', 900], ['Cafe B', 'Mumbai', 1400], ['Cafe A', 'Kolkata', 600],
   ];
-  const restaurantHypothetical = await execute(restaurantHypotheticalSource, 'Which restaurants contribute the most to hypothetical revenue?');
+  const restaurantHypothetical = await execute(restaurantHypotheticalSource, 'Which restaurants contribute the most to hypothetical revenue? top 5');
   assert.strictEqual(restaurantHypothetical.success, true);
   assert.deepStrictEqual(clone(restaurantHypothetical.operation.rows), [
     { 'Restaurant Name': 'Cafe B', 'Total Hypothetical Revenue': 1400 },
@@ -121,7 +121,7 @@ async function run() {
     ['Restaurant ID', 'Revenue (Hypothetical)'],
     [101, 500], [202, 800], [101, 200],
   ];
-  const restaurantIdResult = await execute(restaurantIdHypothetical, 'Which restaurants contribute the most to hypothetical revenue?');
+  const restaurantIdResult = await execute(restaurantIdHypothetical, 'Which restaurants contribute the most to hypothetical revenue? top 5');
   assert.strictEqual(restaurantIdResult.success, true);
   assert.deepStrictEqual(clone(restaurantIdResult.operation.rows), [
     { 'Restaurant ID': 202, 'Total Hypothetical Revenue': 800 },
