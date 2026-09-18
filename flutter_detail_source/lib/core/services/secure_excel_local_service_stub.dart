@@ -1,5 +1,7 @@
 /// Non-web implementation. Excel secure query execution is provided by the
 /// web implementation because it must operate on the live Office worksheet.
+import 'package:flutter/widgets.dart';
+
 class SecureExcelLocalService {
   static const String baseUrl = 'http://127.0.0.1:8000';
 
@@ -13,6 +15,8 @@ class SecureExcelLocalService {
     final hasGrouping = RegExp(r'\b(?:each|per|by|group(?:ed)?\s+by)\b').hasMatch(lower);
     return hasCount && hasGrouping;
   }
+
+  static void registerDialogContext(BuildContext Function() contextProvider) {}
 
   static Future<Map<String, dynamic>> execute({
     required List<List<dynamic>> sourceRows,
