@@ -108,3 +108,12 @@ Future<Map<String, dynamic>> writeQualityReportWorksheet(String optionsJson) asy
   };
 }
 Future<Map<String, dynamic>> appendStaticColumn(String optionsJson) async => {"success": false, "error": "Excel Web interop unavailable."};
+
+/// Native chart creation is available only in the Excel Web Add-in.
+Future<Map<String, dynamic>> createNativeExcelChart(String optionsJson) async {
+  return {
+    "success": false,
+    "processedRows": 0,
+    "error": "Native Excel chart creation is only available via Excel Web Add-ins.",
+  };
+}
