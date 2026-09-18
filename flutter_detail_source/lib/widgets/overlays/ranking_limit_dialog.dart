@@ -33,17 +33,17 @@ class RankingLimitOptionGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final labels = <({String label, RankingLimitChoice choice, bool primary})>[
       (
-        label: $direction 5,
+        label: '${direction} 5',
         choice: const RankingLimitChoice.count(5),
         primary: false,
       ),
       (
-        label: $direction 10,
+        label: '${direction} 10',
         choice: const RankingLimitChoice.count(10),
         primary: false,
       ),
       (
-        label: $direction 20,
+        label: '${direction} 20',
         choice: const RankingLimitChoice.count(20),
         primary: false,
       ),
