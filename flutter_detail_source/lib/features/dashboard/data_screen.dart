@@ -2859,6 +2859,24 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               sheetNote = "\n\n📄 Created and switched to sheet '$sheetName'.";
               await refreshWorksheetNames();
               await syncHeadersSilently();
+              final chart = operation['chart'] is Map ? Map<String,dynamic>.from(operation['chart'] as Map) : null;
+              if (chart != null) {
+                final chartResult = await createNativeExcelChart(json.encode({
+                  'sheetName': sheetName,
+                  'columns': columns,
+                  'rows': resultRows,
+                  'chartType': chart['chartType'],
+                  'categoryColumn': chart['categoryColumn'],
+                  'valueColumn': chart['valueColumn'],
+                  'title': chart['title'],
+                  'chartName': 'InsightFlow_Chart',
+                }));
+                if (chartResult['success'] == true) {
+                  sheetNote += "\n📊 Editable native chart created.";
+                } else {
+                  sheetNote += "\n⚠️ Table created, but chart creation failed: " + (chartResult['error']?.toString() ?? 'unknown error');
+                }
+              }
             } else {
               sheetNote =
                   "\n\n⚠️ Could not write results to a sheet: ${writeResult['error'] ?? 'unknown error'}";

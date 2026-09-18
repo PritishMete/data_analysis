@@ -51,6 +51,9 @@ external JSPromise<JSObject> _jsWriteRangeBinningFormulas(JSString optionsJson);
 @JS('jsAppendStaticColumn')
 external JSPromise<JSObject> _jsAppendStaticColumn(JSString optionsJson);
 
+@JS('createNativeExcelChart')
+external JSPromise<JSObject> _createNativeExcelChart(JSString optionsJson);
+
 @JS('jsWriteQualityReportWorksheet')
 external JSPromise<JSObject> _jsWriteQualityReportWorksheet(JSString optionsJson);
 
@@ -468,6 +471,9 @@ Future<Map<String, dynamic>> writeQueryResultToSheet(String optionsJson) async {
     return {"success": false, "error": e.toString()};
   }
 }
+
+/// Creates or replaces an editable native Excel chart on an existing result worksheet.
+Future<Map<String,dynamic>> createNativeExcelChart(String optionsJson) async {try{final obj=await _createNativeExcelChart(optionsJson.toJS).toDart;final response=PipelineResponse._(obj);return {'success':response.success,'processedRows':response.processedRows,'error':response.error};}catch(e){return {'success':false,'error':e.toString()};}}
 
 /// Writes a range-binning derived column back to the live sheet as LIVE
 /// Excel formulas (a nested `IF()` chain) rather than static computed
