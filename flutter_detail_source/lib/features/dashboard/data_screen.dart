@@ -2860,7 +2860,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               await refreshWorksheetNames();
               await syncHeadersSilently();
               final chart = operation['chart'] is Map ? Map<String,dynamic>.from(operation['chart'] as Map) : null;
-              if (chart != null) {
+              final chartRequested = RegExp(r'\bchart\b', caseSensitive: false).hasMatch(userText);
+              if (chartRequested && chart == null) {
+                sheetNote += "\n⚠️ Partial completion: the result table was created, but the analytical plan did not contain a chart operation.";
+              } else if (chart != null) {
                 final chartResult = await createNativeExcelChart(json.encode({
                   'sheetName': sheetName,
                   'columns': columns,
@@ -2870,11 +2873,14 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                   'valueColumn': chart['valueColumn'],
                   'title': chart['title'],
                   'chartName': 'InsightFlow_Chart',
+                  'startCell': 'D1',
+                  'endCell': 'L20',
+                  'limit': chart['limit'],
                 }));
                 if (chartResult['success'] == true) {
-                  sheetNote += "\n📊 Editable native chart created.";
+                  sheetNote += "\n📊 Editable native chart confirmed on '" + sheetName + "' (" + (chartResult['chartName']?.toString() ?? 'InsightFlow_Chart') + ").";
                 } else {
-                  sheetNote += "\n⚠️ Table created, but chart creation failed: " + (chartResult['error']?.toString() ?? 'unknown error');
+                  sheetNote += "\n⚠️ Partial completion: table created on '" + sheetName + "', but chart creation failed: " + (chartResult['error']?.toString() ?? 'unknown error');
                 }
               }
             } else {

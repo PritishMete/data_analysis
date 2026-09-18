@@ -24,6 +24,22 @@ async function run() {
   ];
   const original = clone(source);
 
+  const cuisineSource = [['cuisine','cost'],['North Indian',3226910],['Chinese',1990023],['Indian',1722723],['Biryani',1470121],['South Indian',1064058],['Italian',900000]];
+  const cuisineResult = await execute(cuisineSource, 'Create a bar chart of the top 5 cuisines by cost.');
+  assert.strictEqual(cuisineResult.success, true);
+  assert.deepStrictEqual(clone(cuisineResult.operation.rows), [
+    { cuisine: 'North Indian', 'Total cost': 3226910 }, { cuisine: 'Chinese', 'Total cost': 1990023 },
+    { cuisine: 'Indian', 'Total cost': 1722723 }, { cuisine: 'Biryani', 'Total cost': 1470121 },
+    { cuisine: 'South Indian', 'Total cost': 1064058 },
+  ]);
+  assert.strictEqual(cuisineResult.operation.chart.chartType, 'bar');
+  assert.strictEqual(cuisineResult.operation.chart.categoryColumn, 'cuisine');
+  assert.strictEqual(cuisineResult.operation.chart.valueColumn, 'Total cost');
+  assert.strictEqual(cuisineResult.operation.chart.title, 'Top 5 Cuisines by Total Cost');
+  const ambiguous = await execute([['City','City Name','Cost'],['Delhi','Delhi',10]], 'Show total cost by city.');
+  assert.strictEqual(ambiguous.success, false);
+  assert.match(ambiguous.error, /ambiguous/i);
+
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
   assert.strictEqual(highest.success, true); assert.strictEqual(highest.operation.action, 'rank_selection');
   assert.strictEqual(highest.operation.sort, 'desc');
