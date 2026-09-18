@@ -11,6 +11,11 @@ class RankingLimitChoice {
 }
 
 class RankingLimitDialog {
+  static int? parseCustomCount(String? value) {
+    final parsed = int.tryParse((value ?? '').trim());
+    return parsed != null && parsed > 0 ? parsed : null;
+  }
+
   static Future<RankingLimitChoice?> show({
     required BuildContext context,
     required bool descending,
@@ -66,13 +71,13 @@ class RankingLimitDialog {
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(labelText: 'Custom number', hintText: 'Enter a positive integer'),
                   validator: (value) {
-                    final parsed = int.tryParse((value ?? '').trim());
-                    if (parsed == null || parsed <= 0) return 'Enter a positive integer.';
+                    final parsed = parseCustomCount(value);
+                    if (parsed == null) return 'Enter a positive integer.';
                     return null;
                   },
                   onFieldSubmitted: (_) {
                     if (!(formKey.currentState?.validate() ?? false)) return;
-                    final parsed = int.parse(customController.text.trim());
+                    final parsed = parseCustomCount(customController.text)!;
                     closeWith(dialogContext, RankingLimitChoice.count(parsed));
                   },
                 ),
