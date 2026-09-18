@@ -25,14 +25,20 @@ async function run() {
   const original = clone(source);
 
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
-  assert.strictEqual(highest.success, true); assert.deepStrictEqual(clone(highest.operation.rows), [{ City: 'Kolkata', 'Average Aggregate rating': 4.5 }]);
-  assert.strictEqual(highest.operation.measure, 'Aggregate rating');
+  assert.strictEqual(highest.success, true); assert.strictEqual(highest.operation.action, 'rank_selection');
+  assert.strictEqual(highest.operation.sort, 'desc');
+  const highestOne = await execute(source, 'Which city has the highest average restaurant rating? top 1');
+  assert.deepStrictEqual(clone(highestOne.operation.rows), [{ City: 'Kolkata', 'Average Aggregate rating': 4.5 }]);
+  assert.strictEqual(highestOne.operation.measure, 'Aggregate rating');
   const average = await execute(source, 'What is the average rating by city?');
   assert.deepStrictEqual(clone(average.operation.rows), [{ City: null, 'Average Aggregate rating': 5 }, { City: 'Kolkata', 'Average Aggregate rating': 4.5 }, { City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
   const top = await execute(source, 'Show the top 5 cities by average rating.');
   assert.deepStrictEqual(clone(top.operation.rows), [{ City: 'Kolkata', 'Average Aggregate rating': 4.5 }, { City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
   const lowest = await execute(source, 'Which city has the lowest average rating?');
-  assert.deepStrictEqual(clone(lowest.operation.rows), [{ City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
+  assert.strictEqual(lowest.success, true); assert.strictEqual(lowest.operation.action, 'rank_selection');
+  assert.strictEqual(lowest.operation.sort, 'asc');
+  const lowestTwo = await execute(source, 'Which city has the lowest average rating? bottom 2');
+  assert.deepStrictEqual(clone(lowestTwo.operation.rows), [{ City: 'Delhi', 'Average Aggregate rating': 4 }, { City: 'Mumbai', 'Average Aggregate rating': 4 }]);
 
   const count = await execute(source, 'Show the number of restaurants in each city');
   assert.strictEqual(count.success, true); assert.strictEqual(count.operation.action, 'group');
