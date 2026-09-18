@@ -26,7 +26,7 @@ class SyntheticDataConfirmationDialog {
           _summary('Target worksheet', sourceWorksheet), _summary('Output worksheet', '$proposedOutputWorksheet (new)'),
           _summary('Existing values', existingColumn ? 'Protected — original values will not be overwritten.' : 'Protected — no existing values will be overwritten.'),
           const SizedBox(height: 10),
-          _field(column, 'Generated column name', (v) => (v ?? '').trim().isEmpty ? 'Enter a column name' : null),
+          _field(column, 'Generated column name', (v) => (v ?? '').trim().isEmpty ? 'Enter a column name' : null, null),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: _field(min, 'Minimum', _numberValidator, const TextInputType.numberWithOptions(decimal: true, signed: true))),
