@@ -5,8 +5,9 @@ const assert = require('assert');
 const context = { window: {}, console };
 vm.createContext(context);
 const base = fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_secure_query.js'), 'utf8');
+const schema = fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_schema_intelligence.js'), 'utf8');
 const aggregation = fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_secure_aggregation.js'), 'utf8');
-vm.runInContext(base, context); vm.runInContext(aggregation, context);
+vm.runInContext(base, context); vm.runInContext(schema, context); vm.runInContext(aggregation, context);
 async function execute(rows, query) { return JSON.parse(await context.window.executeSecureExcelQuery(JSON.stringify({ rows, query }))); }
 function clone(rows) { return JSON.parse(JSON.stringify(rows)); }
 function sortedRows(rows) { return clone(rows).sort((a,b) => String(a.City ?? '').localeCompare(String(b.City ?? ''))); }
