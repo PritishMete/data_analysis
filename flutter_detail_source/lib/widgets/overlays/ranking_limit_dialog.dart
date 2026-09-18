@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../src/renderer/liquid_glass_renderer.dart';
 import '../../widgets/interactive/glass_button.dart';
 import '../../widgets/overlays/glass_dialog.dart';
+import '../../theme/glow_design_system.dart';
 
 class RankingLimitChoice {
   final int? limit;
@@ -26,8 +27,6 @@ class RankingLimitOptionGrid extends StatelessWidget {
   static const _gap = 8.0;
   static const _buttonHeight = 44.0;
   static const _buttonShape = LiquidRoundedSuperellipse(borderRadius: 12);
-  static const _primaryGlow = Color(0x66007AFF);
-  static const _defaultGlow = Color(0x33FFFFFF);
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +76,7 @@ class RankingLimitOptionGrid extends StatelessWidget {
                 label: option.label,
                 primary: option.primary,
                 shape: _buttonShape,
-                glowColor: option.primary ? _primaryGlow : _defaultGlow,
+                glowColor: option.primary ? GlowDesignSystem.activeColor(context) : GlowDesignSystem.activeColor(context).withValues(alpha: 0.55),
                 onTap: () => onSelected(option.choice),
               ),
             );
@@ -114,7 +113,7 @@ class _RankingOptionButtonState extends State<_RankingOptionButton> {
   @override
   Widget build(BuildContext context) {
     final emphasized = widget.primary || _hovered || _focused;
-    final glow = emphasized ? const Color(0x66007AFF) : widget.glowColor;
+    final glow = emphasized ? GlowDesignSystem.activeColor(context) : widget.glowColor;
 
     return FocusableActionDetector(
       mouseCursor: SystemMouseCursors.click,
@@ -135,7 +134,7 @@ class _RankingOptionButtonState extends State<_RankingOptionButton> {
           height: 42,
           shape: widget.shape,
           glowColor: glow,
-          glowOpacity: emphasized ? 0.9 : 0.55,
+          glowOpacity: emphasized ? GlowDesignSystem.activeOpacity : 0.55,
           interactionScale: 0.985,
           stretch: 0.0,
           label: widget.label,
@@ -223,7 +222,7 @@ class _RankingCustomNumberSectionState
             label: 'Use Custom',
             primary: true,
             shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-            glowColor: const Color(0x66007AFF),
+            glowColor: GlowDesignSystem.activeColor(context),
             onTap: _submit,
           ),
         ],

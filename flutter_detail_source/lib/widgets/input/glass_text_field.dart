@@ -7,6 +7,7 @@ import '../../types/glass_quality.dart';
 import '../shared/adaptive_glass.dart';
 import '../../theme/glass_theme_helpers.dart';
 import '../../theme/glass_theme.dart';
+import '../../theme/glow_design_system.dart';
 
 /// A glass text field widget following Apple's input field design.
 ///
@@ -734,6 +735,14 @@ class _GlassTextFieldState extends State<GlassTextField> {
       quality: effectiveQuality,
       useOwnLayer: widget.useOwnLayer,
       child: _wrapWithGlow(textFieldContent, isDark),
+    );
+
+    // Keep the chat/input surface softly lit even when it is idle.
+    glassWidget = DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: [GlowDesignSystem.ambientShadow(context)],
+      ),
+      child: glassWidget,
     );
 
     // GlassGlowLayer is now automatically provided by GlassGlow internally.

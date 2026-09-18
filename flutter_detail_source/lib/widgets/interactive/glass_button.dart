@@ -7,6 +7,7 @@ import '../../types/glass_quality.dart';
 import '../../types/glass_button_style.dart';
 import '../shared/adaptive_glass.dart';
 import '../../theme/glass_theme_helpers.dart';
+import '../../theme/glow_design_system.dart';
 import '../surfaces/glass_app_bar.dart';
 
 /// Glass morphism button with scale animation and glow effects.
@@ -144,9 +145,9 @@ class GlassButton extends StatefulWidget {
     // GlassGlow properties
     this.glowColor,
     this.glowRadius = 1.0,
-    this.glowBlurRadius,
-    this.glowSpreadRadius,
-    this.glowOpacity,
+    this.glowBlurRadius = GlowDesignSystem.blurRadius,
+    this.glowSpreadRadius = GlowDesignSystem.spreadRadius,
+    this.glowOpacity = GlowDesignSystem.activeOpacity,
     this.glowHitTestBehavior = HitTestBehavior.opaque,
     this.enabled = true,
     this.style = GlassButtonStyle.filled,

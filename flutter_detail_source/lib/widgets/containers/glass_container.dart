@@ -5,6 +5,7 @@ import '../../types/glass_quality.dart';
 import '../shared/adaptive_glass.dart';
 import '../shared/inherited_liquid_glass.dart';
 import '../../theme/glass_theme_helpers.dart';
+import '../../theme/glow_design_system.dart';
 
 /// A foundational glass container widget following Apple's liquid glass design.
 ///
@@ -294,6 +295,14 @@ class GlassContainer extends StatelessWidget {
             true, // Containers block children from refracting background
         child: content,
       ),
+    );
+
+    // Shared ambient glow keeps glass surfaces visually consistent with the top-tab reference.
+    glassWidget = DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: [GlowDesignSystem.ambientShadow(context)],
+      ),
+      child: glassWidget,
     );
 
     // 5. Apply width/height constraints
