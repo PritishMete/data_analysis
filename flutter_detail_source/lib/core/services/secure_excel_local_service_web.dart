@@ -96,5 +96,4 @@ class SecureExcelLocalService {
 
   static BuildContext Function() _currentContext = () => throw StateError('SecureExcelLocalService dialog context has not been registered.');
   static void registerDialogContext(BuildContext Function() contextProvider) => _currentContext = contextProvider;
-  }
 }
