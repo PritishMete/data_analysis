@@ -14,7 +14,7 @@ const workbook = {
     getActiveWorksheet() { return activeSheet; },
     getItem(name) { const found = sheets.find(s => s.name === name); if (found) return found; throw new Error('missing worksheet'); },
     add(name) {
-      const out = { name, getUsedRange() { return { values: [this.__values || []], load() {} }; }, getRangeByIndexes() {
+      const out = { name, getUsedRange() { return { values: this.__values || [], load() {} }; }, getRangeByIndexes() {
         return {
           values: null, numberFormat: null,
           format: { font: { bold: false }, autofitColumns() {} },
