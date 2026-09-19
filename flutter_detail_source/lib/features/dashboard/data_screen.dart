@@ -3826,6 +3826,28 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   Future<void> analyzeData() async {
     setState(() => isLoading = true);
     try {
+      // Active Selection is an explicit source-selection action. Capture the
+      // worksheet identity before scanning can create/activate any generated
+      // report sheet. Once captured, all analytical queries use this persisted
+      // source context rather than Excel's presentation-active worksheet.
+      if (kIsWeb &&
+          dataSourceMode == DataSourceMode.excel &&
+          useActiveSelection) {
+        final established =
+            await establishInsightFlowSourceFromActiveWorksheet();
+        if (established == null || established.isEmpty) {
+          throw "Select an original dataset worksheet before scanning.";
+        }
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = established;
+            activeSheetName = established;
+          });
+        }
+        await refreshWorksheetNames();
+      }
+
       final String? jsonString = await _fetchSourceData();
       if (jsonString == null || jsonString.isEmpty)
         throw "No data found. Select a range or load a file first.";
