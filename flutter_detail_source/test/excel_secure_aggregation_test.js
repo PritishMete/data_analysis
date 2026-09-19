@@ -52,6 +52,16 @@ async function run() {
     ['Product', 'marked_price', 'discounted_price'],
     ['Alpha', 1000, 800], ['Alpha', 900, 700], ['Beta', 1200, 900], ['Gamma', 500, 400],
   ];
+  const markedProductPriceExactUnderscore = await execute(productPriceRanking, 'show me top 5 products by marked_price');
+  assert.strictEqual(markedProductPriceExactUnderscore.success, false);
+  assert.strictEqual(markedProductPriceExactUnderscore.operation.action, 'clarification');
+  assert.strictEqual(markedProductPriceExactUnderscore.operation.measure, 'marked_price');
+  assert.strictEqual(markedProductPriceExactUnderscore.operation.resolved_measure, 'marked_price');
+  assert.strictEqual(markedProductPriceExactUnderscore.diagnostics.resolved_measure_column, 'marked_price');
+
+  const discountedProductPrice = await execute(productPriceRanking, 'show me top 5 products by discounted price');
+  assert.strictEqual(discountedProductPrice.success, false);
+  assert.strictEqual(discountedProductPrice.operation.resolved_measure, 'discounted_price');
   const markedProductPrice = await execute(productPriceRanking, 'show me top 5 products by marked price');
   assert.strictEqual(markedProductPrice.success, false);
   assert.strictEqual(markedProductPrice.operation.action, 'clarification');
