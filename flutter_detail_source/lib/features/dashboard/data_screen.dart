@@ -3484,109 +3484,100 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // can ask _promptPivotPlacement ONCE and loop this function over each
   // pivot config with the same override, with no further Flutter changes
   // needed here.
-  Future<Map<String, dynamic>> _executeAgenticPivot(
-    Map<String, dynamic> config, {
-    String? placementOverride,
-  }) async {
-    // Stable default (matches the manual flow's own default of
-    // "Pivot_Workspace", and the "Pivot Analysis" example worksheet name)
-    // rather than a fresh timestamped name on every call — a unique name
-    // every time would mean this sheet could never be detected as already
-    // existing, so append mode could never trigger. The LLM's own
-    // sheetName, when it provides one, always takes priority.
-    final String sheetName =
-        (config["sheetName"]?.toString().trim().isNotEmpty ?? false)
-        ? config["sheetName"].toString().trim()
-        : "Pivot Analysis";
-
-    final List<String> rowFields = (config["rowFields"] is List)
-        ? List<String>.from(
-            (config["rowFields"] as List)
-                .map((e) => (e ?? '').toString())
-                .where((s) => s.isNotEmpty),
-          )
-        : <String>[];
-
-    final List<Map<String, String>> valueFields =
-        (config["valueFields"] is List)
-        ? (config["valueFields"] as List).map<Map<String, String>>((v) {
-            final m = v is Map
-                ? Map<String, dynamic>.from(v)
-                : <String, dynamic>{};
-            return {
-              "field": (m["field"] ?? "").toString(),
-              "op": (m["op"] ?? "sum").toString(),
-            };
-          }).toList()
-        : <Map<String, String>>[];
-
-    if (rowFields.isEmpty ||
-        valueFields.isEmpty ||
-        valueFields.any((v) => v["field"]!.isEmpty)) {
-      return {
-        "success": false,
-        "error":
-            "Could not determine pivot row/value fields from that request.",
-      };
+Future<void> runTransformationPipeline() async {
+    if (secureLocalOnly &&
+        dataSourceMode == DataSourceMode.uploadedFile &&
+        uploadedFile == null) {
+      showNotification(
+        'Choose a local dataset first.',
+        TechColors.statusOrange,
+      );
+      return;
     }
-
-    final bool reuseExisting = config["reuseExisting"] == true;
-    final String? choice = reuseExisting
-        ? "REUSE_EXISTING"
-        : (placementOverride ??
-            await _promptPivotPlacement(sheetName, alwaysAsk: true));    if (choice == null) {
-      // User dismissed the dialog — same as the manual flow's own
-      // `if (choice == null) return;` in runTransformationPipeline: abort
-      // rather than guessing a placement on their behalf.
-      return {
-        "success": false,
-        "error": "Pivot placement not confirmed.",
-        "cancelled": true,
-      };
+    if (generateLookup) {
+      final lookupError = _validateLookupConfig();
+      if (lookupError != null) {
+        showError(lookupError);
+        return;
+      }
     }
-    final bool appendMode = choice == "APPEND_EXISTING";
-    final String tableName = (config["tableName"]?.toString().trim().isNotEmpty ?? false)
-        ? config["tableName"].toString().trim()
-        : "Pivot_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString();
-
-    // Mirrors runTransformationPipeline's own collision-avoidance exactly:
-    // when the user picks "Create New Worksheet" (not append) AND a sheet
-    // with this name already exists, rename rather than reuse it. Without
-    // this, processExcelPipeline's own "not appendMode -> delete any sheet
-    // with this name, then recreate" branch (web/excel_helper.js) would
-    // silently DELETE a previously-created "Pivot Analysis" sheet — and
-    // every PivotTable on it — the moment someone chose "Create New
-    // Worksheet" a second time, which is exactly the "never overwrite
-    // previous Pivot Tables" rule this feature is required to uphold.
-    String targetSheetName = sheetName;
-    await refreshWorksheetNames();
-    if (!appendMode && !reuseExisting && availableSheets.contains(targetSheetName)) {
-      targetSheetName =
-          "${targetSheetName}_${DateTime.now().millisecondsSinceEpoch % 10000}";
+    String desiredPivotSheet = pivotSheetNameController.text.trim().isNotEmpty
+        ? pivotSheetNameController.text.trim()
+        : "Pivot_Workspace";
+    bool appendMode = false;
+    if (generatePivotTable) {
+      final pivotAgentName = await suggestAgenticSheetName(
+        query:
+            "Create pivot ${pivotRowFields.join(', ')} with ${pivotValueFields.map((e) => e['field']).join(', ')}",
+        operation: "manual_pivot",
+        context: {"rows": pivotRowFields, "values": pivotValueFields},
+      );
+      if (pivotAgentName != null && pivotAgentName.trim().isNotEmpty) {
+        desiredPivotSheet = _sanitizeSheetName(pivotAgentName);
+      }
     }
-
-    final options = {
-      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null)
-          ? selectedSourceSheet
-          : null,
-      "targetSheetName": null,
-      "createNewSheet": false,
-      "freezeHeaderRow": false,
-      "enableAutoFilter": false,
-      "generateSummarySheet": false,
-      "removeDuplicates": false,
-      "filter": null,
-      "pivotConfig": {
-        "sheetName": targetSheetName,
-        "tableName": tableName,
-        "rowFields": rowFields,
-        "valueFields": valueFields,
-        "appendMode": appendMode,
-        "reuseExisting": reuseExisting,
-        if (config["sortByValue"] != null) "sortByValue": config["sortByValue"],
-        if (config["limit"] != null) "limit": config["limit"],
-        if (config["hideGrandTotals"] != null) "hideGrandTotals": config["hideGrandTotals"],
-      },
+    if (generatePivotTable && kIsWeb) {
+      final choice = await _promptPivotPlacement(desiredPivotSheet);
+      if (choice == null) return;
+      if (choice == "APPEND_EXISTING") {
+        appendMode = true;
+      } else if (availableSheets.contains(desiredPivotSheet)) {
+        desiredPivotSheet =
+            "${desiredPivotSheet}_${DateTime.now().millisecondsSinceEpoch % 10000}";
+      }
+    }
+    setState(() => pipelineProcessing = true);
+    String? autoTargetName;
+    if (!useCustomTargetName || targetSheetNameController.text.trim().isEmpty) {
+      if (deduplicate && enableFilter) {
+        final dedupTag = deduplicateColumns.isNotEmpty
+            ? deduplicateColumns.take(2).map(sheetSafe).join('_')
+            : 'AllCols';
+        final filterTag = sheetSafe(selectedFilterColumn ?? 'Col');
+        autoTargetName = 'Dedup_${dedupTag}__Filter_$filterTag';
+      } else if (deduplicate) {
+        autoTargetName = deduplicateColumns.isNotEmpty
+            ? 'Dedup_${deduplicateColumns.take(3).map(sheetSafe).join('_')}'
+            : 'Dedup_AllCols';
+      } else if (enableFilter && selectedFilterColumn != null) {
+        autoTargetName =
+            'Filter_${sheetSafe(selectedFilterColumn!)}_${filterTypeShortLabel(selectedFilterType)}';
+      }
+    }
+    String? agentPipelineSheetName;
+    if (createNewSheet) {
+      final pipelineParts = <String>[
+        if (deduplicate) "deduplicate ${deduplicateColumns.join(', ')}",
+        if (enableFilter && selectedFilterColumn != null)
+          "filter ${selectedFilterColumn} ${filterTypeShortLabel(selectedFilterType)} ${valController1.text}",
+        if (generateLookup) "lookup ${lookupSourceColumn ?? ''}",
+        if (generatePivotTable)
+          "create pivot ${pivotRowFields.join(', ')} ${pivotValueFields.map((e) => e['field']).join(', ')}",
+      ];
+      final pipelineQuery =
+          'Manual pipeline: ${pipelineParts.where((s) => s.trim().isNotEmpty).join('; ')}';
+      agentPipelineSheetName = await suggestAgenticSheetName(
+        query: pipelineQuery,
+        operation: "manual_pipeline",
+        context: {
+          "deduplicate": deduplicate,
+          "filter": enableFilter
+              ? {
+                  "column": selectedFilterColumn,
+                  "type": selectedFilterType,
+                  "value": valController1.text,
+                }
+              : null,
+          "lookup": generateLookup
+              ? {
+                  "column": lookupSourceColumn,
+                  "reference_sheet": lookupTargetSheet,
+                }
+              : null,
+          "pivot": generatePivotTable
+              ? {"rows": pivotRowFields, "values": pivotValueFields}
+              : null,
+        },
       );
     }
     final Map<String, dynamic> options = {
@@ -3730,6 +3721,83 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }
   }
 
+  Future<Map<String, dynamic>> _executeAgenticPivot(
+    Map<String, dynamic> config, {
+    String? placementOverride,
+  }) async {
+    final String sheetName =
+        (config["sheetName"]?.toString().trim().isNotEmpty ?? false)
+            ? config["sheetName"].toString().trim()
+            : "Pivot Analysis";
+
+    final List<String> rowFields = config["rowFields"] is List
+        ? List<String>.from((config["rowFields"] as List).map((e) => (e ?? "").toString()).where((s) => s.isNotEmpty))
+        : <String>[];
+    final List<Map<String, String>> valueFields = config["valueFields"] is List
+        ? (config["valueFields"] as List).map<Map<String, String>>((v) {
+            final m = v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+            return {"field": (m["field"] ?? "").toString(), "op": (m["op"] ?? "sum").toString()};
+          }).toList()
+        : <Map<String, String>>[];
+
+    if (rowFields.isEmpty || valueFields.isEmpty || valueFields.any((v) => v["field"]!.isEmpty)) {
+      return {"success": false, "error": "Could not determine pivot row/value fields from that request."};
+    }
+
+    final bool reuseExisting = config["reuseExisting"] == true;
+    final String? choice = reuseExisting
+        ? "REUSE_EXISTING"
+        : (placementOverride ?? await _promptPivotPlacement(sheetName, alwaysAsk: true));
+    if (choice == null) return {"success": false, "error": "Pivot placement not confirmed.", "cancelled": true};
+
+    final bool appendMode = choice == "APPEND_EXISTING";
+    String targetSheetName = sheetName;
+    await refreshWorksheetNames();
+    if (!appendMode && !reuseExisting && availableSheets.contains(targetSheetName)) {
+      targetSheetName = targetSheetName + "_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString();
+    }
+
+    final options = {
+      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null) ? selectedSourceSheet : null,
+      "targetSheetName": null,
+      "createNewSheet": false,
+      "freezeHeaderRow": false,
+      "enableAutoFilter": false,
+      "generateSummarySheet": false,
+      "removeDuplicates": false,
+      "filter": null,
+      "pivotConfig": {
+        "sheetName": targetSheetName,
+        "tableName": (config["tableName"]?.toString().trim().isNotEmpty ?? false)
+            ? config["tableName"].toString().trim()
+            : "Pivot_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString(),
+        "rowFields": rowFields,
+        "valueFields": valueFields,
+        "appendMode": appendMode,
+        "reuseExisting": reuseExisting,
+        if (config["sortByValue"] != null) "sortByValue": config["sortByValue"],
+        if (config["limit"] != null) "limit": config["limit"],
+        if (config["hideGrandTotals"] != null) "hideGrandTotals": config["hideGrandTotals"],
+      },
+    };
+
+    if (secureLocalOnly && dataSourceMode == DataSourceMode.uploadedFile) {
+      return {"success": false, "error": "Pivot creation requires an Excel workbook in secure-local mode."};
+    }
+    final result = await executePipeline(json.encode(options));
+    await refreshWorksheetNames();
+    if (result["success"] == true) {
+      final source = await _ensureAnalyticalSourceSheet();
+      setState(() {
+        activePivotSheetName = targetSheetName;
+        pivotSourceSheetName = source;
+        pivotEditorRowFields = List<String>.from(rowFields);
+        pivotEditorValueFields = List<Map<String, String>>.from(valueFields);
+        pivotSourceHeaders = List<String>.from(detectedHeaders);
+      });
+    }
+    return result;
+  }
   Future<void> rerunPivot() async {
     if (activePivotSheetName == null) return;
     final String? source =
