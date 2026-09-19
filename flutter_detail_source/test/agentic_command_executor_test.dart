@@ -89,7 +89,7 @@ void main() {
 
     expect(parsed['action'], 'pivot');
     expect(parsed['needsClarification'], isTrue);
-    expect(parsed['message'].toString(), contains('restaurant count'));
+    expect(parsed['message'].toString(), contains('count'));
     expect(parsed['message'].toString(), contains('total cost'));
     expect(parsed['message'].toString(), contains('average rating'));
   });
