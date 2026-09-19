@@ -125,6 +125,30 @@ Future<String?> getActiveWorksheetName() async {
   }
 }
 
+@JS('getInsightFlowSourceWorksheetName')
+external JSPromise<JSString?> _getInsightFlowSourceWorksheetName();
+
+@JS('setInsightFlowSourceWorksheetName')
+external JSPromise<JSBoolean> _setInsightFlowSourceWorksheetName(JSString sheetName);
+
+Future<String?> getInsightFlowSourceWorksheetName() async {
+  try {
+    final result = await _getInsightFlowSourceWorksheetName().toDart;
+    if (result == null || result.isNull || result.isUndefined) return null;
+    return result.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<bool> setInsightFlowSourceWorksheetName(String sheetName) async {
+  try {
+    return (await _setInsightFlowSourceWorksheetName(sheetName.toJS).toDart).toDart;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Reads all data from a named sheet, returns JSON string (2D array).
 Future<String?> fetchSheetData(String sheetName) async {
   try {
