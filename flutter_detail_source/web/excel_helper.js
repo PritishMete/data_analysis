@@ -1098,6 +1098,59 @@ async function processExcelPipeline(optionsJson) {
 
             let pivotSheet = currentSheets.items.find(s => s.name === pivotSheetName);
             const sheetAlreadyExisted = !!pivotSheet;
+            if (pc.reuseExisting === true && pivotSheet) {
+                const existingPivots = pivotSheet.pivotTables;
+                existingPivots.load("items/name");
+                await context.sync();
+                if (!existingPivots.items || existingPivots.items.length === 0) {
+                    throw new Error("The existing PivotTable worksheet was found, but no PivotTable could be verified for a safe chart retry.");
+                }
+                const requestedTableName = String(pc.tableName || "").trim();
+                let existingPivot = existingPivots.items[0];
+                if (requestedTableName) {
+                    const named = existingPivots.items.find(p => p.name === requestedTableName);
+                    if (named) existingPivot = named;
+                }
+                const existingRange = existingPivot.layout.getRange();
+                existingRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+                await context.sync();
+                if (!existingRange.address || existingRange.rowCount < 2 || existingRange.columnCount < 2) {
+                    throw new Error("The existing PivotTable could not be verified as populated.");
+                }
+                const existingChartStartColumn = existingRange.columnIndex + existingRange.columnCount + 1;
+                function existingExcelColumnName(index) {
+                    let n = index + 1, out = "";
+                    while (n > 0) {
+                        const rem = (n - 1) % 26;
+                        out = String.fromCharCode(65 + rem) + out;
+                        n = Math.floor((n - 1) / 26);
+                    }
+                    return out;
+                }
+                const existingStartColumn = existingExcelColumnName(existingChartStartColumn);
+                const existingStartRow = existingRange.rowIndex + 1;
+                const existingEndColumn = existingExcelColumnName(existingChartStartColumn + 8);
+                pivotSheet.activate();
+                await context.sync();
+                return {
+                    success: true,
+                    processedRows: 0,
+                    error: null,
+                    pivotPlacement: JSON.stringify({
+                        mode: "reused_existing_sheet",
+                        sheet: pivotSheetName,
+                        startingRow: existingStartRow,
+                        gapRows: PIVOT_GAP_ROWS,
+                        pivotCount: existingPivots.items.length,
+                        sheetAlreadyExisted: true,
+                        pivotRangeAddress: existingRange.address,
+                        pivotRowCount: existingRange.rowCount,
+                        pivotColumnCount: existingRange.columnCount,
+                        chartStartCell: existingStartColumn + existingStartRow,
+                        chartEndCell: existingEndColumn + (existingStartRow + 19),
+                    }),
+                };
+            }
             let destinationCell = "A1";
             let placementMode = "new_sheet";
             let startingRow = 1;
