@@ -522,14 +522,18 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         activeSheetName = "Source worksheet unavailable";
       }
     } else {
-      final active = await getActiveWorksheetName();
-      if (active != null && active.isNotEmpty) {
-        final saved = await setInsightFlowSourceWorksheetName(active);
+      final candidate = await getInsightFlowSourceWorksheetName();
+      if (candidate != null && candidate.isNotEmpty) {
+        final saved = await setInsightFlowSourceWorksheetName(candidate);
         if (saved) {
           useActiveSelection = false;
-          selectedSourceSheet = active;
-          activeSheetName = active;
+          selectedSourceSheet = candidate;
+          activeSheetName = candidate;
         }
+      } else {
+        useActiveSelection = false;
+        selectedSourceSheet = null;
+        activeSheetName = "Select an original dataset worksheet";
       }
     }
     await syncHeadersSilently();
@@ -556,21 +560,21 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       }
       return persisted;
     }
-    final active = await getActiveWorksheetName();
-    if (active == null || active.isEmpty) {
+    final candidate = await getInsightFlowSourceWorksheetName();
+    if (candidate == null || candidate.isEmpty) {
       throw "No analytical source worksheet is established. Select an original dataset worksheet first.";
     }
-    if (!await setInsightFlowSourceWorksheetName(active)) {
-      throw "Could not establish '$active' as the analytical source worksheet.";
+    if (!await setInsightFlowSourceWorksheetName(candidate)) {
+      throw "Could not establish '$candidate' as the analytical source worksheet.";
     }
     if (mounted) {
       setState(() {
         useActiveSelection = false;
-        selectedSourceSheet = active;
-        activeSheetName = active;
+        selectedSourceSheet = candidate;
+        activeSheetName = candidate;
       });
     }
-    return active;
+    return candidate;
   }
 
   Future<void> refreshWorksheetNames() async {
