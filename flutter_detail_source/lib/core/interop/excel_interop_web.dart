@@ -63,6 +63,13 @@ extension type PipelineResponse._(JSObject _) implements JSObject {
   external bool get success;
   external int get processedRows;
   external String? get error;
+  external String? get stage;
+  external String? get chartId;
+  external String? get chartName;
+  external String? get sheetName;
+  external String? get chartType;
+  external String? get sourceRange;
+  external String? get title;
   // Only set by processExcelPipeline when opts.pivotConfig was present —
   // a JSON string (see JSON.stringify(...) in web/excel_helper.js) rather
   // than a nested JS object, decoded the same way every other JSON payload
@@ -473,7 +480,26 @@ Future<Map<String, dynamic>> writeQueryResultToSheet(String optionsJson) async {
 }
 
 /// Creates or replaces an editable native Excel chart on an existing result worksheet.
-Future<Map<String,dynamic>> createNativeExcelChart(String optionsJson) async {try{final obj=await _createNativeExcelChart(optionsJson.toJS).toDart;final response=PipelineResponse._(obj);return {'success':response.success,'processedRows':response.processedRows,'error':response.error};}catch(e){return {'success':false,'error':e.toString()};}}
+Future<Map<String,dynamic>> createNativeExcelChart(String optionsJson) async {
+  try {
+    final obj = await _createNativeExcelChart(optionsJson.toJS).toDart;
+    final response = PipelineResponse._(obj);
+    return {
+      'success': response.success,
+      'processedRows': response.processedRows,
+      'error': response.error,
+      'stage': response.stage,
+      'chartId': response.chartId,
+      'chartName': response.chartName,
+      'sheetName': response.sheetName,
+      'chartType': response.chartType,
+      'sourceRange': response.sourceRange,
+      'title': response.title,
+    };
+  } catch (e) {
+    return {'success': false, 'error': e.toString(), 'stage': 'interop'};
+  }
+}
 
 /// Writes a range-binning derived column back to the live sheet as LIVE
 /// Excel formulas (a nested `IF()` chain) rather than static computed
