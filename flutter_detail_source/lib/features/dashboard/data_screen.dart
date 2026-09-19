@@ -1745,11 +1745,40 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     try {
       switch (action) {
         case "pivot":
-          result = await _executeAgenticPivot(
-            parsed["pivot"] is Map
-                ? Map<String, dynamic>.from(parsed["pivot"])
-                : {},
-          );
+          final String pivotUserText = chatHistory.reversed.firstWhere((entry) => entry["sender"] == "user", orElse: () => {"text": ""})["text"]?.toString() ?? "";
+          final bool combinedChartRequested = RegExp(r"\\b(chart|pivotchart)\\b", caseSensitive: false).hasMatch(pivotUserText);
+          final bool explicitPivotChart = RegExp(r"\\bpivotchart\\b", caseSensitive: false).hasMatch(pivotUserText);
+          final pivotConfig = parsed["pivot"] is Map ? Map<String, dynamic>.from(parsed["pivot"] as Map) : <String, dynamic>{};
+          final lower = pivotUserText.toLowerCase();
+          if (combinedChartRequested) {
+            final topMatch = RegExp(r"\\btop\\s+(\\d+)\\b", caseSensitive: false).firstMatch(pivotUserText);
+            final limit = topMatch == null ? null : int.tryParse(topMatch.group(1)!);
+            pivotConfig["sortByValue"] = "descending";
+            if (limit != null && limit > 0) pivotConfig["limit"] = limit;
+            pivotConfig["hideGrandTotals"] = true;
+            final existingName = (pivotConfig["sheetName"]?.toString().trim().isNotEmpty ?? false) ? pivotConfig["sheetName"].toString().trim() : "Pivot Analysis";
+            pivotConfig["reuseExisting"] = availableSheets.contains(existingName);
+            pivotConfig["tableName"] = "Pivot_InsightFlow_Combined";
+          }
+          result = await _executeAgenticPivot(pivotConfig);
+          if (combinedChartRequested && result["success"] == true) {
+            final placement = result["pivotPlacement"] is Map ? Map<String, dynamic>.from(result["pivotPlacement"] as Map) : <String, dynamic>{};
+            final chartType = lower.contains("pie") ? "pie" : (lower.contains("line") ? "line" : (lower.contains("column") ? "column" : "bar"));
+            final rowField = (pivotConfig["rowFields"] is List && (pivotConfig["rowFields"] as List).isNotEmpty) ? (pivotConfig["rowFields"] as List).first.toString() : "Category";
+            final valueEntry = (pivotConfig["valueFields"] is List && (pivotConfig["valueFields"] as List).isNotEmpty && (pivotConfig["valueFields"] as List).first is Map) ? Map<String, dynamic>.from((pivotConfig["valueFields"] as List).first as Map) : <String, dynamic>{};
+            final valueField = valueEntry["field"]?.toString() ?? "Value";
+            final valueOp = valueEntry["op"]?.toString().toLowerCase() ?? "sum";
+            final opLabel = valueOp == "average" ? "Average" : (valueOp == "count" ? "Count" : (valueOp == "max" ? "Max" : (valueOp == "min" ? "Min" : "Total")));
+            final limit = pivotConfig["limit"] is num ? (pivotConfig["limit"] as num).toInt() : null;
+            final title = (limit != null ? "Top " + limit.toString() + " " : "") + rowField + " by " + opLabel + " " + valueField;
+            final chartResult = await createNativeExcelChart(json.encode({
+              "sheetName": placement["sheet"], "sourceRangeAddress": placement["pivotRangeAddress"],
+              "columns": [rowField, valueField], "rows": const [{}], "categoryColumnIndex": 0, "valueColumnIndex": 1,
+              "chartType": chartType, "title": title, "chartName": "InsightFlow_Pivot_Chart",
+              "startCell": placement["chartStartCell"] ?? "D1", "endCell": placement["chartEndCell"] ?? "L20",
+            }));
+            result = {...result, "combinedChartRequested": true, "explicitPivotChart": explicitPivotChart, "chartResult": chartResult};
+          }
           break;
         case "filter":
           final String filterUserText =
@@ -1846,14 +1875,18 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     // (see PIVOT_GAP_ROWS/pivotPlacement in web/excel_helper.js) — rather
     // than silently discarding it once the write succeeds.
     if (action == "pivot" && success && result["pivotPlacement"] is Map) {
-      final placement = Map<String, dynamic>.from(
-        result["pivotPlacement"] as Map,
-      );
-      final String mode = placement["mode"] == "append_existing_sheet"
-          ? "appended below the existing table(s)"
-          : "placed in a new worksheet";
-      finalMessage =
-          "$finalMessage (${placement['sheet']}, $mode, starting at row ${placement['startingRow']})";
+      final placement = Map<String, dynamic>.from(result["pivotPlacement"] as Map);
+      final String mode = placement["mode"] == "append_existing_sheet" ? "appended below the existing table(s)" : "placed in a new worksheet";
+      finalMessage = "$finalMessage (" + placement["sheet"].toString() + ", " + mode + ", starting at row " + placement["startingRow"].toString() + ")";
+      if (result["combinedChartRequested"] == true) {
+        final chartResult = result["chartResult"] is Map ? Map<String, dynamic>.from(result["chartResult"] as Map) : <String, dynamic>{};
+        if (chartResult["success"] == true) {
+          finalMessage += "\n📊 Editable native chart linked to the PivotTable output confirmed on '" + placement["sheet"].toString() + "' (" + (chartResult["chartName"]?.toString() ?? "InsightFlow_Pivot_Chart") + ").";
+          if (result["explicitPivotChart"] == true) finalMessage += " Office.js exposes PivotChart options, but this supported add-in path does not expose a PivotChart creation method, so this is accurately reported as a regular native Excel chart backed by the PivotTable cells.";
+        } else {
+          finalMessage += "\n⚠️ Partial completion: PivotTable created and preserved on '" + placement["sheet"].toString() + "', but chart creation failed at " + (chartResult["stage"]?.toString() ?? "unknown stage") + ": " + (chartResult["error"]?.toString() ?? "unknown error") + ".";
+        }
+      }
     }
     setState(() {
       isSearchingChat = false;
