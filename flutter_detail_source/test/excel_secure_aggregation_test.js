@@ -39,6 +39,24 @@ async function run() {
   assert.strictEqual(cuisineResult.operation.chart.valueColumn, 'Total cost');
   assert.strictEqual(cuisineResult.operation.chart.title, 'Top 5 Cuisines by Total Cost');
 
+  const priceRanking = [
+    ['Brand', 'marked_price', 'discounted_price'],
+    ['A', 1000, 800], ['A', 900, 700], ['B', 1200, 900], ['C', 500, 400],
+  ];
+  const markedPrice = await execute(priceRanking, 'Show the top 5 brands by marked price.');
+  assert.strictEqual(markedPrice.success, false);
+  assert.strictEqual(markedPrice.operation.action, 'clarification');
+  assert.strictEqual(markedPrice.operation.resolved_measure, 'marked_price');
+  assert.strictEqual(markedPrice.diagnostics.resolved_measure_column, 'marked_price');
+  const discountedPrice = await execute(priceRanking, 'Show the top 5 brands by discounted price.');
+  assert.strictEqual(discountedPrice.success, false);
+  assert.strictEqual(discountedPrice.operation.action, 'clarification');
+  assert.strictEqual(discountedPrice.operation.resolved_measure, 'discounted_price');
+  const averageMarkedPrice = await execute(priceRanking, 'Show the top 5 brands by average marked price.');
+  assert.strictEqual(averageMarkedPrice.success, true);
+  assert.strictEqual(averageMarkedPrice.operation.measure, 'marked_price');
+  assert.strictEqual(averageMarkedPrice.operation.aggregation, 'average');
+
   const highest = await execute(source, 'Which city has the highest average restaurant rating?');
   assert.strictEqual(highest.success, true); assert.strictEqual(highest.operation.action, 'rank_selection');
   assert.strictEqual(highest.operation.sort, 'desc');
