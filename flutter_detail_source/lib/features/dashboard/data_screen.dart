@@ -1822,12 +1822,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       switch (action) {
         case "pivot":
           final String pivotUserText = chatHistory.reversed.firstWhere((entry) => entry["sender"] == "user", orElse: () => {"text": ""})["text"]?.toString() ?? "";
-          final bool combinedChartRequested = RegExp(r"\\b(chart|pivotchart)\\b", caseSensitive: false).hasMatch(pivotUserText);
-          final bool explicitPivotChart = RegExp(r"\\bpivotchart\\b", caseSensitive: false).hasMatch(pivotUserText);
+          final bool combinedChartRequested = RegExp(r"\b(chart|pivotchart)\b", caseSensitive: false).hasMatch(pivotUserText);
+          final bool explicitPivotChart = RegExp(r"\bpivotchart\b", caseSensitive: false).hasMatch(pivotUserText);
           final pivotConfig = parsed["pivot"] is Map ? Map<String, dynamic>.from(parsed["pivot"] as Map) : <String, dynamic>{};
           final lower = pivotUserText.toLowerCase();
           if (combinedChartRequested) {
-            final topMatch = RegExp(r"\\btop\\s+(\\d+)\\b", caseSensitive: false).firstMatch(pivotUserText);
+            final topMatch = RegExp(r"\btop\s+(\d+)\b", caseSensitive: false).firstMatch(pivotUserText);
             final limit = topMatch == null ? null : int.tryParse(topMatch.group(1)!);
             pivotConfig["sortByValue"] = "descending";
             if (limit != null && limit > 0) pivotConfig["limit"] = limit;
@@ -2877,6 +2877,35 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         );
         return;
       }
+      // Explicit PivotTable requests are workbook operations, not remote analytics.
+      // Classify them before SecureExcelLocalService/remote fallback so secure-local
+      // mode cannot reject a request the existing Office.js PivotTable engine supports.
+      final explicitPivotQuery = RegExp(
+        r'\\bpivot\\s*table\\b|\\bpivottable\\b',
+        caseSensitive: false,
+      ).hasMatch(lower);
+      if (explicitPivotQuery) {
+        final parsedPivot = await parseAgenticCommand(
+          userText: userText,
+          availableColumns: detectedHeaders,
+          availableSheets: availableSheets,
+        );
+        if (parsedPivot['needsClarification'] == true) {
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": parsedPivot['message']?.toString() ?? 'Please specify the PivotTable measure.',
+            });
+          });
+          return;
+        }
+        if ((parsedPivot['action'] ?? '').toString() == 'pivot') {
+          await _dispatchParsedOperation('pivot', parsedPivot);
+          return;
+        }
+      }
+
       if (secureLocalOnly && SecureExcelLocalService.supportsQuery(userText)) {
         final String? jsonString = await _fetchSourceData();
         if (jsonString == null || jsonString.isEmpty) {
