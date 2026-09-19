@@ -275,6 +275,82 @@ Map<String, dynamic>? _buildLocalCategorizationPlan(String userText, List<String
   };
 }
 
+Map<String, dynamic>? _buildLocalPivotPlan(
+  String userText,
+  List<String> availableColumns,
+) {
+  final lower = userText.toLowerCase();
+  final explicitPivot = RegExp(r'\bpivot\s*table\b|\bpivottable\b', caseSensitive: false).hasMatch(lower);
+  if (!explicitPivot || availableColumns.isEmpty) return null;
+
+  String? findColumn(String hint) {
+    final direct = _matchColumn(availableColumns, [hint]);
+    if (direct != null) return direct;
+    final wanted = _normalize(hint);
+    for (final column in availableColumns) {
+      final normalized = _normalize(column);
+      if (normalized == wanted || normalized == wanted + 's' ||
+          (wanted.endsWith('y') && normalized == wanted.substring(0, wanted.length - 1) + 'ies')) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  String? rowField;
+  final rowMatch = RegExp(
+    r'\b(?:top\s+\d+|top|show|display|group(?:ed)?\s+by)\s+([a-z0-9_ ?-]+?)(?:\s+in\s+a\s+pivot|\s+by\s+(?:total|sum|average|avg|mean|max|min|count)|\s*$)',
+    caseSensitive: false,
+  ).firstMatch(lower);
+  if (rowMatch != null) rowField = findColumn(rowMatch.group(1)!.trim());
+  rowField ??= availableColumns.firstWhere((column) {
+    final firstWord = _normalize(column).split(' ').first;
+    return RegExp(r'\b' + RegExp.escape(firstWord) + r's?\b', caseSensitive: false).hasMatch(lower);
+  }, orElse: () => '');
+  if (rowField.isEmpty) rowField = null;
+
+  String? valueField;
+  String operation = 'sum';
+  for (final column in availableColumns) {
+    if (column == rowField) continue;
+    final escaped = RegExp.escape(_normalize(column));
+    final measureBefore = RegExp(r'\b(total|sum|average|avg|mean|max|maximum|min|minimum|count|number of)\s+(?:of\s+)?' + escaped + r'\b', caseSensitive: false);
+    final measureAfter = RegExp(r'\b' + escaped + r'\s+(?:total|sum|average|avg|mean|max|maximum|min|minimum|count)\b', caseSensitive: false);
+    if (measureBefore.hasMatch(lower) || measureAfter.hasMatch(lower)) {
+      valueField = column;
+      final match = RegExp(r'\b(total|sum|average|avg|mean|max|maximum|min|minimum|count|number of)\s+(?:of\s+)?' + escaped, caseSensitive: false).firstMatch(lower);
+      final opWord = match?.group(1)?.toLowerCase();
+      operation = switch (opWord) {
+        'average' || 'avg' || 'mean' => 'average',
+        'max' || 'maximum' => 'max',
+        'min' || 'minimum' => 'min',
+        'count' || 'number of' => 'count',
+        _ => 'sum',
+      };
+      break;
+    }
+  }
+
+  if (rowField == null) return null;
+  if (valueField == null) {
+    return {
+      'action': 'pivot', 'confidence': 0.99, 'needsClarification': true,
+      'message': 'Which measure should the PivotTable use for the ranking — restaurant count, total cost, or average rating?',
+      'pivot': {'rowFields': [rowField], 'valueFields': const <Map<String, String>>[]},
+    };
+  }
+  final topMatch = RegExp(r'\btop\s+(\d+)\b', caseSensitive: false).firstMatch(lower);
+  final limit = topMatch == null ? null : int.tryParse(topMatch.group(1)!);
+  return {
+    'action': 'pivot', 'confidence': 0.99, 'message': 'Using the existing local PivotTable engine.',
+    'pivot': {
+      'rowFields': [rowField],
+      'valueFields': [{'field': valueField, 'op': operation}],
+      if (limit != null && limit > 0) 'limit': limit,
+      if (lower.contains('top ')) 'sortByValue': 'descending',
+    },
+  };
+}
 Future<Map<String, dynamic>> parseAgenticCommand({
   required String userText,
   required List<String> availableColumns,
@@ -309,6 +385,10 @@ Future<Map<String, dynamic>> parseAgenticCommand({
           if (targetCurrency != null && !wantsAllColumns) "targetCurrency": targetCurrency,
         },
       };
+    }
+    final localPivot = _buildLocalPivotPlan(userText, availableColumns);
+    if (localPivot != null) {
+      return localPivot;
     }
     final localCategorization = _buildLocalCategorizationPlan(userText, availableColumns);
     if (localCategorization != null) {
