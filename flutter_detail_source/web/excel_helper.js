@@ -1350,6 +1350,58 @@ async function processExcelPipeline(optionsJson) {
             }
             console.log("PIVOT STEP 24: Finished value hierarchies");
 
+            // Combined query support: ranked requests are applied to the
+            // real PivotTable field so the PivotTable itself contains the
+            // requested top-N set.
+            const pivotSortByValue = String(pc.sortByValue || "").toLowerCase();
+            const pivotLimit = Number.isFinite(Number(pc.limit))
+                ? Math.max(0, Math.floor(Number(pc.limit)))
+                : null;
+            let pivotFieldForRanking = null;
+            if (pivotSortByValue || (pivotLimit != null && pivotLimit > 0)) {
+                if (!lastAddedDataHier) {
+                    throw new Error("PivotTable ranking requires a configured value hierarchy.");
+                }
+                const requestedDirection =
+                    pivotSortByValue === "asc" || pivotSortByValue === "ascending"
+                        ? "Ascending"
+                        : "Descending";
+                const rankingHierarchy = pivotTable.hierarchies.getItem(rowFields[0]);
+                pivotFieldForRanking = rankingHierarchy.fields.getItem(rowFields[0]);
+                if (typeof pivotFieldForRanking.sortByValues !== "function") {
+                    throw new Error("This Excel runtime does not support PivotTable value sorting (ExcelApi 1.9+ is required for ranked PivotTable requests).");
+                }
+                pivotFieldForRanking.sortByValues(requestedDirection, lastAddedDataHier);
+                await context.sync();
+                console.log("PIVOT STEP 24a: Applied value sort", requestedDirection);
+
+                if (pivotLimit != null && pivotLimit > 0) {
+                    if (!pivotFieldForRanking.items || typeof pivotFieldForRanking.items.load !== "function") {
+                        throw new Error("This Excel runtime does not expose PivotTable items required for a top-N filter.");
+                    }
+                    pivotFieldForRanking.items.load("items/name");
+                    await context.sync();
+                    const rankedItems = Array.isArray(pivotFieldForRanking.items.items)
+                        ? pivotFieldForRanking.items.items
+                        : [];
+                    rankedItems.forEach((item, index) => {
+                        item.visible = index < pivotLimit;
+                    });
+                    await context.sync();
+                    console.log("PIVOT STEP 24c: Applied top-N item visibility", {
+                        limit: pivotLimit,
+                        itemCount: rankedItems.length,
+                    });
+                }
+            }
+
+            if (pc.hideGrandTotals === true) {
+                pivotTable.layout.showRowGrandTotals = false;
+                pivotTable.layout.showColumnGrandTotals = false;
+                await context.sync();
+                console.log("PIVOT STEP 24d: Disabled grand totals for chart-safe PivotTable output");
+            }
+
             // ── Cleanup ordering (fixes the deferred "InvalidArgument" that
             // surfaced on the NEXT worksheet switch after pivot creation) ──
             //
@@ -1449,6 +1501,30 @@ async function processExcelPipeline(optionsJson) {
                 console.warn(" Staging layer clear bypassed.", e);
             }
 
+            // Capture the actual PivotTable range after ranking/filter
+            // operations have settled. The existing native chart bridge uses
+            // this range directly, avoiding a second aggregation.
+            const pivotOutputRange = pivotTable.layout.getRange();
+            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+            await context.sync();
+            if (!pivotOutputRange.address || pivotOutputRange.rowCount < 2 || pivotOutputRange.columnCount < 2) {
+                throw new Error("PivotTable was created but did not expose a populated two-column output range.");
+            }
+            const pivotStartColumn = pivotOutputRange.columnIndex + pivotOutputRange.columnCount + 1;
+            function excelColumnName(index) {
+                let n = index + 1, out = "";
+                while (n > 0) {
+                    const rem = (n - 1) % 26;
+                    out = String.fromCharCode(65 + rem) + out;
+                    n = Math.floor((n - 1) / 26);
+                }
+                return out;
+            }
+            const chartStartColumn = excelColumnName(pivotStartColumn);
+            const chartStartRow = pivotOutputRange.rowIndex + 1;
+            const chartEndColumn = excelColumnName(pivotStartColumn + 8);
+            const chartEndRow = chartStartRow + 19;
+
             // Count PivotTables now on the sheet (including the one just
             // added) so Flutter/backend callers can report an accurate
             // pivotCount without a separate round trip.
@@ -1489,6 +1565,11 @@ async function processExcelPipeline(optionsJson) {
                     gapRows: PIVOT_GAP_ROWS,
                     pivotCount: pivotTablesOnSheet.items.length,
                     sheetAlreadyExisted: sheetAlreadyExisted,
+                    pivotRangeAddress: pivotOutputRange.address,
+                    pivotRowCount: pivotOutputRange.rowCount,
+                    pivotColumnCount: pivotOutputRange.columnCount,
+                    chartStartCell: chartStartColumn + chartStartRow,
+                    chartEndCell: chartEndColumn + chartEndRow,
                 }),
             };
         } finally {
