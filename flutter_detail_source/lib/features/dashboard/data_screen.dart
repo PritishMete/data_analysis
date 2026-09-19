@@ -2938,6 +2938,18 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           );
           return;
         }
+        if (action == 'clarification') {
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text": operation['question']?.toString() ??
+                  localResult['error']?.toString() ??
+                  'Please clarify the requested measure.',
+            });
+          });
+          return;
+        }
         if (action == 'quality_check' && operation['source_mutated'] == true) {
           throw 'Local quality check unexpectedly reported source mutation.';
         }
