@@ -335,7 +335,7 @@ Map<String, dynamic>? _buildLocalPivotPlan(
   if (valueField == null) {
     return {
       'action': 'pivot', 'confidence': 0.99, 'needsClarification': true,
-      'message': 'Which measure should the PivotTable use for the ranking — restaurant count, total cost, or average rating?',
+      'message': 'Which measure should the PivotTable use for the ranking (for example, count, total cost, or average rating)?',
       'pivot': {'rowFields': [rowField], 'valueFields': const <Map<String, String>>[]},
     };
   }
