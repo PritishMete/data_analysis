@@ -601,7 +601,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (!kIsWeb) return;
     String? rawData;
     if (!useActiveSelection && selectedSourceSheet != null) {
-      rawData = await fetchSheetData(selectedSourceSheet!);
+      rawData = await getInsightFlowSourceData();
+      rawData ??= await fetchSheetData(selectedSourceSheet!);
     } else {
       rawData = await safeFetchActiveSheetData();
       if (rawData == null) {
@@ -859,6 +860,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (dataSourceMode == DataSourceMode.uploadedFile) return _uploadedFileAsJsonString();
     final source = await _ensureAnalyticalSourceSheet();
     if (source == null || source.isEmpty) return null;
+    // Analytical reads must use the persisted worksheet/range context. This
+    // prevents a generated Quality_Report, Query_Result, or Pivot sheet from
+    // becoming the source merely because Excel activated it.
+    if (kIsWeb) {
+      final persistedData = await getInsightFlowSourceData();
+      if (persistedData != null && persistedData.isNotEmpty) return persistedData;
+    }
     return fetchSheetData(source);
   }
 
