@@ -510,7 +510,67 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   Future<void> syncOnStartup() async {
     if (!kIsWeb) return;
     await refreshWorksheetNames();
+    final persistedSource = await getInsightFlowSourceWorksheetName();
+    if (persistedSource != null && persistedSource.isNotEmpty) {
+      if (availableSheets.contains(persistedSource)) {
+        useActiveSelection = false;
+        selectedSourceSheet = persistedSource;
+        activeSheetName = persistedSource;
+      } else {
+        useActiveSelection = false;
+        selectedSourceSheet = null;
+        activeSheetName = "Source worksheet unavailable";
+      }
+    } else {
+      final active = await getActiveWorksheetName();
+      if (active != null && active.isNotEmpty) {
+        final saved = await setInsightFlowSourceWorksheetName(active);
+        if (saved) {
+          useActiveSelection = false;
+          selectedSourceSheet = active;
+          activeSheetName = active;
+        }
+      }
+    }
     await syncHeadersSilently();
+  }
+
+  /// Establishes the workbook's analytical source once, then reuses it for
+  /// subsequent queries. Excel activation remains presentation-only.
+  Future<String?> _ensureAnalyticalSourceSheet() async {
+    if (dataSourceMode == DataSourceMode.uploadedFile) return null;
+    if (!kIsWeb) return null;
+    final persisted = await getInsightFlowSourceWorksheetName();
+    if (persisted != null && persisted.isNotEmpty) {
+      if (!availableSheets.contains(persisted)) {
+        throw "The established source worksheet '$persisted' is no longer available. Select an original dataset worksheet before running this query.";
+      }
+      if (useActiveSelection || selectedSourceSheet != persisted) {
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = persisted;
+            activeSheetName = persisted;
+          });
+        }
+      }
+      return persisted;
+    }
+    final active = await getActiveWorksheetName();
+    if (active == null || active.isEmpty) {
+      throw "No analytical source worksheet is established. Select an original dataset worksheet first.";
+    }
+    if (!await setInsightFlowSourceWorksheetName(active)) {
+      throw "Could not establish '$active' as the analytical source worksheet.";
+    }
+    if (mounted) {
+      setState(() {
+        useActiveSelection = false;
+        selectedSourceSheet = active;
+        activeSheetName = active;
+      });
+    }
+    return active;
   }
 
   Future<void> refreshWorksheetNames() async {
@@ -792,10 +852,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   }
 
   Future<String?> _fetchSourceData() async {
-    if (dataSourceMode == DataSourceMode.uploadedFile)
-      return _uploadedFileAsJsonString();
-    if (useActiveSelection) return safeFetchActiveSheetData();
-    return fetchSheetData(selectedSourceSheet ?? "");
+    if (dataSourceMode == DataSourceMode.uploadedFile) return _uploadedFileAsJsonString();
+    final source = await _ensureAnalyticalSourceSheet();
+    if (source == null || source.isEmpty) return null;
+    return fetchSheetData(source);
   }
 
   Future<void> fetchLookupReferenceHeaders(String targetSheet) async {
