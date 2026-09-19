@@ -128,6 +128,19 @@ Future<String?> getActiveWorksheetName() async {
 @JS('getInsightFlowSourceWorksheetName')
 external JSPromise<JSString?> _getInsightFlowSourceWorksheetName();
 
+@JS('establishInsightFlowSourceFromActiveWorksheet')
+external JSPromise<JSString?> _establishInsightFlowSourceFromActiveWorksheet();
+
+Future<String?> establishInsightFlowSourceFromActiveWorksheet() async {
+  try {
+    final result = await _establishInsightFlowSourceFromActiveWorksheet().toDart;
+    if (result == null || result.isNull || result.isUndefined) return null;
+    return result.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
 @JS('setInsightFlowSourceWorksheetName')
 external JSPromise<JSBoolean> _setInsightFlowSourceWorksheetName(JSString sheetName);
 
