@@ -26,25 +26,42 @@ String _normalize(String value) => value
     .replaceAll(RegExp(r'\s+'), ' ');
 
 String? _matchColumn(List<String> availableColumns, List<String> candidates) {
-  final normalized = <String, String>{
-    for (final col in availableColumns) _normalize(col): col,
-  };
+  final names = availableColumns
+      .map((col) => {'raw': col, 'normalized': _normalize(col), 'singular': _singularColumnName(col)})
+      .toList();
+
+  // Deterministic precedence: exact normalized header, then singular/plural.
   for (final candidate in candidates) {
     final wanted = _normalize(candidate);
-    final exact = normalized[wanted];
-    if (exact != null) return exact;
+    final exact = names.where((x) => x['normalized'] == wanted).toList();
+    if (exact.length == 1) return exact.single['raw'] as String;
   }
-  // Be tolerant of real-world headers such as "Has Online Delivery?",
-  // "Online Delivery Available", or "Provides Table Booking".
+  for (final candidate in candidates) {
+    final wanted = _singularColumnName(candidate);
+    final inflection = names.where((x) => x['singular'] == wanted).toList();
+    if (inflection.length == 1) return inflection.single['raw'] as String;
+  }
+
+  // Candidate aliases are semantic fallbacks only. A generic alias such as
+  // "price" must not select between marked_price and discounted_price.
   for (final candidate in candidates) {
     final wantedWords = _normalize(candidate).split(' ').where((w) => w.isNotEmpty).toSet();
     if (wantedWords.isEmpty) continue;
-    for (final col in availableColumns) {
-      final words = _normalize(col).split(' ').where((w) => w.isNotEmpty).toSet();
-      if (wantedWords.every(words.contains)) return col;
-    }
+    final semantic = names.where((x) {
+      final words = (x['normalized'] as String).split(' ').where((w) => w.isNotEmpty).toSet();
+      return wantedWords.every(words.contains);
+    }).toList();
+    if (semantic.length == 1) return semantic.single['raw'] as String;
   }
   return null;
+}
+
+String _singularColumnName(String value) {
+  var normalized = _normalize(value);
+  if (normalized.endsWith('ies') && normalized.length > 3) return normalized.substring(0, normalized.length - 3) + 'y';
+  if (normalized.endsWith('es') && RegExp(r'(ches|shes|xes|zes|sses)$').hasMatch(normalized)) return normalized.substring(0, normalized.length - 2);
+  if (normalized.endsWith('s') && !normalized.endsWith('ss') && normalized.length > 2) return normalized.substring(0, normalized.length - 1);
+  return normalized;
 }
 
 bool _looksLikeFilterQuery(String text) {
