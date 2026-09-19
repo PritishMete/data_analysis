@@ -65,6 +65,11 @@ async function run() {
   assert.strictEqual(discountedPrice.success, false);
   assert.strictEqual(discountedPrice.operation.action, 'clarification');
   assert.strictEqual(discountedPrice.operation.resolved_measure, 'discounted_price');
+  const genericPrice = await execute(priceRanking, 'Show the top 5 brands by price.');
+  assert.strictEqual(genericPrice.success, false);
+  assert.match(genericPrice.error, /ambiguous|specify how to rank/i);
+  assert.deepStrictEqual(genericPrice.operation.candidates, ['marked_price', 'discounted_price']);
+
   const averageMarkedPrice = await execute(priceRanking, 'Show the top 5 brands by average marked price.');
   assert.strictEqual(averageMarkedPrice.success, true);
   assert.strictEqual(averageMarkedPrice.operation.measure, 'marked_price');
