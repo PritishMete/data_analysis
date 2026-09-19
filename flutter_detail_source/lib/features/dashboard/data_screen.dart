@@ -3435,7 +3435,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     // previous Pivot Tables" rule this feature is required to uphold.
     String targetSheetName = sheetName;
     await refreshWorksheetNames();
-    if (!appendMode && availableSheets.contains(targetSheetName)) {
+    if (!appendMode && !reuseExisting && availableSheets.contains(targetSheetName)) {
       targetSheetName =
           "${targetSheetName}_${DateTime.now().millisecondsSinceEpoch % 10000}";
     }
