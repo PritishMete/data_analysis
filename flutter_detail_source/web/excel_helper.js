@@ -1558,10 +1558,20 @@ async function processExcelPipeline(optionsJson) {
             // operations have settled. The existing native chart bridge uses
             // this range directly, avoiding a second aggregation.
             const pivotOutputRange = pivotTable.layout.getRange();
-            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex", "values"]);
             await context.sync();
             if (!pivotOutputRange.address || pivotOutputRange.rowCount < 2 || pivotOutputRange.columnCount < 2) {
                 throw new Error("PivotTable was created but did not expose a populated two-column output range.");
+            }
+            if (pivotLimit != null && pivotLimit > 0) {
+                const pivotRows = Array.isArray(pivotOutputRange.values)
+                    ? pivotOutputRange.values.slice(1).filter(row =>
+                        Array.isArray(row) &&
+                        row.some(v => v !== null && v !== undefined && String(v).trim() !== ""))
+                    : [];
+                if (pivotRows.length > pivotLimit) {
+                    throw new Error("PivotTable top-N verification failed: the populated PivotTable output contains " + pivotRows.length + " item rows for a requested limit of " + pivotLimit + ".");
+                }
             }
             const pivotStartColumn = pivotOutputRange.columnIndex + pivotOutputRange.columnCount + 1;
             function excelColumnName(index) {
