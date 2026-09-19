@@ -6,6 +6,8 @@ Future<String?> fetchExcelSelection() async => null;
 Future<List<String>> getWorksheetNames() async => [];
 
 Future<String?> getActiveWorksheetName() async => null;
+Future<String?> getInsightFlowSourceWorksheetName() async => null;
+Future<bool> setInsightFlowSourceWorksheetName(String sheetName) async => false;
 
 Future<String?> fetchSheetData(String sheetName) async => null;
 
