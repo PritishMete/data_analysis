@@ -241,7 +241,8 @@ async function getInsightFlowSourceData() {
 
             let matrix;
             if (source.rangeAddress) {
-                const range = sheet.getRange(source.rangeAddress);
+                const localAddress = String(source.rangeAddress).split("!").pop();
+                const range = sheet.getRange(localAddress);
                 range.load(["values", "address", "rowCount", "columnCount"]);
                 await context.sync();
                 matrix = _normaliseMatrix(range.values);
