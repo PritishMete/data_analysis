@@ -1,6 +1,6 @@
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 const source=fs.readFileSync(require('path').join(__dirname,'..','web','excel_helper.js'),'utf8');
-const state={active:'Quality_Report',settings:{}};
+const state={active:'Quality_Report',settings:{},sourceMatrix:[['Product','marked_price'],['A',100]]};
 const sourceSheet={name:'Restaurants',id:'sheet-source-1',isNullObject:false};
 const reportSheet={name:'Quality_Report',id:'sheet-report-1',isNullObject:false};
 const settings={
@@ -8,6 +8,7 @@ const settings={
   add(key,value){state.settings[key]=value;}
 };
 const workbook={
+  getSelectedRange(){return {address:'Restaurants!A1:B2',rowCount:2,columnCount:2,load(){},getCurrentRegion(){return {address:'Restaurants!A1:B2',rowCount:2,columnCount:2,load(){}};}};},
   settings,
   worksheets:{
     getActiveWorksheet(){return state.active==='Quality_Report'?reportSheet:sourceSheet;},
@@ -24,6 +25,10 @@ vm.createContext(context);vm.runInContext(source,context);
   assert.strictEqual(restored,'Restaurants');
 
   state.settings={};
+  state.active='Restaurants';
+  assert.strictEqual(await context.window.establishInsightFlowSourceFromActiveWorksheet(),'Restaurants');
+  const storedRange=JSON.parse(state.settings['InsightFlow.SourceWorksheet']);
+  assert.strictEqual(storedRange.rangeAddress,'Restaurants!A1:B2');
   state.active='Quality_Report';
   assert.strictEqual(await context.window.getInsightFlowSourceWorksheetName(),null);
 
