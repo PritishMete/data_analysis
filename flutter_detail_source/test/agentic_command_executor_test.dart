@@ -46,6 +46,54 @@ void main() {
     expect(categorize.containsKey('targetCurrency'), isFalse);
   });
 
+  test('explicit PivotTable request is classified locally with total cost measure', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'create a pivot table of total cost by cuisine',
+      availableColumns: const ['Cuisine', 'Cost', 'Rating'],
+      availableSheets: const ['Restaurants', 'Quality_Report'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    expect(parsed['confidence'], greaterThanOrEqualTo(0.9));
+    expect(parsed['needsClarification'], isNot(true));
+
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['rowFields'], ['Cuisine']);
+    final values = List<Map<String, dynamic>>.from(
+      (pivot['valueFields'] as List).map((v) => Map<String, dynamic>.from(v as Map)),
+    );
+    expect(values.single['field'], 'Cost');
+    expect(values.single['op'], 'sum');
+  });
+
+  test('top PivotTable request preserves descending limit and stays local', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'show top 5 cuisines in a pivot table by total cost',
+      availableColumns: const ['Cuisine', 'Cost', 'Rating'],
+      availableSheets: const ['Restaurants', 'Quality_Report'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['rowFields'], ['Cuisine']);
+    expect(pivot['limit'], 5);
+    expect(pivot['sortByValue'], 'descending');
+  });
+
+  test('underspecified top cuisines request asks for a ranking measure', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'create a pivot table to show top cuisines',
+      availableColumns: const ['Cuisine', 'Cost', 'Rating'],
+      availableSheets: const ['Restaurants', 'Quality_Report'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    expect(parsed['needsClarification'], isTrue);
+    expect(parsed['message'].toString(), contains('restaurant count'));
+    expect(parsed['message'].toString(), contains('total cost'));
+    expect(parsed['message'].toString(), contains('average rating'));
+  });
+
   test('target currency aliases resolve to ISO codes and symbols', () {
     expect(resolveTargetCurrency('convert currency to rupee'), 'INR');
     expect(resolveTargetCurrency('convert currency to rupees'), 'INR');
