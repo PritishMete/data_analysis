@@ -2881,7 +2881,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Classify them before SecureExcelLocalService/remote fallback so secure-local
       // mode cannot reject a request the existing Office.js PivotTable engine supports.
       final explicitPivotQuery = RegExp(
-        r'\\bpivot\\s*table\\b|\\bpivottable\\b',
+        r'\bpivot\s*table\b|\bpivottable\b',
         caseSensitive: false,
       ).hasMatch(lower);
       if (explicitPivotQuery) {
