@@ -58,6 +58,9 @@ jobs:
       - name: Worksheet schema bridge tests
         run: node test/excel_schema_bridge_test.js
 
+      - name: Source worksheet context tests
+        run: node test/excel_source_context_test.js
+
       - name: Schema intelligence tests
         run: node test/excel_schema_intelligence_test.js
 
