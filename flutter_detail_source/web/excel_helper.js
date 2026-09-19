@@ -58,6 +58,73 @@ async function getActiveWorksheetName() {
 }
 window.getActiveWorksheetName = getActiveWorksheetName;
 
+function _isGeneratedInsightFlowWorksheet(name) {
+    const n = String(name || "").trim().toLowerCase();
+    if (!n) return true;
+    return n === "quality_report" ||
+        n === "data_quality_report" ||
+        n === "query_result" ||
+        n.indexOf("query_result") === 0 ||
+        n.indexOf("pivot_") === 0 ||
+        n.indexOf("pivot ") === 0 ||
+        n.indexOf("data_quality") === 0 ||
+        n.indexOf("quality_report") === 0 ||
+        n.indexOf("temp_source_buffer_") === 0 ||
+        n.indexOf("refactored_data") === 0 ||
+        n.indexOf("wrapped_table") === 0 ||
+        n.indexOf("_split") === n.length - 6;
+}
+
+async function getInsightFlowSourceWorksheetName() {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return null;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const setting = workbook.settings.getItemOrNullObject("InsightFlow.SourceWorksheet");
+            setting.load(["value", "key", "isNullObject"]);
+            await context.sync();
+            if (!setting.isNullObject && setting.value) {
+                const sheet = workbook.worksheets.getItemOrNullObject(String(setting.value));
+                sheet.load(["name", "isNullObject"]);
+                await context.sync();
+                if (!sheet.isNullObject) return sheet.name;
+            }
+            const active = workbook.worksheets.getActiveWorksheet();
+            active.load("name");
+            await context.sync();
+            return _isGeneratedInsightFlowWorksheet(active.name) ? null : active.name;
+        });
+    } catch (err) {
+        console.error("getInsightFlowSourceWorksheetName error:", err);
+        return null;
+    }
+}
+
+async function setInsightFlowSourceWorksheetName(sheetName) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return false;
+    const name = String(sheetName || "").trim();
+    if (!name || _isGeneratedInsightFlowWorksheet(name)) return false;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const sheet = workbook.worksheets.getItemOrNullObject(name);
+            sheet.load(["name", "isNullObject"]);
+            await context.sync();
+            if (sheet.isNullObject) return false;
+            workbook.settings.add("InsightFlow.SourceWorksheet", sheet.name);
+            await context.sync();
+            return true;
+        });
+    } catch (err) {
+        console.error("setInsightFlowSourceWorksheetName error:", err);
+        return false;
+    }
+}
+window.getInsightFlowSourceWorksheetName = getInsightFlowSourceWorksheetName;
+window.setInsightFlowSourceWorksheetName = setInsightFlowSourceWorksheetName;
+
 function _isMeaningfulMatrix(matrix) {
     return Array.isArray(matrix) && matrix.length > 0 &&
         matrix.some(row => Array.isArray(row) && row.some(v => v !== null && v !== undefined && String(v).trim() !== ""));
