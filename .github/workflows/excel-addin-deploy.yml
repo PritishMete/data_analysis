@@ -67,6 +67,9 @@ jobs:
       - name: Query-to-chart flow regression test
         run: node test/excel_query_chart_flow_test.js
 
+      - name: PivotTable-to-chart integration test
+        run: node test/excel_pivot_chart_integration_test.js
+
       - name: Build Excel-enabled Flutter web app
         run: flutter build web --release --base-href /data_analysis/
 
