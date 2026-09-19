@@ -1615,6 +1615,18 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     });
 
     final lowerQuery = query.toLowerCase();
+    if (dataSourceMode != DataSourceMode.uploadedFile && kIsWeb) {
+      try {
+        await _ensureAnalyticalSourceSheet();
+        await syncHeadersSilently();
+      } catch (e) {
+        setState(() {
+          isSearchingChat = false;
+          chatHistory.add({"sender": "system", "text": "❌ " + e.toString()});
+        });
+        return;
+      }
+    }
     final isCategorizationQuery = RegExp(
       r'\b(?:categorize|categorise|classification|classify|categorization|categorisation)\b',
       caseSensitive: false,
