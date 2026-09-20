@@ -26,24 +26,28 @@ function mockWorkbook() {
     dataAdds: [],
     summarizations: [],
     pivotAdds: 0,
+    addedSheets: [],
+    deletedSheets: [],
     activated: [],
   };
   const sourceValues = [
-    ['product_name', 'brand_name', 'category', 'marked_price'],
-    ['A', 'Brand 1', 'Cat 1', 100],
-    ['B', 'Brand 1', 'Cat 2', 200],
-    ['C', 'Brand 2', 'Cat 1', 300],
+    ['brand_name', 'marked_price'],
+    ['Brand A', 100],
+    ['Brand A', 250],
+    ['Brand B', 150],
+    ['Brand B', 300],
   ];
   const sourceRange = createRange(sourceValues);
   const pivotRange = createRange(
     [
-      ['product_name', 'Sum of marked_price'],
-      ['A', 100],
-      ['B', 200],
+      ['brand_name', 'Max of marked_price'],
+      ['Brand A', 250],
+      ['Brand B', 300],
+      ['Grand Total', 300],
     ],
-    'Pivot_Output!A1:B3',
+    'Pivot_Output!A1:B4',
   );
-  const hierarchies = ['product_name', 'brand_name', 'category', 'marked_price']
+  const hierarchies = ['brand_name', 'marked_price']
     .map((name) => ({ name, fields: { getItem: () => ({ sortByValues() {}, items: { items: [], load() {} } }) } }));
   const hierarchyCollection = {
     items: hierarchies,
@@ -96,6 +100,7 @@ function mockWorkbook() {
         return sheets.get(name);
       },
       add(name) {
+        calls.addedSheets.push(name);
         const sheet = {
           name,
           pivotTables: {
@@ -116,7 +121,7 @@ function mockWorkbook() {
           getRangeByIndexes() { return createRange([['temp']]); },
           getUsedRange() { return createRange([['temp']]); },
           activate() { calls.activated.push(name); },
-          delete() { sheets.delete(name); },
+          delete() { calls.deletedSheets.push(name); sheets.delete(name); },
           load() {},
         };
         sheets.set(name, sheet);
@@ -164,12 +169,11 @@ async function main() {
     pivotConfig: {
       sheetName: 'Pivot_Output',
       tableName: 'Pivot_Test',
-      rowFields: ['product_name'],
-      columnFields: ['brand_name'],
-      filterFields: ['category'],
+      rowFields: ['brand_name'],
+      columnFields: [],
+      filterFields: [],
       valueFields: [
         { field: 'marked_price', op: 'max' },
-        { field: 'marked_price', op: 'average' },
       ],
       appendMode: false,
     },
@@ -177,13 +181,17 @@ async function main() {
 
   assert.strictEqual(result.success, true, result.error);
   assert.strictEqual(calls.pivotAdds, 1);
-  assert.deepStrictEqual(calls.rowAdds, ['product_name']);
-  assert.deepStrictEqual(calls.columnAdds, ['brand_name']);
-  assert.deepStrictEqual(calls.filterAdds, ['category']);
-  assert.deepStrictEqual(calls.dataAdds, ['marked_price', 'marked_price']);
-  assert.deepStrictEqual(calls.summarizations, ['MAX', 'AVERAGE']);
+  assert.deepStrictEqual(calls.rowAdds, ['brand_name']);
+  assert.deepStrictEqual(calls.columnAdds, []);
+  assert.deepStrictEqual(calls.filterAdds, []);
+  assert.deepStrictEqual(calls.dataAdds, ['marked_price']);
+  assert.deepStrictEqual(calls.summarizations, ['MAX']);
+  assert.deepStrictEqual(calls.addedSheets, ['Pivot_Output']);
+  assert.deepStrictEqual(calls.deletedSheets, []);
+  assert.deepStrictEqual(calls.activated, ['Pivot_Output']);
   const placement = JSON.parse(result.pivotPlacement);
   assert.strictEqual(placement.nativePivotVerified, true);
+  assert.strictEqual(placement.pivotRangeAddress, 'Pivot_Output!A1:B4');
 
   const failed = await context.processExcelPipeline(JSON.stringify({
     sourceSheetName: 'Products',
@@ -191,11 +199,23 @@ async function main() {
     pivotConfig: {
       sheetName: 'Pivot_Bad',
       rowFields: ['missing_field'],
-      valueFields: [{ field: 'marked_price', op: 'sum' }],
+      valueFields: [{ field: 'marked_price', op: 'max' }],
     },
   }));
   assert.strictEqual(failed.success, false);
   assert.match(failed.error, /Could not resolve PivotTable row field/);
+
+  const nonNumeric = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Pivot_Bad_Max',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'brand_name', op: 'max' }],
+    },
+  }));
+  assert.strictEqual(nonNumeric.success, false);
+  assert.match(nonNumeric.error, /MAX requires a numeric value field/);
 
   console.log('excel_native_pivot_test: PASS');
 }
