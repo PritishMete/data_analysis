@@ -60,13 +60,28 @@ function mockWorkbook() {
   };
   const pivotTable = {
     hierarchies: hierarchyCollection,
-    rowHierarchies: { add(h) { calls.rowAdds.push(h.name); } },
-    columnHierarchies: { add(h) { calls.columnAdds.push(h.name); } },
-    filterHierarchies: { add(h) { calls.filterAdds.push(h.name); } },
+    rowHierarchies: {
+      items: [],
+      load() {},
+      add(h) { calls.rowAdds.push(h.name); this.items.push(h); },
+    },
+    columnHierarchies: {
+      items: [],
+      load() {},
+      add(h) { calls.columnAdds.push(h.name); this.items.push(h); },
+    },
+    filterHierarchies: {
+      items: [],
+      load() {},
+      add(h) { calls.filterAdds.push(h.name); this.items.push(h); },
+    },
     dataHierarchies: {
+      items: [],
+      load() {},
       add(h) {
         calls.dataAdds.push(h.name);
-        const dataHierarchy = {};
+        const dataHierarchy = { name: h.name };
+        this.items.push(dataHierarchy);
         Object.defineProperty(dataHierarchy, 'summarizeBy', {
           set(value) { calls.summarizations.push(value); },
         });
