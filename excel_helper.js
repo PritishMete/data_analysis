@@ -58,6 +58,214 @@ async function getActiveWorksheetName() {
 }
 window.getActiveWorksheetName = getActiveWorksheetName;
 
+function _isGeneratedInsightFlowWorksheet(name) {
+    const n = String(name || "").trim().toLowerCase();
+    if (!n) return true;
+    return n === "quality_report" ||
+        n === "data_quality_report" ||
+        n === "query_result" ||
+        n.indexOf("query_result") === 0 ||
+        n.indexOf("pivot_") === 0 ||
+        n.indexOf("pivot ") === 0 ||
+        n.indexOf("data_quality") === 0 ||
+        n.indexOf("quality_report") === 0 ||
+        n.indexOf("temp_source_buffer_") === 0 ||
+        n.indexOf("refactored_data") === 0 ||
+        n.indexOf("wrapped_table") === 0 ||
+        n.indexOf("_split") === n.length - 6;
+}
+
+function _parseInsightFlowSourceSetting(value) {
+    if (!value) return null;
+    try {
+        const parsed = JSON.parse(String(value));
+        if (parsed && typeof parsed === "object") return parsed;
+    } catch (_) {}
+    return { name: String(value) };
+}
+
+async function getInsightFlowSourceWorksheetName() {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return null;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const setting = workbook.settings.getItemOrNullObject("InsightFlow.SourceWorksheet");
+            setting.load(["value", "key", "isNullObject"]);
+            await context.sync();
+            if (setting.isNullObject || !setting.value) return null;
+
+            const source = _parseInsightFlowSourceSetting(setting.value);
+            if (!source) return null;
+
+            let sheet = null;
+            if (source.id) {
+                sheet = workbook.worksheets.getItemOrNullObject(String(source.id));
+                sheet.load(["name", "id", "isNullObject"]);
+                await context.sync();
+                if (!sheet.isNullObject) return sheet.name;
+            }
+            if (source.name) {
+                sheet = workbook.worksheets.getItemOrNullObject(String(source.name));
+                sheet.load(["name", "id", "isNullObject"]);
+                await context.sync();
+                if (!sheet.isNullObject) return sheet.name;
+            }
+            return null;
+        });
+    } catch (err) {
+        console.error("getInsightFlowSourceWorksheetName error:", err);
+        return null;
+    }
+}
+
+async function setInsightFlowSourceWorksheetName(sheetName) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return false;
+    const name = String(sheetName || "").trim();
+    if (!name || _isGeneratedInsightFlowWorksheet(name)) return false;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const sheet = workbook.worksheets.getItemOrNullObject(name);
+            sheet.load(["name", "id", "isNullObject"]);
+            await context.sync();
+            if (sheet.isNullObject) return false;
+            workbook.settings.add("InsightFlow.SourceWorksheet", JSON.stringify({
+                id: sheet.id,
+                name: sheet.name,
+            }));
+            await context.sync();
+            return true;
+        });
+    } catch (err) {
+        console.error("setInsightFlowSourceWorksheetName error:", err);
+        return false;
+    }
+}
+
+async function setInsightFlowSourceWorksheetName(sheetName) {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return false;
+    const name = String(sheetName || "").trim();
+    if (!name || _isGeneratedInsightFlowWorksheet(name)) return false;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const sheet = workbook.worksheets.getItemOrNullObject(name);
+            sheet.load(["name", "id", "isNullObject"]);
+            await context.sync();
+            if (sheet.isNullObject) return false;
+            workbook.settings.add("InsightFlow.SourceWorksheet", JSON.stringify({
+                id: sheet.id,
+                name: sheet.name,
+            }));
+            await context.sync();
+            return true;
+        });
+    } catch (err) {
+        console.error("setInsightFlowSourceWorksheetName error:", err);
+        return false;
+    }
+}
+
+// Establish the worksheet AND the exact dataset range selected by the user.
+// The range is workbook-local metadata only; no cell values are persisted.
+async function establishInsightFlowSourceFromActiveWorksheet() {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return null;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const sheet = workbook.worksheets.getActiveWorksheet();
+            sheet.load(["name", "id"]);
+            const selected = workbook.getSelectedRange();
+            selected.load(["address", "rowCount", "columnCount"]);
+            await context.sync();
+            if (_isGeneratedInsightFlowWorksheet(sheet.name)) return null;
+
+            let sourceRange = null;
+            try {
+                const currentRegion = selected.getCurrentRegion();
+                currentRegion.load(["address", "rowCount", "columnCount"]);
+                await context.sync();
+                if ((currentRegion.rowCount || 0) > 1 &&
+                    (currentRegion.columnCount || 0) > 1) {
+                    sourceRange = currentRegion;
+                }
+            } catch (_) {}
+
+            const rangeAddress = sourceRange ? sourceRange.address : selected.address;
+            workbook.settings.add("InsightFlow.SourceWorksheet", JSON.stringify({
+                id: sheet.id,
+                name: sheet.name,
+                rangeAddress: rangeAddress,
+            }));
+            await context.sync();
+            console.log("[SOURCE CONTEXT] established analytical source metadata (worksheet/range only).");
+            return sheet.name;
+        });
+    } catch (err) {
+        console.error("establishInsightFlowSourceFromActiveWorksheet error:", err);
+        return null;
+    }
+}
+
+async function getInsightFlowSourceData() {
+    await window.waitForOfficeReady();
+    if (typeof Excel === "undefined") return null;
+    try {
+        return await Excel.run(async function(context) {
+            const workbook = context.workbook;
+            const setting = workbook.settings.getItemOrNullObject("InsightFlow.SourceWorksheet");
+            setting.load(["value", "isNullObject"]);
+            await context.sync();
+            if (setting.isNullObject || !setting.value) return null;
+            const source = _parseInsightFlowSourceSetting(setting.value);
+            if (!source || !source.name) return null;
+
+            let sheet = null;
+            if (source.id) {
+                sheet = workbook.worksheets.getItemOrNullObject(String(source.id));
+                sheet.load(["name", "id", "isNullObject"]);
+                await context.sync();
+                if (sheet.isNullObject) sheet = null;
+            }
+            if (!sheet && source.name) {
+                sheet = workbook.worksheets.getItemOrNullObject(String(source.name));
+                sheet.load(["name", "id", "isNullObject"]);
+                await context.sync();
+                if (sheet.isNullObject) return null;
+            }
+            if (_isGeneratedInsightFlowWorksheet(sheet.name)) return null;
+
+            let matrix;
+            if (source.rangeAddress) {
+                const localAddress = String(source.rangeAddress).split("!").pop();
+                const range = sheet.getRange(localAddress);
+                range.load(["values", "address", "rowCount", "columnCount"]);
+                await context.sync();
+                matrix = _normaliseMatrix(range.values);
+                console.log("[SOURCE CONTEXT] reading persisted source range:", range.address,
+                    "shape:", _matrixShape(matrix));
+            } else {
+                const range = await _getLargestTableRange(context, sheet) || await _getUsedRangeData(context, sheet);
+                matrix = _normaliseMatrix(range && range.values);
+                console.log("[SOURCE CONTEXT] reading persisted source worksheet:", sheet.name,
+                    "shape:", _matrixShape(matrix));
+            }
+            return JSON.stringify(matrix);
+        });
+    } catch (err) {
+        console.error("getInsightFlowSourceData error:", err);
+        return JSON.stringify({ __error: (err && err.message) ? err.message : String(err) });
+    }
+}
+window.getInsightFlowSourceWorksheetName = getInsightFlowSourceWorksheetName;
+window.setInsightFlowSourceWorksheetName = setInsightFlowSourceWorksheetName;
+window.establishInsightFlowSourceFromActiveWorksheet = establishInsightFlowSourceFromActiveWorksheet;
+window.getInsightFlowSourceData = getInsightFlowSourceData;
+
 function _isMeaningfulMatrix(matrix) {
     return Array.isArray(matrix) && matrix.length > 0 &&
         matrix.some(row => Array.isArray(row) && row.some(v => v !== null && v !== undefined && String(v).trim() !== ""));
@@ -1558,10 +1766,20 @@ async function processExcelPipeline(optionsJson) {
             // operations have settled. The existing native chart bridge uses
             // this range directly, avoiding a second aggregation.
             const pivotOutputRange = pivotTable.layout.getRange();
-            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex", "values"]);
             await context.sync();
             if (!pivotOutputRange.address || pivotOutputRange.rowCount < 2 || pivotOutputRange.columnCount < 2) {
                 throw new Error("PivotTable was created but did not expose a populated two-column output range.");
+            }
+            if (pivotLimit != null && pivotLimit > 0) {
+                const pivotRows = Array.isArray(pivotOutputRange.values)
+                    ? pivotOutputRange.values.slice(1).filter(row =>
+                        Array.isArray(row) &&
+                        row.some(v => v !== null && v !== undefined && String(v).trim() !== ""))
+                    : [];
+                if (pivotRows.length > pivotLimit) {
+                    throw new Error("PivotTable top-N verification failed: the populated PivotTable output contains " + pivotRows.length + " item rows for a requested limit of " + pivotLimit + ".");
+                }
             }
             const pivotStartColumn = pivotOutputRange.columnIndex + pivotOutputRange.columnCount + 1;
             function excelColumnName(index) {
