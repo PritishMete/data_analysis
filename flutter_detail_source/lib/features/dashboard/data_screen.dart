@@ -4801,13 +4801,14 @@ Future<void> runTransformationPipeline() async {
             : null);
     final Map<String, dynamic> options = {
       "sourceSheetName": pivotSource,
-      "targetSheetName":
-          (useCustomTargetName &&
-              targetSheetNameController.text.trim().isNotEmpty)
-          ? targetSheetNameController.text.trim()
-          : (generatePivotTable
-                ? autoTargetName
-                : (agentPipelineSheetName ?? autoTargetName)),
+      // Native PivotTables write directly to pivotConfig.sheetName.
+      // Never create a parallel copied-data result sheet for the Pivot path.
+      "targetSheetName": generatePivotTable
+          ? null
+          : ((useCustomTargetName &&
+                  targetSheetNameController.text.trim().isNotEmpty)
+              ? targetSheetNameController.text.trim()
+              : (agentPipelineSheetName ?? autoTargetName)),
       "createNewSheet": true,
       "freezeHeaderRow": freezeHeaderRow,
       "enableAutoFilter": enableAutoFilter,
