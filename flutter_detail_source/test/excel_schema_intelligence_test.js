@@ -4,5 +4,6 @@ assert.strictEqual(s.resolveMeasure(priceSchema,'marked price').index,1);
 assert.strictEqual(s.resolveMeasure(priceSchema,'discounted price').index,2);
 assert.strictEqual(s.resolveDimension(['cuisine','cost'],'cuisines').index,0);
 assert.strictEqual(s.resolveMeasure(['sale price','unit price'],'price').index,-1);
-assert.strictEqual(s.resolveMeasure(['Revenue','Revenue Amount'],'revenue').index,-1);
+assert.strictEqual(s.resolveMeasure(['Revenue','Revenue Amount'],'revenue').index,0);
+assert.strictEqual(s.resolveMeasure(['Revenue','Revenue Amount'],'revenue amount').index,1);
 console.log('excel_schema_intelligence_test: PASS');

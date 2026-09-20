@@ -40,47 +40,88 @@ async function run() {
   assert.strictEqual(cuisineResult.operation.chart.title, 'Top 5 Cuisines by Total Cost');
 
   const priceRanking = [
-    ['Brand', 'marked_price', 'discounted_price'],
-    ['A', 1000, 800], ['A', 900, 700], ['B', 1200, 900], ['C', 500, 400],
+    ['product_name', 'marked_price', 'discounted_price'],
+    ['Alpha', 1000, 800],
+    ['Beta', 1200, 900],
+    ['Gamma', 500, 400],
+    ['Delta', 1700, 1300],
+    ['Epsilon', 1100, 1000],
+    ['Zeta', 50, 45],
   ];
-  const markedPrice = await execute(priceRanking, 'Show the top 5 brands by marked price.');
-  assert.strictEqual(markedPrice.success, false);
-  assert.strictEqual(markedPrice.operation.action, 'clarification');
-  assert.strictEqual(markedPrice.operation.resolved_measure, 'marked_price');
-  assert.strictEqual(markedPrice.diagnostics.resolved_measure_column, 'marked_price');
-  const productPriceRanking = [
-    ['Product', 'marked_price', 'discounted_price'],
-    ['Alpha', 1000, 800], ['Alpha', 900, 700], ['Beta', 1200, 900], ['Gamma', 500, 400],
+  const priceRankingOriginal = clone(priceRanking);
+  const priceCases = [
+    {
+      query: 'show me top 5 product_name by marked_price',
+      measure: 'marked_price',
+      label: 'Maximum marked_price',
+      rows: [
+        { product_name: 'Delta', 'Maximum marked_price': 1700 },
+        { product_name: 'Beta', 'Maximum marked_price': 1200 },
+        { product_name: 'Epsilon', 'Maximum marked_price': 1100 },
+        { product_name: 'Alpha', 'Maximum marked_price': 1000 },
+        { product_name: 'Gamma', 'Maximum marked_price': 500 },
+      ],
+    },
+    {
+      query: 'show me top 5 product_name by marked price',
+      measure: 'marked_price',
+      label: 'Maximum marked_price',
+      rows: [
+        { product_name: 'Delta', 'Maximum marked_price': 1700 },
+        { product_name: 'Beta', 'Maximum marked_price': 1200 },
+        { product_name: 'Epsilon', 'Maximum marked_price': 1100 },
+        { product_name: 'Alpha', 'Maximum marked_price': 1000 },
+        { product_name: 'Gamma', 'Maximum marked_price': 500 },
+      ],
+    },
+    {
+      query: 'show me top 5 product_name by discounted_price',
+      measure: 'discounted_price',
+      label: 'Maximum discounted_price',
+      rows: [
+        { product_name: 'Delta', 'Maximum discounted_price': 1300 },
+        { product_name: 'Epsilon', 'Maximum discounted_price': 1000 },
+        { product_name: 'Beta', 'Maximum discounted_price': 900 },
+        { product_name: 'Alpha', 'Maximum discounted_price': 800 },
+        { product_name: 'Gamma', 'Maximum discounted_price': 400 },
+      ],
+    },
+    {
+      query: 'show me top 5 product_name by discounted price',
+      measure: 'discounted_price',
+      label: 'Maximum discounted_price',
+      rows: [
+        { product_name: 'Delta', 'Maximum discounted_price': 1300 },
+        { product_name: 'Epsilon', 'Maximum discounted_price': 1000 },
+        { product_name: 'Beta', 'Maximum discounted_price': 900 },
+        { product_name: 'Alpha', 'Maximum discounted_price': 800 },
+        { product_name: 'Gamma', 'Maximum discounted_price': 400 },
+      ],
+    },
   ];
-  const markedProductPriceExactUnderscore = await execute(productPriceRanking, 'show me top 5 products by marked_price');
-  assert.strictEqual(markedProductPriceExactUnderscore.success, false);
-  assert.strictEqual(markedProductPriceExactUnderscore.operation.action, 'clarification');
-  assert.strictEqual(markedProductPriceExactUnderscore.operation.measure, 'marked_price');
-  assert.strictEqual(markedProductPriceExactUnderscore.operation.resolved_measure, 'marked_price');
-  assert.strictEqual(markedProductPriceExactUnderscore.diagnostics.resolved_measure_column, 'marked_price');
+  for (const testCase of priceCases) {
+    const result = await execute(priceRanking, testCase.query);
+    assert.strictEqual(result.success, true, testCase.query);
+    assert.strictEqual(result.operation.action, 'aggregate', testCase.query);
+    assert.strictEqual(result.operation.group_by[0], 'product_name', testCase.query);
+    assert.strictEqual(result.operation.measure, testCase.measure, testCase.query);
+    assert.strictEqual(result.operation.aggregation, 'max', testCase.query);
+    assert.strictEqual(result.operation.sort, 'desc', testCase.query);
+    assert.strictEqual(result.operation.limit, 5, testCase.query);
+    assert.strictEqual(result.operation.row_count, 5, testCase.query);
+    assert.deepStrictEqual(clone(result.operation.rows), testCase.rows, testCase.query);
+    assert.strictEqual(result.diagnostics.resolved_measure_column, testCase.measure, testCase.query);
+    assert.strictEqual(result.diagnostics.measure_defaulted_to, 'max_for_explicit_price_ranking', testCase.query);
+    assert.strictEqual(result.source_mutated, false, testCase.query);
+  }
+  assert.deepStrictEqual(priceRanking, priceRankingOriginal);
 
-  const discountedProductPrice = await execute(productPriceRanking, 'show me top 5 products by discounted price');
-  assert.strictEqual(discountedProductPrice.success, false);
-  assert.strictEqual(discountedProductPrice.operation.resolved_measure, 'discounted_price');
-  const markedProductPrice = await execute(productPriceRanking, 'show me top 5 products by marked price');
-  assert.strictEqual(markedProductPrice.success, false);
-  assert.strictEqual(markedProductPrice.operation.action, 'clarification');
-  assert.strictEqual(markedProductPrice.operation.group_by[0], 'Product');
-  assert.strictEqual(markedProductPrice.operation.measure, 'marked_price');
-  assert.strictEqual(markedProductPrice.operation.resolved_measure, 'marked_price');
-  assert.strictEqual(markedProductPrice.diagnostics.resolved_measure_column, 'marked_price');
-  assert.match(markedProductPrice.operation.question, /highest individual marked price|average marked price|total marked price/i);
-
-  const discountedPrice = await execute(priceRanking, 'Show the top 5 brands by discounted price.');
-  assert.strictEqual(discountedPrice.success, false);
-  assert.strictEqual(discountedPrice.operation.action, 'clarification');
-  assert.strictEqual(discountedPrice.operation.resolved_measure, 'discounted_price');
-  const genericPrice = await execute(priceRanking, 'Show the top 5 brands by price.');
+  const genericPrice = await execute(priceRanking, 'Show the top 5 product_name by price.');
   assert.strictEqual(genericPrice.success, false);
   assert.match(genericPrice.error, /ambiguous|specify how to rank/i);
   assert.deepStrictEqual(genericPrice.operation.candidates, ['marked_price', 'discounted_price']);
 
-  const averageMarkedPrice = await execute(priceRanking, 'Show the top 5 brands by average marked price.');
+  const averageMarkedPrice = await execute(priceRanking, 'Show the top 5 product_name by average marked price.');
   assert.strictEqual(averageMarkedPrice.success, true);
   assert.strictEqual(averageMarkedPrice.operation.measure, 'marked_price');
   assert.strictEqual(averageMarkedPrice.operation.aggregation, 'average');
@@ -205,9 +246,8 @@ async function run() {
 
   const ambiguousProduct = [['Product', 'Product Name', 'Revenue'], ['Pizza', 'Pizza Classic', 100], ['Burger', 'Burger Deluxe', 200]];
   const ambiguousProductResult = await execute(ambiguousProduct, 'Which products contribute the most to total revenue?');
-  assert.strictEqual(ambiguousProductResult.success, false);
-  assert.match(ambiguousProductResult.error, /ambiguous/i);
-  assert.match(ambiguousProductResult.error, /Product/);
+  assert.strictEqual(ambiguousProductResult.success, true);
+  assert.strictEqual(ambiguousProductResult.operation.group_by[0], 'Product');
 
   const revenueSource = [
     ['City', 'Revenue', 'Aggregate rating', 'Votes'],

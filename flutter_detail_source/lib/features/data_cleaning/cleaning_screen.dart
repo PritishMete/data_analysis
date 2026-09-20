@@ -454,7 +454,7 @@ class _DataCleaningScreenState extends State<DataCleaningScreen> {
       String subtitle,
       bool value,
       ValueChanged<bool> onChanged,
-      {required bool isLast},
+      {required bool isLast}
       ) {
     return GlassListTile(
       leading: Icon(
