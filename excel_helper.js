@@ -1511,6 +1511,12 @@ async function processExcelPipeline(optionsJson) {
                 if (hierMap[key] && !usedHierarchyNames.has(hierMap[key].name)) {
                     return hierMap[key];
                 }
+                const normalizedKey = key.replace(/[^a-z0-9]+/g, "");
+                for (const [k, v] of Object.entries(hierMap)) {
+                    if (!usedHierarchyNames.has(v.name) && k.replace(/[^a-z0-9]+/g, "") === normalizedKey) {
+                        return v;
+                    }
+                }
                 for (const [k, v] of Object.entries(hierMap)) {
                     if (!usedHierarchyNames.has(v.name) && (k.includes(key) || key.includes(k))) {
                         return v;
@@ -1541,12 +1547,12 @@ async function processExcelPipeline(optionsJson) {
                     pivotTable.rowHierarchies.add(rHier);
                     usedHierarchyNames.add(rHier.name);
                     appliedRows++;
+                } else {
+                    throw new Error("Could not resolve PivotTable row field '" + String(rf) + "' against the source worksheet headers.");
                 }
             }
-            if (appliedRows === 0 && hierarchies.items.length > 0) {
-                console.log("PIVOT STEP 18c: No rows applied, fallback: adding first hierarchy");
-                pivotTable.rowHierarchies.add(hierarchies.items[0]);
-                usedHierarchyNames.add(hierarchies.items[0].name);
+            if (appliedRows === 0) {
+                throw new Error("PivotTable creation requires at least one valid row field.");
             }
             console.log("PIVOT STEP 19: Finished row hierarchies, appliedRows:", appliedRows);
 
@@ -1562,6 +1568,8 @@ async function processExcelPipeline(optionsJson) {
                     console.log("PIVOT STEP 21b: Queuing columnHierarchies.add() for", cf);
                     pivotTable.columnHierarchies.add(cHier);
                     usedHierarchyNames.add(cHier.name);
+                } else {
+                    throw new Error("Could not resolve PivotTable column field '" + String(cf) + "' against the source worksheet headers.");
                 }
             }
             console.log("PIVOT STEP 22: Finished column hierarchies");
@@ -1594,6 +1602,8 @@ async function processExcelPipeline(optionsJson) {
                         const dataHierarchy = pivotTable.dataHierarchies.add(valHier);
                         dataHierarchy.summarizeBy = opToAggFunction(vf.op);
                         lastAddedDataHier = dataHierarchy;
+                    } else {
+                        throw new Error("Could not resolve PivotTable value field '" + String(vf.field) + "' against the source worksheet headers.");
                     }
                 }
             } else if (pc.valueField) {
@@ -1605,11 +1615,28 @@ async function processExcelPipeline(optionsJson) {
                     const dataHierarchy = pivotTable.dataHierarchies.add(valTarget);
                     dataHierarchy.summarizeBy = opToAggFunction(pc.valueOperation || "sum");
                     lastAddedDataHier = dataHierarchy;
+                } else {
+                    throw new Error("Could not resolve PivotTable value field '" + String(pc.valueField) + "' against the source worksheet headers.");
                 }
             } else {
                 console.log("PIVOT STEP 23g: No value fields provided");
             }
+            if (!lastAddedDataHier) {
+                throw new Error("PivotTable creation requires at least one valid value field.");
+            }
             console.log("PIVOT STEP 24: Finished value hierarchies");
+
+            const filterFields = Array.isArray(pc.filterFields) ? pc.filterFields : (pc.filterField ? [pc.filterField] : []);
+            console.log("PIVOT STEP 24f: Processing filterFields", filterFields);
+            for (const ff of filterFields) {
+                const fHier = findHier(ff);
+                if (fHier) {
+                    pivotTable.filterHierarchies.add(fHier);
+                    usedHierarchyNames.add(fHier.name);
+                } else {
+                    throw new Error("Could not resolve PivotTable filter field '" + String(ff) + "' against the source worksheet headers.");
+                }
+            }
 
             // Combined query support: ranked requests are applied to the
             // real PivotTable field so the PivotTable itself contains the
@@ -1839,6 +1866,7 @@ async function processExcelPipeline(optionsJson) {
                     pivotRangeAddress: pivotOutputRange.address,
                     pivotRowCount: pivotOutputRange.rowCount,
                     pivotColumnCount: pivotOutputRange.columnCount,
+                    nativePivotVerified: true,
                     chartStartCell: chartStartColumn + chartStartRow,
                     chartEndCell: chartEndColumn + chartEndRow,
                 }),
