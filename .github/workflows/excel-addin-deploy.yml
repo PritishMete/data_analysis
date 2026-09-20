@@ -73,6 +73,9 @@ jobs:
       - name: PivotTable-to-chart integration test
         run: node test/excel_pivot_chart_integration_test.js
 
+      - name: Native PivotTable execution test
+        run: node test/excel_native_pivot_test.js
+
       - name: Build Excel-enabled Flutter web app
         run: flutter build web --release --base-href /data_analysis/
 

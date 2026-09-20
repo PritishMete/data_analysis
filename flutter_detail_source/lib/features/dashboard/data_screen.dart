@@ -217,6 +217,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // ── Pivot table ───────────────────────────────────────────────────────────
   bool generatePivotTable = false;
   List<String> pivotRowFields = [];
+  List<String> pivotColumnFields = [];
+  List<String> pivotFilterFields = [];
   List<Map<String, String>> pivotValueFields = [];
   final TextEditingController pivotSheetNameController = TextEditingController(
     text: "Pivot_Workspace",
@@ -315,6 +317,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // ── Pivot editor ──────────────────────────────────────────────────────────
   String? activePivotSheetName;
   List<String> pivotEditorRowFields = [];
+  List<String> pivotEditorColumnFields = [];
+  List<String> pivotEditorFilterFields = [];
   List<Map<String, String>> pivotEditorValueFields = [];
   List<String> pivotSourceHeaders = [];
   bool pivotEditorRefreshing = false;
@@ -4790,10 +4794,13 @@ Future<void> runTransformationPipeline() async {
         },
       );
     }
+    final String? pivotSource = generatePivotTable
+        ? await _ensureAnalyticalSourceSheet()
+        : ((!useActiveSelection && selectedSourceSheet != null)
+            ? selectedSourceSheet
+            : null);
     final Map<String, dynamic> options = {
-      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null)
-          ? selectedSourceSheet
-          : null,
+      "sourceSheetName": pivotSource,
       "targetSheetName":
           (useCustomTargetName &&
               targetSheetNameController.text.trim().isNotEmpty)
@@ -4846,7 +4853,9 @@ Future<void> runTransformationPipeline() async {
               "tableName":
                   "Pivot_${DateTime.now().millisecondsSinceEpoch % 10000}",
               "rowFields": pivotRowFields,
+              "columnFields": pivotColumnFields,
               "valueFields": pivotValueFields,
+              "filterFields": pivotFilterFields,
               "appendMode": appendMode,
             }
           : null,
@@ -4903,17 +4912,15 @@ Future<void> runTransformationPipeline() async {
     if (result["success"] == true) {
       await refreshWorksheetNames();
       if (generatePivotTable) {
-        String? resolvedSource =
-            (!useActiveSelection && selectedSourceSheet != null)
-            ? selectedSourceSheet
-            : (availableSheets.isNotEmpty ? availableSheets.first : null);
         setState(() {
           activePivotSheetName = desiredPivotSheet;
-          pivotSourceSheetName = resolvedSource;
+          pivotSourceSheetName = pivotSource;
           pivotEditorRowFields = List<String>.from(pivotRowFields);
+          pivotEditorColumnFields = List<String>.from(pivotColumnFields);
           pivotEditorValueFields = List<Map<String, String>>.from(
             pivotValueFields,
           );
+          pivotEditorFilterFields = List<String>.from(pivotFilterFields);
           pivotSourceHeaders = List<String>.from(detectedHeaders);
         });
         showNotification("✅ Pivot synchronized.", TechColors.statusGreen);
@@ -4943,6 +4950,12 @@ Future<void> runTransformationPipeline() async {
     final List<String> rowFields = config["rowFields"] is List
         ? List<String>.from((config["rowFields"] as List).map((e) => (e ?? "").toString()).where((s) => s.isNotEmpty))
         : <String>[];
+    final List<String> columnFields = config["columnFields"] is List
+        ? List<String>.from((config["columnFields"] as List).map((e) => (e ?? "").toString()).where((s) => s.isNotEmpty))
+        : <String>[];
+    final List<String> filterFields = config["filterFields"] is List
+        ? List<String>.from((config["filterFields"] as List).map((e) => (e ?? "").toString()).where((s) => s.isNotEmpty))
+        : <String>[];
     final List<Map<String, String>> valueFields = config["valueFields"] is List
         ? (config["valueFields"] as List).map<Map<String, String>>((v) {
             final m = v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
@@ -4967,8 +4980,9 @@ Future<void> runTransformationPipeline() async {
       targetSheetName = targetSheetName + "_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString();
     }
 
+    final String? source = await _ensureAnalyticalSourceSheet();
     final options = {
-      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null) ? selectedSourceSheet : null,
+      "sourceSheetName": source,
       "targetSheetName": null,
       "createNewSheet": false,
       "freezeHeaderRow": false,
@@ -4982,7 +4996,9 @@ Future<void> runTransformationPipeline() async {
             ? config["tableName"].toString().trim()
             : "Pivot_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString(),
         "rowFields": rowFields,
+        "columnFields": columnFields,
         "valueFields": valueFields,
+        "filterFields": filterFields,
         "appendMode": appendMode,
         "reuseExisting": reuseExisting,
         if (config["sortByValue"] != null) "sortByValue": config["sortByValue"],
@@ -4997,12 +5013,13 @@ Future<void> runTransformationPipeline() async {
     final result = await executePipeline(json.encode(options));
     await refreshWorksheetNames();
     if (result["success"] == true) {
-      final source = await _ensureAnalyticalSourceSheet();
       setState(() {
         activePivotSheetName = targetSheetName;
         pivotSourceSheetName = source;
         pivotEditorRowFields = List<String>.from(rowFields);
+        pivotEditorColumnFields = List<String>.from(columnFields);
         pivotEditorValueFields = List<Map<String, String>>.from(valueFields);
+        pivotEditorFilterFields = List<String>.from(filterFields);
         pivotSourceHeaders = List<String>.from(detectedHeaders);
       });
     }
@@ -5028,7 +5045,9 @@ Future<void> runTransformationPipeline() async {
         "sheetName": activePivotSheetName,
         "tableName": "Pivot_Manual_Refactor",
         "rowFields": pivotEditorRowFields,
+        "columnFields": pivotEditorColumnFields,
         "valueFields": pivotEditorValueFields,
+        "filterFields": pivotEditorFilterFields,
         "appendMode": false,
       },
     };

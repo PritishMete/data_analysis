@@ -71,6 +71,104 @@ class PivotBuilder extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildItemLabel("PIVOT COLUMN SEGMENTATION FIELDS"),
+              IconButton(
+                icon: const Icon(Icons.add_box, color: TechColors.borderActive, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  if (state.detectedHeaders.isNotEmpty) {
+                    state.setState(() => state.pivotColumnFields.add(state.detectedHeaders.first));
+                  }
+                },
+              )
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...List.generate(state.pivotColumnFields.length, (index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _styledDropdown<String>(
+                      value: state.pivotColumnFields[index],
+                      hint: "Select column axis dimension",
+                      items: state.detectedHeaders
+                          .map((h) => DropdownMenuItem(
+                          value: h,
+                          child: Text(h, style: const TextStyle(fontSize: 12, color: Colors.white))))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          state.setState(() => state.pivotColumnFields[index] = v);
+                        }
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel, color: TechColors.statusRed, size: 18),
+                    onPressed: () => state.setState(() => state.pivotColumnFields.removeAt(index)),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          const SizedBox(height: 16),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildItemLabel("PIVOT FILTER FIELDS"),
+              IconButton(
+                icon: const Icon(Icons.add_box, color: TechColors.borderActive, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  if (state.detectedHeaders.isNotEmpty) {
+                    state.setState(() => state.pivotFilterFields.add(state.detectedHeaders.first));
+                  }
+                },
+              )
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...List.generate(state.pivotFilterFields.length, (index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _styledDropdown<String>(
+                      value: state.pivotFilterFields[index],
+                      hint: "Select report filter field",
+                      items: state.detectedHeaders
+                          .map((h) => DropdownMenuItem(
+                          value: h,
+                          child: Text(h, style: const TextStyle(fontSize: 12, color: Colors.white))))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          state.setState(() => state.pivotFilterFields[index] = v);
+                        }
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel, color: TechColors.statusRed, size: 18),
+                    onPressed: () => state.setState(() => state.pivotFilterFields.removeAt(index)),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          const SizedBox(height: 16),
+
           // ── MULTIPLE VALUES & AGGREGATIONS SECTION ──
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

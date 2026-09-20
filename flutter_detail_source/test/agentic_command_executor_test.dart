@@ -80,6 +80,70 @@ void main() {
     expect(pivot['sortByValue'], 'descending');
   });
 
+  test('query PivotTable preserves explicit marked_price measure', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'Create a pivot table showing total marked_price by product_name',
+      availableColumns: const ['product_name', 'brand_name', 'marked_price', 'discounted_price'],
+      availableSheets: const ['Products'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    expect(parsed['needsClarification'], isNot(true));
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['rowFields'], ['product_name']);
+    final values = List<Map<String, dynamic>>.from(
+      (pivot['valueFields'] as List).map((v) => Map<String, dynamic>.from(v as Map)),
+    );
+    expect(values.single, {'field': 'marked_price', 'op': 'sum'});
+  });
+
+  test('query PivotTable resolves spaced discounted price to exact header', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'Create a pivot table with brand_name as rows and discounted price as values using AVERAGE',
+      availableColumns: const ['product_name', 'brand_name', 'marked_price', 'discounted_price'],
+      availableSheets: const ['Products'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['rowFields'], ['brand_name']);
+    final values = List<Map<String, dynamic>>.from(
+      (pivot['valueFields'] as List).map((v) => Map<String, dynamic>.from(v as Map)),
+    );
+    expect(values.single, {'field': 'discounted_price', 'op': 'average'});
+  });
+
+  test('query PivotTable preserves row columns and sum value contract', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'Create a pivot table with category as rows, brand_name as columns, and sum of marked_price as values',
+      availableColumns: const ['category', 'brand_name', 'marked_price', 'discounted_price'],
+      availableSheets: const ['Products'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['rowFields'], ['category']);
+    expect(pivot['columnFields'], ['brand_name']);
+    final values = List<Map<String, dynamic>>.from(
+      (pivot['valueFields'] as List).map((v) => Map<String, dynamic>.from(v as Map)),
+    );
+    expect(values.single, {'field': 'marked_price', 'op': 'sum'});
+  });
+
+  test('generic price PivotTable request asks for clarification when price columns conflict', () async {
+    final parsed = await parseAgenticCommand(
+      userText: 'Create a pivot table showing total price by product_name',
+      availableColumns: const ['product_name', 'marked_price', 'discounted_price'],
+      availableSheets: const ['Products'],
+    );
+
+    expect(parsed['action'], 'pivot');
+    expect(parsed['needsClarification'], isTrue);
+    expect(parsed['message'].toString(), contains('ambiguous'));
+    final pivot = Map<String, dynamic>.from(parsed['pivot'] as Map);
+    expect(pivot['candidates'], ['marked_price', 'discounted_price']);
+  });
+
   test('underspecified top cuisines request asks for a ranking measure', () async {
     final parsed = await parseAgenticCommand(
       userText: 'create a pivot table to show top cuisines',

@@ -128,6 +128,88 @@ class _PivotEditorState extends State<PivotEditor> {
               const SizedBox(height: 16),
               _sectionHeader(
                 context,
+                'Column fields',
+                onAdd: () => setState(() => widget.state.pivotEditorColumnFields.add(headers.first)),
+              ),
+              const SizedBox(height: 8),
+              ...List.generate(widget.state.pivotEditorColumnFields.length, (idx) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GlassPicker(
+                          value: widget.state.pivotEditorColumnFields[idx],
+                          placeholder: 'Select column dimension',
+                          onTap: () async {
+                            final picked = await showGlassPickerSheet<String>(
+                              context: context,
+                              title: 'Column field',
+                              items: headers,
+                              itemLabel: (h) => h,
+                              initialItem: widget.state.pivotEditorColumnFields[idx],
+                            );
+                            if (picked != null) {
+                              setState(() => widget.state.pivotEditorColumnFields[idx] = picked);
+                            }
+                          },
+                        ),
+                      ),
+                      GlassIconButton(
+                        size: 36,
+                        icon: const Icon(CupertinoIcons.xmark),
+                        onPressed: () =>
+                            setState(() => widget.state.pivotEditorColumnFields.removeAt(idx)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 16),
+              _sectionHeader(
+                context,
+                'Filter fields',
+                onAdd: () => setState(() => widget.state.pivotEditorFilterFields.add(headers.first)),
+              ),
+              const SizedBox(height: 8),
+              ...List.generate(widget.state.pivotEditorFilterFields.length, (idx) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GlassPicker(
+                          value: widget.state.pivotEditorFilterFields[idx],
+                          placeholder: 'Select report filter',
+                          onTap: () async {
+                            final picked = await showGlassPickerSheet<String>(
+                              context: context,
+                              title: 'Filter field',
+                              items: headers,
+                              itemLabel: (h) => h,
+                              initialItem: widget.state.pivotEditorFilterFields[idx],
+                            );
+                            if (picked != null) {
+                              setState(() => widget.state.pivotEditorFilterFields[idx] = picked);
+                            }
+                          },
+                        ),
+                      ),
+                      GlassIconButton(
+                        size: 36,
+                        icon: const Icon(CupertinoIcons.xmark),
+                        onPressed: () =>
+                            setState(() => widget.state.pivotEditorFilterFields.removeAt(idx)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              const SizedBox(height: 16),
+              _sectionHeader(
+                context,
                 'Value fields',
                 onAdd: () => setState(() => widget.state.pivotEditorValueFields
                     .add({'field': headers.last, 'op': 'sum'})),
