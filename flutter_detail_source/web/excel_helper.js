@@ -1266,29 +1266,41 @@ async function processExcelPipeline(optionsJson) {
             await context.sync();
         }
 
-        let targetSheet;
+        // A native PivotTable can consume the original worksheet range directly.
+        // Do not create a presentation/staging copy for a pure Pivot request:
+        // that copy was the source of the misleading "copied dataset" result.
+        // A staging worksheet is still used when a preceding transformation
+        // genuinely changes the rows the PivotTable must consume.
+        const pivotNeedsStaging = !!opts.pivotConfig && (
+            !!opts.removeDuplicates ||
+            !!opts.filter ||
+            !!opts.lookupConfig
+        );
+        let targetSheet = null;
         let isTempSheet = false;
-        if (opts.targetSheetName === null && opts.pivotConfig) {
-            targetSheet = workbook.worksheets.add("Temp_Source_Buffer_" + Math.floor(Math.random() * 1000));
-            isTempSheet = true;
-        } else {
-            targetSheet = workbook.worksheets.add(sheetName);
-        }
+        if (!opts.pivotConfig || pivotNeedsStaging) {
+            if (opts.targetSheetName === null && opts.pivotConfig) {
+                targetSheet = workbook.worksheets.add("Temp_Source_Buffer_" + Math.floor(Math.random() * 1000));
+                isTempSheet = true;
+            } else {
+                targetSheet = workbook.worksheets.add(sheetName);
+            }
 
-        // Load targetSheet.name to prevent PropertyNotLoaded errors when reading it later
-        targetSheet.load("name");
-        await context.sync();
+            // Load targetSheet.name to prevent PropertyNotLoaded errors when reading it later
+            targetSheet.load("name");
+            await context.sync();
 
-        const finalRange = targetSheet.getRangeByIndexes(0, 0, runningData.length, runningData[0].length);
-        finalRange.values = runningData;
+            const finalRange = targetSheet.getRangeByIndexes(0, 0, runningData.length, runningData[0].length);
+            finalRange.values = runningData;
 
-        if (opts.freezeHeaderRow) {
-            targetSheet.freezePanes.freezeRows(1);
+            if (opts.freezeHeaderRow) {
+                targetSheet.freezePanes.freezeRows(1);
+            }
+            if (opts.enableAutoFilter) {
+                targetSheet.autoFilter.apply(finalRange);
+            }
+            targetSheet.getUsedRange().format.autofitColumns();
         }
-        if (opts.enableAutoFilter) {
-            targetSheet.autoFilter.apply(finalRange);
-        }
-        targetSheet.getUsedRange().format.autofitColumns();
 
         if (opts.pivotConfig) {
             try {
@@ -1512,25 +1524,13 @@ async function processExcelPipeline(optionsJson) {
                     return hierMap[key];
                 }
                 const normalizedKey = key.replace(/[^a-z0-9]+/g, "");
-                for (const [k, v] of Object.entries(hierMap)) {
-                    if (!usedHierarchyNames.has(v.name) && k.replace(/[^a-z0-9]+/g, "") === normalizedKey) {
-                        return v;
-                    }
-                }
-                for (const [k, v] of Object.entries(hierMap)) {
-                    if (!usedHierarchyNames.has(v.name) && (k.includes(key) || key.includes(k))) {
-                        return v;
-                    }
-                }
-                // Fall back to an already-used hierarchy only if truly
-                // nothing unused matches — preserves the old behavior for
-                // the (rare, and arguably mis-specified) case where the
-                // caller genuinely asked for the same field twice.
-                if (hierMap[key]) return hierMap[key];
-                for (const [k, v] of Object.entries(hierMap)) {
-                    if (k.includes(key) || key.includes(k)) return v;
-                }
-                return null;
+                const normalizedMatches = Object.entries(hierMap)
+                    .filter(([k, v]) =>
+                        !usedHierarchyNames.has(v.name) &&
+                        k.replace(/[^a-z0-9]+/g, "") === normalizedKey
+                    )
+                    .map(([, v]) => v);
+                return normalizedMatches.length === 1 ? normalizedMatches[0] : null;
             }
 
             console.log("PIVOT STEP 17: Processing rowFields", pc.rowFields);
@@ -1582,7 +1582,31 @@ async function processExcelPipeline(optionsJson) {
                 if (op === "min")                        return Excel.AggregationFunction.min;
                 if (op === "product")                    return Excel.AggregationFunction.product;
                 if (op === "stdev")                      return Excel.AggregationFunction.standardDeviation;
-                return Excel.AggregationFunction.sum;
+                throw new Error("Unsupported PivotTable aggregation '" + op + "'.");
+            }
+
+            function isNumericPivotValue(value) {
+                if (typeof value === "number") return Number.isFinite(value);
+                if (value === null || value === undefined || String(value).trim() === "") return false;
+                const cleaned = String(value).replace(/[₹$€£,\s]/g, "");
+                return cleaned !== "" && Number.isFinite(Number(cleaned));
+            }
+
+            function validateMaxField(fieldName) {
+                const headerRow = Array.isArray(runningData[0]) ? runningData[0] : [];
+                const normalized = String(fieldName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+                const index = headerRow.findIndex(h =>
+                    String(h ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "") === normalized
+                );
+                if (index < 0) {
+                    throw new Error("Could not validate PivotTable MAX value field '" + String(fieldName) + "' against the source worksheet headers.");
+                }
+                const numericCount = runningData.slice(1).reduce((count, row) =>
+                    count + (Array.isArray(row) && isNumericPivotValue(row[index]) ? 1 : 0), 0
+                );
+                if (numericCount === 0) {
+                    throw new Error("PivotTable MAX requires a numeric value field; '" + String(fieldName) + "' contains no numeric values.");
+                }
             }
 
             console.log("PIVOT STEP 23: Processing value fields");
@@ -1598,9 +1622,11 @@ async function processExcelPipeline(optionsJson) {
                     console.log("PIVOT STEP 23c: Found hierarchy for valueField", { field: vf.field, foundHierarchyName: valHier ? valHier.name : "NOT FOUND", op: vf.op });
                     
                     if (valHier) {
+                        const valueOp = String(vf.op || "sum").toLowerCase();
+                        if (valueOp === "max") validateMaxField(vf.field);
                         console.log("PIVOT STEP 23d: Queuing dataHierarchies.add() for", vf.field);
                         const dataHierarchy = pivotTable.dataHierarchies.add(valHier);
-                        dataHierarchy.summarizeBy = opToAggFunction(vf.op);
+                        dataHierarchy.summarizeBy = opToAggFunction(valueOp);
                         lastAddedDataHier = dataHierarchy;
                     } else {
                         throw new Error("Could not resolve PivotTable value field '" + String(vf.field) + "' against the source worksheet headers.");
@@ -1612,8 +1638,10 @@ async function processExcelPipeline(optionsJson) {
                 console.log("PIVOT STEP 23f: Found hierarchy for single valueField", { field: pc.valueField, foundHierarchyName: valTarget ? valTarget.name : "NOT FOUND" });
                 
                 if (valTarget) {
+                    const valueOp = String(pc.valueOperation || "sum").toLowerCase();
+                    if (valueOp === "max") validateMaxField(pc.valueField);
                     const dataHierarchy = pivotTable.dataHierarchies.add(valTarget);
-                    dataHierarchy.summarizeBy = opToAggFunction(pc.valueOperation || "sum");
+                    dataHierarchy.summarizeBy = opToAggFunction(valueOp);
                     lastAddedDataHier = dataHierarchy;
                 } else {
                     throw new Error("Could not resolve PivotTable value field '" + String(pc.valueField) + "' against the source worksheet headers.");
@@ -1831,20 +1859,72 @@ async function processExcelPipeline(optionsJson) {
             console.log("PIVOT STEP 34: Got pivotTables collection");
             
             try {
-                pivotTablesOnSheet.load("items");
-                console.log("PIVOT STEP 35: Queued pivotTablesOnSheet.load()");
+                pivotTablesOnSheet.load("items/name");
+                pivotTable.rowHierarchies.load("items/name");
+                pivotTable.columnHierarchies.load("items/name");
+                pivotTable.filterHierarchies.load("items/name");
+                pivotTable.dataHierarchies.load("items/name");
+                pivotTable.layout.getRange().load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+                console.log("PIVOT STEP 35: Queued native PivotTable verification");
             } catch (e) {
-                console.error("PIVOT STEP 35 ERROR: pivotTablesOnSheet.load() threw", e.toString());
+                console.error("PIVOT STEP 35 ERROR: native PivotTable verification threw", e.toString());
                 throw e;
             }
-            
-            console.log("PIVOT STEP 36: About to sync for pivotTables load");
+
+            console.log("PIVOT STEP 36: About to sync for native PivotTable verification");
             try {
                 await context.sync();
-                console.log("PIVOT STEP 37: Successfully synced pivotTables load", { count: pivotTablesOnSheet.items.length });
+                console.log("PIVOT STEP 37: Native PivotTable verification sync succeeded", {
+                    count: pivotTablesOnSheet.items.length,
+                    rows: pivotTable.rowHierarchies.items.map(h => h.name),
+                    columns: pivotTable.columnHierarchies.items.map(h => h.name),
+                    filters: pivotTable.filterHierarchies.items.map(h => h.name),
+                    values: pivotTable.dataHierarchies.items.map(h => h.name),
+                });
             } catch (e) {
-                console.error("PIVOT STEP 37 ERROR: context.sync() after pivotTablesOnSheet.load() threw", e.toString());
+                console.error("PIVOT STEP 37 ERROR: context.sync() after native PivotTable verification threw", e.toString());
                 throw e;
+            }
+
+            const expectedRows = rowFields.map(String);
+            const expectedColumns = columnFields.map(String);
+            const expectedFilters = filterFields.map(String);
+            const normalizeField = value => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+            const axisMatches = (actual, expected) => {
+                if (actual.length !== expected.length) return false;
+                return expected.every((wanted, index) => normalizeField(actual[index]) === normalizeField(wanted));
+            };
+            const actualRows = pivotTable.rowHierarchies.items.map(h => String(h.name));
+            const actualColumns = pivotTable.columnHierarchies.items.map(h => String(h.name));
+            const actualFilters = pivotTable.filterHierarchies.items.map(h => String(h.name));
+            const actualValues = pivotTable.dataHierarchies.items.map(h => String(h.name));
+            if (!axisMatches(actualRows, expectedRows)) {
+                throw new Error("Native PivotTable verification failed: row hierarchies do not match the requested fields.");
+            }
+            if (!axisMatches(actualColumns, expectedColumns)) {
+                throw new Error("Native PivotTable verification failed: column hierarchies do not match the requested fields.");
+            }
+            if (!axisMatches(actualFilters, expectedFilters)) {
+                throw new Error("Native PivotTable verification failed: filter hierarchies do not match the requested fields.");
+            }
+            const expectedValues = valueFields.length > 0
+                ? valueFields.map(v => String(v.field || ""))
+                : [String(pc.valueField || "")];
+            const valueNamesMatch = actualValues.length === expectedValues.length &&
+                expectedValues.every((wanted, index) => {
+                    const actual = normalizeField(actualValues[index]);
+                    const expected = normalizeField(wanted);
+                    return actual === expected || actual.endsWith(expected) || expected.endsWith(actual);
+                });
+            if (!valueNamesMatch) {
+                throw new Error("Native PivotTable verification failed: data hierarchies do not match the requested value fields.");
+            }
+
+            const pivotOutputRange = pivotTable.layout.getRange();
+            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
+            await context.sync();
+            if (!pivotOutputRange.address || pivotOutputRange.rowCount < 2 || pivotOutputRange.columnCount < 2) {
+                throw new Error("Native PivotTable was created but its output range is not populated.");
             }
 
             console.log("PIVOT STEP 38: Building success response");
@@ -1888,9 +1968,11 @@ async function processExcelPipeline(optionsJson) {
         }
         }
 
-        await context.sync();
-        targetSheet.activate();
-        await context.sync();
+        if (targetSheet) {
+            await context.sync();
+            targetSheet.activate();
+            await context.sync();
+        }
         return { success: true, processedRows: runningData.length, error: null };
 
     }).catch(function (err) {
