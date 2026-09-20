@@ -204,6 +204,13 @@ async function main() {
   assert.deepStrictEqual(calls.addedSheets, ['Pivot_Output']);
   assert.deepStrictEqual(calls.deletedSheets, []);
   assert.deepStrictEqual(calls.activated, ['Pivot_Output']);
+  assert.deepStrictEqual(sourceValues, [
+    ['brand_name', 'marked_price'],
+    ['Brand A', 100],
+    ['Brand A', 250],
+    ['Brand B', 150],
+    ['Brand B', 300],
+  ]);
   const placement = JSON.parse(result.pivotPlacement);
   assert.strictEqual(placement.nativePivotVerified, true);
   assert.strictEqual(placement.pivotRangeAddress, 'Pivot_Output!A1:B4');
