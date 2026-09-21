@@ -4820,9 +4820,9 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
 
         setState(() {
           activePivotSheetName = actualPivotSheet;
-          pivotSourceSheetName = result["pivotPlacement"] is Map
-              ? (result["pivotPlacement"]["sourceSheet"]?.toString())
-              : pivotSourceSheetName;
+          // _executeAgenticPivot already records the exact analytical
+          // source worksheet it used. Keep that value for Pivot Editor refresh.
+          pivotSourceSheetName = pivotSourceSheetName;
           pivotEditorRowFields = List<String>.from(pivotRowFields);
           pivotEditorColumnFields = List<String>.from(pivotColumnFields);
           pivotEditorValueFields =
