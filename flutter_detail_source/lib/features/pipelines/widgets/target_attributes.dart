@@ -76,6 +76,34 @@ class TargetAttributes extends StatelessWidget {
               ),
             ),
             GlassListTile(
+              leading: const Icon(CupertinoIcons.square_grid_2x2),
+              title: const Text('Generate native PivotTable'),
+              subtitle: const Text('Create a real editable Excel PivotTable'),
+              trailing: GlassSwitch(
+                value: state.generatePivotTable,
+                onChanged: (v) => state.setState(() {
+                  state.generatePivotTable = v;
+                  if (!v) {
+                    state.pivotRowFields.clear();
+                    state.pivotColumnFields.clear();
+                    state.pivotFilterFields.clear();
+                    state.pivotValueFields.clear();
+                  } else if (state.pivotRowFields.isEmpty &&
+                      state.detectedHeaders.isNotEmpty) {
+                    state.pivotRowFields.add(state.detectedHeaders.first);
+                  }
+                  if (v &&
+                      state.pivotValueFields.isEmpty &&
+                      state.detectedHeaders.isNotEmpty) {
+                    state.pivotValueFields.add({
+                      'field': state.detectedHeaders.last,
+                      'op': 'sum',
+                    });
+                  }
+                }),
+              ),
+            ),
+            GlassListTile(
               leading: const Icon(CupertinoIcons.square_stack_3d_down_right),
               title: const Text('Remove duplicate rows'),
               trailing: GlassSwitch(
