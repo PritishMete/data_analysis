@@ -126,7 +126,14 @@ function mockWorkbook() {
               calls.tableName = tableName;
               calls.sourceAddress = range.address;
               calls.destination = destination.address || 'A1';
-              this.items.push(pivotTable);
+              // Each Office.js pivotTables.add() returns a distinct PivotTable.
+              // Reset the reusable mock object so separate pipeline calls do
+              // not leak hierarchy state into the next verification.
+              pivotTable.rowHierarchies.items = [];
+              pivotTable.columnHierarchies.items = [];
+              pivotTable.filterHierarchies.items = [];
+              pivotTable.dataHierarchies.items = [];
+              this.items = [pivotTable];
               return pivotTable;
             },
           },
