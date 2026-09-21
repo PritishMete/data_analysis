@@ -1730,7 +1730,6 @@ async function processExcelPipeline(optionsJson) {
                     } else {
                         throw new Error("Could not resolve PivotTable value field '" + String(vf.field) + "' against the source worksheet headers.");
                     }
-                }
             }
             if (!lastAddedDataHier) {
                 throw new Error("PivotTable creation requires at least one valid value field.");
