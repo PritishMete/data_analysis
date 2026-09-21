@@ -4720,14 +4720,11 @@ Future<void> runTransformationPipeline() async {
         : "Pivot_Workspace";
     bool appendMode = false;
     if (generatePivotTable) {
-      final pivotAgentName = await suggestAgenticSheetName(
-        query:
-            "Create pivot ${pivotRowFields.join(', ')} with ${pivotValueFields.map((e) => e['field']).join(', ')}",
-        operation: "manual_pivot",
-        context: {"rows": pivotRowFields, "values": pivotValueFields},
-      );
-      if (pivotAgentName != null && pivotAgentName.trim().isNotEmpty) {
-        desiredPivotSheet = _sanitizeSheetName(pivotAgentName);
+      // The manual builder owns its requested destination. Do not replace it
+      // with an agentic sheet-name suggestion.
+      desiredPivotSheet = _sanitizeSheetName(desiredPivotSheet);
+      if (desiredPivotSheet.isEmpty) {
+        desiredPivotSheet = "Pivot_Workspace";
       }
     }
     if (generatePivotTable && kIsWeb) {
@@ -4799,6 +4796,63 @@ Future<void> runTransformationPipeline() async {
         : ((!useActiveSelection && selectedSourceSheet != null)
             ? selectedSourceSheet
             : null);
+    if (generatePivotTable) {
+      // Manual PivotBuilder and AI pivot queries use the same native Office.js
+      // pivotConfig contract. Normalize the Flutter state before dispatch.
+      pivotRowFields = pivotRowFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotColumnFields = pivotColumnFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotFilterFields = pivotFilterFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotValueFields = pivotValueFields
+          .map((entry) => <String, String>{
+                "field": (entry["field"] ?? "").trim(),
+                "op": (entry["op"] ?? "sum").trim().toLowerCase(),
+              })
+          .where((entry) => entry["field"]!.isNotEmpty)
+          .toList();
+
+      if (pivotRowFields.isEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Pick at least one PivotTable row field.");
+        return;
+      }
+      if (pivotValueFields.isEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Pick at least one PivotTable value field.");
+        return;
+      }
+
+      const supportedPivotOps = {
+        "sum",
+        "average",
+        "count",
+        "counta",
+        "max",
+        "min",
+        "product",
+        "stdev",
+      };
+      final unsupported = pivotValueFields
+          .map((entry) => entry["op"]!)
+          .firstWhere(
+            (op) => !supportedPivotOps.contains(op),
+            orElse: () => "",
+          );
+      if (unsupported.isNotEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Unsupported PivotTable aggregation: " + unsupported);
+        return;
+      }
+    }
+
     final Map<String, dynamic> options = {
       "sourceSheetName": pivotSource,
       // Native PivotTables write directly to pivotConfig.sheetName.
@@ -4913,8 +4967,21 @@ Future<void> runTransformationPipeline() async {
     if (result["success"] == true) {
       await refreshWorksheetNames();
       if (generatePivotTable) {
+        String actualPivotSheet = desiredPivotSheet;
+        final placementRaw = result["pivotPlacement"];
+        if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+          try {
+            final placement = json.decode(placementRaw);
+            if (placement is Map && placement["sheet"] is String) {
+              actualPivotSheet = placement["sheet"].toString();
+            }
+          } catch (_) {
+            // Native creation already succeeded; retain the requested name
+            // only as a UI fallback if placement metadata cannot be decoded.
+          }
+        }
         setState(() {
-          activePivotSheetName = desiredPivotSheet;
+          activePivotSheetName = actualPivotSheet;
           pivotSourceSheetName = pivotSource;
           pivotEditorRowFields = List<String>.from(pivotRowFields);
           pivotEditorColumnFields = List<String>.from(pivotColumnFields);
