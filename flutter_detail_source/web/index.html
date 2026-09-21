@@ -58,15 +58,19 @@
     console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
     window.__isOfficeHost = !!(info && info.host);
 
+    // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
+    // Office task panes can retain a previous Flutter web bundle after gh-pages
+    // has received a new build. CI replaces the marker with the source commit.
+    var buildCommit = "__INSIGHTFLOW_BUILD_COMMIT__";
     var script = document.createElement("script");
-    script.src = "flutter_bootstrap.js";
+    script.src = "flutter_bootstrap.js?build=" + buildCommit;
     script.onload = function () {
       _flutter.buildConfig = {
         builds: [
           {
             compileTarget: "dart2js",
             renderer: "canvaskit",
-            mainJsPath: "main.dart.js",
+            mainJsPath: "main.dart.js?build=" + buildCommit,
           },
         ],
       };
