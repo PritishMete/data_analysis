@@ -333,7 +333,8 @@ async function main() {
   const staged = await context.processExcelPipeline(JSON.stringify({
     sourceSheetName: 'Products',
     targetSheetName: null,
-    filter: { columnName: 'marked_price', type: 'greater_than', value: '100' },
+    removeDuplicates: true,
+    deduplicateColumns: ['brand_name', 'marked_price'],
     pivotConfig: {
       sheetName: 'Pivot_Staged',
       tableName: 'Pivot_Staged_Test',
