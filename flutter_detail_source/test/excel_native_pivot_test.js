@@ -165,11 +165,11 @@ function mockWorkbook() {
     },
   };
   vm.createContext(context);
-  return { context, calls };
+  return { context, calls, sourceValues };
 }
 
 async function main() {
-  const { context, calls } = mockWorkbook();
+  const { context, calls, sourceValues } = mockWorkbook();
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_helper.js'), 'utf8'), context);
   context.window._onOfficeReady();
 
