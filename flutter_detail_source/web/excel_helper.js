@@ -1239,6 +1239,7 @@ async function processExcelPipeline(optionsJson) {
         );
         let targetSheet = null;
         let isTempSheet = false;
+        let nativePivotCreated = false;
         let pivotSourceSheetForPivot = sourceSheet;
         if (!opts.pivotConfig || pivotNeedsStaging) {
             try {
@@ -1536,6 +1537,7 @@ async function processExcelPipeline(optionsJson) {
                 pivotSourceRange,
                 destinationRange
             );
+            nativePivotCreated = true;
             console.log("PIVOT STEP 10: Created PivotTable", pc.tableName);
 
             // ── PivotLayout parity with a MANUALLY-inserted PivotTable ──────
@@ -2025,9 +2027,12 @@ async function processExcelPipeline(optionsJson) {
                 }),
             };
         } finally {
-            // Delete ONLY a staging worksheet that this operation actually created.
-            // Cleanup failures are surfaced to the caller rather than silently ignored.
-            if (isTempSheet && targetSheet) {
+            // Only clean up a staging sheet created by this invocation. Once
+            // a native PivotTable exists, its PivotCache may depend on that
+            // staging source, so retaining it avoids invalidating the editable
+            // PivotTable. If staging failed before Pivot creation, cleanup is
+            // safe and any cleanup failure is surfaced to the caller.
+            if (isTempSheet && targetSheet && !nativePivotCreated) {
                 const stagingName = targetSheet.name;
                 console.log("FINALLY: Deleting temporary staging worksheet", stagingName);
                 targetSheet.delete();
