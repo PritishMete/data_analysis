@@ -13,6 +13,7 @@ import 'widgets/column_splitter.dart';
 import 'widgets/lookup_builder.dart';
 import 'widgets/table_builder.dart';
 import 'widgets/color_coding.dart';
+import 'widgets/pivot_builder.dart';
 
 class PipelineScreen extends StatelessWidget {
   final DataScreenState state;
@@ -23,62 +24,91 @@ class PipelineScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Landing: data source (Excel selection / named sheet / upload) ──
+        // The native PivotTable has its own source, output, and execution
+        // contract. Never let unrelated pipeline options create a copied
+        // dataset when the user selects the PivotTable workflow.
         SourceRouter(state: state),
         const SizedBox(height: 20),
-
-        // ── Output Target Object Attributes ──
-        TargetAttributes(state: state),
-        const SizedBox(height: 20),
-
-        // ── Conditional Statement Filters ──
-        ConditionalFilter(state: state),
-        const SizedBox(height: 20),
-
-        // ── Enable Field Item Extract Lookup ──
-        GlassCard(
-          padding: EdgeInsets.zero,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-          child: Column(
-            children: [
-              GlassListTile(
-                leading: const Icon(CupertinoIcons.search_circle_fill),
-                title: const Text('Field item extract lookup'),
-                subtitle: const Text('VLOOKUP / HLOOKUP / XLOOKUP against a reference sheet'),
-                trailing: GlassSwitch(
-                  value: state.generateLookup,
-                  onChanged: (v) => state.setState(() => state.generateLookup = v),
-                ),
-                isLast: !state.generateLookup,
-              ),
-              if (state.generateLookup)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                  child: LookupBuilder(state: state),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
         if (kIsWeb) ...[
-          // ── Single-column dump → table (WRAPROWS) ──
-          TableBuilder(state: state),
-          const SizedBox(height: 20),
-
-          // ── Conditional Colour Formatting ──
-          ColorCoding(state: state),
+          GlassCard(
+            padding: EdgeInsets.zero,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+            child: Column(
+              children: [
+                GlassListTile(
+                  leading: const Icon(CupertinoIcons.table_fill),
+                  title: const Text('Native Excel PivotTable'),
+                  subtitle: const Text('Build an editable PivotTable from selected fields'),
+                  trailing: GlassSwitch(
+                    value: state.generatePivotTable,
+                    onChanged: (enabled) {
+                      state.setState(() {
+                        state.generatePivotTable = enabled;
+                        if (enabled) {
+                          // A manual PivotTable is a standalone operation.
+                          // Clear stale transformations so Office.js consumes
+                          // the original source range instead of staging a
+                          // copied dataset for an unrelated operation.
+                          state.deduplicate = false;
+                          state.enableFilter = false;
+                          state.generateLookup = false;
+                        }
+                      });
+                    },
+                  ),
+                  isLast: !state.generatePivotTable,
+                ),
+                if (state.generatePivotTable)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: PivotBuilder(state: state),
+                  ),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
         ],
-
-        if (kIsWeb && state.detectedHeaders.isNotEmpty) ...[
-          ColumnSplitter(state: state),
+        if (!state.generatePivotTable) ...[
+          TargetAttributes(state: state),
           const SizedBox(height: 20),
+          ConditionalFilter(state: state),
+          const SizedBox(height: 20),
+          GlassCard(
+            padding: EdgeInsets.zero,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+            child: Column(
+              children: [
+                GlassListTile(
+                  leading: const Icon(CupertinoIcons.search_circle_fill),
+                  title: const Text('Field item extract lookup'),
+                  subtitle: const Text('VLOOKUP / HLOOKUP / XLOOKUP against a reference sheet'),
+                  trailing: GlassSwitch(
+                    value: state.generateLookup,
+                    onChanged: (v) => state.setState(() => state.generateLookup = v),
+                  ),
+                  isLast: !state.generateLookup,
+                ),
+                if (state.generateLookup)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: LookupBuilder(state: state),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (kIsWeb) ...[
+            TableBuilder(state: state),
+            const SizedBox(height: 20),
+            ColorCoding(state: state),
+            const SizedBox(height: 20),
+          ],
+          if (kIsWeb && state.detectedHeaders.isNotEmpty) ...[
+            ColumnSplitter(state: state),
+            const SizedBox(height: 20),
+          ],
         ],
-
-        // Run action moved to a fixed bottom FAB (ElectricTaskButton, in
-        // data_screen.dart) so it's always reachable without scrolling to
-        // the end of this list — no inline button here anymore.
+        // Run action is the fixed bottom FAB in data_screen.dart.
       ],
     );
   }
