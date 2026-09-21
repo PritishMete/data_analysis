@@ -1239,7 +1239,6 @@ async function processExcelPipeline(optionsJson) {
         );
         let targetSheet = null;
         let isTempSheet = false;
-        let nativePivotCreated = false;
         let pivotSourceSheetForPivot = sourceSheet;
         if (!opts.pivotConfig || pivotNeedsStaging) {
             try {
@@ -1537,7 +1536,6 @@ async function processExcelPipeline(optionsJson) {
                 pivotSourceRange,
                 destinationRange
             );
-            nativePivotCreated = true;
             console.log("PIVOT STEP 10: Created PivotTable", pc.tableName);
 
             // ── PivotLayout parity with a MANUALLY-inserted PivotTable ──────
