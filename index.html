@@ -3,7 +3,7 @@
 <head>
   <base href="/data_analysis/">
   <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="a8135dd5ee5cb3502370930dc69b68f0cc7fac40">
+  <meta name="detail-analysis-build-id" content="d50718b95fede5e3df22e06796219b6f84b29dad">
   <title>electric_ai_app</title>
 
   <!-- Office.js MUST come first -->
@@ -58,15 +58,19 @@
     console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
     window.__isOfficeHost = !!(info && info.host);
 
+    // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
+    // Office task panes can retain a previous Flutter web bundle after gh-pages
+    // has received a new build. CI replaces the marker with the source commit.
+    var buildCommit = "d50718b95fede5e3df22e06796219b6f84b29dad";
     var script = document.createElement("script");
-    script.src = "flutter_bootstrap.js";
+    script.src = "flutter_bootstrap.js?build=" + buildCommit;
     script.onload = function () {
       _flutter.buildConfig = {
         builds: [
           {
             compileTarget: "dart2js",
             renderer: "canvaskit",
-            mainJsPath: "main.dart.js",
+            mainJsPath: "main.dart.js?build=" + buildCommit,
           },
         ],
       };
