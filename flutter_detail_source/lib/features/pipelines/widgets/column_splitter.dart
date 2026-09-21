@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../../app_colors.dart';
 import '../../dashboard/data_screen.dart';
+import 'shared/glass_picker_sheet.dart';
 
 class ColumnSplitter extends StatelessWidget {
   final DataScreenState state;
@@ -10,6 +11,11 @@ class ColumnSplitter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedColumn =
+        state.detectedHeaders.contains(state.splitTargetColumn)
+            ? state.splitTargetColumn
+            : null;
+
     return GlassCard(
       padding: EdgeInsets.zero,
       shape: const LiquidRoundedSuperellipse(borderRadius: 18),
@@ -19,7 +25,9 @@ class ColumnSplitter extends StatelessWidget {
           const GlassListTile(
             leading: Icon(CupertinoIcons.textformat_abc_dottedunderline),
             title: Text('Dynamic column boundary splitter'),
-            subtitle: Text('Split text into columns using detected delimiters'),
+            subtitle: Text(
+              'Split text into columns using detected delimiters',
+            ),
             isLast: false,
           ),
           Padding(
@@ -27,51 +35,100 @@ class ColumnSplitter extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('TARGET COLUMN', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  value: state.detectedHeaders.contains(state.splitTargetColumn) ? state.splitTargetColumn : null,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    hintText: 'Select column',
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                GlassFormField(
+                  label: 'Target column',
+                  child: GlassPicker(
+                    value: selectedColumn,
+                    placeholder: 'Select column',
+                    icon: const Icon(CupertinoIcons.chevron_down),
+                    onTap: state.detectedHeaders.isEmpty
+                        ? null
+                        : () async {
+                            final picked =
+                                await showGlassPickerSheet<String>(
+                              context: context,
+                              title: 'Select Target Column',
+                              items: state.detectedHeaders,
+                              itemLabel: (item) => item,
+                              initialItem: selectedColumn,
+                            );
+                            if (picked == null) return;
+                            state.setState(
+                              () => state.splitTargetColumn = picked,
+                            );
+                            await state.triggerDelimiterDetection();
+                          },
                   ),
-                  items: state.detectedHeaders.map((h) => DropdownMenuItem(value: h, child: Text(h, overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: (v) {
-                    state.setState(() => state.splitTargetColumn = v);
-                    state.triggerDelimiterDetection();
-                  },
                 ),
                 const SizedBox(height: 16),
-                const Text('DETECTED DELIMITERS', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                if (state.isDetectingDelimiters)
-                  const LinearProgressIndicator()
-                else if (state.detectedDelimiters.isEmpty)
-                  const Text('Select a column to detect delimiters.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: state.detectedDelimiters.map((delimiter) {
-                      final selected = state.selectedDelimiter == delimiter;
-                      final label = delimiter == ' ' ? 'Space' : delimiter == '\t' ? 'Tab' : delimiter;
-                      return ChoiceChip(
-                        label: Text(label),
-                        selected: selected,
-                        onSelected: (_) => state.setState(() => state.selectedDelimiter = delimiter),
-                      );
-                    }).toList(),
-                  ),
+                GlassFormField(
+                  label: 'Detected delimiters',
+                  child: state.isDetectingDelimiters
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              CupertinoActivityIndicator(),
+                              SizedBox(width: 10),
+                              Text(
+                                'Detecting delimiters…',
+                                style: TextStyle(
+                                  color: TechColors.textMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : state.detectedDelimiters.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                'Select a column to detect delimiters.',
+                                style: TextStyle(
+                                  color: TechColors.textMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: state.detectedDelimiters.map((delimiter) {
+                                final selected =
+                                    state.selectedDelimiter == delimiter;
+                                final label = delimiter == ' '
+                                    ? 'Space'
+                                    : delimiter == '\t'
+                                        ? 'Tab'
+                                        : delimiter;
+                                return GlassChip(
+                                  label: label,
+                                  selected: selected,
+                                  onTap: () => state.setState(
+                                    () => state.selectedDelimiter = delimiter,
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                ),
                 const SizedBox(height: 16),
-                SizedBox(
+                GlassButton(
+                  onTap: state.isExecutingSplit ||
+                          state.selectedDelimiter == null
+                      ? () {}
+                      : state.runColumnSplitPipeline,
+                  enabled: !state.isExecutingSplit &&
+                      state.selectedDelimiter != null,
                   width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: state.isExecutingSplit || state.selectedDelimiter == null ? null : state.runColumnSplitPipeline,
-                    icon: state.isExecutingSplit ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(CupertinoIcons.scissors, size: 16),
-                    label: const Text('Split column'),
-                  ),
+                  height: 46,
+                  shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+                  icon: state.isExecutingSplit
+                      ? const CupertinoActivityIndicator()
+                      : const Icon(CupertinoIcons.scissors, size: 16),
+                  label: state.isExecutingSplit
+                      ? 'Splitting…'
+                      : 'Split column',
                 ),
               ],
             ),
