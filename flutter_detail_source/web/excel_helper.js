@@ -1637,6 +1637,21 @@ async function processExcelPipeline(optionsJson) {
                 return normalizedMatches.length === 1 ? normalizedMatches[0] : null;
             }
 
+            // A value hierarchy may legally reuse a source hierarchy that is
+            // already present on the row/column/filter axis (for example,
+            // MAX(marked_price) while also grouping by marked_price).
+            // Axis hierarchies must remain unique, but data hierarchies do not.
+            function findValueHier(fieldName) {
+                if (!fieldName) return null;
+                const key = String(fieldName).trim().toLowerCase();
+                if (hierMap[key]) return hierMap[key];
+                const normalizedKey = key.replace(/[^a-z0-9]+/g, "");
+                const normalizedMatches = Object.entries(hierMap)
+                    .filter(([k]) => k.replace(/[^a-z0-9]+/g, "") === normalizedKey)
+                    .map(([, v]) => v);
+                return normalizedMatches.length === 1 ? normalizedMatches[0] : null;
+            }
+
             console.log("PIVOT STEP 17: Processing rowFields", pc.rowFields);
             const rowFields = resolvedRowFields;
             console.log("PIVOT STEP 18: Normalized rowFields to array:", rowFields);
@@ -1717,7 +1732,7 @@ async function processExcelPipeline(optionsJson) {
             let lastAddedDataHier = null;
             for (const vf of resolvedValueFields) {
                     console.log("PIVOT STEP 23a: Resolved valueField", { field: vf.field, op: vf.op });
-                    const valHier = findHier(vf.field);
+                    const valHier = findValueHier(vf.field);
                     console.log("PIVOT STEP 23c: Found hierarchy for valueField", { field: vf.field, foundHierarchyName: valHier ? valHier.name : "NOT FOUND", op: vf.op });
                     
                     if (valHier) {
