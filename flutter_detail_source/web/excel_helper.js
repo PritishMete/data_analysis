@@ -144,31 +144,6 @@ async function setInsightFlowSourceWorksheetName(sheetName) {
     }
 }
 
-async function setInsightFlowSourceWorksheetName(sheetName) {
-    await window.waitForOfficeReady();
-    if (typeof Excel === "undefined") return false;
-    const name = String(sheetName || "").trim();
-    if (!name || _isGeneratedInsightFlowWorksheet(name)) return false;
-    try {
-        return await Excel.run(async function(context) {
-            const workbook = context.workbook;
-            const sheet = workbook.worksheets.getItemOrNullObject(name);
-            sheet.load(["name", "id", "isNullObject"]);
-            await context.sync();
-            if (sheet.isNullObject) return false;
-            workbook.settings.add("InsightFlow.SourceWorksheet", JSON.stringify({
-                id: sheet.id,
-                name: sheet.name,
-            }));
-            await context.sync();
-            return true;
-        });
-    } catch (err) {
-        console.error("setInsightFlowSourceWorksheetName error:", err);
-        return false;
-    }
-}
-
 // Establish the worksheet AND the exact dataset range selected by the user.
 // The range is workbook-local metadata only; no cell values are persisted.
 async function establishInsightFlowSourceFromActiveWorksheet() {
@@ -1252,20 +1227,6 @@ async function processExcelPipeline(optionsJson) {
             }
         }
 
-        if (opts.targetSheetName === null && opts.pivotConfig) {
-        } else {
-            const sheetsList = workbook.worksheets;
-            sheetsList.load("items/name");
-            await context.sync();
-            for (let i = 0; i < sheetsList.items.length; i++) {
-                if (sheetsList.items[i].name === sheetName) {
-                    sheetsList.items[i].delete();
-                    break;
-                }
-            }
-            await context.sync();
-        }
-
         // A native PivotTable can consume the original worksheet range directly.
         // Do not create a presentation/staging copy for a pure Pivot request:
         // that copy was the source of the misleading "copied dataset" result.
@@ -1278,7 +1239,9 @@ async function processExcelPipeline(optionsJson) {
         );
         let targetSheet = null;
         let isTempSheet = false;
+        let pivotSourceSheetForPivot = sourceSheet;
         if (!opts.pivotConfig || pivotNeedsStaging) {
+            try {
             if (opts.targetSheetName === null && opts.pivotConfig) {
                 targetSheet = workbook.worksheets.add("Temp_Source_Buffer_" + Math.floor(Math.random() * 1000));
                 isTempSheet = true;
@@ -1300,12 +1263,147 @@ async function processExcelPipeline(optionsJson) {
                 targetSheet.autoFilter.apply(finalRange);
             }
             targetSheet.getUsedRange().format.autofitColumns();
+            if (pivotNeedsStaging) {
+                pivotSourceSheetForPivot = targetSheet;
+            }
+            } catch (stagingErr) {
+                if (isTempSheet && targetSheet) {
+                    try {
+                        targetSheet.delete();
+                        await context.sync();
+                    } catch (cleanupErr) {
+                        throw new Error(
+                            "Pivot staging failed and temporary worksheet cleanup also failed: " +
+                            cleanupErr.toString()
+                        );
+                    }
+                }
+                throw stagingErr;
+            }
         }
 
         if (opts.pivotConfig) {
             try {
             const pc = opts.pivotConfig;
-            const pivotSheetName = (pc.sheetName || ("Pivot_" + (sheetName || "Data"))).substring(0, 31);
+
+            function normalizePivotHeader(value) {
+                return String(value ?? "")
+                    .normalize("NFKC")
+                    .trim()
+                    .replace(/\s+/g, " ")
+                    .toLowerCase();
+            }
+
+            function sanitizeWorksheetName(value) {
+                const cleaned = String(value || "")
+                    .replace(/[\\/:?*\[\]]/g, "_")
+                    .replace(/^'+|'+$/g, "")
+                    .trim();
+                return (cleaned || "Pivot_Output").substring(0, 31);
+            }
+
+            function makeUniqueWorksheetName(requestedName, existingNames) {
+                const base = sanitizeWorksheetName(requestedName);
+                const taken = new Set(existingNames.map(n => String(n).toLowerCase()));
+                if (!taken.has(base.toLowerCase())) return base;
+                for (let suffix = 2; suffix < 10000; suffix++) {
+                    const suffixText = "_" + suffix;
+                    const candidate = base.substring(0, Math.max(1, 31 - suffixText.length)) + suffixText;
+                    if (!taken.has(candidate.toLowerCase())) return candidate;
+                }
+                throw new Error("Could not generate a unique PivotTable worksheet name for '" + base + "'.");
+            }
+
+            function sanitizePivotTableName(value) {
+                const cleaned = String(value || "")
+                    .replace(/[^A-Za-z0-9_]/g, "_")
+                    .replace(/^\d+/, "_")
+                    .trim();
+                return (cleaned || "Pivot_InsightFlow").substring(0, 255);
+            }
+
+            function makeUniquePivotTableName(requestedName, existingNames) {
+                const base = sanitizePivotTableName(requestedName);
+                const taken = new Set(existingNames.map(n => String(n).toLowerCase()));
+                if (!taken.has(base.toLowerCase())) return base;
+                for (let suffix = 2; suffix < 10000; suffix++) {
+                    const suffixText = "_" + suffix;
+                    const candidate = base.substring(0, Math.max(1, 255 - suffixText.length)) + suffixText;
+                    if (!taken.has(candidate.toLowerCase())) return candidate;
+                }
+                throw new Error("Could not generate a unique PivotTable name for '" + base + "'.");
+            }
+
+            const sourceHeaders = Array.isArray(runningData[0]) ? runningData[0].map(v => String(v ?? "")) : [];
+            const headerMatches = new Map();
+            sourceHeaders.forEach((header, index) => {
+                const key = normalizePivotHeader(header);
+                if (!headerMatches.has(key)) headerMatches.set(key, []);
+                headerMatches.get(key).push({ header, index });
+            });
+
+            function resolvePivotField(requested, axis) {
+                const wanted = String(requested ?? "");
+                const key = normalizePivotHeader(wanted);
+                const matches = headerMatches.get(key) || [];
+                if (matches.length === 1) return matches[0].header;
+                if (matches.length > 1) {
+                    throw new Error(
+                        "Ambiguous PivotTable " + axis + " field '" + wanted +
+                        "'; it matches multiple source headers: " +
+                        matches.map(m => "'" + m.header + "'").join(", ") + "."
+                    );
+                }
+                throw new Error(
+                    "Could not resolve PivotTable " + axis + " field '" + wanted +
+                    "' against the source worksheet headers. Available headers: " +
+                    sourceHeaders.map(h => "'" + h + "'").join(", ") + "."
+                );
+            }
+
+            const requestedRowFields = Array.isArray(pc.rowFields)
+                ? pc.rowFields
+                : (pc.rowField ? [pc.rowField] : []);
+            const requestedColumnFields = Array.isArray(pc.columnFields)
+                ? pc.columnFields
+                : (pc.columnField ? [pc.columnField] : []);
+            const requestedFilterFields = Array.isArray(pc.filterFields)
+                ? pc.filterFields
+                : (pc.filterField ? [pc.filterField] : []);
+            const requestedValueFields = Array.isArray(pc.valueFields) && pc.valueFields.length
+                ? pc.valueFields
+                : (pc.valueField ? [{ field: pc.valueField, op: pc.valueOperation || "sum" }] : []);
+
+            if (requestedRowFields.length === 0) {
+                throw new Error("PivotTable creation requires at least one row field.");
+            }
+            if (requestedValueFields.length === 0) {
+                throw new Error("PivotTable creation requires at least one value field.");
+            }
+
+            const resolvedRowFields = requestedRowFields.map(field => resolvePivotField(field, "row"));
+            const resolvedColumnFields = requestedColumnFields.map(field => resolvePivotField(field, "column"));
+            const resolvedFilterFields = requestedFilterFields.map(field => resolvePivotField(field, "filter"));
+
+            const supportedPivotAggregations = new Set([
+                "sum", "average", "count", "counta", "max", "min", "product", "stdev"
+            ]);
+            const resolvedValueFields = requestedValueFields.map((vf) => {
+                const field = vf && vf.field;
+                if (!field || !String(field).trim()) {
+                    throw new Error("PivotTable value field is missing its field name.");
+                }
+                const op = String((vf && vf.op) || "sum").trim().toLowerCase();
+                if (!supportedPivotAggregations.has(op)) {
+                    throw new Error(
+                        "Unsupported PivotTable aggregation '" + op +
+                        "'. Supported aggregations: " +
+                        Array.from(supportedPivotAggregations).join(", ") + "."
+                    );
+                }
+                return { field: resolvePivotField(field, "value"), op };
+            });
+
             // Exactly 20 empty rows between consecutive PivotTables on the
             // same worksheet — see PIVOT_GAP_ROWS usage below. Vertical
             // stacking only; side-by-side/column placement was removed here
@@ -1316,7 +1414,11 @@ async function processExcelPipeline(optionsJson) {
             currentSheets.load("items/name");
             await context.sync();
 
-            let pivotSheet = currentSheets.items.find(s => s.name === pivotSheetName);
+            const requestedPivotSheetName = sanitizeWorksheetName(
+                pc.sheetName || ("Pivot_" + (sheetName || "Data"))
+            );
+            let pivotSheetName = requestedPivotSheetName;
+            let pivotSheet = currentSheets.items.find(s => s.name.toLowerCase() === pivotSheetName.toLowerCase());
             const sheetAlreadyExisted = !!pivotSheet;
             if (pc.reuseExisting === true && pivotSheet) {
                 const existingPivots = pivotSheet.pivotTables;
@@ -1376,16 +1478,18 @@ async function processExcelPipeline(optionsJson) {
             let startingRow = 1;
 
             if (!pc.appendMode || !pivotSheet) {
-                for (let i = 0; i < currentSheets.items.length; i++) {
-                    if (currentSheets.items[i].name === pivotSheetName) {
-                        currentSheets.items[i].delete();
-                        break;
-                    }
+                if (pivotSheet && pc.reuseExisting !== true) {
+                    pivotSheetName = makeUniqueWorksheetName(
+                        requestedPivotSheetName,
+                        currentSheets.items.map(s => s.name)
+                    );
+                    pivotSheet = null;
                 }
-                await context.sync();
-                pivotSheet = workbook.worksheets.add(pivotSheetName);
-                placementMode = "new_sheet";
-                startingRow = 1;
+                if (!pivotSheet) {
+                    pivotSheet = workbook.worksheets.add(pivotSheetName);
+                    placementMode = "new_sheet";
+                    startingRow = 1;
+                }
             } else {
                 placementMode = "append_existing_sheet";
                 const usedRange = pivotSheet.getUsedRange(true);
@@ -1405,8 +1509,8 @@ async function processExcelPipeline(optionsJson) {
                 }
             }
 
-            console.log("PIVOT STEP 1: About to get sourceSheet", resolvedSourceName);
-            const pivotSourceSheet = workbook.worksheets.getItem(resolvedSourceName);
+            console.log("PIVOT STEP 1: About to get sourceSheet", pivotNeedsStaging ? targetSheet.name : resolvedSourceName);
+            const pivotSourceSheet = pivotSourceSheetForPivot;
             console.log("PIVOT STEP 2: Got sourceSheet");
             
             console.log("PIVOT STEP 3: About to get sourceRange");
@@ -1534,7 +1638,7 @@ async function processExcelPipeline(optionsJson) {
             }
 
             console.log("PIVOT STEP 17: Processing rowFields", pc.rowFields);
-            const rowFields = Array.isArray(pc.rowFields) ? pc.rowFields : (pc.rowField ? [pc.rowField] : []);
+            const rowFields = resolvedRowFields;
             console.log("PIVOT STEP 18: Normalized rowFields to array:", rowFields);
             
             let appliedRows = 0;
@@ -1557,7 +1661,7 @@ async function processExcelPipeline(optionsJson) {
             console.log("PIVOT STEP 19: Finished row hierarchies, appliedRows:", appliedRows);
 
             console.log("PIVOT STEP 20: Processing columnFields", pc.columnFields);
-            const columnFields = Array.isArray(pc.columnFields) ? pc.columnFields : (pc.columnField ? [pc.columnField] : []);
+            const columnFields = resolvedColumnFields;
             console.log("PIVOT STEP 21: Normalized columnFields to array:", columnFields);
             
             for (const cf of columnFields) {
@@ -1611,18 +1715,13 @@ async function processExcelPipeline(optionsJson) {
 
             console.log("PIVOT STEP 23: Processing value fields");
             let lastAddedDataHier = null;
-            if (Array.isArray(pc.valueFields) && pc.valueFields.length > 0) {
-                console.log("PIVOT STEP 23a: Have valueFields array with", pc.valueFields.length, "items");
-                for (const vf of pc.valueFields) {
-                    if (!vf || !vf.field) {
-                        console.log("PIVOT STEP 23b: Skipping empty valueField");
-                        continue;
-                    }
+            for (const vf of resolvedValueFields) {
+                    console.log("PIVOT STEP 23a: Resolved valueField", { field: vf.field, op: vf.op });
                     const valHier = findHier(vf.field);
                     console.log("PIVOT STEP 23c: Found hierarchy for valueField", { field: vf.field, foundHierarchyName: valHier ? valHier.name : "NOT FOUND", op: vf.op });
                     
                     if (valHier) {
-                        const valueOp = String(vf.op || "sum").toLowerCase();
+                        const valueOp = vf.op;
                         if (valueOp === "max") validateMaxField(vf.field);
                         console.log("PIVOT STEP 23d: Queuing dataHierarchies.add() for", vf.field);
                         const dataHierarchy = pivotTable.dataHierarchies.add(valHier);
@@ -1632,29 +1731,13 @@ async function processExcelPipeline(optionsJson) {
                         throw new Error("Could not resolve PivotTable value field '" + String(vf.field) + "' against the source worksheet headers.");
                     }
                 }
-            } else if (pc.valueField) {
-                console.log("PIVOT STEP 23e: Single valueField", pc.valueField);
-                const valTarget = findHier(pc.valueField);
-                console.log("PIVOT STEP 23f: Found hierarchy for single valueField", { field: pc.valueField, foundHierarchyName: valTarget ? valTarget.name : "NOT FOUND" });
-                
-                if (valTarget) {
-                    const valueOp = String(pc.valueOperation || "sum").toLowerCase();
-                    if (valueOp === "max") validateMaxField(pc.valueField);
-                    const dataHierarchy = pivotTable.dataHierarchies.add(valTarget);
-                    dataHierarchy.summarizeBy = opToAggFunction(valueOp);
-                    lastAddedDataHier = dataHierarchy;
-                } else {
-                    throw new Error("Could not resolve PivotTable value field '" + String(pc.valueField) + "' against the source worksheet headers.");
-                }
-            } else {
-                console.log("PIVOT STEP 23g: No value fields provided");
             }
             if (!lastAddedDataHier) {
                 throw new Error("PivotTable creation requires at least one valid value field.");
             }
             console.log("PIVOT STEP 24: Finished value hierarchies");
 
-            const filterFields = Array.isArray(pc.filterFields) ? pc.filterFields : (pc.filterField ? [pc.filterField] : []);
+            const filterFields = resolvedFilterFields;
             console.log("PIVOT STEP 24f: Processing filterFields", filterFields);
             for (const ff of filterFields) {
                 const fHier = findHier(ff);
@@ -1799,23 +1882,8 @@ async function processExcelPipeline(optionsJson) {
                 throw e;
             }
 
-            console.log("PIVOT STEP 29: About to delete targetSheet", targetSheet.name);
-            try {
-                targetSheet.delete();
-                console.log("PIVOT STEP 30: Queued targetSheet.delete()");
-            } catch (e) {
-                console.error("PIVOT STEP 30 ERROR: targetSheet.delete() threw", e.toString());
-                throw e;
-            }
-            
-            console.log("PIVOT STEP 31: About to sync after targetSheet.delete()");
-            try {
-                await context.sync();
-                console.log("PIVOT STEP 32: Successfully synced after targetSheet.delete()");
-            } catch (e) {
-                console.error("PIVOT STEP 32 ERROR: context.sync() after delete threw", e.toString());
-                console.warn(" Staging layer clear bypassed.", e);
-            }
+            // Temporary staging cleanup is performed exactly once in the finally block below.
+            // The original source sheet and any user/output worksheet are never deleted here.
 
             // Capture the actual PivotTable range after ranking/filter
             // operations have settled. The existing native chart bridge uses
@@ -1886,9 +1954,9 @@ async function processExcelPipeline(optionsJson) {
                 throw e;
             }
 
-            const expectedRows = rowFields.map(String);
-            const expectedColumns = columnFields.map(String);
-            const expectedFilters = filterFields.map(String);
+            const expectedRows = resolvedRowFields.map(String);
+            const expectedColumns = resolvedColumnFields.map(String);
+            const expectedFilters = resolvedFilterFields.map(String);
             const normalizeField = value => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
             const axisMatches = (actual, expected) => {
                 if (actual.length !== expected.length) return false;
@@ -1907,9 +1975,7 @@ async function processExcelPipeline(optionsJson) {
             if (!axisMatches(actualFilters, expectedFilters)) {
                 throw new Error("Native PivotTable verification failed: filter hierarchies do not match the requested fields.");
             }
-            const expectedValues = valueFields.length > 0
-                ? valueFields.map(v => String(v.field || ""))
-                : [String(pc.valueField || "")];
+            const expectedValues = resolvedValueFields.map(v => String(v.field || ""));
             const valueNamesMatch = actualValues.length === expectedValues.length &&
                 expectedValues.every((wanted, index) => {
                     const actual = normalizeField(actualValues[index]);
@@ -1918,13 +1984,6 @@ async function processExcelPipeline(optionsJson) {
                 });
             if (!valueNamesMatch) {
                 throw new Error("Native PivotTable verification failed: data hierarchies do not match the requested value fields.");
-            }
-
-            const pivotOutputRange = pivotTable.layout.getRange();
-            pivotOutputRange.load(["address", "rowCount", "columnCount", "rowIndex", "columnIndex"]);
-            await context.sync();
-            if (!pivotOutputRange.address || pivotOutputRange.rowCount < 2 || pivotOutputRange.columnCount < 2) {
-                throw new Error("Native PivotTable was created but its output range is not populated.");
             }
 
             console.log("PIVOT STEP 38: Building success response");
@@ -1952,17 +2011,20 @@ async function processExcelPipeline(optionsJson) {
                 }),
             };
         } finally {
-            // ALWAYS delete temporary worksheet, whether pivot creation succeeded or failed.
-            // This guarantees no orphan Temp_Source_Buffer sheets remain.
-            if (isTempSheet) {
+            // Delete ONLY a staging worksheet that this operation actually created.
+            // Cleanup failures are surfaced to the caller rather than silently ignored.
+            if (isTempSheet && targetSheet) {
+                const stagingName = targetSheet.name;
+                console.log("FINALLY: Deleting temporary staging worksheet", stagingName);
+                targetSheet.delete();
                 try {
-                    console.log("FINALLY: Deleting temporary worksheet", targetSheet.name);
-                    targetSheet.delete();
                     await context.sync();
-                    console.log("FINALLY: Successfully deleted temporary worksheet");
+                    console.log("FINALLY: Successfully deleted temporary staging worksheet", stagingName);
                 } catch (cleanupErr) {
-                    console.warn("FINALLY: Failed to delete temporary worksheet:", cleanupErr.toString());
-                    // Do not re-throw — cleanup failure should not mask the original error.
+                    throw new Error(
+                        "Failed to delete temporary staging worksheet '" +
+                        stagingName + "': " + cleanupErr.toString()
+                    );
                 }
             }
         }
