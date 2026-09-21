@@ -5122,9 +5122,23 @@ Future<void> runTransformationPipeline() async {
     final result = await executePipeline(json.encode(options));
     setState(() => pivotEditorRefreshing = false);
     if (result["success"] == true) {
+      String actualPivotSheet = activePivotSheetName!;
+      final placementRaw = result["pivotPlacement"];
+      if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+        try {
+          final placement = json.decode(placementRaw);
+          if (placement is Map && placement["sheet"] is String) {
+            actualPivotSheet = placement["sheet"].toString();
+          }
+        } catch (_) {}
+      }
+      setState(() => activePivotSheetName = actualPivotSheet);
       showNotification("✅ Pivot updated.", TechColors.statusGreen);
     } else {
-      showNotification("PIVOT ERROR: ${result['error']}", TechColors.statusRed);
+      showNotification(
+        "PIVOT ERROR: " + (result["error"] ?? "Unknown error").toString(),
+        TechColors.statusRed,
+      );
     }
   }
 
