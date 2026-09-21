@@ -1,7 +1,9 @@
 // lib/features/pipelines/widgets/pivot_builder.dart
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../../app_colors.dart';
 import '../../dashboard/data_screen.dart';
+import 'shared/glass_picker_sheet.dart';
 
 class PivotBuilder extends StatelessWidget {
   final DataScreenState state;
@@ -44,18 +46,13 @@ class PivotBuilder extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: _styledDropdown<String>(
+                    child: _glassFieldPicker(
+                      context: context,
                       value: state.pivotRowFields[index],
-                      hint: "Select row axis dimension",
-                      items: state.detectedHeaders
-                          .map((h) => DropdownMenuItem(
-                          value: h,
-                          child: Text(h, style: const TextStyle(fontSize: 12, color: Colors.white))))
-                          .toList(),
+                      placeholder: "Select row axis dimension",
+                      items: state.detectedHeaders,
                       onChanged: (v) {
-                        if (v != null) {
-                          state.setState(() => state.pivotRowFields[index] = v);
-                        }
+                        state.setState(() => state.pivotRowFields[index] = v);
                       },
                     ),
                   ),
@@ -94,18 +91,13 @@ class PivotBuilder extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: _styledDropdown<String>(
+                    child: _glassFieldPicker(
+                      context: context,
                       value: state.pivotColumnFields[index],
-                      hint: "Select column axis dimension",
-                      items: state.detectedHeaders
-                          .map((h) => DropdownMenuItem(
-                          value: h,
-                          child: Text(h, style: const TextStyle(fontSize: 12, color: Colors.white))))
-                          .toList(),
+                      placeholder: "Select column axis dimension",
+                      items: state.detectedHeaders,
                       onChanged: (v) {
-                        if (v != null) {
-                          state.setState(() => state.pivotColumnFields[index] = v);
-                        }
+                        state.setState(() => state.pivotColumnFields[index] = v);
                       },
                     ),
                   ),
@@ -143,18 +135,13 @@ class PivotBuilder extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: _styledDropdown<String>(
+                    child: _glassFieldPicker(
+                      context: context,
                       value: state.pivotFilterFields[index],
-                      hint: "Select report filter field",
-                      items: state.detectedHeaders
-                          .map((h) => DropdownMenuItem(
-                          value: h,
-                          child: Text(h, style: const TextStyle(fontSize: 12, color: Colors.white))))
-                          .toList(),
+                      placeholder: "Select report filter field",
+                      items: state.detectedHeaders,
                       onChanged: (v) {
-                        if (v != null) {
-                          state.setState(() => state.pivotFilterFields[index] = v);
-                        }
+                        state.setState(() => state.pivotFilterFields[index] = v);
                       },
                     ),
                   ),
@@ -202,38 +189,36 @@ class PivotBuilder extends StatelessWidget {
                   children: [
                     Expanded(
                       flex: 3,
-                      child: _styledDropdown<String>(
-                        value: entry["field"],
-                        hint: "Select accumulation column",
-                        items: state.detectedHeaders
-                            .map((h) => DropdownMenuItem(
-                            value: h,
-                            child: Text(h, style: const TextStyle(fontSize: 11, color: Colors.white))))
-                            .toList(),
+                      child: _glassFieldPicker(
+                        context: context,
+                        value: entry["field"]?.toString(),
+                        placeholder: "Select accumulation column",
+                        items: state.detectedHeaders,
+                        compact: true,
                         onChanged: (v) {
-                          if (v != null) {
-                            state.setState(() => state.pivotValueFields[index]["field"] = v);
-                          }
+                          state.setState(() => state.pivotValueFields[index]["field"] = v);
                         },
                       ),
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                       flex: 2,
-                      child: _styledDropdown<String>(
-                        value: entry["op"],
-                        hint: "Function",
-                        items: const [
-                          DropdownMenuItem(value: "sum", child: Text("SUM", style: TextStyle(fontSize: 11, color: Colors.white))),
-                          DropdownMenuItem(value: "average", child: Text("AVG", style: TextStyle(fontSize: 11, color: Colors.white))),
-                          DropdownMenuItem(value: "count", child: Text("COUNT", style: TextStyle(fontSize: 11, color: Colors.white))),
-                          DropdownMenuItem(value: "max", child: Text("MAX", style: TextStyle(fontSize: 11, color: Colors.white))),
-                          DropdownMenuItem(value: "min", child: Text("MIN", style: TextStyle(fontSize: 11, color: Colors.white))),
-                        ],
+                      child: _glassFieldPicker(
+                        context: context,
+                        value: entry["op"]?.toString(),
+                        placeholder: "Function",
+                        items: const ["sum", "average", "count", "max", "min"],
+                        itemLabel: (v) => switch (v) {
+                          "sum" => "SUM",
+                          "average" => "AVG",
+                          "count" => "COUNT",
+                          "max" => "MAX",
+                          "min" => "MIN",
+                          _ => v.toUpperCase(),
+                        },
+                        compact: true,
                         onChanged: (v) {
-                          if (v != null) {
-                            state.setState(() => state.pivotValueFields[index]["op"] = v);
-                          }
+                          state.setState(() => state.pivotValueFields[index]["op"] = v);
                         },
                       ),
                     ),
@@ -256,30 +241,29 @@ class PivotBuilder extends StatelessWidget {
     return Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold));
   }
 
-  Widget _styledDropdown<T>({
-    required T? value,
-    required String hint,
-    required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
+  Widget _glassFieldPicker({
+    required BuildContext context,
+    required String? value,
+    required String placeholder,
+    required List<String> items,
+    required ValueChanged<String> onChanged,
+    String Function(String value)? itemLabel,
+    bool compact = false,
   }) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: TechColors.bgBlack,
-        border: Border.all(color: TechColors.borderMuted),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          hint: Text(hint, style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-          dropdownColor: TechColors.panelBg,
-          isExpanded: true,
+    return GlassPicker(
+      value: value,
+      placeholder: placeholder,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      onTap: () async {
+        final picked = await showGlassPickerSheet<String>(
+          context: context,
+          title: placeholder,
           items: items,
-          onChanged: onChanged,
-        ),
-      ),
+          itemLabel: itemLabel ?? (item) => item,
+          initialItem: value,
+        );
+        if (picked != null) onChanged(picked);
+      },
     );
   }
 
