@@ -4698,7 +4698,98 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     return null;
   }
 
-Future<void> runTransformationPipeline() async {
+Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
+    final requestedSheet = pivotSheetNameController.text.trim().isNotEmpty
+        ? _sanitizeSheetName(pivotSheetNameController.text.trim())
+        : "Pivot_Workspace";
+
+    final rowFields = pivotRowFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final columnFields = pivotColumnFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final filterFields = pivotFilterFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final valueFields = pivotValueFields
+        .map((entry) => <String, String>{
+              "field": (entry["field"] ?? "").trim(),
+              "op": (entry["op"] ?? "sum").trim().toLowerCase(),
+            })
+        .where((entry) => entry["field"]!.isNotEmpty)
+        .toList();
+
+    if (rowFields.isEmpty) {
+      return {"success": false, "error": "Pick at least one PivotTable row field."};
+    }
+    if (valueFields.isEmpty) {
+      return {"success": false, "error": "Pick at least one PivotTable value field."};
+    }
+
+    const supportedPivotOps = {
+      "sum",
+      "average",
+      "count",
+      "counta",
+      "max",
+      "min",
+      "product",
+      "stdev",
+    };
+    final unsupported = valueFields
+        .map((entry) => entry["op"]!)
+        .firstWhere(
+          (op) => !supportedPivotOps.contains(op),
+          orElse: () => "",
+        );
+    if (unsupported.isNotEmpty) {
+      return {
+        "success": false,
+        "error": "Unsupported PivotTable aggregation: " + unsupported,
+      };
+    }
+
+    // Manual Builder deliberately delegates to the exact same native executor
+    // used by AI/query PivotTable requests. This keeps source resolution,
+    // placement, native hierarchy assignment, verification, and cleanup in
+    // one implementation instead of maintaining two divergent contracts.
+    final result = await _executeAgenticPivot(
+      {
+        "sheetName": requestedSheet,
+        "tableName":
+            "Pivot_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString(),
+        "rowFields": rowFields,
+        "columnFields": columnFields,
+        "valueFields": valueFields,
+        "filterFields": filterFields,
+        "reuseExisting": false,
+      },
+      placementOverride: null,
+    );
+
+    if (result["success"] == true) {
+      String actualPivotSheet = requestedSheet;
+      final placementRaw = result["pivotPlacement"];
+      if (placementRaw is Map && placementRaw["sheet"] is String) {
+        actualPivotSheet = placementRaw["sheet"].toString();
+      } else if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+        try {
+          final placement = json.decode(placementRaw);
+          if (placement is Map && placement["sheet"] is String) {
+            actualPivotSheet = placement["sheet"].toString();
+          }
+        } catch (_) {}
+      }
+      result["manualPivotSheet"] = actualPivotSheet;
+    }
+    return result;
+  }
+
+  Future<void> runTransformationPipeline() async {
     if (secureLocalOnly &&
         dataSourceMode == DataSourceMode.uploadedFile &&
         uploadedFile == null) {
@@ -4714,6 +4805,39 @@ Future<void> runTransformationPipeline() async {
         showError(lookupError);
         return;
       }
+    }
+    if (generatePivotTable) {
+      setState(() => pipelineProcessing = true);
+      final result = await _executeManualPivotFromBuilder();
+      if (!mounted) return;
+      setState(() => pipelineProcessing = false);
+
+      if (result["success"] == true) {
+        final actualPivotSheet =
+            result["manualPivotSheet"]?.toString().trim().isNotEmpty == true
+                ? result["manualPivotSheet"].toString()
+                : pivotSheetNameController.text.trim();
+
+        setState(() {
+          activePivotSheetName = actualPivotSheet;
+          pivotSourceSheetName = result["pivotPlacement"] is Map
+              ? (result["pivotPlacement"]["sourceSheet"]?.toString())
+              : pivotSourceSheetName;
+          pivotEditorRowFields = List<String>.from(pivotRowFields);
+          pivotEditorColumnFields = List<String>.from(pivotColumnFields);
+          pivotEditorValueFields =
+              List<Map<String, String>>.from(pivotValueFields);
+          pivotEditorFilterFields = List<String>.from(pivotFilterFields);
+          pivotSourceHeaders = List<String>.from(detectedHeaders);
+        });
+        showNotification("✅ Native PivotTable created.", TechColors.statusGreen);
+      } else {
+        showNotification(
+          "PIVOT ERROR: " + (result["error"] ?? "Unknown error").toString(),
+          TechColors.statusRed,
+        );
+      }
+      return;
     }
     String desiredPivotSheet = pivotSheetNameController.text.trim().isNotEmpty
         ? pivotSheetNameController.text.trim()
