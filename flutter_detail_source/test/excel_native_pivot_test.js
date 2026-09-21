@@ -239,6 +239,105 @@ async function main() {
   assert.strictEqual(nonNumeric.success, false);
   assert.match(nonNumeric.error, /MAX requires a numeric value field/);
 
+
+
+  // Case-insensitive + whitespace-normalized field matching must resolve the
+  // actual source header rather than guessing another column.
+  const caseAndWhitespace = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Pivot_Case',
+      tableName: 'Pivot_Case_Test',
+      rowFields: ['  BRAND_NAME  '],
+      columnFields: [],
+      filterFields: [],
+      valueFields: [{ field: ' MARKED_PRICE ', op: 'max' }],
+      appendMode: false,
+    },
+  }));
+  assert.strictEqual(caseAndWhitespace.success, true, caseAndWhitespace.error);
+  assert.strictEqual(calls.summarizations[calls.summarizations.length - 1], 'MAX');
+
+  // Missing fields must fail instead of falling back to the first source column.
+  const missingValue = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Pivot_Missing',
+      tableName: 'Pivot_Missing_Test',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'not_a_price', op: 'max' }],
+    },
+  }));
+  assert.strictEqual(missingValue.success, false);
+  assert.match(missingValue.error, /Could not resolve PivotTable value field 'not_a_price'/);
+
+  // Unsupported aggregations must fail rather than silently becoming SUM.
+  const unsupportedAgg = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Pivot_Bad_Agg',
+      tableName: 'Pivot_Bad_Agg_Test',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'marked_price', op: 'median' }],
+    },
+  }));
+  assert.strictEqual(unsupportedAgg.success, false);
+  assert.match(unsupportedAgg.error, /Unsupported PivotTable aggregation 'median'/);
+
+  // Existing output names must never be deleted or overwritten.
+  // Seed a user sheet with the requested name.
+  const existingUserSheet = context.Excel.run ? null : null;
+  // The mock's sheet map is private, so exercise collision behavior by
+  // creating the requested name through a first successful PivotTable and
+  // then requesting the same output name again.
+  const collisionFirst = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Collision_Target',
+      tableName: 'Collision_First',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'marked_price', op: 'max' }],
+    },
+  }));
+  assert.strictEqual(collisionFirst.success, true, collisionFirst.error);
+
+  const collisionSecond = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    pivotConfig: {
+      sheetName: 'Collision_Target',
+      tableName: 'Collision_Second',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'marked_price', op: 'max' }],
+    },
+  }));
+  assert.strictEqual(collisionSecond.success, true, collisionSecond.error);
+  const collisionPlacement = JSON.parse(collisionSecond.pivotPlacement);
+  assert.notStrictEqual(collisionPlacement.sheet, 'Collision_Target');
+  assert.ok(calls.deletedSheets.every((name) => !/^Products$/i.test(name)));
+  assert.ok(calls.deletedSheets.every((name) => !/^Collision_Target$/i.test(name)));
+
+  // A transformed Pivot must stage the transformed matrix, use that staging
+  // sheet as the native Pivot source, and clean up only that sheet.
+  const staged = await context.processExcelPipeline(JSON.stringify({
+    sourceSheetName: 'Products',
+    targetSheetName: null,
+    filter: { columnName: 'marked_price', type: 'greater_than', value: '100' },
+    pivotConfig: {
+      sheetName: 'Pivot_Staged',
+      tableName: 'Pivot_Staged_Test',
+      rowFields: ['brand_name'],
+      valueFields: [{ field: 'marked_price', op: 'max' }],
+    },
+  }));
+  assert.strictEqual(staged.success, true, staged.error);
+  assert.ok(calls.deletedSheets.some((name) => /^Temp_Source_Buffer_/i.test(name)));
+  assert.ok(!calls.deletedSheets.some((name) => /^Products$/i.test(name)));
+
   console.log('excel_native_pivot_test: PASS');
 }
 
