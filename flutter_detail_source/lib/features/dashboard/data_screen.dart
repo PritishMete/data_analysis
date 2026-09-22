@@ -4482,7 +4482,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       );
 
       final request = http.MultipartRequest('POST', Uri.parse(_cleanDataUrl));
-       await attachFirebaseAuth(request);
+       await attachFirebaseAuth(request, resourceId: activeSheetName);
       request.fields['config'] = json.encode({
         "steps": steps,
         "output_sheet_name": targetSheetName,
