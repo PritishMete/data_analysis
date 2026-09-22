@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -249,6 +249,7 @@ from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
@@ -1204,7 +1205,7 @@ async def agentic_filter_plan(payload: dict):
 
 
 @app.post("/agentic_command")
-async def agentic_command(payload: dict):
+async def agentic_command(payload: dict, request: Request):
     try:
         text, available_columns, available_sheets = validate_metadata_planner_payload(payload, allow_sheets=True)
     except ValueError as exc:
@@ -1254,6 +1255,31 @@ async def agentic_command(payload: dict):
 
     try:
         result = await parse_agentic_command(text, available_columns, available_sheets)
+
+        # The middleware authorizes the generic analysis.run entry point. The
+        # parsed operation can require a narrower permission, so re-authorize
+        # the actual operation before returning a plan to the Excel client.
+        if getattr(request.state, "firebase_uid", None):
+            action_name = str(result.get("action") or "").strip().lower()
+            action_permission = {
+                "pivot": "pivot.create",
+                "filter": "worksheet.modify",
+                "deduplicate": "worksheet.modify",
+                "color_scale": "worksheet.modify",
+                "add_column": "worksheet.modify",
+                "fill_missing": "worksheet.modify",
+                "multi_step": "worksheet.modify",
+                "categorize": "worksheet.modify",
+            }.get(action_name, "analysis.run")
+            try:
+                authorize_workspace_action(
+                    request.state.firebase_uid,
+                    request.state.workspace_id,
+                    action_permission,
+                    request.state.resource_id,
+                )
+            except (FirebasePermissionDenied, ValueError):
+                raise HTTPException(status_code=403, detail="Permission denied.")
 
         if dataset_id:
             try:
