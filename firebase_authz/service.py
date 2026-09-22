@@ -18,7 +18,7 @@ except ImportError:
 from .schema import ACTIONS, DEFAULT_ROLES, validate_action, validate_id
 
 PROJECT_ID = "insightflow-5a23d"
-DATABASE_URL = "https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app"
+DATABASE_URL = "https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/"
 _init_lock = threading.Lock()
 
 class AuthzError(Exception): pass
@@ -31,7 +31,7 @@ def _config():
     url = os.environ.get("FIREBASE_DATABASE_URL")
     if project != PROJECT_ID:
         raise RuntimeError("Firebase configuration is missing or has the wrong project.")
-    if url != DATABASE_URL:
+    if not url or url.rstrip("/") != DATABASE_URL.rstrip("/"):
         raise RuntimeError("Firebase configuration is missing or has the wrong regional Realtime Database URL.")
     if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
         # Application Default Credentials may still be available; firebase-admin will report a
