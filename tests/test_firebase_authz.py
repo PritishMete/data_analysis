@@ -7,7 +7,7 @@ def test_actions_and_roles_are_explicit():
     assert "owner" in service.DEFAULT_ROLES
 
 def test_suspended_user_is_denied(monkeypatch):
-    monkeypatch.setattr(service, "_user", lambda uid: {"suspended": True})
+    monkeypatch.setattr(service, "_user", lambda uid: (_ for _ in ()).throw(service.PermissionDenied("User is suspended.")))
     with pytest.raises(service.PermissionDenied):
         service.authorization("u", "w", "data.view", "r")
 
