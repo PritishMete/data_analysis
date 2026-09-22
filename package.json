@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test:rules": "firebase emulators:exec --only auth,database --project insightflow-5a23d 'npx mocha tests/firebase_rtdb_rules.test.js && FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000 FIREBASE_PROJECT_ID=insightflow-5a23d FIREBASE_DATABASE_URL=https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app INSIGHTFLOW_BOOTSTRAP_SECRET=test-secret pytest -q tests/test_firebase_authz_emulator.py'"
+    "test:rules": "firebase emulators:exec --only auth,database --project insightflow-5a23d 'npx mocha tests/firebase_rtdb_rules.test.js && FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000 FIREBASE_PROJECT_ID=insightflow-5a23d FIREBASE_DATABASE_URL=https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/ INSIGHTFLOW_BOOTSTRAP_SECRET=test-secret pytest -q tests/test_firebase_authz_emulator.py'"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.4",
