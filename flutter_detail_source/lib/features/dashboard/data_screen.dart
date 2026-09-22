@@ -5812,6 +5812,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
           "https://data-analysis-oajs.onrender.com/analyze-report-focused",
         ),
       );
+      await attachFirebaseAuth(request);
       request.fields['focus_analysis_types'] = json.encode(selectedTypes);
       request.files.add(
         http.MultipartFile.fromString(
