@@ -35,7 +35,7 @@ def test_resource_only_is_not_enough(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: {
         "members": {"u": {"roles": {"viewer": True}}},
         "roles": {"viewer": {"permissions": ["history.view"]}},
-        "resources": {"r1": {"grants": {"u": {"permissions": {"data.view": True}}}}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}}},
     })
     with pytest.raises(service.PermissionDenied):
         service.authorization("u", "w", "data.view", "r1")
@@ -45,7 +45,7 @@ def test_revoked_role_permission_takes_effect_immediately(monkeypatch):
     workspace = {
         "members": {"u": {"roles": {"analyst": True}}},
         "roles": {"analyst": {"permissions": ["data.view"]}},
-        "resources": {"r1": {"grants": {"u": {"permissions": {"data.view": True}}}}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}}},
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     assert service.authorization("u", "w", "data.view", "r1")["allowed"] is True
@@ -62,7 +62,7 @@ def test_revoked_resource_grant_takes_effect_immediately(monkeypatch):
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     assert service.authorization("u", "w", "data.view", "r1")["allowed"] is True
-    workspace["resources"]["r1"]["grants"]["u"]["permissions"]["data.view"] = False
+    workspace["resources"]["r1"]["grants"]["u"]["permissions"] = []
     with pytest.raises(service.PermissionDenied):
         service.authorization("u", "w", "data.view", "r1")
 
