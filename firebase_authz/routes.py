@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, _user
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, _user, workspace_memberships
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -24,7 +24,7 @@ def _token(value):
 def me(authorization: str=Header(default=None)):
     try:
         claims=verify_id_token(_token(authorization)); uid=str(claims["uid"]); user=_user(uid)
-        return {"uid":uid,"email":claims.get("email"),"suspended":False,"roles":user.get("roles") or {}}
+        return {"uid":uid,"email":claims.get("email"),"suspended":False,"workspaces":workspace_memberships(uid)}
     except AuthenticationRequired as exc: raise HTTPException(401,str(exc))
     except AuthzError as exc: raise HTTPException(403,str(exc))
 
