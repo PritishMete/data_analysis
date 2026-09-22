@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 import 'insightflow_auth_service.dart';
@@ -43,10 +45,6 @@ Future<Map<String, String>> firebaseAuthHeaders({
   return headers;
 }
 
-
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
 
 Future<bool> authorizeExcelOperation({
   required String backendBaseUrl,
