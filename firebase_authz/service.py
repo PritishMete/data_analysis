@@ -113,7 +113,7 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
 
     if resource_id:
         grant = _resource_grant(workspace, uid, resource_id)
-        grant_permissions = {p for p, enabled in grant.get("permissions", {}).items() if enabled and p in ACTIONS}
+        grant_permissions = {p for p in (grant.get("permissions") or []) if p in ACTIONS}
         permissions &= grant_permissions
         if action not in permissions:
             raise PermissionDenied("Permission denied for this resource.")
@@ -221,6 +221,6 @@ def set_resource_grant(workspace_id: str, resource_id: str, target_uid: str, per
         raise PermissionDenied("Grant target is not a workspace member.")
     initialize_firebase()
     db.reference(f"workspaces/{workspace_id}/resources/{resource_id}/grants/{target_uid}").set({
-        "permissions": {p: True for p in sorted(set(permissions))}
+        "permissions": sorted(set(permissions))
     })
     return True
