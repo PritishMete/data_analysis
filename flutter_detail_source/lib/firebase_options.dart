@@ -31,13 +31,12 @@ class DefaultFirebaseOptions {
         'InsightFlow Firebase configuration is currently provisioned for Web only.',
       );
     }
-    const missing = [
-      if (_apiKey.isEmpty) 'apiKey',
-      if (_appId.isEmpty) 'appId',
-      if (_messagingSenderId.isEmpty) 'messagingSenderId',
-      if (_projectId.isEmpty) 'projectId',
-      if (_authDomain.isEmpty) 'authDomain',
-    ];
+    final missing = <String>[];
+    if (_apiKey.isEmpty) missing.add('apiKey');
+    if (_appId.isEmpty) missing.add('appId');
+    if (_messagingSenderId.isEmpty) missing.add('messagingSenderId');
+    if (_projectId.isEmpty) missing.add('projectId');
+    if (_authDomain.isEmpty) missing.add('authDomain');
     if (missing.isNotEmpty || _projectId != 'insightflow-5a23d') {
       throw StateError(
         'InsightFlow Firebase Web configuration is missing or targets the wrong Firebase project.',
