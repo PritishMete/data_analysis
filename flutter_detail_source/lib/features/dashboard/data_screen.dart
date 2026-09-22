@@ -5934,26 +5934,26 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
   // one place source selection happens, and `_buildEmptyState()` below
   // already shows an uploaded-file badge, so this panel is just the title.
   Widget _buildGlassAppBar() {
-    return GlassContainer(
-      useOwnLayer: true,
-      quality: GlassQuality.standard,
-      settings: TechColors.panelGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 0),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-      child: const Row(
-        children: [
-          Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
-          SizedBox(width: 10),
-          Text(
-            'InsightFlow',
-            style: TextStyle(
-              color: TechColors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'monospace',
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        child: const Row(
+          children: [
+            Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
+            SizedBox(width: 10),
+            Text(
+              'InsightFlow',
+              style: TextStyle(
+                color: TechColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
