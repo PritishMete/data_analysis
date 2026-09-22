@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, protected_context, verify_id_token, _user
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, _user
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -38,3 +38,32 @@ def role_mutation(req:RoleMutation,authorization: str=Header(default=None)):
     try:return {"success":mutate_role(req.target_uid,req.role_id,req.enabled,_token(authorization),req.workspace_id)}
     except AuthenticationRequired as exc: raise HTTPException(401,str(exc))
     except AuthzError as exc: raise HTTPException(403,str(exc))
+
+
+class RoleUpsert(BaseModel):
+    workspace_id: str
+    role_id: str
+    name: str
+    permissions: list[str]
+
+class ResourceGrant(BaseModel):
+    workspace_id: str
+    resource_id: str
+    target_uid: str
+    permissions: list[str]
+
+@router.post("/roles")
+def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
+    try:
+        return {"success": upsert_role(req.workspace_id, req.role_id, req.name, req.permissions, _token(authorization))}
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(400, str(exc))
+
+@router.post("/resource-grants")
+def resource_grant(req: ResourceGrant, authorization: str=Header(default=None)):
+    try:
+        return {"success": set_resource_grant(req.workspace_id, req.resource_id, req.target_uid, req.permissions, _token(authorization))}
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(400, str(exc))
