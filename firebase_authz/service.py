@@ -141,17 +141,22 @@ def bootstrap_owner(id_token: str, bootstrap_secret: str, workspace_id: str, exp
     initialize_firebase()
     ref = db.reference(f"workspaces/{workspace_id}")
     def txn(current):
-        if current is not None:
-            return current
         now = int(time.time() * 1000)
         roles = {rid: {"name": rid.title(), "permissions": sorted(perms), "system": True}
                  for rid, perms in DEFAULT_ROLES.items()}
-        return {
-            "bootstrap": {"initialized": True, "owner_uid": expected_uid, "initialized_at": now, "nonce": uuid.uuid4().hex},
-            "roles": roles,
-            "members": {expected_uid: {"roles": {"owner": True}}},
-            "resources": {},
-        }
+        if current is None:
+            return {
+                "bootstrap": {"initialized": True, "owner_uid": expected_uid, "initialized_at": now, "nonce": uuid.uuid4().hex},
+                "roles": roles,
+                "members": {expected_uid: {"roles": {"owner": True}}},
+                "resources": {},
+            }
+        bootstrap = current.get("bootstrap") or {}
+        if bootstrap.get("initialized") is True and bootstrap.get("owner_uid") == expected_uid:
+            current.setdefault("roles", {}).update({k: v for k, v in roles.items() if k not in current.get("roles", {})})
+            current.setdefault("members", {}).setdefault(expected_uid, {"roles": {"owner": True}})
+            current.setdefault("resources", {})
+        return current
     result = ref.transaction(txn)
     if not isinstance(result, dict) or (result.get("bootstrap") or {}).get("owner_uid") != expected_uid:
         raise BootstrapDenied("Workspace initialization was not completed by this bootstrap request.")
