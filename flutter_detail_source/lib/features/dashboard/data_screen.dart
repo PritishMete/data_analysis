@@ -1192,8 +1192,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   // Base URL for /smart_query — same backend as /agentic_command and
   // /parse_command, just a different route (see main.py + query_router.py).
+  static const String _backendBaseUrl = "https://data-analysis-oajs.onrender.com";
   static const String _smartQueryUrl =
-      "https://data-analysis-oajs.onrender.com/smart_query";
+      "$_backendBaseUrl/smart_query";
   static const String _sentimentUrl =
       "https://data-analysis-oajs.onrender.com/sentiment_analysis";
   static const Duration _sentimentRequestTimeout = Duration(minutes: 4);
@@ -1848,7 +1849,25 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     String action,
     Map<String, dynamic> parsed,
   ) async {
-    if (!_kLegacyExcelActions.contains(action)) {
+    final permission = action == "pivot" ? "pivot.create" : "worksheet.modify";
+    final authorized = await authorizeExcelOperation(
+      backendBaseUrl: _backendBaseUrl,
+      action: permission,
+      resourceId: activeSheetName,
+    );
+    if (!authorized) {
+      if (mounted) {
+        setState(() {
+          isSearchingChat = false;
+          chatHistory.add({
+            "sender": "system",
+            "text": "You are not authorized to perform this Excel operation in the current workspace.",
+          });
+        });
+      }
+      return;
+    }
+    if (!_kLegacyExcelActions.contains(action) && action != "unknown") {
       await _applyGenericTransformation(parsed);
       return;
     }
@@ -4793,6 +4812,19 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
   }
 
   Future<void> runTransformationPipeline() async {
+    final permission = generatePivotTable ? "pivot.create" : "worksheet.modify";
+    final authorized = await authorizeExcelOperation(
+      backendBaseUrl: _backendBaseUrl,
+      action: permission,
+      resourceId: activeSheetName,
+    );
+    if (!authorized) {
+      showNotification(
+        "You are not authorized to perform this Excel operation in the current workspace.",
+        TechColors.statusOrange,
+      );
+      return;
+    }
     if (secureLocalOnly &&
         dataSourceMode == DataSourceMode.uploadedFile &&
         uploadedFile == null) {
