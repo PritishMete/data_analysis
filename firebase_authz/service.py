@@ -99,6 +99,8 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     validate_id(uid, "user ID")
     validate_id(workspace_id, "workspace ID")
     validate_action(action)
+    if resource_id is not None:
+        validate_id(resource_id, "resource ID")
     user = _user(uid)
     workspace = _workspace(workspace_id)
     members = workspace.get("members") or {}
@@ -189,6 +191,8 @@ def mutate_role(target_uid: str, role_id: str, enabled: bool, actor_token: str, 
     claims = verify_id_token(actor_token)
     actor = str(claims["uid"])
     authorization(actor, workspace_id, "roles.manage")
+    if role_id == "owner" and enabled and target_uid == actor:
+        raise PermissionDenied("Self-promotion to Owner is not permitted.")
     if role_id == "owner" and not enabled:
         last_owner_guard(workspace_id, target_uid)
     db.reference(f"workspaces/{workspace_id}/members/{target_uid}/roles/{role_id}").set(bool(enabled))
