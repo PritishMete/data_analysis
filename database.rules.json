@@ -3,21 +3,29 @@
     ".read": false,
     ".write": false,
     "roles": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && root.child('users').child(auth.uid).child('roles').child('owner').val() == true && root.child('users').child(auth.uid).child('roles').child('roles.manage').val() == true",
-      ".write": false
+      "$roleId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && root.child('users').child(auth.uid).child('effectivePermissions').child('roles.manage').val() == true",
+        ".write": false
+      }
     },
     "users": {
       "$uid": {
-        ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('roles').child('owner').val() == true)",
-        ".write": "false"
+        ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
+        ".write": false
       }
     },
     "workspaces": {
       "$workspaceId": {
+        "members": {
+          "$uid": {
+            ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
+            ".write": false
+          }
+        },
         "grants": {
           "$uid": {
-            ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('roles').child('owner').val() == true)",
-            ".write": "false"
+            ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
+            ".write": false
           }
         },
         "bootstrap": { ".read": false, ".write": false }
