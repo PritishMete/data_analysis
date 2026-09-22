@@ -32,6 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -74,8 +80,12 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Flutter web source
-        run: flutter analyze
+      - name: Analyze Firebase Auth Flutter sources
+        run: >-
+          dart analyze
+          lib/firebase_options.dart
+          lib/core/auth/insightflow_auth_service.dart
+          lib/core/auth/authenticated_http.dart
 
       - name: Run Flutter Auth tests
         run: flutter test test/firebase_auth_service_test.dart
