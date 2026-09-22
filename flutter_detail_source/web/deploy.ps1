@@ -1,6 +1,12 @@
 param(
   [string]$BaseHref = '/data_analysis/',
-  [string]$GhPagesBranch = 'gh-pages'
+  [string]$GhPagesBranch = 'gh-pages',
+  [string]$FirebaseWebApiKey = $env:INSIGHTFLOW_FIREBASE_WEB_API_KEY,
+  [string]$FirebaseWebAppId = $env:INSIGHTFLOW_FIREBASE_WEB_APP_ID,
+  [string]$FirebaseWebMessagingSenderId = $env:INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID,
+  [string]$FirebaseWebProjectId = $env:INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID,
+  [string]$FirebaseWebAuthDomain = $env:INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN,
+  [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,7 +21,28 @@ try {
     throw "Refusing deployment from '$CurrentBranch'. Expected feature/data-workspace."
   }
 
-  flutter build web --release --base-href $BaseHref
+  $requiredDefines = @{
+    'INSIGHTFLOW_FIREBASE_WEB_API_KEY' = $FirebaseWebApiKey
+    'INSIGHTFLOW_FIREBASE_WEB_APP_ID' = $FirebaseWebAppId
+    'INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID' = $FirebaseWebMessagingSenderId
+    'INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID' = $FirebaseWebProjectId
+    'INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN' = $FirebaseWebAuthDomain
+    'INSIGHTFLOW_WORKSPACE_ID' = $WorkspaceId
+  }
+  $missingDefines = @(
+    $requiredDefines.GetEnumerator() |
+      Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } |
+      ForEach-Object { $_.Key }
+  )
+  if ($missingDefines.Count -gt 0) {
+    throw "Missing Firebase/Workspace build configuration: $($missingDefines -join ', ')"
+  }
+
+  $buildArgs = @('build', 'web', '--release', '--base-href', $BaseHref)
+  foreach ($entry in $requiredDefines.GetEnumerator()) {
+    $buildArgs += "--dart-define=$($entry.Key)=$($entry.Value)"
+  }
+  flutter @buildArgs
 
   $BuildWeb = Join-Path $RepoRoot 'build\web'
   $IndexPath = Join-Path $BuildWeb 'index.html'
