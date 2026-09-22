@@ -247,6 +247,7 @@ from sql_cache.middleware import SqlCacheMiddleware
 from sql_cache.routes import sql_cache_router
 from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
+from firebase_authz.routes import router as authz_router
 from secure_excel.service import list_supported_transforms
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
@@ -2500,6 +2501,7 @@ app.include_router(plan_cache_router)
 app.include_router(sql_cache_router)
 app.include_router(memory_engine_router)
 app.include_router(secure_excel_router)
+app.include_router(authz_router)
 
 try:
     # Prefer the dedicated Flutter Detail Analysis build when it exists.
