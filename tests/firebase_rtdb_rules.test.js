@@ -25,12 +25,12 @@ function seedDb() {
         a: {
           members: { alice: { roles: { analyst: true } } },
           roles: { analyst: { permissions: ["data.view"] } },
-          resources: { r1: { grants: { alice: { permissions: { "data.view": true } } }, value: "private-a" } }
+          resources: { r1: { grants: { alice: { permissions: ["data.view"] } }, value: "private-a" } }
         },
         b: {
           members: { bob: { roles: { analyst: true } } },
           roles: { analyst: { permissions: ["data.view"] } },
-          resources: { r2: { grants: { bob: { permissions: { "data.view": true } } }, value: "private-b" } }
+          resources: { r2: { grants: { bob: { permissions: ["data.view"] } }, value: "private-b" } }
         }
       }
     });
@@ -52,7 +52,7 @@ describe("InsightFlow RTDB security rules", () => {
     await assertFails(unauth.ref("users/alice").once("value"));
     await assertFails(db("alice").ref("users/alice").set({ suspended: true }));
     await assertFails(db("alice").ref("workspaces/a/members/bob").set({ roles: { owner: true } }));
-    await assertFails(db("alice").ref("workspaces/a/resources/r1/grants/alice").set({ permissions: { "data.view": true } }));
+    await assertFails(db("alice").ref("workspaces/a/resources/r1/grants/alice").set({ permissions: ["data.view"] }));
   });
 
   it("allows a user to read only their own non-sensitive authorization records", async () => {
