@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test:rules": "firebase emulators:exec --only auth,database --project insightflow-5a23d "node tests/firebase_rtdb_rules.test.js""
+    "test:rules": "firebase emulators:exec --only auth,database --project insightflow-5a23d 'node tests/firebase_rtdb_rules.test.js'"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.4",
