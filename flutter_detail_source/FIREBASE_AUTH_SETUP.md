@@ -17,6 +17,12 @@ Required values for the current build:
 - `projectId` — must be `insightflow-5a23d`
 - `authDomain`
 
+The Flutter build also needs the workspace context configured as a non-secret build define:
+
+`INSIGHTFLOW_WORKSPACE_ID=<workspace-id>`
+
+The backend verifies that this workspace belongs to the signed-in Firebase UID. Do not use a user-supplied UID as an identity claim.
+
 The project already has Realtime Database at:
 `https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/`
 
@@ -44,7 +50,8 @@ flutter build web --release \
   --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID="<APP_ID>" \
   --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID="<SENDER_ID>" \
   --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID="insightflow-5a23d" \
-  --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN="<AUTH_DOMAIN>"
+  --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN="<AUTH_DOMAIN>" \\
+  --dart-define=INSIGHTFLOW_WORKSPACE_ID="<WORKSPACE_ID>"
 ```
 
 These values are not service-account credentials.
