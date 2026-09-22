@@ -4,6 +4,10 @@ import threading
 import time
 import uuid
 from typing import Any
+try:
+    from google.auth.credentials import AnonymousCredentials
+except ImportError:
+    AnonymousCredentials = None
 
 try:
     import firebase_admin
@@ -47,7 +51,9 @@ def initialize_firebase():
         if cred_path:
             cred = firebase_admin.credentials.Certificate(cred_path)
         elif os.environ.get("FIREBASE_DATABASE_EMULATOR_HOST"):
-            cred = firebase_admin.credentials.AnonymousCredentials()
+            if AnonymousCredentials is None:
+                raise RuntimeError("Google auth credentials are required for emulator tests.")
+            cred = AnonymousCredentials()
         else:
             cred = firebase_admin.credentials.ApplicationDefault()
         return firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID, "databaseURL": DATABASE_URL})
