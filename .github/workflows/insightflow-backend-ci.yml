@@ -31,6 +31,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Firebase emulator test dependencies
+        run: npm install
+
+      - name: Run RTDB/Auth emulator security tests
+        run: npm run test:rules
+
+      - name: Run Firebase authorization unit tests
+        run: pytest -q tests/test_firebase_authz.py
+
       - name: Run Data Workspace focused tests
         run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
 
