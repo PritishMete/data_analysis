@@ -79,6 +79,27 @@ def _user(uid: str):
         raise PermissionDenied("User is suspended.")
     return value
 
+def workspace_memberships(uid: str) -> list[dict[str, Any]]:
+    validate_id(uid, "user ID")
+    _user(uid)
+    workspaces = _get("workspaces") or {}
+    memberships: list[dict[str, Any]] = []
+    for workspace_id, workspace in workspaces.items():
+        if not isinstance(workspace, dict):
+            continue
+        member = (workspace.get("members") or {}).get(uid)
+        if isinstance(member, dict):
+            role_ids = [
+                role_id
+                for role_id, enabled in (member.get("roles") or {}).items()
+                if enabled
+            ]
+            memberships.append({
+                "workspace_id": workspace_id,
+                "role_ids": role_ids,
+            })
+    return memberships
+
 def _workspace(workspace_id: str):
     workspace_id = validate_id(workspace_id, "workspace ID")
     value = _get(f"workspaces/{workspace_id}") or {}
