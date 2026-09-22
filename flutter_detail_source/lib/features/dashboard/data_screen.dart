@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
+import '../../core/auth/insightflow_auth_service.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -5944,11 +5945,11 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
       child: GlassCard(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
-            SizedBox(width: 10),
-            Text(
+            const Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
+            const SizedBox(width: 10),
+            const Text(
               'InsightFlow',
               style: TextStyle(
                 color: TechColors.textPrimary,
@@ -5956,6 +5957,12 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
                 fontWeight: FontWeight.bold,
                 fontFamily: 'monospace',
               ),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: () => InsightFlowAuthService.signOut(),
+              icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
             ),
           ],
         ),
