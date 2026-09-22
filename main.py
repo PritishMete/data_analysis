@@ -248,6 +248,7 @@ from sql_cache.routes import sql_cache_router
 from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
+from firebase_authz.middleware import FirebaseAuthorizationMiddleware
 from secure_excel.service import list_supported_transforms
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
@@ -263,6 +264,7 @@ from ai_analyst import (
 )
 
 app = FastAPI()
+app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
 @app.get("/health")
