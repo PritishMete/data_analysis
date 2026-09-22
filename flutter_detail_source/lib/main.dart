@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'core/auth/insightflow_auth_service.dart';
+import 'features/auth/auth_gate.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'features/dashboard/data_screen.dart';
@@ -17,11 +19,24 @@ void alarmDispatcher() {}
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
-  runApp(const ElectricAIApp());
+
+  String? firebaseInitError;
+  try {
+    await InsightFlowAuthService.initialize();
+  } catch (_) {
+    // Do not expose configuration values or SDK internals to users. The
+    // browser will show a safe configuration message until the registered
+    // Firebase Web app values are supplied at build time.
+    firebaseInitError = 'Firebase authentication is not configured for this build.';
+  }
+
+  runApp(ElectricAIApp(firebaseInitError: firebaseInitError));
 }
 
 class ElectricAIApp extends StatelessWidget {
-  const ElectricAIApp({super.key});
+  const ElectricAIApp({super.key, this.firebaseInitError});
+
+  final String? firebaseInitError;
 
   /// Detect if device has low available memory.
   /// 
@@ -113,7 +128,30 @@ class ElectricAIApp extends StatelessWidget {
             child: child!,
           ),
         ),
-        home: const DataScreen(),
+        home: firebaseInitError == null
+            ? const AuthGate()
+            : const _FirebaseConfigurationError(),
+      ),
+    );
+  }
+}
+
+
+class _FirebaseConfigurationError extends StatelessWidget {
+  const _FirebaseConfigurationError();
+
+  @override
+  Widget build(BuildContext context) {
+    return const CupertinoPageScaffold(
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Firebase authentication is not configured for this build.\n\n'
+            'Register the InsightFlow Web app and rebuild with its Firebase Web configuration.',
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
     );
   }
