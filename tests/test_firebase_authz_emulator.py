@@ -2,7 +2,7 @@ import os
 import threading
 import pytest
 
-pytestmark = pytest.mark.emulator
+pytestmark = pytest.mark.skipif(not os.environ.get("FIREBASE_DATABASE_EMULATOR_HOST"), reason="Requires the RTDB emulator")
 
 from firebase_authz import service
 
