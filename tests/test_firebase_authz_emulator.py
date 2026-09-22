@@ -87,3 +87,18 @@ def test_emulator_last_active_owner_is_protected():
     service.db.reference("users/alice").set({"suspended": False})
     with pytest.raises(service.PermissionDenied):
         service.last_owner_guard("workspace", "alice")
+
+
+def test_emulator_resource_scoped_actions_reject_missing_resource_id():
+    service.db.reference("/").set({
+        "users": {"alice": {"suspended": False}},
+        "workspaces": {
+            "a": {
+                "members": {"alice": {"roles": {"analyst": True}}},
+                "roles": {"analyst": {"permissions": ["pivot.create"]}},
+                "resources": {},
+            }
+        },
+    })
+    with pytest.raises(service.PermissionDenied):
+        service.authorization("alice", "a", "pivot.create")
