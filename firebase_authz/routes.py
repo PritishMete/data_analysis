@@ -10,6 +10,11 @@ class BootstrapRequest(BaseModel):
     workspace_id:str
     expected_uid:str
 
+class AuthorizationCheck(BaseModel):
+    workspace_id: str
+    action: str
+    resource_id: str | None = None
+
 class RoleMutation(BaseModel):
     target_uid:str
     role_id:str
@@ -32,6 +37,19 @@ def me(authorization: str=Header(default=None)):
 def bootstrap(req:BootstrapRequest):
     try:return bootstrap_owner(req.id_token,req.bootstrap_secret,req.workspace_id,req.expected_uid)
     except (BootstrapDenied,AuthenticationRequired) as exc: raise HTTPException(403,str(exc))
+
+@router.post("/check")
+def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):
+    try:
+        token = _token(authorization)
+        claims = verify_id_token(token)
+        return protected_context(token, req.workspace_id, req.action, req.resource_id)[1]
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 @router.post("/roles/mutate")
 def role_mutation(req:RoleMutation,authorization: str=Header(default=None)):
