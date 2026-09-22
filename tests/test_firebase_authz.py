@@ -126,3 +126,23 @@ def test_wrong_firebase_configuration_fails(monkeypatch):
     monkeypatch.setenv("FIREBASE_DATABASE_URL", service.DATABASE_URL)
     with pytest.raises(RuntimeError):
         service.initialize_firebase()
+
+def test_partial_bootstrap_recovers_only_for_same_owner(monkeypatch):
+    class Ref:
+        def __init__(self):
+            self.value = {
+                "bootstrap": {"initialized": True, "owner_uid": "alice"},
+                "members": {},
+            }
+        def transaction(self, fn):
+            self.value = fn(self.value)
+            return self.value
+    ref = Ref()
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "alice"})
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: ref)
+    monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "secret")
+    result = service.bootstrap_owner("alice", "secret", "w", "alice")
+    assert result["owner_uid"] == "alice"
+    assert ref.value["members"]["alice"]["roles"]["owner"] is True
+    assert "analyst" in ref.value["roles"]
