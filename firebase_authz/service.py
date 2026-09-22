@@ -46,6 +46,8 @@ def initialize_firebase():
         cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         if cred_path:
             cred = firebase_admin.credentials.Certificate(cred_path)
+        elif os.environ.get("FIREBASE_DATABASE_EMULATOR_HOST"):
+            cred = firebase_admin.credentials.AnonymousCredentials()
         else:
             cred = firebase_admin.credentials.ApplicationDefault()
         return firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID, "databaseURL": DATABASE_URL})
