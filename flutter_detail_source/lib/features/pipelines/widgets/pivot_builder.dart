@@ -81,30 +81,22 @@ class PivotBuilder extends StatelessWidget {
             final entry = state.pivotValueFields[index];
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: TechColors.panelBg.withOpacity(0.5),
-                  border: Border.all(color: TechColors.borderMuted),
-                  borderRadius: BorderRadius.circular(4),
+              child: Row(children: [
+                Expanded(flex: 3, child: _picker(context, entry['field']?.toString(), 'Select accumulation column', state.detectedHeaders,
+                  (v) => state.setState(() => state.pivotValueFields[index]['field'] = v))),
+                const SizedBox(width: 6),
+                Expanded(flex: 2, child: _picker(context, entry['op']?.toString(), 'Function',
+                  const ['sum', 'average', 'count', 'max', 'min'],
+                  (v) => state.setState(() => state.pivotValueFields[index]['op'] = v),
+                  itemLabel: (v) => switch (v) {
+                    'sum' => 'SUM', 'average' => 'AVG', 'count' => 'COUNT',
+                    'max' => 'MAX', 'min' => 'MIN', _ => v.toUpperCase(),
+                  })),
+                if (state.pivotValueFields.length > 1) IconButton(
+                  icon: const Icon(Icons.delete_outline, color: TechColors.statusRed, size: 18),
+                  onPressed: () => state.setState(() => state.pivotValueFields.removeAt(index)),
                 ),
-                child: Row(children: [
-                  Expanded(flex: 3, child: _picker(context, entry['field']?.toString(), 'Select accumulation column', state.detectedHeaders,
-                    (v) => state.setState(() => state.pivotValueFields[index]['field'] = v))),
-                  const SizedBox(width: 6),
-                  Expanded(flex: 2, child: _picker(context, entry['op']?.toString(), 'Function',
-                    const ['sum', 'average', 'count', 'max', 'min'],
-                    (v) => state.setState(() => state.pivotValueFields[index]['op'] = v),
-                    itemLabel: (v) => switch (v) {
-                      'sum' => 'SUM', 'average' => 'AVG', 'count' => 'COUNT',
-                      'max' => 'MAX', 'min' => 'MIN', _ => v.toUpperCase(),
-                    })),
-                  if (state.pivotValueFields.length > 1) IconButton(
-                    icon: const Icon(Icons.delete_outline, color: TechColors.statusRed, size: 18),
-                    onPressed: () => state.setState(() => state.pivotValueFields.removeAt(index)),
-                  ),
-                ]),
-              ),
+              ]),
             );
           }),
         ],
