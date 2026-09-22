@@ -53,3 +53,37 @@ jobs:
 
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
+
+  flutter-web-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter web source
+        run: flutter analyze
+
+      - name: Run Flutter Auth tests
+        run: flutter test test/firebase_auth_service_test.dart
+
+      - name: Build Flutter web
+        run: >-
+          flutter build web --release
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=insightflow-5a23d
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=ci-placeholder.firebaseapp.com
