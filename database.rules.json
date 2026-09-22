@@ -2,33 +2,42 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "roles": {
-      "$roleId": {
-        ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && root.child('users').child(auth.uid).child('effectivePermissions').child('roles.manage').val() == true",
-        ".write": false
-      }
-    },
     "users": {
       "$uid": {
-        ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
+        ".read": "auth != null && auth.uid == $uid && data.child('suspended').val() != true",
         ".write": false
       }
     },
     "workspaces": {
       "$workspaceId": {
+        ".read": false,
+        ".write": false,
         "members": {
           "$uid": {
-            ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
+            ".read": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('suspended').val() != true",
             ".write": false
           }
         },
-        "grants": {
-          "$uid": {
-            ".read": "auth != null && root.child('users').child(auth.uid).child('suspended').val() != true && (auth.uid == $uid || root.child('users').child(auth.uid).child('effectivePermissions').child('users.manage').val() == true)",
-            ".write": false
+        "roles": {
+          ".read": false,
+          ".write": false
+        },
+        "resources": {
+          "$resourceId": {
+            ".read": false,
+            ".write": false,
+            "grants": {
+              "$uid": {
+                ".read": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('suspended').val() != true",
+                ".write": false
+              }
+            }
           }
         },
-        "bootstrap": { ".read": false, ".write": false }
+        "bootstrap": {
+          ".read": false,
+          ".write": false
+        }
       }
     }
   }
