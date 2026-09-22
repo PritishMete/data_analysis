@@ -44,7 +44,7 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setattr(
         auth_middleware,
         "authorization",
-        lambda *args, **kwargs: (_ for _ in ()).throw(auth_middleware.PermissionDenied("denied")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(auth_middleware.PermissionDenied("sensitive-internal-detail")),
     )
     from main import app
     response = TestClient(app).get(
@@ -56,7 +56,7 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
         },
     )
     assert response.status_code == 403
-    assert "denied" not in response.text
+    assert "sensitive-internal-detail" not in response.text
 
 
 def test_authorized_user_reaches_protected_api(monkeypatch):
