@@ -101,6 +101,9 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     validate_action(action)
     if resource_id is not None:
         validate_id(resource_id, "resource ID")
+    requires_resource = action in {"data.view", "analysis.run", "worksheet.modify", "worksheet.delete", "operation.undo.own", "operation.undo.other"}
+    if requires_resource and not resource_id:
+        raise PermissionDenied("A resource ID is required for this action.")
     user = _user(uid)
     workspace = _workspace(workspace_id)
     members = workspace.get("members") or {}
@@ -109,9 +112,6 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
         raise PermissionDenied("User is not a member of this workspace.")
 
     permissions = _role_permissions(workspace, member)
-    requires_resource = action in {"data.view", "analysis.run", "worksheet.modify", "worksheet.delete", "operation.undo.own", "operation.undo.other"}
-    if requires_resource and not resource_id:
-        raise PermissionDenied("A resource ID is required for this action.")
 
     if resource_id:
         grant = _resource_grant(workspace, uid, resource_id)
