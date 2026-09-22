@@ -5440,7 +5440,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
           .map((row) => row.map(escapeCsvValue).join(','))
           .join('\n');
       final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
-      await attachFirebaseAuth(request);
+      await attachFirebaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -5600,7 +5600,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
         'POST',
         Uri.parse("https://data-analysis-oajs.onrender.com/analyze-report"),
       );
-      await attachFirebaseAuth(request);
+      await attachFirebaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -5813,7 +5813,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
           "https://data-analysis-oajs.onrender.com/analyze-report-focused",
         ),
       );
-      await attachFirebaseAuth(request);
+      await attachFirebaseAuth(request, resourceId: activeSheetName);
       request.fields['focus_analysis_types'] = json.encode(selectedTypes);
       request.files.add(
         http.MultipartFile.fromString(
