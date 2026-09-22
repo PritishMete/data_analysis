@@ -42,3 +42,32 @@ Future<Map<String, String>> firebaseAuthHeaders({
   }
   return headers;
 }
+
+
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+Future<bool> authorizeExcelOperation({
+  required String backendBaseUrl,
+  required String action,
+  required String resourceId,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty) {
+    return false;
+  }
+  final headers = await firebaseAuthHeaders(resourceId: resourceId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/check'),
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'action': action,
+      'resource_id': _safeResourceId(resourceId),
+    }),
+  );
+  return response.statusCode == 200;
+}
