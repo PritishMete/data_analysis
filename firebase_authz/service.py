@@ -188,3 +188,34 @@ def mutate_role(target_uid: str, role_id: str, enabled: bool, actor_token: str, 
         last_owner_guard(workspace_id, target_uid)
     db.reference(f"workspaces/{workspace_id}/members/{target_uid}/roles/{role_id}").set(bool(enabled))
     return True
+
+
+def upsert_role(workspace_id: str, role_id: str, name: str, permissions: list[str], actor_token: str):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(role_id, "role ID")
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+        raise ValueError("Invalid role name.")
+    permissions = [validate_action(p) for p in permissions]
+    claims = verify_id_token(actor_token)
+    authorization(str(claims["uid"]), workspace_id, "roles.manage")
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/roles/{role_id}").set({
+        "name": name.strip(), "permissions": sorted(set(permissions)), "system": role_id in DEFAULT_ROLES
+    })
+    return True
+
+def set_resource_grant(workspace_id: str, resource_id: str, target_uid: str, permissions: list[str], actor_token: str):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(resource_id, "resource ID")
+    validate_id(target_uid, "user ID")
+    permissions = [validate_action(p) for p in permissions]
+    claims = verify_id_token(actor_token)
+    authorization(str(claims["uid"]), workspace_id, "users.manage")
+    workspace = _workspace(workspace_id)
+    if target_uid not in (workspace.get("members") or {}):
+        raise PermissionDenied("Grant target is not a workspace member.")
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/resources/{resource_id}/grants/{target_uid}").set({
+        "permissions": {p: True for p in sorted(set(permissions))}
+    })
+    return True
