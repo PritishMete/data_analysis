@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../core/auth/authenticated_http.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -4480,6 +4481,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       );
 
       final request = http.MultipartRequest('POST', Uri.parse(_cleanDataUrl));
+       await attachFirebaseAuth(request);
       request.fields['config'] = json.encode({
         "steps": steps,
         "output_sheet_name": targetSheetName,
@@ -5437,6 +5439,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
           .map((row) => row.map(escapeCsvValue).join(','))
           .join('\n');
       final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
+      await attachFirebaseAuth(request);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -5596,6 +5599,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
         'POST',
         Uri.parse("https://data-analysis-oajs.onrender.com/analyze-report"),
       );
+      await attachFirebaseAuth(request);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
