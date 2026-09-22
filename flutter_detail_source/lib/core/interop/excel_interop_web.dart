@@ -5,6 +5,7 @@ library excel_sheet_interop;
 import 'dart:convert';
 import 'dart:js_interop';
 import 'package:http/http.dart' as http;
+import '../auth/authenticated_http.dart';
 import '../security/privacy_mode.dart';
 
 // ── JS Bindings ──────────────────────────────────────────────────────────────
@@ -451,9 +452,10 @@ Future<Map<String, dynamic>> backtrackFillMissing(String optionsJson) async {
     // route in this file — see _cleanDataUrl's counterpart in data_screen.dart).
     final Uri apiUrl = Uri.parse('https://data-analysis-oajs.onrender.com/api/clean/dynamic_backtrack');
 
+    final authHeaders = await firebaseAuthHeaders();
     final response = await http.post(
       apiUrl,
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", ...authHeaders},
       body: jsonEncode({
         "data": records,
         "target_column": targetColumn,
