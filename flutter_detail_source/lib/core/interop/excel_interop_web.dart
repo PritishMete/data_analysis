@@ -452,7 +452,7 @@ Future<Map<String, dynamic>> backtrackFillMissing(String optionsJson) async {
     // route in this file — see _cleanDataUrl's counterpart in data_screen.dart).
     final Uri apiUrl = Uri.parse('https://data-analysis-oajs.onrender.com/api/clean/dynamic_backtrack');
 
-    final authHeaders = await firebaseAuthHeaders();
+    final authHeaders = await firebaseAuthHeaders(resourceId: sheetName ?? 'active-sheet');
     final response = await http.post(
       apiUrl,
       headers: {"Content-Type": "application/json", ...authHeaders},
