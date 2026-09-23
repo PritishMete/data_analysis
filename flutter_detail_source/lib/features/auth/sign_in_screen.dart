@@ -76,9 +76,8 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return _AuthShell(
-      eyebrow: 'SECURE WORKSPACE ACCESS',
-      title: 'Welcome back',
-      subtitle: 'Sign in to continue to your InsightFlow workspace.',
+      title: 'Sign in',
+      subtitle: 'Access your InsightFlow workspace securely.',
       children: [
         _GlassTextField(
           controller: _emailController,
@@ -163,121 +162,97 @@ class _SignInScreenState extends State<SignInScreen> {
 
 class _AuthShell extends StatelessWidget {
   const _AuthShell({
-    required this.eyebrow,
     required this.title,
     required this.subtitle,
     required this.children,
   });
 
-  final String eyebrow;
   final String title;
   final String subtitle;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return Scaffold(
       backgroundColor: Colors.transparent,
-      child: LiquidGlassScope(
+      body: LiquidGlassScope(
         child: Stack(
           children: [
             const Positioned.fill(
-              child: GlassBackgroundSource(
-                child: TechAnimatedBackground(),
-              ),
+              child: GlassBackgroundSource(child: TechAnimatedBackground()),
             ),
             Positioned.fill(
               child: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 440),
-                      child: GlassContainer(
-                        useOwnLayer: true,
-                        quality: GlassQuality.minimal,
-                        settings: TechColors.panelGlass,
-                        shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: GlassCard(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                        child: Row(
                           children: [
-                            const _InsightFlowMark(),
-                            const SizedBox(height: 26),
-                            Text(
-                              eyebrow,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: TechColors.borderActive,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.5,
+                            const Icon(Icons.terminal,
+                                color: TechColors.borderActive, size: 18),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'InsightFlow',
+                              style: TextStyle(
+                                color: TechColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
                                 fontFamily: 'monospace',
                               ),
                             ),
-                            const SizedBox(height: 9),
-                            Text(
-                              title,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: TechColors.textPrimary,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              subtitle,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: TechColors.textMuted,
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-                            ...children,
                           ],
                         ),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: GlassContainer(
+                            useOwnLayer: true,
+                            quality: GlassQuality.minimal,
+                            settings: TechColors.sectionGlass,
+                            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  title,
+                                  style: const TextStyle(
+                                    color: TechColors.textPrimary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  subtitle,
+                                  style: const TextStyle(
+                                    color: TechColors.textMuted,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                ...children,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InsightFlowMark extends StatelessWidget {
-  const _InsightFlowMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: TechColors.borderActive.withValues(alpha: 0.55),
-          ),
-          color: TechColors.borderActive.withValues(alpha: 0.08),
-          boxShadow: [
-            BoxShadow(
-              color: TechColors.borderActive.withValues(alpha: 0.16),
-              blurRadius: 24,
-            ),
-          ],
-        ),
-        child: const Icon(
-          CupertinoIcons.waveform_path_ecg,
-          color: TechColors.borderActive,
-          size: 27,
         ),
       ),
     );
