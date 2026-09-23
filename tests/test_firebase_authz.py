@@ -496,3 +496,82 @@ def test_audit_event_filters_workbook_sensitive_metadata(monkeypatch):
     assert "rows" not in captured["metadata"]
     assert "workbook" not in captured["metadata"]
     assert "result" not in captured["metadata"]
+
+
+def test_original_mutation_requires_dataset_view_grant(monkeypatch):
+    workspace = {
+        "members": {"employee": {"status": "active", "roles": {"employee": True}}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "datasets": {
+            "ds_opaque": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "grants": {},
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_excel_mutation(
+            "employee", "org", "excel.mutate.original", "ds_opaque"
+        )
+
+
+def test_working_copy_mutation_uses_copy_grant(monkeypatch):
+    workspace = {
+        "members": {"employee": {"status": "active", "roles": {"employee": True}}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "working_copies": {
+            "wc_123": {
+                "created_by_uid": "employee",
+                "status": "active",
+                "grants": {
+                    "employee": {
+                        "permissions": ["working_copy.modify"]
+                    }
+                },
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    result = service.authorize_excel_mutation(
+        "employee", "org", "excel.mutate.working_copy", "wc_123"
+    )
+    assert result["allowed"] is True
+
+
+def test_account_cleanup_revokes_membership_grants_and_delegations(monkeypatch):
+    root = {
+        "workspaces": {
+            "org": {
+                "members": {
+                    "employee": {"status": "active", "roles": {"employee": True}},
+                    "owner": {"status": "active", "roles": {"organization_owner": True}},
+                },
+                "datasets": {
+                    "ds_1": {"owner_uid": "owner", "grants": {"employee": {"permissions": ["dataset.view_original"]}}}
+                },
+                "delegations": {
+                    "del_1": {"team_lead_uid": "employee", "member_ids": ["employee"], "status": "active"}
+                },
+                "invitations": {},
+            }
+        }
+    }
+    class Ref:
+        def __init__(self, path): self.path = path
+        def get(self): return root
+        def update(self, values):
+            for path, value in values.items():
+                if path.endswith("/status"):
+                    continue
+    monkeypatch.setattr(service, "_get", lambda path: root.get("workspaces", {}).get("org", {}) if path == "workspaces" else root.get("workspaces", {}))
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref(path))
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True, "auth_time": int(__import__("time").time())})
+    monkeypatch.setattr(service, "audit_event", lambda *args, **kwargs: None)
+    result = service.cleanup_account("employee", "employee")
+    assert result["revoked_workspaces"] == ["org"]
