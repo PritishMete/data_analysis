@@ -78,7 +78,7 @@ class AuthGlassScaffold extends StatelessWidget {
                             const SizedBox(width: 12),
                             Text(
                               'AUTH',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: CupertinoColors.secondaryLabel.resolveFrom(context),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -153,7 +153,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                           children: [
                                             Text(
                                               title,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 color: CupertinoColors.label.resolveFrom(context),
                                                 fontSize: 15,
                                                 fontWeight: FontWeight.w600,
@@ -235,7 +235,7 @@ class AuthGlassField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: CupertinoColors.secondaryLabel.resolveFrom(context),
             fontSize: 11,
             fontWeight: FontWeight.w600,
