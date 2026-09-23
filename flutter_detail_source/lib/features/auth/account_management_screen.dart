@@ -1,6 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:http/http.dart' as http;
+import '../../core/auth/authenticated_http.dart';
+import 'dart:convert';
 
 import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
@@ -200,6 +203,24 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     });
     try {
       if (!await _reauthenticate()) return;
+      final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+      final cleanup = await http.post(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/account/cleanup'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          if (insightFlowWorkspaceId.isNotEmpty)
+            'X-InsightFlow-Workspace-ID': insightFlowWorkspaceId,
+        },
+        body: jsonEncode({
+          'uid': InsightFlowAuthService.currentUser?.uid,
+        }),
+      );
+      if (cleanup.statusCode != 200) {
+        throw StateError(
+          'Authorization cleanup could not be completed. The account was not deleted.',
+        );
+      }
       await InsightFlowAuthService.deleteAccount();
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
