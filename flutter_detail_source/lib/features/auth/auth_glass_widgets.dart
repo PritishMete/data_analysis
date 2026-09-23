@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -10,8 +9,6 @@ import '../../core/interop/office_host.dart';
 GlassQuality get _authGlassQuality =>
     kIsWeb || isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard;
 
-/// Authentication uses the exact same visual primitives as the main tool:
-/// TechAnimatedBackground + GlassCard + GlassContainer + TechColors.
 class AuthGlassScaffold extends StatelessWidget {
   const AuthGlassScaffold({
     super.key,
@@ -36,62 +33,91 @@ class AuthGlassScaffold extends StatelessWidget {
             ),
             Positioned.fill(
               child: SafeArea(
-                child: Column(
-                  children: [
-                    // Same app-bar card, spacing, radius and typography as DataScreen.
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-                      child: GlassCard(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                        shape:
-                            const LiquidRoundedSuperellipse(borderRadius: 16),
-                        child: const Row(
-                          children: [
-                            Icon(
-                              Icons.terminal,
-                              color: TechColors.borderActive,
-                              size: 18,
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          GlassContainer(
+                            useOwnLayer: true,
+                            quality: _authGlassQuality,
+                            settings: TechColors.sectionGlass,
+                            shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            child: Row(
+                              children: [
+                                GlassContainer(
+                                  useOwnLayer: true,
+                                  quality: _authGlassQuality,
+                                  settings: TechColors.fieldGlass,
+                                  shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+                                  padding: const EdgeInsets.all(9),
+                                  child: const Icon(
+                                    Icons.auto_awesome_rounded,
+                                    color: TechColors.borderActive,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text(
+                                    'INSIGHTFLOW',
+                                    style: TextStyle(
+                                      color: TechColors.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.4,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: TechColors.statusGreen.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: TechColors.statusGreen.withValues(alpha: 0.30),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'SECURE',
+                                    style: TextStyle(
+                                      color: TechColors.statusGreen,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            SizedBox(width: 10),
-                            Text(
-                              'InsightFlow',
-                              style: TextStyle(
-                                color: TechColors.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                            Spacer(),
-                            Icon(
-                              Icons.lock_outline_rounded,
-                              size: 18,
-                              color: TechColors.textPrimary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(10, 44, 10, 28),
-                        child: GlassCard(
-                          padding: const EdgeInsets.all(16),
-                          shape:
-                              const LiquidRoundedSuperellipse(borderRadius: 20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _AuthHeader(title: title, subtitle: subtitle),
-                              const SizedBox(height: 18),
-                              ...children,
-                            ],
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          GlassContainer(
+                            useOwnLayer: true,
+                            quality: _authGlassQuality,
+                            settings: TechColors.panelGlass,
+                            shape: const LiquidRoundedSuperellipse(borderRadius: 22),
+                            padding: const EdgeInsets.all(22),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _AuthHeader(title: title, subtitle: subtitle),
+                                const SizedBox(height: 18),
+                                ...children,
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -104,49 +130,60 @@ class AuthGlassScaffold extends StatelessWidget {
 
 class _AuthHeader extends StatelessWidget {
   const _AuthHeader({required this.title, required this.subtitle});
+
   final String title;
   final String subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: CupertinoColors.white.withValues(alpha: 0.08),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            CupertinoIcons.person_crop_circle,
-            size: 18,
-            color: CupertinoColors.label.resolveFrom(context),
+        Row(
+          children: [
+            GlassContainer(
+              useOwnLayer: true,
+              quality: _authGlassQuality,
+              settings: TechColors.fieldGlass,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+              padding: const EdgeInsets.all(9),
+              child: const Icon(
+                Icons.person_outline_rounded,
+                color: TechColors.borderActive,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .8,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 11,
+            height: 1.4,
+            fontFamily: 'monospace',
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: CupertinoColors.label.resolveFrom(context),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                ),
-              ),
-            ],
+        const SizedBox(height: 14),
+        Container(
+          height: 1,
+          decoration: BoxDecoration(
+            color: TechColors.borderActive.withValues(alpha: .18),
+            borderRadius: BorderRadius.circular(1),
           ),
         ),
       ],
@@ -184,7 +221,7 @@ class AuthGlassField extends StatelessWidget {
       useOwnLayer: true,
       quality: _authGlassQuality,
       settings: TechColors.fieldGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
       padding: EdgeInsets.zero,
       child: TextField(
         controller: controller,
@@ -193,50 +230,46 @@ class AuthGlassField extends StatelessWidget {
         enabled: enabled,
         autofillHints: autofillHints,
         onSubmitted: onSubmitted,
-        style: TextStyle(
-          color: CupertinoColors.label.resolveFrom(context),
-          fontSize: 14,
+        style: const TextStyle(
+          color: TechColors.textPrimary,
+          fontSize: 13,
+          fontFamily: 'monospace',
         ),
         cursorColor: TechColors.borderActive,
         decoration: InputDecoration(
-          hintText: label,
-          hintStyle: TextStyle(
-            color: CupertinoColors.secondaryLabel.resolveFrom(context),
-            fontSize: 13,
+          hintText: 'Enter ${label.toLowerCase()}',
+          hintStyle: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 11,
+            fontFamily: 'monospace',
           ),
-          prefixIcon: Icon(
-            icon,
-            size: 17,
-            color: CupertinoColors.secondaryLabel.resolveFrom(context),
-          ),
+          prefixIcon: Icon(icon, size: 17, color: TechColors.textMuted),
           suffixIcon: suffix,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: CupertinoColors.separator.withValues(alpha: .50),
+              color: TechColors.borderMuted.withValues(alpha: .70),
               width: .8,
             ),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: CupertinoColors.separator.withValues(alpha: .50),
+              color: TechColors.borderMuted.withValues(alpha: .70),
               width: .8,
             ),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide:
-                const BorderSide(color: TechColors.borderActive, width: 1),
+          focusedBorder: const OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            borderSide: BorderSide(color: TechColors.borderActive, width: 1),
           ),
           disabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: TechColors.borderMuted.withValues(alpha: .45),
+              color: TechColors.borderMuted.withValues(alpha: .35),
             ),
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         ),
       ),
     );
@@ -259,18 +292,47 @@ class AuthGlassPrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onPressed != null && !loading;
     return SizedBox(
-      height: 48,
+      height: 46,
       width: double.infinity,
-      child: GlassButton(
+      child: GlassButton.custom(
         onTap: enabled ? onPressed! : () {},
         enabled: enabled,
-        width: double.infinity,
-        height: 48,
-        shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-        icon: loading
-            ? const CupertinoActivityIndicator()
-            : const Icon(Icons.bolt_rounded, size: 18),
-        label: loading ? 'Please wait…' : label,
+        style: GlassButtonStyle.prominent,
+        settings: TechColors.sectionGlass,
+        useOwnLayer: true,
+        quality: _authGlassQuality,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (loading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: TechColors.borderActive,
+                ),
+              )
+            else
+              const Icon(
+                Icons.arrow_forward_rounded,
+                size: 17,
+                color: TechColors.borderActive,
+              ),
+            const SizedBox(width: 8),
+            Text(
+              loading ? 'PLEASE WAIT...' : label.toUpperCase(),
+              style: const TextStyle(
+                color: TechColors.textPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .8,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -293,14 +355,12 @@ class AuthGlassMessage extends StatelessWidget {
       useOwnLayer: true,
       quality: _authGlassQuality,
       settings: TechColors.fieldGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           Icon(
-            error
-                ? Icons.error_outline_rounded
-                : Icons.check_circle_outline_rounded,
+            error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
             color: color,
             size: 16,
           ),
@@ -308,7 +368,12 @@ class AuthGlassMessage extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: color, fontSize: 11, height: 1.35),
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                height: 1.35,
+                fontFamily: 'monospace',
+              ),
             ),
           ),
         ],
@@ -338,11 +403,13 @@ class AuthGlassLink extends StatelessWidget {
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: Text(
-        label,
+        label.toUpperCase(),
         style: const TextStyle(
           color: TechColors.borderActive,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .5,
+          fontFamily: 'monospace',
         ),
       ),
     );
