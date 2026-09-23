@@ -799,6 +799,16 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         if is_manager or uid == dataset.get("owner_uid") or dataset_id in delegated_dataset_ids or "dataset.view_original" in set(grant.get("permissions") or []):
             result["datasets"].append({
                 "dataset_id": dataset_id,
+                "display_name": dataset.get("display_name") or dataset.get("original_filename") or dataset_id,
+                "original_filename": dataset.get("original_filename"),
+                "content_type": dataset.get("content_type"),
+                "file_size": dataset.get("file_size"),
+                "current_version": dataset.get("current_version"),
+                "version": dataset.get("version", 1),
+                "status": dataset.get("status", "active"),
+                "created_at": dataset.get("created_at"),
+                "updated_at": dataset.get("updated_at"),
+                "storage_provider": dataset.get("storage_provider"),
                 "protected_original": dataset.get("protected_original") is True,
                 "owner_uid": dataset.get("owner_uid"),
                 "grants": [
