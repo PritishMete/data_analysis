@@ -34791,7 +34791,9 @@ if(a instanceof A.xy)switch(a.c){case"invalid-credential":case"invalid-login-cre
 case"user-disabled":return"This account is disabled."
 case"too-many-requests":return"Too many sign-in attempts. Please try again later."
 case"network-request-failed":return"Network connection failed. Check your connection and try again."
-case"operation-not-allowed":return"Email/password sign-in is not enabled for this Firebase project."
+case"operation-not-allowed":return"Email/password authentication is not enabled for this Firebase project."
+case"email-already-in-use":return"An account already exists for this email."
+case"weak-password":return"Choose a stronger password and try again."
 case"invalid-email":return"Enter a valid email address."
 default:return s}return s},
 aZP(){var s=0,r=A.D(t.u),q,p=2,o=[],n,m,l
