@@ -61,65 +61,78 @@ class AuthGlassScaffold extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(top: 61),
                 child: LayoutBuilder(
-        builder: (context, constraints) {
-          final horizontalPadding = constraints.hasBoundedWidth &&
-                  constraints.maxWidth < 420
-              ? 8.0
-              : 16.0;
-          final verticalPadding = constraints.hasBoundedHeight &&
-                  constraints.maxHeight < 620
-              ? 12.0
-              : 20.0;
-          final minViewportHeight = constraints.hasBoundedHeight
-              ? (constraints.maxHeight - verticalPadding * 2)
-                  .clamp(0.0, double.infinity)
-              : 0.0;
+                  builder: (context, constraints) {
+                    final horizontalPadding =
+                        constraints.hasBoundedWidth &&
+                            constraints.maxWidth < 420
+                        ? 8.0
+                        : 16.0;
+                    final verticalPadding =
+                        constraints.hasBoundedHeight &&
+                            constraints.maxHeight < 620
+                        ? 12.0
+                        : 20.0;
+                    final minViewportHeight = constraints.hasBoundedHeight
+                        ? (constraints.maxHeight - verticalPadding * 2)
+                            .clamp(0.0, double.infinity)
+                        : 0.0;
 
-          final card = ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: SizedBox(
-              width: double.infinity,
-              child: GlassCard(
-                padding: EdgeInsets.zero,
-                shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    GlassListTile(
-                      leading: const Icon(CupertinoIcons.lock_shield_fill),
-                      title: Text(title),
-                      subtitle: Text(subtitle),
-                      isLast: false,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: children,
+                    final card = ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: GlassCard(
+                          padding: EdgeInsets.zero,
+                          shape: const LiquidRoundedSuperellipse(
+                            borderRadius: 18,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              GlassListTile(
+                                leading: const Icon(
+                                  CupertinoIcons.lock_shield_fill,
+                                ),
+                                title: Text(title),
+                                subtitle: Text(subtitle),
+                                isLast: false,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  12,
+                                  14,
+                                  16,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: children,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
+                    );
 
-          // Fill the available viewport first so the auth card is genuinely
-          // centered on short, tall, narrow and wide screens. When the card
-          // is taller than the viewport (notably Signup in a narrow task
-          // pane), the same scroll view naturally becomes vertically
-          // scrollable instead of overflowing.
-          return SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: verticalPadding,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: minViewportHeight),
-              child: Center(child: card),
-            ),
-          );
+                    // Fill the available viewport first so the auth card is
+                    // genuinely centered on short, tall, narrow and wide
+                    // screens. When the card is taller than the viewport
+                    // (notably Signup in a narrow task pane), the same scroll
+                    // view naturally becomes vertically scrollable instead of
+                    // overflowing.
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                        vertical: verticalPadding,
+                      ),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: minViewportHeight),
+                        child: Center(child: card),
+                      ),
+                    );
                   },
                 ),
               ),
