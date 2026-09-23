@@ -530,7 +530,7 @@ def set_dataset_grant(
     }
     if any(permission not in allowed for permission in permissions):
         raise ValueError("Invalid dataset permission.")
-    claims = require_email_verified(verify_id_token(actor_token))
+    claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
     actor = str(claims["uid"])
     workspace = _workspace(workspace_id)
     try:
@@ -982,7 +982,7 @@ def last_owner_guard(workspace_id: str, target_uid: str):
 def mutate_role(target_uid: str, role_id: str, enabled: bool, actor_token: str, workspace_id: str):
     validate_id(target_uid, "user ID")
     validate_id(role_id, "role ID")
-    claims = require_email_verified(verify_id_token(actor_token))
+    claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
     actor = str(claims["uid"])
     authorization(actor, workspace_id, "roles.manage")
     can_manage_role(workspace_id, actor, target_uid, role_id, enabled)
