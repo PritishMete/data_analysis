@@ -33,7 +33,7 @@ const workbook = {
   },
 };
 const context = {
-  window: { executeSecureExcelQuery: async () => ({ success: true, delegated: true }), waitForOfficeReady: async () => {} },
+  window: { insightflowRequireMutationAuthorization: async () => true, executeSecureExcelQuery: async () => ({ success: true, delegated: true }), waitForOfficeReady: async () => {} },
   Excel: { run: async fn => fn({ workbook, sync: async () => {} }) },
   Math, Number, String, Array, Set, JSON, Promise, console,
 };
