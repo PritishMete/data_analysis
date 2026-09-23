@@ -81,204 +81,82 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return Scaffold(
       backgroundColor: Colors.transparent,
-      child: LiquidGlassScope(
+      body: LiquidGlassScope(
         child: Stack(
           children: [
             const Positioned.fill(
-              child: GlassBackgroundSource(
-                child: TechAnimatedBackground(),
-              ),
+              child: GlassBackgroundSource(child: TechAnimatedBackground()),
             ),
             Positioned.fill(
               child: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 440),
-                      child: GlassContainer(
-                        useOwnLayer: true,
-                        quality: GlassQuality.minimal,
-                        settings: TechColors.panelGlass,
-                        shape: const LiquidRoundedSuperellipse(borderRadius: 28),
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: GlassCard(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                        child: Row(
                           children: [
-                            const _SignUpMark(),
-                            const SizedBox(height: 26),
+                            const Icon(Icons.terminal,
+                                color: TechColors.borderActive, size: 18),
+                            const SizedBox(width: 10),
                             const Text(
-                              'CREATE SECURE ACCESS',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: TechColors.borderActive,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.5,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                            const SizedBox(height: 9),
-                            const Text(
-                              'Create your account',
-                              textAlign: TextAlign.center,
+                              'InsightFlow',
                               style: TextStyle(
                                 color: TechColors.textPrimary,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
                               ),
-                            ),
-                            const SizedBox(height: 7),
-                            const Text(
-                              'Set up your secure InsightFlow workspace access.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: TechColors.textMuted,
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-                            _SignUpField(
-                              controller: _nameController,
-                              label: 'Full name',
-                              icon: CupertinoIcons.person,
-                              enabled: !_loading,
-                              autofillHints: const [AutofillHints.name],
-                            ),
-                            const SizedBox(height: 14),
-                            _SignUpField(
-                              controller: _emailController,
-                              label: 'Email',
-                              icon: CupertinoIcons.mail,
-                              keyboardType: TextInputType.emailAddress,
-                              enabled: !_loading,
-                              autofillHints: const [AutofillHints.email],
-                            ),
-                            const SizedBox(height: 14),
-                            _SignUpField(
-                              controller: _passwordController,
-                              label: 'Password',
-                              icon: CupertinoIcons.lock,
-                              obscureText: _obscurePassword,
-                              enabled: !_loading,
-                              autofillHints: const [AutofillHints.newPassword],
-                              suffix: IconButton(
-                                onPressed: _loading
-                                    ? null
-                                    : () => setState(
-                                          () => _obscurePassword =
-                                              !_obscurePassword,
-                                        ),
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? CupertinoIcons.eye
-                                      : CupertinoIcons.eye_slash,
-                                  color: TechColors.textMuted,
-                                  size: 18,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _SignUpField(
-                              controller: _confirmController,
-                              label: 'Confirm password',
-                              icon: CupertinoIcons.lock_shield,
-                              obscureText: _obscureConfirm,
-                              enabled: !_loading,
-                              autofillHints: const [AutofillHints.newPassword],
-                              suffix: IconButton(
-                                onPressed: _loading
-                                    ? null
-                                    : () => setState(
-                                          () => _obscureConfirm =
-                                              !_obscureConfirm,
-                                        ),
-                                icon: Icon(
-                                  _obscureConfirm
-                                      ? CupertinoIcons.eye
-                                      : CupertinoIcons.eye_slash,
-                                  color: TechColors.textMuted,
-                                  size: 18,
-                                ),
-                              ),
-                              onSubmitted: (_) => _signUp(),
-                            ),
-                            if (_error != null) ...[
-                              const SizedBox(height: 14),
-                              _SignUpMessage(text: _error!),
-                            ],
-                            const SizedBox(height: 22),
-                            SizedBox(
-                              height: 52,
-                              child: FilledButton(
-                                onPressed: _loading ? null : _signUp,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor:
-                                      TechColors.borderActive.withValues(
-                                    alpha: 0.16,
-                                  ),
-                                  foregroundColor: TechColors.textPrimary,
-                                  disabledBackgroundColor:
-                                      Colors.white.withValues(alpha: 0.06),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    side: BorderSide(
-                                      color: TechColors.borderActive.withValues(
-                                        alpha: 0.42,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                child: _loading
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Text(
-                                        'Create account',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  'Already have an account? ',
-                                  style: TextStyle(
-                                    color: TechColors.textMuted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                CupertinoButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: _loading
-                                      ? null
-                                      : () => Navigator.of(context).pop(),
-                                  child: const Text(
-                                    'Sign in',
-                                    style: TextStyle(
-                                      color: TechColors.borderActive,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: GlassContainer(
+                            useOwnLayer: true,
+                            quality: GlassQuality.minimal,
+                            settings: TechColors.sectionGlass,
+                            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Text(
+                                  'Create account',
+                                  style: TextStyle(
+                                    color: TechColors.textPrimary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Create secure access to your InsightFlow workspace.',
+                                  style: TextStyle(
+                                    color: TechColors.textMuted,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                ..._formChildren(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -287,37 +165,115 @@ class _SignUpScreenState extends State<SignUpScreen> {
       ),
     );
   }
-}
 
-class _SignUpMark extends StatelessWidget {
-  const _SignUpMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: TechColors.borderActive.withValues(alpha: 0.55),
+  List<Widget> _formChildren() {
+    return [
+      _SignUpField(
+        controller: _nameController,
+        label: 'Full name',
+        icon: CupertinoIcons.person,
+        enabled: !_loading,
+        autofillHints: const [AutofillHints.name],
+      ),
+      const SizedBox(height: 14),
+      _SignUpField(
+        controller: _emailController,
+        label: 'Email',
+        icon: CupertinoIcons.mail,
+        keyboardType: TextInputType.emailAddress,
+        enabled: !_loading,
+        autofillHints: const [AutofillHints.email],
+      ),
+      const SizedBox(height: 14),
+      _SignUpField(
+        controller: _passwordController,
+        label: 'Password',
+        icon: CupertinoIcons.lock,
+        obscureText: _obscurePassword,
+        enabled: !_loading,
+        autofillHints: const [AutofillHints.newPassword],
+        suffix: IconButton(
+          onPressed: _loading
+              ? null
+              : () => setState(() => _obscurePassword = !_obscurePassword),
+          icon: Icon(
+            _obscurePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+            color: TechColors.textMuted,
+            size: 18,
           ),
-          color: TechColors.borderActive.withValues(alpha: 0.08),
-          boxShadow: [
-            BoxShadow(
-              color: TechColors.borderActive.withValues(alpha: 0.16),
-              blurRadius: 24,
-            ),
-          ],
-        ),
-        child: const Icon(
-          CupertinoIcons.person_add,
-          color: TechColors.borderActive,
-          size: 27,
         ),
       ),
-    );
+      const SizedBox(height: 14),
+      _SignUpField(
+        controller: _confirmController,
+        label: 'Confirm password',
+        icon: CupertinoIcons.lock_shield,
+        obscureText: _obscureConfirm,
+        enabled: !_loading,
+        autofillHints: const [AutofillHints.newPassword],
+        suffix: IconButton(
+          onPressed: _loading
+              ? null
+              : () => setState(() => _obscureConfirm = !_obscureConfirm),
+          icon: Icon(
+            _obscureConfirm ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
+            color: TechColors.textMuted,
+            size: 18,
+          ),
+        ),
+        onSubmitted: (_) => _signUp(),
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: 14),
+        _SignUpMessage(text: _error!),
+      ],
+      const SizedBox(height: 22),
+      SizedBox(
+        height: 52,
+        child: FilledButton(
+          onPressed: _loading ? null : _signUp,
+          style: FilledButton.styleFrom(
+            backgroundColor: TechColors.borderActive.withValues(alpha: 0.16),
+            foregroundColor: TechColors.textPrimary,
+            disabledBackgroundColor: Colors.white.withValues(alpha: 0.06),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: TechColors.borderActive.withValues(alpha: 0.42),
+              ),
+            ),
+          ),
+          child: _loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text(
+                  'Create account',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+        ),
+      ),
+      const SizedBox(height: 18),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            'Already have an account? ',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 12),
+          ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: _loading ? null : () => Navigator.of(context).pop(),
+            child: const Text(
+              'Sign in',
+              style: TextStyle(color: TechColors.borderActive, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ];
   }
 }
 
