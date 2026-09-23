@@ -750,6 +750,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         "delegations": [],
         "audit": [],
     }
+    is_manager = "membership.manage" in capabilities
     if "membership.view" in capabilities:
         for member_uid, item in (workspace.get("members") or {}).items():
             if isinstance(item, dict):
@@ -763,7 +764,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         if not isinstance(dataset, dict):
             continue
         grant = _dataset_grant(dataset, uid)
-        if uid == dataset.get("owner_uid") or "dataset.view_original" in set(grant.get("permissions") or []):
+        if is_manager or uid == dataset.get("owner_uid") or "dataset.view_original" in set(grant.get("permissions") or []):
             result["datasets"].append({
                 "dataset_id": dataset_id,
                 "protected_original": dataset.get("protected_original") is True,
@@ -821,6 +822,18 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                 "status": delegation.get("status"),
             })
 
+    if "delegation.manage" in capabilities:
+        for delegation_id, delegation in (workspace.get("delegations") or {}).items():
+            if isinstance(delegation, dict):
+                result.setdefault("delegations", []).append({
+                    "delegation_id": delegation_id,
+                    "team_lead_uid": delegation.get("team_lead_uid"),
+                    "member_ids": delegation.get("member_ids") or [],
+                    "dataset_ids": delegation.get("dataset_ids") or [],
+                    "permissions": delegation.get("permissions") or [],
+                    "expires_at": delegation.get("expires_at"),
+                    "status": delegation.get("status"),
+                })
     if "audit.view" in capabilities:
         audit = _get(f"audit/{workspace_id}") or {}
         if isinstance(audit, dict):
@@ -903,10 +916,16 @@ def cleanup_account(uid: str, actor_token: str):
                 continue
             if delegation.get("team_lead_uid") == uid or uid in (delegation.get("member_ids") or []):
                 updates[f"workspaces/{workspace_id}/delegations/{delegation_id}/status"] = "revoked"
+        account_email = str(claims.get("email") or "").strip().lower()
         for invitation_id, invitation in (workspace.get("invitations") or {}).items():
             if isinstance(invitation, dict) and (
                 str(invitation.get("target_uid") or "") == uid
                 or str(invitation.get("created_for_uid") or "") == uid
+                or (
+                    account_email
+                    and str(invitation.get("email") or "").strip().lower() == account_email
+                    and str(invitation.get("status") or "") == "invited"
+                )
             ):
                 updates[f"workspaces/{workspace_id}/invitations/{invitation_id}/status"] = "revoked"
         audit_event(
