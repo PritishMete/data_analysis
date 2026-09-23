@@ -44,7 +44,7 @@ external JSPromise<JSAny?> _createWorkingCopy(
 
 Future<String?> getWorkbookDatasetId(String sourceSheetName) async {
   try {
-    return (await _getWorkbookDatasetId(sourceSheetName).toDart).toDart;
+    return (await _getWorkbookDatasetId(sourceSheetName.toJS).toDart).toDart;
   } catch (_) {
     return null;
   }
