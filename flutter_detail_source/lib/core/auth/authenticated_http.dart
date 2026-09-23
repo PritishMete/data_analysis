@@ -1,13 +1,30 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'insightflow_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
 
-const String insightFlowWorkspaceId = String.fromEnvironment(
+String insightFlowWorkspaceId = String.fromEnvironment(
   'INSIGHTFLOW_WORKSPACE_ID',
 );
+
+Future<void> loadInsightFlowWorkspaceId(String uid) async {
+  final prefs = await SharedPreferences.getInstance();
+  final stored = prefs.getString('insightflow.workspace.$uid');
+  if (stored != null && stored.trim().isNotEmpty) {
+    insightFlowWorkspaceId = stored.trim();
+  }
+}
+
+Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
+  final normalized = workspaceId.trim();
+  if (normalized.isEmpty) return;
+  insightFlowWorkspaceId = normalized;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('insightflow.workspace.$uid', normalized);
+}
 const String insightFlowBackendBaseUrl = String.fromEnvironment(
   'INSIGHTFLOW_BACKEND_URL',
   defaultValue: 'https://data-analysis-oajs.onrender.com',
