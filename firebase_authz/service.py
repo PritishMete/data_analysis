@@ -747,6 +747,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         "working_copies": [],
         "invitations": [],
         "approved_employees": [],
+        "delegations": [],
         "audit": [],
     }
     if "membership.view" in capabilities:
@@ -806,6 +807,20 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                     "employee_id": item.get("employee_id"),
                     "status": item.get("status"),
                 })
+    for delegation_id, delegation in (workspace.get("delegations") or {}).items():
+        if not isinstance(delegation, dict):
+            continue
+        if delegation.get("team_lead_uid") == uid or "delegation.manage" in capabilities:
+            result["delegations"].append({
+                "delegation_id": delegation_id,
+                "team_lead_uid": delegation.get("team_lead_uid"),
+                "member_ids": delegation.get("member_ids") or [],
+                "dataset_ids": delegation.get("dataset_ids") or [],
+                "permissions": delegation.get("permissions") or [],
+                "expires_at": delegation.get("expires_at"),
+                "status": delegation.get("status"),
+            })
+
     if "audit.view" in capabilities:
         audit = _get(f"audit/{workspace_id}") or {}
         if isinstance(audit, dict):
