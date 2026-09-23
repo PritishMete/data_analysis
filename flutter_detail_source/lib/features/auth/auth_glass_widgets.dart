@@ -9,8 +9,8 @@ import '../../core/interop/office_host.dart';
 /// Shared Flutter-only shell for authentication.
 ///
 /// This deliberately uses the same LiquidGlassScope, TechAnimatedBackground,
-/// GlassCard, GlassContainer and TechColors used by DataScreen. There is no
-/// HtmlElementView, web HTML form, CSS-auth page, or DOM-based auth widget.
+/// GlassCard, GlassContainer and TechColors used by DataScreen. Authentication
+/// is rendered entirely with Flutter widgets.
 class AuthGlassScaffold extends StatelessWidget {
   const AuthGlassScaffold({
     super.key,
