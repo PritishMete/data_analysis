@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
+import '../../core/interop/excel_mutation_authorization.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../auth/account_management_screen.dart';
 import '../auth/authorization_management_screen.dart';
@@ -1870,7 +1871,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     final permission = action == "pivot" ? "pivot.create" : "worksheet.modify";
     final authorized = await _authorizeMutationAndAdoptWorkingCopy(
       action: permission,
-      operationLabel: generatePivotTable ? 'PivotTable' : 'pipeline',
     );
     if (!authorized) {
       if (mounted) {
@@ -3669,8 +3669,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         await setInsightFlowSourceWorksheetName(sheet);
         return _authorizeMutationAndAdoptWorkingCopy(
           action: 'worksheet.modify',
-          operationLabel: 'working copy',
-        );
+            );
       }
     }
     if (mounted) {
@@ -5031,7 +5030,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     final permission = generatePivotTable ? "pivot.create" : "worksheet.modify";
     final authorized = await _authorizeMutationAndAdoptWorkingCopy(
       action: permission,
-      operationLabel: action,
     );
     if (!authorized) {
       showNotification(
