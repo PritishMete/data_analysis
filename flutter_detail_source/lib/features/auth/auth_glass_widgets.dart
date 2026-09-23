@@ -74,25 +74,27 @@ class AuthGlassScaffold extends StatelessWidget {
                   child: SizedBox(
                     width: double.infinity,
                     child: GlassCard(
-                    padding: EdgeInsets.zero,
-                    shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        GlassListTile(
-                          leading: const Icon(CupertinoIcons.lock_shield_fill),
-                          title: Text(title),
-                          subtitle: Text(subtitle),
-                          isLast: false,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: children,
+                      padding: EdgeInsets.zero,
+                      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          GlassListTile(
+                            leading:
+                                const Icon(CupertinoIcons.lock_shield_fill),
+                            title: Text(title),
+                            subtitle: Text(subtitle),
+                            isLast: false,
                           ),
-                        ),
-                      ],
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: children,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
