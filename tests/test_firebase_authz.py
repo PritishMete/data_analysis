@@ -567,6 +567,8 @@ def test_account_cleanup_revokes_membership_grants_and_delegations(monkeypatch):
             for path, value in values.items():
                 if path.endswith("/status"):
                     continue
+        def set(self, value):
+            return None
     monkeypatch.setattr(service, "_get", lambda path: root.get("workspaces", {}).get("org", {}) if path == "workspaces" else root.get("workspaces", {}))
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
