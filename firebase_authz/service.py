@@ -506,9 +506,17 @@ def authorize_excel_mutation(
 ):
     validate_id(dataset_id, "dataset ID")
     if action == "excel.mutate.original":
-        decision = authorization(uid, workspace_id, action, None)
+        # Original-workbook mutation requires the role capability plus an
+        # explicit dataset grant. The dataset grant is the resource boundary;
+        # do not route this through legacy workspace.resources ACLs.
+        decision = authorization(uid, workspace_id, "worksheet.modify", None)
         authorize_dataset(uid, workspace_id, dataset_id, "dataset.view_original")
-        return decision
+        return {
+            **decision,
+            "action": action,
+            "resource_id": dataset_id,
+            "protected_original": True,
+        }
     if action == "excel.mutate.working_copy":
         return authorize_working_copy(uid, workspace_id, dataset_id, "working_copy.modify")
     raise ValueError("Unsupported Excel mutation capability.")
