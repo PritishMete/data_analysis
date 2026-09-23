@@ -10,6 +10,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
+import 'organization_onboarding_screen.dart';
 import 'sign_in_screen.dart';
 
 class AuthGate extends StatelessWidget {
@@ -62,6 +63,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     });
 
     try {
+      await loadInsightFlowWorkspaceId(widget.user.uid);
       final verified = await InsightFlowAuthService.reloadCurrentUser();
       if (!verified) {
         if (mounted) setState(() => _loading = false);
@@ -161,20 +163,39 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       );
     }
 
+    final authorizationState = state['authorization_state']?.toString() ?? '';
+    if (authorizationState == 'suspended' || membershipStatus == 'suspended') {
+      return _AccessStateScreen(
+        title: 'ACCESS / SUSPENDED',
+        message: 'Your organization access is suspended. Contact your organization administrator.',
+        action: InsightFlowAuthService.signOut,
+        actionLabel: 'Sign out',
+      );
+    }
+
+    if (authorizationState == 'bootstrap_candidate' ||
+        authorizationState == 'pending_invitation' ||
+        authorizationState == 'no_membership' ||
+        membershipStatus == 'invited' ||
+        membershipStatus == 'approved') {
+      return OrganizationOnboardingScreen(
+        state: state,
+        onCompleted: _refresh,
+      );
+    }
+
     if (membershipStatus != 'active' || !workspaceAuthorized) {
-      final message = membershipStatus == 'invited'
-          ? 'Your organization invitation has not been activated yet.'
-          : membershipStatus == 'approved'
-              ? 'Your organization membership is approved but not active yet.'
-              : membershipStatus == 'suspended'
-                  ? 'Your organization membership is suspended.'
-                  : 'Authentication succeeded, but this account has no authorized workspace membership. A new account is not granted organization access automatically.';
       return _AccessStateScreen(
         title: 'WORKSPACE / ACCESS PENDING',
-        message: message,
+        message: 'Your organization membership is not active yet. Check your access again or contact your organization administrator.',
         action: _refresh,
         actionLabel: 'Check access again',
       );
+    }
+
+    final resolvedWorkspaceId = state['workspace_id']?.toString();
+    if (resolvedWorkspaceId != null && resolvedWorkspaceId.isNotEmpty) {
+      setInsightFlowWorkspaceId(user.uid, resolvedWorkspaceId);
     }
 
     return DataScreen(
