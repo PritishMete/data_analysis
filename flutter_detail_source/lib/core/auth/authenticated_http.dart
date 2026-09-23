@@ -70,7 +70,7 @@ Future<Map<String, dynamic>?> requestWorkingCopy({
   if (insightFlowWorkspaceId.isEmpty || datasetId.trim().isEmpty) return null;
   final headers = await firebaseAuthHeaders(resourceId: datasetId);
   final response = await http.post(
-    Uri.parse('$backendUrl/v1/authz/working-copies'),
+    Uri.parse('$backendBaseUrl/v1/authz/working-copies'),
     headers: {...headers, 'Content-Type': 'application/json'},
     body: jsonEncode({
       'workspace_id': insightFlowWorkspaceId,
