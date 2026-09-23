@@ -12,7 +12,10 @@ def test_standalone_build_script_targets_detail_output_without_excel_template():
     script = (FLUTTER_ROOT / "build_detail_analysis.ps1").read_text(encoding="utf-8")
     assert "lib\\detail_analysis_main.dart" in script
     assert "frontend\\flutter_detail" in script
-    assert "--base-href $BaseHref" in script
+    assert "'--base-href'" in script
+    assert "$BaseHref" in script
+    assert "'--target'" in script
+    assert "$Target" in script
     assert "office\\.js" in script
     assert "excel_helper.js" in script
     assert "native-star-schema" in script
