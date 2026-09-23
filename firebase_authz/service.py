@@ -197,7 +197,13 @@ def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[
         if enabled:
             definition = role_defs.get(effective_role_id) or role_defs.get(role_id) or {}
             permissions.update(definition.get("permissions") or [])
-    return {p for p in permissions if p in ACTIONS}
+    permissions = {p for p in permissions if p in ACTIONS}
+    level = _effective_role_level(member)
+    if level >= ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
+        permissions.add("excel.mutate.original")
+    if level >= ROLE_LEVELS["employee"] and level < ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
+        permissions.add("excel.mutate.working_copy")
+    return permissions
 
 def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> dict[str, Any]:
     resource_id = validate_id(resource_id, "resource ID")
@@ -231,6 +237,11 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     if resource_id:
         grant = _resource_grant(workspace, uid, resource_id)
         grant_permissions = {p for p in (grant.get("permissions") or []) if p in ACTIONS}
+        level = _effective_role_level(member)
+        if action == "excel.mutate.original" and level >= ROLE_LEVELS["manager"] and "worksheet.modify" in grant_permissions:
+            grant_permissions.add("excel.mutate.original")
+        if action == "excel.mutate.working_copy" and level < ROLE_LEVELS["manager"] and "worksheet.modify" in grant_permissions:
+            grant_permissions.add("excel.mutate.working_copy")
         permissions &= grant_permissions
         if action not in permissions:
             raise PermissionDenied("Permission denied for this resource.")
