@@ -109,7 +109,7 @@ class _AuthorizationManagementScreenState
       final uid = member['uid']?.toString() ?? '';
       final status = member['membership_status']?.toString() ?? 'active';
       final memberRoles = List<String>.from(member['role_ids'] ?? const []);
-      final rows = <Widget>[_MetaRow(member['employee_id']?.toString() ?? uid, status + ' · ' + (memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')))];
+      final rows = <Widget>[_MetaRow(member['employee_id']?.toString() ?? uid, '$status · ${memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')}')];
       if (uid != InsightFlowAuthService.currentUser?.uid) {
         rows.add(Wrap(spacing: 6, children: [
           if (status == 'active') TextButton(onPressed: () => _approveEmployee(member), child: const Text('Approve')),
@@ -167,7 +167,7 @@ class _AuthorizationManagementScreenState
     final rows = <Widget>[];
     for (final dataset in datasets) {
       final datasetId = dataset['dataset_id']?.toString() ?? '';
-      rows.add(_MetaRow('Dataset', datasetId + (dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : '')));
+      rows.add(_MetaRow('Dataset', '$datasetId${dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : ''}'));
       for (final member in members) {
         final uid = member['uid']?.toString() ?? '';
         if (uid.isEmpty) continue;
@@ -221,7 +221,7 @@ class _AuthorizationManagementScreenState
         item['event_id'] ??
         'record';
     final status = item['status'] ?? item['outcome'] ?? '';
-    return id.toString() + (status.toString().isEmpty ? '' : ' · ' + status.toString());
+    return '${id.toString()}${status.toString().isEmpty ? '' : ' · ' + status.toString()}';
   }
 
   List<Widget> _rows(dynamic values) {
@@ -300,7 +300,10 @@ class _AuthorizationManagementScreenState
         ),
       _MetadataSection(
         title: 'DATASET ACCESS',
-        children: _datasetAccessRows(),
+        children: [
+          ..._datasetAccessRows(),
+          if (isOwner || isManager) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
+        ],
       ),
       _MetadataSection(
         title: 'WORKING COPIES',
