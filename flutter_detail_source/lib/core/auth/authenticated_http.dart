@@ -181,6 +181,15 @@ Future<bool> authorizeExcelOperation({
   final workingCopyId = copy?['working_copy_id']?.toString();
   if (workingCopyId == null || workingCopyId.isEmpty) return false;
 
+  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+  await setExcelMutationAuthorization(
+    idToken: token,
+    workspaceId: insightFlowWorkspaceId,
+    resourceId: workingCopyId,
+    action: 'excel.mutate.working_copy',
+    backendBaseUrl: backendBaseUrl,
+  );
+
   final sourceSheet = resourceId;
   final copied = await createWorkbookWorkingCopy(
     sourceSheetName: sourceSheet,
@@ -197,14 +206,6 @@ Future<bool> authorizeExcelOperation({
   );
   if (!workingAllowed) return false;
 
-  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
-  await setExcelMutationAuthorization(
-    idToken: token,
-    workspaceId: insightFlowWorkspaceId,
-    resourceId: workingCopyId,
-    action: 'excel.mutate.working_copy',
-    backendBaseUrl: backendBaseUrl,
-  );
   return true;
 }
 
