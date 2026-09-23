@@ -3,6 +3,9 @@
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>electric_ai_app</title>
 
   <!-- Office.js MUST come first -->
@@ -65,7 +68,7 @@
 
     // ── Load Flutter only AFTER Office is ready ──────────────────────────────
     var script = document.createElement("script");
-    script.src = "flutter_bootstrap.js";
+    script.src = "flutter_bootstrap.js?v=20260923-auth-v2";
     script.onload = function () {
       _flutter.buildConfig = {
         builds: [
