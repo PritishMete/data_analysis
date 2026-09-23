@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../app_colors.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_up_screen.dart';
 
@@ -75,12 +76,12 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthGlassScaffold(
-      title: 'AUTH / SIGN IN',
-      subtitle: 'EMAIL/PASSWORD CHANNEL // FIREBASE AUTH',
+      title: 'Sign in',
+      subtitle: 'Access your InsightFlow workspace securely.',
       children: [
         AuthGlassField(
           controller: _emailController,
-          label: 'EMAIL',
+          label: 'Email',
           icon: Icons.alternate_email,
           keyboardType: TextInputType.emailAddress,
           enabled: !_loading,
@@ -90,7 +91,7 @@ class _SignInScreenState extends State<SignInScreen> {
         const SizedBox(height: 8),
         AuthGlassField(
           controller: _passwordController,
-          label: 'PASSWORD',
+          label: 'Password',
           icon: Icons.lock_outline,
           obscureText: _obscurePassword,
           enabled: !_loading,
@@ -112,7 +113,7 @@ class _SignInScreenState extends State<SignInScreen> {
         Align(
           alignment: Alignment.centerRight,
           child: AuthGlassLink(
-            label: 'FORGOT PASSWORD?',
+            label: 'Forgot password?',
             onPressed: _loading ? null : _resetPassword,
           ),
         ),
@@ -125,7 +126,7 @@ class _SignInScreenState extends State<SignInScreen> {
         ],
         const SizedBox(height: 14),
         AuthGlassPrimaryButton(
-          label: 'SIGN IN',
+          label: 'Sign In',
           loading: _loading,
           onPressed: _loading ? null : _signIn,
         ),
@@ -134,7 +135,7 @@ class _SignInScreenState extends State<SignInScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'NO ACCOUNT? ',
+              'New to InsightFlow? ',
               style: TextStyle(
                 color: TechColors.textMuted,
                 fontSize: 10,
@@ -142,7 +143,7 @@ class _SignInScreenState extends State<SignInScreen> {
               ),
             ),
             AuthGlassLink(
-              label: 'CREATE ACCOUNT',
+              label: 'Create account',
               onPressed: _loading
                   ? null
                   : () => Navigator.of(context).push(
