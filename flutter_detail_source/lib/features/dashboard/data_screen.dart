@@ -3509,6 +3509,35 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     return buffer.toString();
   }
 
+  Future<bool> _startWorkingFromDataset(String datasetId) async {
+    if (!kIsWeb) return false;
+    await refreshWorksheetNames();
+    for (final sheet in availableSheets) {
+      final resolvedId = await getWorkbookDatasetId(sheet);
+      if (resolvedId == datasetId) {
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = sheet;
+            activeSheetName = sheet;
+          });
+        }
+        await setInsightFlowSourceWorksheetName(sheet);
+        return _authorizeMutationAndAdoptWorkingCopy(
+          action: 'worksheet.modify',
+          operationLabel: 'working copy',
+        );
+      }
+    }
+    if (mounted) {
+      showNotification(
+        'The assigned dataset is not open in this workbook.',
+        TechColors.statusOrange,
+      );
+    }
+    return false;
+  }
+
   Future<bool> _authorizeMutationAndAdoptWorkingCopy({
     required String action,
     required String operationLabel,
@@ -6037,11 +6066,7 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
                 MaterialPageRoute(
                   builder: (_) => AuthorizationManagementScreen(
                       onStartWorking: (datasetId) async {
-                        final authorized =
-                            await _authorizeMutationAndAdoptWorkingCopy(
-                          action: 'worksheet.modify',
-                          operationLabel: 'working copy',
-                        );
+                        final authorized = await _startWorkingFromDataset(datasetId);
                         if (authorized && mounted) {
                           Navigator.of(context).pop();
                         }
