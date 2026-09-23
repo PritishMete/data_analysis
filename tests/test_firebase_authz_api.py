@@ -140,3 +140,26 @@ def test_authz_me_reports_pending_unregistered_user(monkeypatch):
     assert response.status_code == 200
     assert response.json()["account_status"] == "pending"
     assert response.json()["workspace_authorized"] is False
+
+
+def test_membership_endpoint_returns_membership_only_for_authenticated_user(monkeypatch):
+    from firebase_authz import routes
+    monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "employee-1", "email_verified": True})
+    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+        "organization_id": "abc",
+        "workspace_id": "abc",
+        "employee_id": "emp_1",
+        "membership_status": "active",
+        "workspaces": [{"workspace_id": "abc", "role_ids": ["employee"]}],
+    })
+    from main import app
+    response = TestClient(app).get(
+        "/v1/authz/membership",
+        headers={
+            "Authorization": "Bearer valid",
+            "X-InsightFlow-Workspace-ID": "abc",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["organization_id"] == "abc"
+    assert response.json()["employee_id"] == "emp_1"

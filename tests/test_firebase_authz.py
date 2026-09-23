@@ -192,3 +192,32 @@ def test_unverified_email_cannot_be_authorized(monkeypatch):
     ])
     context = service.authentication_context("u", "workspace", email_verified=False)
     assert context["workspace_authorized"] is False
+
+
+def test_membership_context_exposes_stable_organization_and_employee_ids(monkeypatch):
+    monkeypatch.setattr(service, "_get", lambda path: {
+        "workspaces/w": {
+            "organization": {"organization_id": "org_w", "status": "active"},
+            "members": {"u": {"status": "active", "employee_id": "emp_123", "roles": {"employee": True}}},
+        }
+    }.get(path))
+    result = service.workspace_memberships("u", include_user=False)
+    assert result == [{
+        "workspace_id": "w",
+        "organization_id": "org_w",
+        "membership_status": "active",
+        "employee_id": "emp_123",
+        "role_ids": ["employee"],
+    }]
+
+
+def test_legacy_workspace_gets_stable_organization_alias_without_promoting_user(monkeypatch):
+    monkeypatch.setattr(service, "_get", lambda path: {
+        "workspaces/w": {
+            "members": {"u": {"roles": {"viewer": True}}},
+        }
+    }.get(path))
+    result = service.workspace_memberships("u", include_user=False)
+    assert result[0]["organization_id"] == "w"
+    assert result[0]["employee_id"] == "emp_u"
+    assert result[0]["role_ids"] == ["viewer"]

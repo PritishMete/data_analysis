@@ -85,6 +85,18 @@ def _user(uid: str):
         raise PermissionDenied("User is suspended.")
     return value
 
+def _organization_record(workspace_id: str, workspace: dict[str, Any]) -> dict[str, Any]:
+    organization = workspace.get("organization")
+    if isinstance(organization, dict):
+        result = dict(organization)
+        result.setdefault("organization_id", workspace_id)
+        result.setdefault("status", "active")
+        return result
+    return {
+        "organization_id": workspace_id,
+        "status": "active",
+    }
+
 def _membership_status(member: dict[str, Any]) -> str:
     status = str(member.get("status") or "active").strip().lower()
     return status if status in {"invited", "approved", "active", "suspended", "removed"} else "active"
@@ -125,6 +137,10 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
         "membership_status": membership_status,
         "workspace_authorized": workspace_authorized,
         "workspace_id": workspace_id,
+        "organization_id": (
+            selected.get("organization_id") if selected else None
+        ),
+        "employee_id": selected.get("employee_id") if selected else None,
         "workspaces": memberships,
     }
 
@@ -144,9 +160,12 @@ def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str,
                 for role_id, enabled in (member.get("roles") or {}).items()
                 if enabled
             ]
+            organization = _organization_record(workspace_id, workspace)
             memberships.append({
                 "workspace_id": workspace_id,
+                "organization_id": organization["organization_id"],
                 "membership_status": _membership_status(member),
+                "employee_id": str(member.get("employee_id") or f"emp_{uid}"),
                 "role_ids": role_ids,
             })
     return memberships
@@ -236,14 +255,36 @@ def bootstrap_owner(id_token: str, bootstrap_secret: str, workspace_id: str, exp
         if current is None:
             return {
                 "bootstrap": {"initialized": True, "owner_uid": expected_uid, "initialized_at": now, "nonce": uuid.uuid4().hex},
+                "organization": {
+                    "organization_id": workspace_id,
+                    "status": "active",
+                    "created_at": now,
+                },
                 "roles": roles,
-                "members": {expected_uid: {"roles": {"owner": True}}},
+                "members": {
+                    expected_uid: {
+                        "employee_id": f"emp_{uuid.uuid4().hex}",
+                        "status": "active",
+                        "roles": {"owner": True},
+                    }
+                },
                 "resources": {},
             }
         bootstrap = current.get("bootstrap") or {}
         if bootstrap.get("initialized") is True and bootstrap.get("owner_uid") == expected_uid:
+            current.setdefault("organization", {
+                "organization_id": workspace_id,
+                "status": "active",
+            })
+            current["organization"].setdefault("organization_id", workspace_id)
+            current["organization"].setdefault("status", "active")
             current.setdefault("roles", {}).update({k: v for k, v in roles.items() if k not in current.get("roles", {})})
-            current.setdefault("members", {}).setdefault(expected_uid, {"roles": {"owner": True}})
+            member = current.setdefault("members", {}).setdefault(
+                expected_uid,
+                {"roles": {"owner": True}},
+            )
+            member.setdefault("status", "active")
+            member.setdefault("employee_id", f"emp_{expected_uid}")
             current.setdefault("resources", {})
         return current
     result = ref.transaction(txn)

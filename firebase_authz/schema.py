@@ -9,9 +9,16 @@ ACTIONS = frozenset({
 })
 
 DEFAULT_ROLES = {
+    # Legacy role IDs remain valid for backward compatibility. Phase 4 maps
+    # them into the organization RBAC roles without changing authentication.
     "owner": set(ACTIONS),
     "analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view"},
     "viewer": {"data.view","history.view"},
+    "organization_owner": set(ACTIONS),
+    "manager": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","worksheet.delete","operation.undo.own","history.view","users.manage","roles.manage","policies.manage"},
+    "team_lead": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view"},
+    "employee": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view"},
+    "external_viewer": {"data.view","history.view"},
 }
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")

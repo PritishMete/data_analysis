@@ -44,6 +44,43 @@ def me(
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
 
+@router.get("/membership")
+def membership(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not workspace_id:
+            raise ValueError("Workspace authorization context required.")
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        context = authentication_context(
+            str(claims["uid"]),
+            workspace_id.strip(),
+            True,
+        )
+        if context["membership_status"] == "none":
+            raise AuthzError("User is not a member of this organization.")
+        return {
+            "organization_id": context.get("organization_id"),
+            "workspace_id": context.get("workspace_id"),
+            "employee_id": context.get("employee_id"),
+            "membership_status": context["membership_status"],
+            "role_ids": next(
+                (
+                    item["role_ids"]
+                    for item in context["workspaces"]
+                    if item["workspace_id"] == workspace_id.strip()
+                ),
+                [],
+            ),
+        }
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
 @router.post("/bootstrap-owner")
 def bootstrap(req:BootstrapRequest):
     try:return bootstrap_owner(req.id_token,req.bootstrap_secret,req.workspace_id,req.expected_uid)
