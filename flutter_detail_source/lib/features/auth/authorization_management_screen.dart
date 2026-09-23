@@ -442,6 +442,7 @@ class _AuthorizationManagementScreenState
       }
       final id = dataset['dataset_id'].toString();
       final version = dataset['current_version']?.toString();
+      headers['X-InsightFlow-Resource-ID'] = id;
       var url = insightFlowBackendBaseUrl + '/v1/managed-datasets/' + id + '/download';
       if (version != null && version.isNotEmpty) {
         url += '?version_id=' + Uri.encodeQueryComponent(version);
@@ -478,6 +479,7 @@ class _AuthorizationManagementScreenState
       if (insightFlowWorkspaceId.isNotEmpty) {
         headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
       }
+      headers['X-InsightFlow-Resource-ID'] = datasetId;
       final response = await http.delete(
         Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + datasetId),
         headers: headers,
