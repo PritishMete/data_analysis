@@ -429,6 +429,7 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
         "members": {"owner": {"roles": {"organization_owner": True}}},
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "owner", "email_verified": True, "auth_time": __import__("time").time(),
     })
