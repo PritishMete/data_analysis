@@ -163,6 +163,7 @@ def managed_dataset_delete(
         return delete_managed_dataset(
             workspace_id=_workspace(workspace_id),
             token=_token(authorization),
+            dataset_id=dataset_id,
         )
     except Exception as exc:
         raise _map_error(exc)
