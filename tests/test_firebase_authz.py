@@ -81,7 +81,7 @@ def test_invalid_path_ids_are_rejected(monkeypatch):
         service.authorization("u", "w", "data.view", "../r")
 
 def test_self_promotion_is_rejected(monkeypatch):
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "u"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "u", "email_verified": True})
     monkeypatch.setattr(service, "authorization", lambda *args, **kwargs: {"allowed": True})
     with pytest.raises(service.PermissionDenied):
         service.mutate_role("u", "owner", True, "token", "w")
@@ -196,11 +196,19 @@ def test_unverified_email_cannot_be_authorized(monkeypatch):
 
 def test_membership_context_exposes_stable_organization_and_employee_ids(monkeypatch):
     monkeypatch.setattr(service, "_get", lambda path: {
-        "workspaces/w": {
-            "organization": {"organization_id": "org_w", "status": "active"},
-            "members": {"u": {"status": "active", "employee_id": "emp_123", "roles": {"employee": True}}},
+        "workspaces": {
+            "w": {
+                "organization": {"organization_id": "org_w", "status": "active"},
+                "members": {
+                    "u": {
+                        "status": "active",
+                        "employee_id": "emp_123",
+                        "roles": {"employee": True},
+                    }
+                },
+            }
         }
-    }.get(path))
+    }.get(path, {}))
     result = service.workspace_memberships("u", include_user=False)
     assert result == [{
         "workspace_id": "w",
@@ -213,10 +221,12 @@ def test_membership_context_exposes_stable_organization_and_employee_ids(monkeyp
 
 def test_legacy_workspace_gets_stable_organization_alias_without_promoting_user(monkeypatch):
     monkeypatch.setattr(service, "_get", lambda path: {
-        "workspaces/w": {
-            "members": {"u": {"roles": {"viewer": True}}},
+        "workspaces": {
+            "w": {
+                "members": {"u": {"roles": {"viewer": True}}},
+            }
         }
-    }.get(path))
+    }.get(path, {}))
     result = service.workspace_memberships("u", include_user=False)
     assert result[0]["organization_id"] == "w"
     assert result[0]["employee_id"] == "emp_u"
@@ -295,7 +305,7 @@ def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "owner", "email_verified": True})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
-    with pytest.raises(KeyError):
+    with pytest.raises(service.PermissionDenied):
         service._dataset(workspace, "not_present")
 
 
@@ -316,6 +326,7 @@ def test_team_lead_delegation_requires_approved_employees(monkeypatch):
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "manager", "email_verified": True})
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     class Ref:
         def set(self, value): self.value = value
@@ -419,7 +430,7 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
-        "uid": "owner", "email_verified": True, "auth_time": time.time(),
+        "uid": "owner", "email_verified": True, "auth_time": __import__("time").time(),
     })
     monkeypatch.setattr(service, "authorization", lambda *args, **kwargs: {"allowed": True})
     with pytest.raises(service.PermissionDenied):
@@ -569,7 +580,15 @@ def test_account_cleanup_revokes_membership_grants_and_delegations(monkeypatch):
                     continue
         def set(self, value):
             return None
-    monkeypatch.setattr(service, "_get", lambda path: root.get("workspaces", {}).get("org", {}) if path == "workspaces" else root.get("workspaces", {}))
+    monkeypatch.setattr(
+        service,
+        "_get",
+        lambda path: (
+            root["workspaces"]
+            if path == "workspaces"
+            else root["workspaces"].get("org", {})
+        ),
+    )
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: Ref(path))
