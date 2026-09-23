@@ -57,7 +57,11 @@ def initialize_firebase():
             cred = AnonymousCredentials()
         else:
             cred = firebase_admin.credentials.ApplicationDefault()
-        return firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID, "databaseURL": DATABASE_URL})
+        options = {"projectId": PROJECT_ID, "databaseURL": DATABASE_URL}
+        storage_bucket = os.environ.get("FIREBASE_STORAGE_BUCKET", "").strip()
+        if storage_bucket:
+            options["storageBucket"] = storage_bucket
+        return firebase_admin.initialize_app(cred, options)
 
 def verify_id_token(id_token: str) -> dict[str, Any]:
     if not id_token:
