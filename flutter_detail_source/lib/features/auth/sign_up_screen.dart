@@ -126,16 +126,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
           AuthGlassMessage(text: _error!),
         ],
         const SizedBox(height: 14),
-        GlassButton(
+        GlassButton.custom(
           onTap: _loading ? () {} : _signUp,
           enabled: !_loading,
           width: double.infinity,
           height: 46,
           shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          icon: _loading
-              ? const CupertinoActivityIndicator()
-              : const Icon(CupertinoIcons.arrow_right, size: 17),
           label: _loading ? 'Please wait…' : 'Create Account',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_loading)
+                const CupertinoActivityIndicator()
+              else
+                const Icon(CupertinoIcons.arrow_right, size: 17),
+              const SizedBox(width: 8),
+              Text(
+                _loading ? 'Please wait…' : 'Create Account',
+                style: TextStyle(
+                  color: CupertinoColors.label.resolveFrom(context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         Wrap(
