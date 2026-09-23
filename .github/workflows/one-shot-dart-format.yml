@@ -1,7 +1,14 @@
 name: One-shot Dart formatter
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [feature/data-workspace]
+    paths:
+      - 'flutter_detail_source/lib/features/auth/authorization_management_screen.dart'
+      - 'flutter_detail_source/lib/features/dashboard/data_screen.dart'
+      - 'flutter_detail_source/lib/core/auth/authenticated_http.dart'
+      - 'flutter_detail_source/lib/core/interop/excel_mutation_authorization.dart'
+      - 'flutter_detail_source/test/auth_screens_test.dart'
 
 permissions:
   contents: write
