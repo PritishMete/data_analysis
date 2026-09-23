@@ -87,6 +87,24 @@ jobs:
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
 
+      - name: Check auth UI Dart formatting
+        run: >-
+          dart format
+          --output=none
+          --set-exit-if-changed
+          lib/features/auth/auth_glass_widgets.dart
+          lib/features/auth/sign_in_screen.dart
+          lib/features/auth/sign_up_screen.dart
+          test/auth_screens_test.dart
+
+      - name: Analyze auth UI Flutter sources
+        run: >-
+          flutter analyze
+          lib/features/auth/auth_glass_widgets.dart
+          lib/features/auth/sign_in_screen.dart
+          lib/features/auth/sign_up_screen.dart
+          test/auth_screens_test.dart
+
       - name: Run Flutter Auth tests
         run: flutter test test/firebase_auth_service_test.dart
 
