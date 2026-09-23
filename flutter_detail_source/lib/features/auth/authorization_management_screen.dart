@@ -367,7 +367,7 @@ class _AuthorizationManagementScreenState
         title: 'DATASET ACCESS',
         children: [
           ..._datasetAccessRows(),
-          if (isOwner) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
+          if (isOwner || isManager) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
         ],
       ),
       _MetadataSection(
