@@ -800,9 +800,20 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                     "status": invitation.get("status"),
                     "expires_at": invitation.get("expires_at"),
                 })
-    if "membership.manage" in capabilities:
+    if "membership.manage" in capabilities or "delegation.manage" in capabilities:
+        allowed_employee_ids = None
+        if "delegation.manage" in capabilities and "membership.manage" not in capabilities:
+            allowed_employee_ids = {
+                member_uid
+                for delegation in (workspace.get("delegations") or {}).values()
+                if isinstance(delegation, dict)
+                and delegation.get("team_lead_uid") == uid
+                for member_uid in (delegation.get("member_ids") or [])
+            }
         for member_uid, item in (workspace.get("approved_employees") or {}).items():
-            if isinstance(item, dict):
+            if isinstance(item, dict) and (
+                allowed_employee_ids is None or member_uid in allowed_employee_ids
+            ):
                 result["approved_employees"].append({
                     "uid": member_uid,
                     "employee_id": item.get("employee_id"),
