@@ -34769,22 +34769,17 @@ s=1
 break
 case 1:return A.B(q,r)}})
 return A.C($async$aZb,r)},
-VH(){var s=0,r=A.D(t.H),q,p,o
+VH(){var s=0,r=A.D(t.H),q,p
 var $async$VH=A.y(function(a,b){if(a===1)return A.A(b,r)
-for(;;)switch(s){case 0:o=$.Eb
-o=(o==null?$.Eb=$.b_Q():o).ga_N()
-q=A.N(o).i("J<1,kZ>")
-o=A.L(new A.J(o,A.buc(),q),q.i("a1.E"))
-o.$flags=1
-s=o.length===0?2:3
+for(;;)switch(s){case 0:p=$.Eb
+p=(p==null?$.Eb=$.b_Q():p).ga_N()
+q=A.N(p).i("J<1,kZ>")
+p=A.L(new A.J(p,A.buc(),q),q.i("a1.E"))
+p.$flags=1
+s=p.length===0?2:3
 break
-case 2:p=A.b([],t.s)
-p.push("apiKey")
-p.push("appId")
-p.push("messagingSenderId")
-p.push("projectId")
-p.push("authDomain")
-A.ac(A.am("InsightFlow Firebase Web configuration is missing or targets the wrong Firebase project."))
+case 2:p=[].length
+if(p!==0)A.ac(A.am("InsightFlow Firebase Web configuration is missing or targets the wrong Firebase project."))
 s=4
 return A.p(A.aqM(B.WA),$async$VH)
 case 4:case 3:s=5
@@ -121963,7 +121958,7 @@ B.cC=new A.tp(0,"none")
 B.Wz=new A.tp(1,"low")
 B.jY=new A.tp(2,"medium")
 B.jZ=new A.tp(3,"high")
-B.WA=new A.xC("","","","","",null,null,null,null,null,null,null,null,null)
+B.WA=new A.xC("AIzaSyDnsdFUmN5wIIVsYaGk1vJM2dAaQVcmVNs","1:791927014116:web:157aee2d2d67e453fa22f1","791927014116","insightflow-5a23d","insightflow-5a23d.firebaseapp.com",null,null,null,null,null,null,null,null,null)
 B.R=new A.R(0,0)
 B.WB=new A.Uv(B.R,B.R)
 B.WC=new A.Uy(null)
