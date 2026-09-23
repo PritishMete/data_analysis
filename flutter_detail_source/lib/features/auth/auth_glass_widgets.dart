@@ -129,11 +129,7 @@ class AuthGlassFieldLabel extends StatelessWidget {
 /// Status feedback kept as composition only; the visual surface is the shared
 /// [GlassContainer] component.
 class AuthGlassMessage extends StatelessWidget {
-  const AuthGlassMessage({
-    super.key,
-    required this.text,
-    this.error = true,
-  });
+  const AuthGlassMessage({super.key, required this.text, this.error = true});
 
   final String text;
   final bool error;
@@ -158,11 +154,7 @@ class AuthGlassMessage extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                height: 1.35,
-              ),
+              style: TextStyle(color: color, fontSize: 11, height: 1.35),
             ),
           ),
         ],
