@@ -2,11 +2,11 @@ import 'dart:js_interop';
 
 @JS('insightflowSetMutationAuthorization')
 external void _setMutationAuthorization(
-  String idToken,
-  String workspaceId,
-  String resourceId,
-  String action,
-  String backendBaseUrl,
+  JSString idToken,
+  JSString workspaceId,
+  JSString resourceId,
+  JSString action,
+  JSString backendBaseUrl,
 );
 
 @JS('insightflowClearMutationAuthorization')
@@ -20,11 +20,11 @@ Future<void> setExcelMutationAuthorization({
   required String backendBaseUrl,
 }) async {
   _setMutationAuthorization(
-    idToken,
-    workspaceId,
-    resourceId,
-    action,
-    backendBaseUrl,
+    idToken.toJS,
+    workspaceId.toJS,
+    resourceId.toJS,
+    action.toJS,
+    backendBaseUrl.toJS,
   );
 }
 
