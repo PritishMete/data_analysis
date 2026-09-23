@@ -3666,7 +3666,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             activeSheetName = sheet;
           });
         }
-        await setInsightFlowSourceWorksheetName(sheet);
         return _authorizeMutationAndAdoptWorkingCopy(
           action: 'worksheet.modify',
         );
