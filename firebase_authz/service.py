@@ -592,6 +592,11 @@ def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id:
         raise PermissionDenied("Delegated administration cannot grant an equal or higher role.")
     if normalized_role == "organization_owner" and actor_level < ROLE_LEVELS["organization_owner"]:
         raise PermissionDenied("Only the Organization Owner can manage Owner access.")
+    target_status = _membership_status(target)
+    if enabled and target_status != "active":
+        raise PermissionDenied("Only active members can receive a role.")
+    if enabled and normalized_role == "team_lead" and not _approved_employee(workspace, target_uid):
+        raise PermissionDenied("Only approved employees can be promoted to Team Lead.")
     return True
 
 def require_recent_auth(claims: dict[str, Any], max_age_seconds: int = 300) -> dict[str, Any]:
