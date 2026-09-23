@@ -17,7 +17,8 @@ def test_standalone_build_script_targets_detail_output_without_excel_template():
     assert "'--target'" in script
     assert "$Target" in script
     assert "office\\.js" in script
-    assert "excel_helper.js" in script
+    assert "excel_*.js" in script
+    assert "Remove-Item -Force" in script
     assert "native-star-schema" in script
 
 
