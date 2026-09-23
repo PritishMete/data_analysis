@@ -297,8 +297,7 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     if action not in permissions:
         raise PermissionDenied("Permission denied.")
     return {
-        "allowed": True, "uid": uid, "workspace_id": workspace_id, "action": action,
-        "resource_id": resource_id,
+        "allowed": True, "uid": uid, "workspace_id": workspace_id, "action": action,        "resource_id": resource_id,
         "role_ids": _effective_role_ids(member),
     }
 
@@ -597,8 +596,7 @@ def set_dataset_grant(
         ):
             raise
     if target_uid not in (workspace.get("members") or {}):
-        raise PermissionDenied("Grant target is not an organization member.")
-    if _effective_role_level((workspace.get("members") or {}).get(actor, {})) <= ROLE_LEVELS["team_lead"]:
+        raise PermissionDenied("Grant target is not an organization member.")    if _effective_role_level((workspace.get("members") or {}).get(actor, {})) <= ROLE_LEVELS["team_lead"]:
         if not _approved_employee(workspace, target_uid):
             raise PermissionDenied("Team Leads may grant dataset access only to approved employees.")
     dataset = _dataset(workspace, dataset_id)
@@ -761,6 +759,11 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
     email = str(claims.get("email") or "").strip().lower()
+    existing_user = _raw_user(actor)
+    if existing_user:
+        status = str(existing_user.get("status") or "active").strip().lower()
+        if existing_user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
+            raise PermissionDenied("This account is suspended.")
     workspace = _workspace(workspace_id)
     invitation = _invitation_by_id(workspace, invitation_id)
     if invitation.get("status") != "invited":
@@ -897,8 +900,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         for member_uid, item in (workspace.get("approved_employees") or {}).items():
             if isinstance(item, dict) and (
                 allowed_employee_ids is None or member_uid in allowed_employee_ids
-            ):
-                result["approved_employees"].append({
+            ):                result["approved_employees"].append({
                     "uid": member_uid,
                     "employee_id": item.get("employee_id"),
                     "status": item.get("status"),
