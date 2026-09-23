@@ -177,7 +177,25 @@ function mockWorkbook() {
 
 async function main() {
   const { context, calls, sourceValues } = mockWorkbook();
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_helper.js'), 'utf8'), context);
+  vm.runInContext(
+    fs.readFileSync(
+      path.join(__dirname, '..', 'web', 'excel_authorization_guard.js'),
+      'utf8',
+    ),
+    context,
+  );
+  context.fetch = async () => ({ status: 200 });
+  context.window.insightflowSetMutationAuthorization(
+    'test-token',
+    'test-org',
+    'wc_test',
+    'excel.mutate.working_copy',
+    'https://authz.test',
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'web', 'excel_helper.js'), 'utf8'),
+    context,
+  );
   context.window._onOfficeReady();
 
   const result = await context.processExcelPipeline(JSON.stringify({
