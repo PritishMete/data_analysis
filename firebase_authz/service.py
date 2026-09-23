@@ -557,7 +557,10 @@ def set_dataset_grant(
     dataset = _dataset(workspace, dataset_id)
     actor_grant = _dataset_grant(dataset, actor)
     actor_can_manage = "dataset.manage_acl" in set(actor_grant.get("permissions") or [])
-    if actor_can_manage is False and actor != dataset.get("owner_uid"):
+    delegated_share = _delegated_permission(
+        workspace, actor, target_uid, dataset_id, "dataset.share"
+    )
+    if actor_can_manage is False and actor != dataset.get("owner_uid") and not delegated_share:
         raise PermissionDenied("Dataset ACL management is not delegated to this user.")
     initialize_firebase()
     db.reference(
@@ -773,11 +776,23 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                     "membership_status": _membership_status(item),
                     "role_ids": _effective_role_ids(item),
                 })
+    delegated_dataset_ids = {
+        dataset_id
+        for delegation in (workspace.get("delegations") or {}).values()
+        if isinstance(delegation, dict)
+        and delegation.get("team_lead_uid") == uid
+        and delegation.get("status") == "active"
+        and (
+            delegation.get("expires_at") is None
+            or int(delegation.get("expires_at")) > int(time.time() * 1000)
+        )
+        for dataset_id in (delegation.get("dataset_ids") or [])
+    }
     for dataset_id, dataset in (workspace.get("datasets") or {}).items():
         if not isinstance(dataset, dict):
             continue
         grant = _dataset_grant(dataset, uid)
-        if is_manager or uid == dataset.get("owner_uid") or "dataset.view_original" in set(grant.get("permissions") or []):
+        if is_manager or uid == dataset.get("owner_uid") or dataset_id in delegated_dataset_ids or "dataset.view_original" in set(grant.get("permissions") or []):
             result["datasets"].append({
                 "dataset_id": dataset_id,
                 "protected_original": dataset.get("protected_original") is True,

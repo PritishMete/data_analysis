@@ -254,12 +254,28 @@ class _AuthorizationManagementScreenState
         roles.contains('team_lead') &&
         !roles.contains('manager') &&
         !roles.contains('organization_owner');
-    final members =
+    final allMembers =
         (_snapshot[lead ? 'approved_employees' : 'members'] as List? ??
                 const [])
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
+    final delegations = (_snapshot['delegations'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((d) => d['status']?.toString() == 'active')
+        .toList();
+    final delegatedMemberIds = lead
+        ? delegations
+            .expand((d) => (d['member_ids'] as List? ?? const []))
+            .map((e) => e.toString())
+            .toSet()
+        : <String>{};
+    final members = lead
+        ? allMembers
+            .where((m) => delegatedMemberIds.contains(m['uid']?.toString()))
+            .toList()
+        : allMembers;
     final datasets = (_snapshot['datasets'] as List? ?? const [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -270,6 +286,13 @@ class _AuthorizationManagementScreenState
     final rows = <Widget>[];
     for (final dataset in datasets) {
       final datasetId = dataset['dataset_id']?.toString() ?? '';
+      final delegatedDataset = lead &&
+          delegations.any(
+            (d) => (d['dataset_ids'] as List? ?? const [])
+                .map((e) => e.toString())
+                .contains(datasetId),
+          );
+      if (lead && !delegatedDataset) continue;
       rows.add(
         _MetaRow(
           'Dataset',
