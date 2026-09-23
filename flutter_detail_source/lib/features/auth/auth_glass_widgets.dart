@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -24,8 +25,9 @@ class AuthGlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glassQuality =
-        isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard;
+    final glassQuality = kIsWeb || isRunningInsideOffice
+        ? GlassQuality.minimal
+        : GlassQuality.standard;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -72,10 +74,10 @@ class AuthGlassScaffold extends StatelessWidget {
                     ),
                     Expanded(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
                         child: Center(
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 520),
+                            constraints: const BoxConstraints(maxWidth: 440),
                             child: GlassContainer(
                               useOwnLayer: true,
                               quality: glassQuality,
@@ -83,7 +85,7 @@ class AuthGlassScaffold extends StatelessWidget {
                               shape: const LiquidRoundedSuperellipse(
                                 borderRadius: 4,
                               ),
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -105,7 +107,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                       height: 1.35,
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
                                   ...children,
                                 ],
                               ),
@@ -191,9 +193,22 @@ class AuthGlassField extends StatelessWidget {
             size: 16,
           ),
           suffixIcon: suffix,
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4),
+            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.6),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4),
+            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.6),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4),
+            borderSide: const BorderSide(color: TechColors.borderActive, width: 0.8),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4),
+            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.4),
+          ),
           contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         ),
       ),
@@ -216,7 +231,7 @@ class AuthGlassPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 42,
+      height: 38,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
