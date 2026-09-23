@@ -15,7 +15,7 @@ try:
 except ImportError:
     firebase_admin = auth = db = None
 
-from .schema import ACTIONS, DEFAULT_ROLES, validate_action, validate_id
+from .schema import ACTIONS, DEFAULT_ROLES, ROLE_ALIASES, ROLE_LEVELS, validate_action, validate_id
 
 PROJECT_ID = "insightflow-5a23d"
 DATABASE_URL = "https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -177,13 +177,26 @@ def _workspace(workspace_id: str):
         raise PermissionDenied("Workspace is not accessible.")
     return value
 
+def _effective_role_ids(member: dict[str, Any]) -> list[str]:
+    raw = [
+        role_id for role_id, enabled in (member.get("roles") or {}).items()
+        if enabled
+    ]
+    return [ROLE_ALIASES.get(role_id, role_id) for role_id in raw]
+
+def _effective_role_level(member: dict[str, Any]) -> int:
+    levels = [ROLE_LEVELS.get(role_id, 0) for role_id in _effective_role_ids(member)]
+    return max(levels, default=0)
+
 def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[str]:
     role_defs = workspace.get("roles") or {}
     permissions: set[str] = set()
     for role_id, enabled in (member.get("roles") or {}).items():
         validate_id(role_id, "role ID")
+        effective_role_id = ROLE_ALIASES.get(role_id, role_id)
         if enabled:
-            permissions.update((role_defs.get(role_id) or {}).get("permissions") or [])
+            definition = role_defs.get(effective_role_id) or role_defs.get(role_id) or {}
+            permissions.update(definition.get("permissions") or [])
     return {p for p in permissions if p in ACTIONS}
 
 def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> dict[str, Any]:
@@ -225,8 +238,30 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
         raise PermissionDenied("Permission denied.")
     return {
         "allowed": True, "uid": uid, "workspace_id": workspace_id, "action": action,
-        "resource_id": resource_id, "role_ids": [r for r,v in (member.get("roles") or {}).items() if v],
+        "resource_id": resource_id,
+        "role_ids": _effective_role_ids(member),
     }
+
+def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id: str, enabled: bool) -> bool:
+    validate_id(role_id, "role ID")
+    workspace = _workspace(workspace_id)
+    members = workspace.get("members") or {}
+    actor = members.get(actor_uid)
+    target = members.get(target_uid)
+    if not isinstance(actor, dict) or not isinstance(target, dict):
+        raise PermissionDenied("Both users must be organization members.")
+    normalized_role = ROLE_ALIASES.get(role_id, role_id)
+    target_level = ROLE_LEVELS.get(normalized_role)
+    actor_level = _effective_role_level(actor)
+    if target_level is None:
+        raise PermissionDenied("Role is not part of the organization RBAC model.")
+    if actor_uid == target_uid and enabled:
+        raise PermissionDenied("A user cannot grant a higher role to themselves.")
+    if target_level >= actor_level and actor_level < ROLE_LEVELS["organization_owner"]:
+        raise PermissionDenied("Delegated administration cannot grant an equal or higher role.")
+    if normalized_role == "organization_owner" and actor_level < ROLE_LEVELS["organization_owner"]:
+        raise PermissionDenied("Only the Organization Owner can manage Owner access.")
+    return True
 
 def require_email_verified(claims: dict[str, Any]) -> dict[str, Any]:
     if claims.get("email_verified") is not True:
@@ -319,9 +354,8 @@ def mutate_role(target_uid: str, role_id: str, enabled: bool, actor_token: str, 
     claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
     authorization(actor, workspace_id, "roles.manage")
-    if role_id == "owner" and enabled and target_uid == actor:
-        raise PermissionDenied("Self-promotion to Owner is not permitted.")
-    if role_id == "owner" and not enabled:
+    can_manage_role(workspace_id, actor, target_uid, role_id, enabled)
+    if ROLE_ALIASES.get(role_id, role_id) == "organization_owner" and not enabled:
         last_owner_guard(workspace_id, target_uid)
     db.reference(f"workspaces/{workspace_id}/members/{target_uid}/roles/{role_id}").set(bool(enabled))
     return True

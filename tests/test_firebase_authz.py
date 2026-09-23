@@ -221,3 +221,35 @@ def test_legacy_workspace_gets_stable_organization_alias_without_promoting_user(
     assert result[0]["organization_id"] == "w"
     assert result[0]["employee_id"] == "emp_u"
     assert result[0]["role_ids"] == ["viewer"]
+
+
+def test_manager_cannot_grant_manager_or_owner_to_peer(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {"roles": {"manager": True}},
+            "peer": {"roles": {"employee": True}},
+        },
+        "roles": {
+            "manager": {"permissions": sorted(service.ACTIONS)},
+            "employee": {"permissions": ["data.view"]},
+            "organization_owner": {"permissions": sorted(service.ACTIONS)},
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    with pytest.raises(service.PermissionDenied):
+        service.can_manage_role("org", "manager", "peer", "manager", True)
+    with pytest.raises(service.PermissionDenied):
+        service.can_manage_role("org", "manager", "peer", "organization_owner", True)
+
+
+def test_owner_can_manage_lower_roles_but_not_self_promote():
+    workspace = {
+        "members": {
+            "owner": {"roles": {"organization_owner": True}},
+            "employee": {"roles": {"employee": True}},
+        }
+    }
+    service._workspace = lambda wid: workspace
+    assert service.can_manage_role("org", "owner", "employee", "manager", True) is True
+    with pytest.raises(service.PermissionDenied):
+        service.can_manage_role("org", "owner", "owner", "manager", True)
