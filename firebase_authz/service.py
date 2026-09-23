@@ -767,6 +767,14 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                 "dataset_id": dataset_id,
                 "protected_original": dataset.get("protected_original") is True,
                 "owner_uid": dataset.get("owner_uid"),
+                "grants": [
+                    {
+                        "uid": grant_uid,
+                        "permissions": list((grant or {}).get("permissions") or []),
+                    }
+                    for grant_uid, grant in (dataset.get("grants") or {}).items()
+                    if isinstance(grant, dict)
+                ],
             })
     for copy_id, item in (workspace.get("working_copies") or {}).items():
         if isinstance(item, dict) and (

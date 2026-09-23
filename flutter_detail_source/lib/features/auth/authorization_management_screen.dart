@@ -124,6 +124,63 @@ class _AuthorizationManagementScreenState
       return rows;
     }).toList();
   }
+  Future<void> _inviteEmployee() async {
+    final email = TextEditingController();
+    final employeeId = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Invite employee'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: email, decoration: const InputDecoration(labelText: 'Company email')),
+          TextField(controller: employeeId, decoration: const InputDecoration(labelText: 'Employee ID')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Invite')),
+        ],
+      ),
+    );
+    if (result != true) { email.dispose(); employeeId.dispose(); return; }
+    if (email.text.trim().isEmpty || employeeId.text.trim().isEmpty) {
+      email.dispose(); employeeId.dispose();
+      throw StateError('Company email and employee ID are required.');
+    }
+    await _post('invitations', {
+      'workspace_id': insightFlowWorkspaceId,
+      'email': email.text.trim(),
+      'employee_id': employeeId.text.trim(),
+      'role_id': 'employee',
+    });
+    email.dispose(); employeeId.dispose();
+    await _load();
+  }
+
+  List<Widget> _datasetAccessRows() {
+    final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
+    final lead = roles.contains('team_lead') && !roles.contains('manager') && !roles.contains('organization_owner');
+    final members = (_snapshot[lead ? 'approved_employees' : 'members'] as List? ?? const [])
+        .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    final datasets = (_snapshot['datasets'] as List? ?? const [])
+        .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    if (datasets.isEmpty) return [const _MetaRow('Status', 'No datasets in this scope.')];
+    final rows = <Widget>[];
+    for (final dataset in datasets) {
+      final datasetId = dataset['dataset_id']?.toString() ?? '';
+      rows.add(_MetaRow('Dataset', datasetId + (dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : '')));
+      for (final member in members) {
+        final uid = member['uid']?.toString() ?? '';
+        if (uid.isEmpty) continue;
+        rows.add(Wrap(spacing: 5, children: [
+          Text(member['employee_id']?.toString() ?? uid, style: const TextStyle(color: TechColors.textSecondary, fontSize: 10, fontFamily: 'monospace')),
+          TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': ['dataset.view_original']} ).then((_) => _load()), child: const Text('Viewer')),
+          if (!lead) TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': ['dataset.view_original', 'dataset.create_working_copy', 'dataset.edit_working_copy']} ).then((_) => _load()), child: const Text('Editor')),
+          TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': []}).then((_) => _load()), child: const Text('Revoke')),
+        ]));
+      }
+    }
+    return rows;
+  }
   String _itemLabel(Map<String, dynamic> item) {
     final id = item['dataset_id'] ??
         item['working_copy_id'] ??
@@ -195,7 +252,10 @@ class _AuthorizationManagementScreenState
       if (isOwner || isManager)
         _MetadataSection(
           title: 'TEAM / EMPLOYEES',
-          children: _memberRows(),
+          children: [
+            ..._memberRows(),
+            if (isOwner || isManager) TextButton(onPressed: _inviteEmployee, child: const Text('Invite employee')),
+          ],
         ),
       if (isLead)
         _MetadataSection(
@@ -204,7 +264,7 @@ class _AuthorizationManagementScreenState
         ),
       _MetadataSection(
         title: 'DATASET ACCESS',
-        children: _rows(_snapshot['datasets']),
+        children: _datasetAccessRows(),
       ),
       _MetadataSection(
         title: 'WORKING COPIES',
