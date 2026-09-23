@@ -10,10 +10,7 @@ import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class AuthorizationManagementScreen extends StatefulWidget {
-  const AuthorizationManagementScreen({
-    super.key,
-    this.onStartWorking,
-  });
+  const AuthorizationManagementScreen({super.key, this.onStartWorking});
 
   final Future<void> Function(String datasetId)? onStartWorking;
 
@@ -90,7 +87,9 @@ class _AuthorizationManagementScreenState
     );
     if (response.statusCode != 200) {
       dynamic decoded;
-      try { decoded = jsonDecode(response.body); } catch (_) {}
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {}
       throw StateError(
         decoded is Map && decoded['detail'] != null
             ? decoded['detail'].toString()
@@ -100,39 +99,30 @@ class _AuthorizationManagementScreenState
   }
 
   Future<void> _setMemberStatus(String uid, String status) async {
-    await _post(
-      'membership/status',
-      {
-        'workspace_id': insightFlowWorkspaceId,
-        'target_uid': uid,
-        'status': status,
-      },
-    );
+    await _post('membership/status', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': uid,
+      'status': status,
+    });
     await _load();
   }
 
   Future<void> _setRole(String uid, String role, bool enabled) async {
-    await _post(
-      'roles/mutate',
-      {
-        'workspace_id': insightFlowWorkspaceId,
-        'target_uid': uid,
-        'role_id': role,
-        'enabled': enabled,
-      },
-    );
+    await _post('roles/mutate', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': uid,
+      'role_id': role,
+      'enabled': enabled,
+    });
     await _load();
   }
 
   Future<void> _approveEmployee(Map<String, dynamic> member) async {
-    await _post(
-      'approved-employees',
-      {
-        'workspace_id': insightFlowWorkspaceId,
-        'target_uid': member['uid'],
-        'employee_id': member['employee_id'],
-      },
-    );
+    await _post('approved-employees', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': member['uid'],
+      'employee_id': member['employee_id'],
+    });
     await _load();
   }
 
@@ -142,12 +132,11 @@ class _AuthorizationManagementScreenState
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
     if (members.isEmpty) {
-      return [
-        const _MetaRow('Status', 'No members in this scope.'),
-      ];
+      return [const _MetaRow('Status', 'No members in this scope.')];
     }
-    final owner = List<String>.from(_snapshot['role_ids'] ?? const [])
-        .contains('organization_owner');
+    final owner = List<String>.from(
+      _snapshot['role_ids'] ?? const [],
+    ).contains('organization_owner');
     return members.expand<Widget>((member) {
       final uid = member['uid']?.toString() ?? '';
       final status = member['membership_status']?.toString() ?? 'active';
@@ -159,47 +148,53 @@ class _AuthorizationManagementScreenState
         ),
       ];
       if (uid != InsightFlowAuthService.currentUser?.uid) {
-        rows.add(Wrap(spacing: 6, children: [
-          if (status == 'active')
-            TextButton(
-              onPressed: () => _approveEmployee(member),
-              child: const Text('Approve'),
-            ),
-          if (status == 'active')
-            TextButton(
-              onPressed: () => _setMemberStatus(uid, 'suspended'),
-              child: const Text('Suspend'),
-            ),
-          if (status == 'suspended')
-            TextButton(
-              onPressed: () => _setMemberStatus(uid, 'active'),
-              child: const Text('Reactivate'),
-            ),
-          if (status != 'removed')
-            TextButton(
-              onPressed: () => _setMemberStatus(uid, 'removed'),
-              child: const Text('Remove'),
-            ),
-          if (!memberRoles.contains('team_lead'))
-            TextButton(
-              onPressed: () => _setRole(uid, 'team_lead', true),
-              child: const Text('Promote Team Lead'),
-            ),
-          if (memberRoles.contains('team_lead'))
-            TextButton(
-              onPressed: () => _setRole(uid, 'team_lead', false),
-              child: const Text('Remove Team Lead'),
-            ),
-          if (owner && memberRoles.contains('manager'))
-            TextButton(
-              onPressed: () => _setRole(uid, 'manager', false),
-              child: const Text('Remove Manager'),
-            ),
-        ]));
+        rows.add(
+          Wrap(
+            spacing: 6,
+            children: [
+              if (status == 'active')
+                TextButton(
+                  onPressed: () => _approveEmployee(member),
+                  child: const Text('Approve'),
+                ),
+              if (status == 'active')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'suspended'),
+                  child: const Text('Suspend'),
+                ),
+              if (status == 'suspended')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'active'),
+                  child: const Text('Reactivate'),
+                ),
+              if (status != 'removed')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'removed'),
+                  child: const Text('Remove'),
+                ),
+              if (!memberRoles.contains('team_lead'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'team_lead', true),
+                  child: const Text('Promote Team Lead'),
+                ),
+              if (memberRoles.contains('team_lead'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'team_lead', false),
+                  child: const Text('Remove Team Lead'),
+                ),
+              if (owner && memberRoles.contains('manager'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'manager', false),
+                  child: const Text('Remove Manager'),
+                ),
+            ],
+          ),
+        );
       }
       return rows;
     }).toList();
   }
+
   Future<void> _inviteEmployee() async {
     final email = TextEditingController();
     final employeeId = TextEditingController();
@@ -207,16 +202,19 @@ class _AuthorizationManagementScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Invite employee'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: email,
-            decoration: const InputDecoration(labelText: 'Company email'),
-          ),
-          TextField(
-            controller: employeeId,
-            decoration: const InputDecoration(labelText: 'Employee ID'),
-          ),
-        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: email,
+              decoration: const InputDecoration(labelText: 'Company email'),
+            ),
+            TextField(
+              controller: employeeId,
+              decoration: const InputDecoration(labelText: 'Employee ID'),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -229,9 +227,14 @@ class _AuthorizationManagementScreenState
         ],
       ),
     );
-    if (result != true) { email.dispose(); employeeId.dispose(); return; }
+    if (result != true) {
+      email.dispose();
+      employeeId.dispose();
+      return;
+    }
     if (email.text.trim().isEmpty || employeeId.text.trim().isEmpty) {
-      email.dispose(); employeeId.dispose();
+      email.dispose();
+      employeeId.dispose();
       throw StateError('Company email and employee ID are required.');
     }
     await _post('invitations', {
@@ -240,24 +243,29 @@ class _AuthorizationManagementScreenState
       'employee_id': employeeId.text.trim(),
       'role_id': 'employee',
     });
-    email.dispose(); employeeId.dispose();
+    email.dispose();
+    employeeId.dispose();
     await _load();
   }
 
   List<Widget> _datasetAccessRows() {
     final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
-    final lead = roles.contains('team_lead') &&
+    final lead =
+        roles.contains('team_lead') &&
         !roles.contains('manager') &&
         !roles.contains('organization_owner');
     final members =
-        (_snapshot[lead ? 'approved_employees' : 'members'] as List? ?? const [])
-        .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        (_snapshot[lead ? 'approved_employees' : 'members'] as List? ??
+                const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
     final datasets = (_snapshot['datasets'] as List? ?? const [])
-        .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     if (datasets.isEmpty) {
-      return [
-        const _MetaRow('Status', 'No datasets in this scope.'),
-      ];
+      return [const _MetaRow('Status', 'No datasets in this scope.')];
     }
     final rows = <Widget>[];
     for (final dataset in datasets) {
@@ -271,71 +279,70 @@ class _AuthorizationManagementScreenState
       for (final member in members) {
         final uid = member['uid']?.toString() ?? '';
         if (uid.isEmpty) continue;
-        rows.add(Wrap(spacing: 5, children: [
-          Text(
-            member['employee_id']?.toString() ?? uid,
-            style: const TextStyle(
-              color: TechColors.textMuted,
-              fontSize: 10,
-              fontFamily: 'monospace',
-            ),
-          ),
-          TextButton(
-            onPressed: () => _post(
-              'datasets/grants',
-              {
-                'workspace_id': insightFlowWorkspaceId,
-                'dataset_id': datasetId,
-                'target_uid': uid,
-                'permissions': ['dataset.view_original'],
-              },
-            ).then((_) => _load()),
-            child: const Text('Viewer'),
-          ),
-          if (!lead)
-            TextButton(
-              onPressed: () => _post(
-                'datasets/grants',
-                {
+        rows.add(
+          Wrap(
+            spacing: 5,
+            children: [
+              Text(
+                member['employee_id']?.toString() ?? uid,
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              TextButton(
+                onPressed: () => _post('datasets/grants', {
                   'workspace_id': insightFlowWorkspaceId,
                   'dataset_id': datasetId,
                   'target_uid': uid,
-                  'permissions': [
-                    'dataset.view_original',
-                    'dataset.create_working_copy',
-                    'dataset.edit_working_copy',
-                  ],
-                },
-              ).then((_) => _load()),
-              child: const Text('Editor'),
-            ),
-          TextButton(
-            onPressed: () => _post(
-              'datasets/grants',
-              {
-                'workspace_id': insightFlowWorkspaceId,
-                'dataset_id': datasetId,
-                'target_uid': uid,
-                'permissions': [],
-              },
-            ).then((_) => _load()),
-            child: const Text('Revoke'),
+                  'permissions': ['dataset.view_original'],
+                }).then((_) => _load()),
+                child: const Text('Viewer'),
+              ),
+              if (!lead)
+                TextButton(
+                  onPressed: () => _post('datasets/grants', {
+                    'workspace_id': insightFlowWorkspaceId,
+                    'dataset_id': datasetId,
+                    'target_uid': uid,
+                    'permissions': [
+                      'dataset.view_original',
+                      'dataset.create_working_copy',
+                      'dataset.edit_working_copy',
+                    ],
+                  }).then((_) => _load()),
+                  child: const Text('Editor'),
+                ),
+              TextButton(
+                onPressed: () => _post('datasets/grants', {
+                  'workspace_id': insightFlowWorkspaceId,
+                  'dataset_id': datasetId,
+                  'target_uid': uid,
+                  'permissions': [],
+                }).then((_) => _load()),
+                child: const Text('Revoke'),
+              ),
+            ],
           ),
-        ]));
+        );
       }
     }
     return rows;
   }
+
   Future<void> _createDelegation() async {
     final memberIds = <String>{};
     final datasetIds = <String>{};
     final leads = (_snapshot['members'] as List? ?? const [])
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
-        .where((m) =>
-            m['membership_status']?.toString() == 'active' &&
-            m['role_ids'] is List &&
-            (m['role_ids'] as List).contains('team_lead'))
+        .where(
+          (m) =>
+              m['membership_status']?.toString() == 'active' &&
+              m['role_ids'] is List &&
+              (m['role_ids'] as List).contains('team_lead'),
+        )
         .toList();
     if (leads.isEmpty) {
       throw StateError('No active Team Lead is available.');
@@ -347,59 +354,67 @@ class _AuthorizationManagementScreenState
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Manage Team Lead delegation'),
           content: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<String>(
-                value: leadUid,
-                decoration: const InputDecoration(labelText: 'Team Lead'),
-                items: leads.map((m) => DropdownMenuItem(
-                  value: m['uid'].toString(),
-                  child: Text(
-                    m['employee_id']?.toString() ?? m['uid'].toString(),
-                  ),
-                )).toList(),
-                onChanged: (v) => setDialogState(() => leadUid = v ?? leadUid),
-              ),
-              const SizedBox(height: 10),
-              const Text('Approved employees only'),
-              ...(_snapshot['approved_employees'] as List? ?? const [])
-                  .whereType<Map>()
-                  .map((raw) {
-                    final m = Map<String, dynamic>.from(raw);
-                    final id = m['uid']?.toString() ?? '';
-                    return CheckboxListTile(
-                      dense: true,
-                      value: memberIds.contains(id),
-                      title: Text(m['employee_id']?.toString() ?? id),
-                      onChanged: (checked) => setDialogState(() {
-                        if (checked == true) {
-                          memberIds.add(id);
-                        } else {
-                          memberIds.remove(id);
-                        }
-                      }),
-                    );
-                  }),
-              const SizedBox(height: 8),
-              const Text('Datasets'),
-              ...(_snapshot['datasets'] as List? ?? const [])
-                  .whereType<Map>()
-                  .map((raw) {
-                    final dataset = Map<String, dynamic>.from(raw);
-                    final id = dataset['dataset_id']?.toString() ?? '';
-                    return CheckboxListTile(
-                      dense: true,
-                      value: datasetIds.contains(id),
-                      title: Text(id),
-                      onChanged: (checked) => setDialogState(() {
-                        if (checked == true) {
-                          datasetIds.add(id);
-                        } else {
-                          datasetIds.remove(id);
-                        }
-                      }),
-                    );
-                  }),
-            ]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: leadUid,
+                  decoration: const InputDecoration(labelText: 'Team Lead'),
+                  items: leads
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m['uid'].toString(),
+                          child: Text(
+                            m['employee_id']?.toString() ?? m['uid'].toString(),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setDialogState(() => leadUid = v ?? leadUid),
+                ),
+                const SizedBox(height: 10),
+                const Text('Approved employees only'),
+                ...(_snapshot['approved_employees'] as List? ?? const [])
+                    .whereType<Map>()
+                    .map((raw) {
+                      final m = Map<String, dynamic>.from(raw);
+                      final id = m['uid']?.toString() ?? '';
+                      return CheckboxListTile(
+                        dense: true,
+                        value: memberIds.contains(id),
+                        title: Text(m['employee_id']?.toString() ?? id),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked == true) {
+                            memberIds.add(id);
+                          } else {
+                            memberIds.remove(id);
+                          }
+                        }),
+                      );
+                    }),
+                const SizedBox(height: 8),
+                const Text('Datasets'),
+                ...(_snapshot['datasets'] as List? ?? const [])
+                    .whereType<Map>()
+                    .map((raw) {
+                      final dataset = Map<String, dynamic>.from(raw);
+                      final id = dataset['dataset_id']?.toString() ?? '';
+                      return CheckboxListTile(
+                        dense: true,
+                        value: datasetIds.contains(id),
+                        title: Text(id),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked == true) {
+                            datasetIds.add(id);
+                          } else {
+                            datasetIds.remove(id);
+                          }
+                        }),
+                      );
+                    }),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -407,9 +422,9 @@ class _AuthorizationManagementScreenState
               child: const Text('Cancel'),
             ),
             FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delegate'),
-          ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delegate'),
+            ),
           ],
         ),
       ),
@@ -428,8 +443,10 @@ class _AuthorizationManagementScreenState
     });
     await _load();
   }
+
   String _itemLabel(Map<String, dynamic> item) {
-    final id = item['dataset_id'] ??
+    final id =
+        item['dataset_id'] ??
         item['working_copy_id'] ??
         item['employee_id'] ??
         item['email'] ??
@@ -488,10 +505,10 @@ class _AuthorizationManagementScreenState
         title: isOwner || isManager
             ? 'ORGANIZATION / MANAGEMENT'
             : isLead
-                ? 'TEAM LEAD / ASSIGNED TEAM'
-                : isViewer
-                    ? 'VIEWER / SHARED WITH ME'
-                    : 'EMPLOYEE / MY DATASETS',
+            ? 'TEAM LEAD / ASSIGNED TEAM'
+            : isViewer
+            ? 'VIEWER / SHARED WITH ME'
+            : 'EMPLOYEE / MY DATASETS',
         children: [
           _MetaRow(
             'Organization',
@@ -544,16 +561,16 @@ class _AuthorizationManagementScreenState
             ...((_snapshot['datasets'] as List? ?? const [])
                 .whereType<Map>()
                 .where((dataset) => dataset['protected_original'] == true)
-                .map((dataset) => TextButton(
-                      onPressed: widget.onStartWorking == null
-                          ? null
-                          : () => widget.onStartWorking!(
-                                dataset['dataset_id'].toString(),
-                              ),
-                      child: Text(
-                        'Start working · ${dataset['dataset_id']}',
-                      ),
-                    ))),
+                .map(
+                  (dataset) => TextButton(
+                    onPressed: widget.onStartWorking == null
+                        ? null
+                        : () => widget.onStartWorking!(
+                            dataset['dataset_id'].toString(),
+                          ),
+                    child: Text('Start working · ${dataset['dataset_id']}'),
+                  ),
+                )),
         ],
       ),
       if (isOwner || isManager)
@@ -562,10 +579,7 @@ class _AuthorizationManagementScreenState
           children: _rows(_snapshot['invitations']),
         ),
       if (isOwner || isManager)
-        _MetadataSection(
-          title: 'AUDIT',
-          children: _rows(_snapshot['audit']),
-        ),
+        _MetadataSection(title: 'AUDIT', children: _rows(_snapshot['audit'])),
     ];
 
     return AuthGlassScaffold(

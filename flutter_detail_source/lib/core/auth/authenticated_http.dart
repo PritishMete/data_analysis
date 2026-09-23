@@ -7,16 +7,16 @@ import 'package:http/http.dart' as http;
 import 'insightflow_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
 
-const String insightFlowWorkspaceId =
-    String.fromEnvironment('INSIGHTFLOW_WORKSPACE_ID');
+const String insightFlowWorkspaceId = String.fromEnvironment(
+  'INSIGHTFLOW_WORKSPACE_ID',
+);
 const String insightFlowBackendBaseUrl = String.fromEnvironment(
   'INSIGHTFLOW_BACKEND_URL',
   defaultValue: 'https://data-analysis-oajs.onrender.com',
 );
 
 String _safeResourceId(String raw) {
-  final normalized =
-      raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
+  final normalized = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
   final value = normalized.replaceAll(RegExp(r'_+'), '_');
   return value.isEmpty
       ? 'active-sheet'
@@ -28,8 +28,9 @@ Future<void> attachFirebaseAuth(
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token =
-      await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
+  final token = await InsightFlowAuthService.getIdToken(
+    forceRefresh: forceRefresh,
+  );
   request.headers['Authorization'] = 'Bearer $token';
   if (insightFlowWorkspaceId.isNotEmpty) {
     request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
@@ -43,11 +44,10 @@ Future<Map<String, String>> firebaseAuthHeaders({
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token =
-      await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
-  final headers = <String, String>{
-    'Authorization': 'Bearer $token',
-  };
+  final token = await InsightFlowAuthService.getIdToken(
+    forceRefresh: forceRefresh,
+  );
+  final headers = <String, String>{'Authorization': 'Bearer $token'};
   if (insightFlowWorkspaceId.isNotEmpty) {
     headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
   }
@@ -110,7 +110,8 @@ Future<Map<String, dynamic>?> requestWorkingCopy({
     body: jsonEncode({
       'workspace_id': insightFlowWorkspaceId,
       'dataset_id': _safeResourceId(datasetId),
-      if (sourceVersion != null) 'source_version': _safeResourceId(sourceVersion),
+      if (sourceVersion != null)
+        'source_version': _safeResourceId(sourceVersion),
     }),
   );
   if (response.statusCode != 200) return null;
@@ -222,10 +223,7 @@ Future<bool> authorizeWorkingCopyExcelMutation({
   final headers = await firebaseAuthHeaders(resourceId: safeResourceId);
   final response = await http.post(
     Uri.parse('$backendBaseUrl/v1/authz/check'),
-    headers: {
-      ...headers,
-      'Content-Type': 'application/json',
-    },
+    headers: {...headers, 'Content-Type': 'application/json'},
     body: jsonEncode({
       'workspace_id': insightFlowWorkspaceId,
       'action': 'excel.mutate.working_copy',
