@@ -16,7 +16,7 @@ const workbook={
     getItem(name){return name==='Restaurants'?sourceSheet:reportSheet;}
   }
 };
-const context={console,window:{waitForOfficeReady:async()=>{}},Excel:{run:async fn=>fn({workbook,sync:async()=>{}})}};
+const context={console,window:{waitForOfficeReady:async()=>{},insightflowRequireMutationAuthorization:async()=>true},Excel:{run:async fn=>fn({workbook,sync:async()=>{}})}};
 vm.createContext(context);vm.runInContext(source,context);
 
 (async()=>{
