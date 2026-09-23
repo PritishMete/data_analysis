@@ -60,9 +60,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
     try {
       final credential =
           await InsightFlowAuthService.createUserWithEmailAndPassword(
-        email,
-        password,
-      );
+            email,
+            password,
+          );
 
       await credential.user?.updateDisplayName(name);
     } catch (error) {
@@ -159,10 +159,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           children: [
             const Text(
               'Already have an account? ',
-              style: TextStyle(
-                color: TechColors.textMuted,
-                fontSize: 10,
-              ),
+              style: TextStyle(color: TechColors.textMuted, fontSize: 10),
             ),
             TextButton(
               onPressed: _loading ? null : () => Navigator.of(context).pop(),
