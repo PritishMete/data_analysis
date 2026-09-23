@@ -34,7 +34,7 @@ class AuthGlassScaffold extends StatelessWidget {
         title: Row(
           children: [
             const Icon(
-              CupertinoIcons.terminal_fill,
+              Icons.terminal,
               color: TechColors.borderActive,
               size: 17,
             ),
