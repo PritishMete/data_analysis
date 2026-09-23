@@ -1,11 +1,9 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../lib/app_colors.dart';
-import '../lib/features/auth/sign_in_screen.dart';
-import '../lib/features/auth/sign_up_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
 
 void main() {
   Future<void> pumpAuthApp(
@@ -43,8 +41,9 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('sign in uses shared glass fields and remains narrow-pane safe',
-      (tester) async {
+  testWidgets('sign in uses shared glass fields and remains narrow-pane safe', (
+    tester,
+  ) async {
     await pumpAuthApp(tester, const SignInScreen());
 
     expect(find.text('InsightFlow'), findsOneWidget);
@@ -58,8 +57,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shared password field keeps show/hide interaction',
-      (tester) async {
+  testWidgets('shared password field keeps show/hide interaction', (
+    tester,
+  ) async {
     await pumpAuthApp(tester, const SignInScreen());
 
     expect(find.byIcon(CupertinoIcons.eye_slash_fill), findsOneWidget);
@@ -70,8 +70,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('sign up uses shared glass fields and scrolls in narrow pane',
-      (tester) async {
+  testWidgets('sign up uses shared glass fields and scrolls in narrow pane', (
+    tester,
+  ) async {
     await pumpAuthApp(tester, const SignUpScreen());
 
     expect(find.text('Create account'), findsOneWidget);
