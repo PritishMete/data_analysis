@@ -125,7 +125,10 @@ async function setInsightFlowSourceWorksheetName(sheetName) {
     const name = String(sheetName || "").trim();
     if (!name || _isGeneratedInsightFlowWorksheet(name)) return false;
     try {
-        return await Excel.run(async function(context) {
+        return await if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, error: "Excel mutation authorization denied." };
+    }
+    Excel.run(async function(context) {
             const workbook = context.workbook;
             const sheet = workbook.worksheets.getItemOrNullObject(name);
             sheet.load(["name", "id", "isNullObject"]);
@@ -150,7 +153,10 @@ async function establishInsightFlowSourceFromActiveWorksheet() {
     await window.waitForOfficeReady();
     if (typeof Excel === "undefined") return null;
     try {
-        return await Excel.run(async function(context) {
+        return await if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, error: "Excel mutation authorization denied." };
+    }
+    Excel.run(async function(context) {
             const workbook = context.workbook;
             const sheet = workbook.worksheets.getActiveWorksheet();
             sheet.load(["name", "id"]);
