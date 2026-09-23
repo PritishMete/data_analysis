@@ -141,7 +141,11 @@ class _AuthorizationManagementScreenState
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
-    if (members.isEmpty) return [const _MetaRow('Status', 'No members in this scope.')];
+    if (members.isEmpty) {
+      return [
+        const _MetaRow('Status', 'No members in this scope.'),
+      ];
+    }
     final owner = List<String>.from(_snapshot['role_ids'] ?? const [])
         .contains('organization_owner');
     return members.expand<Widget>((member) {
@@ -214,8 +218,14 @@ class _AuthorizationManagementScreenState
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Invite')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Invite'),
+          ),
         ],
       ),
     );
@@ -239,11 +249,16 @@ class _AuthorizationManagementScreenState
     final lead = roles.contains('team_lead') &&
         !roles.contains('manager') &&
         !roles.contains('organization_owner');
-    final members = (_snapshot[lead ? 'approved_employees' : 'members'] as List? ?? const [])
+    final members =
+        (_snapshot[lead ? 'approved_employees' : 'members'] as List? ?? const [])
         .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     final datasets = (_snapshot['datasets'] as List? ?? const [])
         .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-    if (datasets.isEmpty) return [const _MetaRow('Status', 'No datasets in this scope.')];
+    if (datasets.isEmpty) {
+      return [
+        const _MetaRow('Status', 'No datasets in this scope.'),
+      ];
+    }
     final rows = <Widget>[];
     for (final dataset in datasets) {
       final datasetId = dataset['dataset_id']?.toString() ?? '';
@@ -338,7 +353,9 @@ class _AuthorizationManagementScreenState
                 decoration: const InputDecoration(labelText: 'Team Lead'),
                 items: leads.map((m) => DropdownMenuItem(
                   value: m['uid'].toString(),
-                  child: Text(m['employee_id']?.toString() ?? m['uid'].toString()),
+                  child: Text(
+                    m['employee_id']?.toString() ?? m['uid'].toString(),
+                  ),
                 )).toList(),
                 onChanged: (v) => setDialogState(() => leadUid = v ?? leadUid),
               ),
@@ -385,7 +402,10 @@ class _AuthorizationManagementScreenState
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Delegate'),
@@ -400,7 +420,11 @@ class _AuthorizationManagementScreenState
       'team_lead_uid': leadUid,
       'member_ids': memberIds.toList(),
       'dataset_ids': datasetIds.toList(),
-      'permissions': ['dataset.view_original', 'dataset.create_working_copy', 'dataset.share'],
+      'permissions': [
+        'dataset.view_original',
+        'dataset.create_working_copy',
+        'dataset.share',
+      ],
     });
     await _load();
   }
@@ -469,7 +493,10 @@ class _AuthorizationManagementScreenState
                     ? 'VIEWER / SHARED WITH ME'
                     : 'EMPLOYEE / MY DATASETS',
         children: [
-          _MetaRow('Organization', _snapshot['organization_id']?.toString() ?? '—'),
+          _MetaRow(
+            'Organization',
+            _snapshot['organization_id']?.toString() ?? '—',
+          ),
           _MetaRow('Workspace', _snapshot['workspace_id']?.toString() ?? '—'),
           _MetaRow('Roles', _joinRoles(_snapshot['role_ids'])),
         ],
@@ -492,7 +519,10 @@ class _AuthorizationManagementScreenState
           children: [
             ..._rows(_snapshot['approved_employees']),
             const SizedBox(height: 6),
-            _MetadataSection(title: 'DELEGATION SCOPE', children: _rows(_snapshot['delegations'])),
+            _MetadataSection(
+              title: 'DELEGATION SCOPE',
+              children: _rows(_snapshot['delegations']),
+            ),
           ],
         ),
       _MetadataSection(
