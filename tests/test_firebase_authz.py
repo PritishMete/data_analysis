@@ -94,7 +94,7 @@ def test_last_owner_is_protected(monkeypatch):
     with pytest.raises(service.PermissionDenied):
         service.last_owner_guard("w", "u")
 
-def test_bootstrap_transaction_is_atomic_and_concurrent(monkeypatch):
+def test_bootstrap_transaction_is_atomic_for_same_identity(monkeypatch):
     class Ref:
         def __init__(self):
             self.value = None
@@ -104,22 +104,24 @@ def test_bootstrap_transaction_is_atomic_and_concurrent(monkeypatch):
                 self.value = fn(self.value)
                 return self.value
     ref = Ref()
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "alice", "email": "alice@example.com", "email_verified": True
+    })
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
-    monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "secret")
     results = []
-    def run(uid):
+    def run():
         try:
-            results.append(service.bootstrap_owner(uid, "secret", "w", uid))
+            results.append(service.bootstrap_owner("token", "Acme"))
         except Exception as exc:
             results.append(exc)
-    threads = [threading.Thread(target=run, args=(uid,)) for uid in ("alice", "bob")]
+    threads = [threading.Thread(target=run) for _ in range(2)]
     for t in threads: t.start()
     for t in threads: t.join()
     successes = [x for x in results if isinstance(x, dict)]
     assert len(successes) == 1
-    assert ref.value["bootstrap"]["owner_uid"] == successes[0]["owner_uid"]
+    assert ref.value["users"]["alice"]["status"] == "active"
+    assert ref.value["workspaces"][successes[0]["workspace_id"]]["members"]["alice"]["roles"]["owner"] is True
 
 def test_wrong_firebase_configuration_fails(monkeypatch):
     monkeypatch.setenv("FIREBASE_PROJECT_ID", "wrong-project")
@@ -127,27 +129,29 @@ def test_wrong_firebase_configuration_fails(monkeypatch):
     with pytest.raises(RuntimeError):
         service.initialize_firebase()
 
-def test_partial_bootstrap_recovers_only_for_same_owner(monkeypatch):
+def test_bootstrap_rejects_existing_member(monkeypatch):
     class Ref:
         def __init__(self):
             self.value = {
-                "bootstrap": {"initialized": True, "owner_uid": "alice"},
-                "members": {},
+                "workspaces": {
+                    "org_existing": {
+                        "members": {"alice": {"status": "active", "roles": {"employee": True}}}
+                    }
+                },
+                "users": {"alice": {"status": "active", "email": "alice@example.com"}},
             }
         def transaction(self, fn):
             self.value = fn(self.value)
             return self.value
     ref = Ref()
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "alice", "email": "alice@example.com", "email_verified": True
+    })
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
-    monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "secret")
-    result = service.bootstrap_owner("alice", "secret", "w", "alice")
-    assert result["owner_uid"] == "alice"
-    assert ref.value["members"]["alice"]["roles"]["owner"] is True
-    assert "analyst" in ref.value["roles"]
+    with pytest.raises(service.BootstrapDenied):
+        service.bootstrap_owner("token", "Second Organization")
 
-    
 def test_legacy_membership_without_status_is_treated_as_active(monkeypatch):
     monkeypatch.setattr(service, "_user", lambda uid: {"suspended": False})
     monkeypatch.setattr(service, "_workspace", lambda wid: {
@@ -169,12 +173,28 @@ def test_non_active_membership_is_denied(monkeypatch):
         service.authorization("u", "w", "data.view", "r1")
 
 
-def test_new_user_has_no_authorization_record(monkeypatch):
+def test_new_user_without_invitation_is_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "_raw_user", lambda uid: {})
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
-    context = service.authentication_context("new-user", "workspace", email_verified=True)
-    assert context["account_status"] == "pending"
+    monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [])
+    context = service.authentication_context("new-user", "workspace", email_verified=True, email="new@example.com")
+    assert context["authorization_state"] == "bootstrap_candidate"
+    assert context["has_authorization_record"] is False
     assert context["workspace_authorized"] is False
+
+def test_new_user_with_invitation_is_not_a_bootstrap_candidate(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {})
+    monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
+    monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [{
+        "invitation_id": "inv1",
+        "workspace_id": "org1",
+        "organization_id": "org1",
+        "organization_name": "Acme",
+        "role_id": "employee",
+    }])
+    context = service.authentication_context("new-user", email_verified=True, email="new@example.com")
+    assert context["authorization_state"] == "pending_invitation"
+    assert context["pending_invitations"][0]["role_id"] == "employee"
 
 
 def test_suspended_user_is_reported_as_suspended(monkeypatch):
