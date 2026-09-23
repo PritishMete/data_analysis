@@ -138,7 +138,7 @@ def test_partial_bootstrap_recovers_only_for_same_owner(monkeypatch):
             self.value = fn(self.value)
             return self.value
     ref = Ref()
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "alice"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
     monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "secret")
@@ -163,7 +163,7 @@ def test_non_active_membership_is_denied(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: {
         "members": {"u": {"status": "suspended", "roles": {"viewer": True}}},
         "roles": {"viewer": {"permissions": ["data.view"]}},
-        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}}},
     })
     with pytest.raises(service.PermissionDenied):
         service.authorization("u", "w", "data.view", "r1")
