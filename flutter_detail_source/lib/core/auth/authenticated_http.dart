@@ -55,52 +55,6 @@ Future<Map<String, String>> firebaseAuthHeaders({
   return headers;
 }
 
-String _excelMutationCapability(String action) {
-  const readOnly = {'data.view', 'history.view', 'organization.view'};
-  return readOnly.contains(action)
-      ? action
-      : 'excel.mutate.original';
-}
-
-Future<Map<String, dynamic>?> requestWorkingCopy({
-  required String backendBaseUrl,
-  required String datasetId,
-  String? sourceVersion,
-}) async {
-  if (insightFlowWorkspaceId.isEmpty || datasetId.trim().isEmpty) return null;
-  final headers = await firebaseAuthHeaders(resourceId: datasetId);
-  final response = await http.post(
-    Uri.parse('$backendBaseUrl/v1/authz/working-copies'),
-    headers: {...headers, 'Content-Type': 'application/json'},
-    body: jsonEncode({
-      'workspace_id': insightFlowWorkspaceId,
-      'dataset_id': _safeResourceId(datasetId),
-      if (sourceVersion != null) 'source_version': _safeResourceId(sourceVersion),
-    }),
-  );
-  if (response.statusCode != 200) return null;
-  final decoded = jsonDecode(response.body);
-  return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
-}
-
-Future<bool> _checkAuthorization({
-  required String backendBaseUrl,
-  required String action,
-  required String resourceId,
-}) async {
-  final headers = await firebaseAuthHeaders(resourceId: resourceId);
-  final response = await http.post(
-    Uri.parse('$backendBaseUrl/v1/authz/check'),
-    headers: {...headers, 'Content-Type': 'application/json'},
-    body: jsonEncode({
-      'workspace_id': insightFlowWorkspaceId,
-      'action': action,
-      'resource_id': resourceId,
-    }),
-  );
-  return response.statusCode == 200;
-}
-
 Future<String?> _resolveDatasetId(String sourceSheetName) async {
   final id = await getWorkbookDatasetId(sourceSheetName);
   if (id == null || id.isEmpty) return null;
