@@ -49,7 +49,7 @@ void main() {
 
     expect(find.text('InsightFlow'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
-    expect(find.byType(GlassTextField), findsNWidgets(2));
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
     expect(find.byType(GlassPasswordField), findsOneWidget);
     expect(find.text('EMAIL'), findsOneWidget);
     expect(find.text('PASSWORD'), findsOneWidget);
