@@ -112654,7 +112654,7 @@ m=J.F(g.h(a,"dataset_id"))
 f=g.h(a,"current_version")
 l=f==null?null:J.F(f)
 J.bX(n,"X-InsightFlow-Resource-ID",m)
-k=B.c.a2(u.V,m)+"/download"
+k=u.V+A.m(m)+"/download"
 if(l!=null&&l.length!==0)k=J.bbd(k,"?version_id="+A.t7(1,l,B.a6,!0))
 s=7
 return A.j(A.b4x(A.e4(k,0,null),n),$async$u1)
@@ -112738,7 +112738,7 @@ i=l==null?f:J.F(l)
 if(i==null)i="v1"
 h=J.d(m.h(n,"protected_original"),!0)
 m=m.h(n,"content_type")
-m=J.F(m==null?"binary":m)
+m=A.m(m==null?"binary":m)
 l=h?"PROTECTED ORIGINAL":"MANAGED"
 s.push(new A.jn(j,m+" \xb7 "+i+" \xb7 "+l,f))
 l=A.b([A.dJ(B.aph,new A.aQ2(g,n),f)],e)
