@@ -174,8 +174,8 @@ class _SignInScreenState extends State<SignInScreen> {
               onPressed: _loading
                   ? null
                   : () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SignUpScreen()),
-                  ),
+                      MaterialPageRoute(builder: (_) => const SignUpScreen()),
+                    ),
               style: TextButton.styleFrom(
                 foregroundColor: TechColors.borderActive,
                 padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
