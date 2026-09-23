@@ -11,8 +11,7 @@ def emulator_config(monkeypatch):
     monkeypatch.setenv("FIREBASE_PROJECT_ID", service.PROJECT_ID)
     monkeypatch.setenv("FIREBASE_DATABASE_URL", service.DATABASE_URL)
     monkeypatch.setenv("FIREBASE_DATABASE_EMULATOR_HOST", "127.0.0.1:9000")
-    monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "test-secret")
-    service.firebase_admin.delete_app(service.firebase_admin.get_app()) if service.firebase_admin and service.firebase_admin._apps else None
+        service.firebase_admin.delete_app(service.firebase_admin.get_app()) if service.firebase_admin and service.firebase_admin._apps else None
     service.initialize_firebase()
     service.db.reference("/").delete()
     yield
@@ -52,33 +51,36 @@ def test_emulator_action_and_resource_grants_are_both_required():
     service.db.reference("workspaces/a/roles/analyst").set({"permissions": []})
     with pytest.raises(service.PermissionDenied): service.authorization("alice", "a", "data.view", "r1")
 
-def test_emulator_concurrent_first_owner_initialization(monkeypatch):
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
+def test_emulator_concurrent_same_user_bootstrap_is_single_owner(monkeypatch):
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "alice", "email": "alice@example.com", "email_verified": True
+    })
     results = []
-    def bootstrap(uid):
+    def bootstrap():
         try:
-            results.append(service.bootstrap_owner(uid, "test-secret", "workspace", uid))
+            results.append(service.bootstrap_owner("token", "Acme"))
         except Exception as exc:
             results.append(exc)
-    threads = [threading.Thread(target=bootstrap, args=(uid,)) for uid in ("alice", "bob")]
+    threads = [threading.Thread(target=bootstrap) for _ in range(2)]
     for thread in threads: thread.start()
     for thread in threads: thread.join()
     successes = [item for item in results if isinstance(item, dict)]
     assert len(successes) == 1
-    workspace = service.db.reference("workspaces/workspace").get()
-    assert workspace["bootstrap"]["owner_uid"] == successes[0]["owner_uid"]
-    assert workspace["members"][successes[0]["owner_uid"]]["roles"]["owner"] is True
-
-def test_emulator_partial_bootstrap_recovers_for_same_owner(monkeypatch):
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
-    service.db.reference("workspaces/workspace").set({
-        "bootstrap": {"initialized": True, "owner_uid": "alice"}
-    })
-    result = service.bootstrap_owner("alice", "test-secret", "workspace", "alice")
-    assert result["owner_uid"] == "alice"
-    workspace = service.db.reference("workspaces/workspace").get()
+    workspace_id = successes[0]["workspace_id"]
+    workspace = service.db.reference("workspaces/" + workspace_id).get()
     assert workspace["members"]["alice"]["roles"]["owner"] is True
-    assert "owner" in workspace["roles"]
+    assert service.db.reference("users/alice").get()["bootstrap_organization_id"] == workspace_id
+
+def test_emulator_bootstrap_creates_default_roles_and_active_membership(monkeypatch):
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "owner", "email": "owner@example.com", "email_verified": True
+    })
+    result = service.bootstrap_owner("token", "Acme")
+    workspace = service.db.reference("workspaces/" + result["workspace_id"]).get()
+    assert workspace["organization"]["name"] == "Acme"
+    assert workspace["members"]["owner"]["status"] == "active"
+    assert workspace["members"]["owner"]["roles"]["owner"] is True
+    assert set(service.DEFAULT_ROLES).issubset(workspace["roles"])
 
 def test_emulator_last_active_owner_is_protected():
     service.db.reference("workspaces/workspace").set({
@@ -102,3 +104,30 @@ def test_emulator_resource_scoped_actions_reject_missing_resource_id():
     })
     with pytest.raises(service.PermissionDenied):
         service.authorization("alice", "a", "pivot.create")
+
+
+def test_emulator_fresh_user_is_onboarding_candidate(monkeypatch):
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "fresh", "email": "fresh@example.com", "email_verified": True
+    })
+    context = service.authentication_context("fresh", email_verified=True, email="fresh@example.com")
+    assert context["authorization_state"] == "bootstrap_candidate"
+    assert context["has_authorization_record"] is False
+
+def test_emulator_invited_user_cannot_bootstrap(monkeypatch):
+    service.db.reference("workspaces/existing").set({
+        "organization": {"organization_id": "existing", "name": "Acme"},
+        "invitations": {"inv1": {
+            "status": "invited",
+            "email": "employee@example.com",
+            "role_id": "employee",
+        }},
+        "members": {}, "roles": {}, "resources": {},
+    })
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "employee", "email": "employee@example.com", "email_verified": True
+    })
+    context = service.authentication_context("employee", email_verified=True, email="employee@example.com")
+    assert context["authorization_state"] == "pending_invitation"
+    with pytest.raises(service.BootstrapDenied):
+        service.bootstrap_owner("token", "Should Not Create")
