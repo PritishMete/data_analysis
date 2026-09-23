@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../app_colors.dart';
 import 'auth_glass_widgets.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -77,12 +78,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthGlassScaffold(
-      title: 'AUTH / CREATE ACCOUNT',
-      subtitle: 'REGISTER CREDENTIALS // FIREBASE AUTH',
+      title: 'Create account',
+      subtitle: 'Set up your InsightFlow workspace access.',
       children: [
         AuthGlassField(
           controller: _nameController,
-          label: 'FULL NAME',
+          label: 'Full name',
           icon: Icons.person_outline,
           enabled: !_loading,
           autofillHints: const [AutofillHints.name],
@@ -90,7 +91,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         const SizedBox(height: 8),
         AuthGlassField(
           controller: _emailController,
-          label: 'EMAIL',
+          label: 'Email',
           icon: Icons.alternate_email,
           keyboardType: TextInputType.emailAddress,
           enabled: !_loading,
@@ -99,7 +100,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         const SizedBox(height: 8),
         AuthGlassField(
           controller: _passwordController,
-          label: 'PASSWORD',
+          label: 'Password',
           icon: Icons.lock_outline,
           obscureText: _obscurePassword,
           enabled: !_loading,
@@ -118,7 +119,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         const SizedBox(height: 8),
         AuthGlassField(
           controller: _confirmController,
-          label: 'CONFIRM PASSWORD',
+          label: 'Confirm password',
           icon: Icons.lock_outline,
           obscureText: _obscureConfirm,
           enabled: !_loading,
@@ -140,7 +141,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ],
         const SizedBox(height: 14),
         AuthGlassPrimaryButton(
-          label: 'CREATE ACCOUNT',
+          label: 'Create Account',
           loading: _loading,
           onPressed: _loading ? null : _signUp,
         ),
@@ -149,7 +150,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'ALREADY REGISTERED? ',
+              'Already have an account? ',
               style: TextStyle(
                 color: TechColors.textMuted,
                 fontSize: 10,
@@ -157,7 +158,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ),
             ),
             AuthGlassLink(
-              label: 'SIGN IN',
+              label: 'Sign in',
               onPressed: _loading
                   ? null
                   : () => Navigator.of(context).pop(),
