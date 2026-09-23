@@ -172,7 +172,7 @@ class _AuthorizationManagementScreenState
         final uid = member['uid']?.toString() ?? '';
         if (uid.isEmpty) continue;
         rows.add(Wrap(spacing: 5, children: [
-          Text(member['employee_id']?.toString() ?? uid, style: const TextStyle(color: TechColors.textSecondary, fontSize: 10, fontFamily: 'monospace')),
+          Text(member['employee_id']?.toString() ?? uid, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
           TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': ['dataset.view_original']} ).then((_) => _load()), child: const Text('Viewer')),
           if (!lead) TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': ['dataset.view_original', 'dataset.create_working_copy', 'dataset.edit_working_copy']} ).then((_) => _load()), child: const Text('Editor')),
           TextButton(onPressed: () => _post('datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': datasetId, 'target_uid': uid, 'permissions': []}).then((_) => _load()), child: const Text('Revoke')),
@@ -375,7 +375,7 @@ class _MetaRow extends StatelessWidget {
       child: Text(
         label + '  ' + value,
         style: const TextStyle(
-          color: TechColors.textSecondary,
+          color: TechColors.textMuted,
           fontSize: 11,
           fontFamily: 'monospace',
         ),
