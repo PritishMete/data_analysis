@@ -3693,7 +3693,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (!authorized) {
       if (mounted) {
         showNotification(
-          'This protected original cannot be modified and no authorized working copy could be created.',
+          'This protected original cannot be modified and no authorized '
+          'working copy could be created.',
           TechColors.statusOrange,
         );
       }
