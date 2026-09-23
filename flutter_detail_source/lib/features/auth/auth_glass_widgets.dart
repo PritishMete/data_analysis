@@ -73,8 +73,10 @@ class AuthGlassScaffold extends StatelessWidget {
                         ? 12.0
                         : 20.0;
                     final minViewportHeight = constraints.hasBoundedHeight
-                        ? (constraints.maxHeight - verticalPadding * 2)
-                            .clamp(0.0, double.infinity)
+                        ? (constraints.maxHeight - verticalPadding * 2).clamp(
+                            0.0,
+                            double.infinity,
+                          )
                         : 0.0;
 
                     final card = ConstrainedBox(
@@ -129,7 +131,9 @@ class AuthGlassScaffold extends StatelessWidget {
                         vertical: verticalPadding,
                       ),
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: minViewportHeight),
+                        constraints: BoxConstraints(
+                          minHeight: minViewportHeight,
+                        ),
                         child: Center(child: card),
                       ),
                     );
