@@ -77,7 +77,7 @@ class AuthGlassScaffold extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
                         child: Center(
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 440),
+                            constraints: const BoxConstraints(maxWidth: 520),
                             child: GlassContainer(
                               useOwnLayer: true,
                               quality: glassQuality,
@@ -85,7 +85,7 @@ class AuthGlassScaffold extends StatelessWidget {
                               shape: const LiquidRoundedSuperellipse(
                                 borderRadius: 4,
                               ),
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -93,9 +93,9 @@ class AuthGlassScaffold extends StatelessWidget {
                                     title,
                                     style: const TextStyle(
                                       color: TechColors.textPrimary,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'monospace',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamily: 'SFPro',
                                     ),
                                   ),
                                   const SizedBox(height: 5),
@@ -103,11 +103,12 @@ class AuthGlassScaffold extends StatelessWidget {
                                     subtitle,
                                     style: const TextStyle(
                                       color: TechColors.textMuted,
-                                      fontSize: 11,
-                                      height: 1.35,
+                                      fontSize: 12,
+                                      height: 1.4,
+                                      fontFamily: 'SFPro',
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 18),
                                   ...children,
                                 ],
                               ),
