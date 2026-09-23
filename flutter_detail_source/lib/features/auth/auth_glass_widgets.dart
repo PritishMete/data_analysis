@@ -27,29 +27,40 @@ class AuthGlassScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassScaffold(
       background: const TechAnimatedBackground(),
-      appBar: GlassAppBar(
-        centerTitle: false,
-        title: Row(
+      edgeFade: false,
+      body: SafeArea(
+        child: Stack(
           children: [
-            const Icon(
-              Icons.terminal,
-              color: TechColors.borderActive,
-              size: 17,
-            ),
-            const SizedBox(width: 9),
-            const Text(
-              'InsightFlow',
-              style: TextStyle(
-                color: TechColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: GlassCard(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.terminal,
+                      color: TechColors.borderActive,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'InsightFlow',
+                      style: TextStyle(
+                        color: TechColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-      edgeFade: false,
-      body: LayoutBuilder(
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 61),
+                child: LayoutBuilder(
         builder: (context, constraints) {
           final horizontalPadding = constraints.hasBoundedWidth &&
                   constraints.maxWidth < 420
@@ -110,7 +121,12 @@ class AuthGlassScaffold extends StatelessWidget {
             ),
           );
         },
-      ),
+,
+              ),
+            ),
+          ],
+        ),
+      ),),
     );
   }
 }
