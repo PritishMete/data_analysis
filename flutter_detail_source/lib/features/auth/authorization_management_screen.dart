@@ -10,7 +10,12 @@ import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class AuthorizationManagementScreen extends StatefulWidget {
-  const AuthorizationManagementScreen({super.key});
+  const AuthorizationManagementScreen({
+    super.key,
+    this.onStartWorking,
+  });
+
+  final Future<void> Function(String datasetId)? onStartWorking;
 
   @override
   State<AuthorizationManagementScreen> createState() =>
@@ -182,35 +187,93 @@ class _AuthorizationManagementScreenState
     return rows;
   }
   Future<void> _createDelegation() async {
-    final lead = TextEditingController();
-    final members = TextEditingController();
-    final datasets = TextEditingController();
+    final memberIds = <String>{};
+    final datasetIds = <String>{};
+    final leads = (_snapshot['members'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((m) =>
+            m['membership_status']?.toString() == 'active' &&
+            m['role_ids'] is List &&
+            (m['role_ids'] as List).contains('team_lead'))
+        .toList();
+    if (leads.isEmpty) {
+      throw StateError('No active Team Lead is available.');
+    }
+    String leadUid = leads.first['uid'].toString();
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Manage Team Lead delegation'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: lead, decoration: const InputDecoration(labelText: 'Team Lead UID')),
-          TextField(controller: members, decoration: const InputDecoration(labelText: 'Approved employee UIDs (comma separated)')),
-          TextField(controller: datasets, decoration: const InputDecoration(labelText: 'Dataset IDs (comma separated)')),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delegate')),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Manage Team Lead delegation'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<String>(
+                value: leadUid,
+                decoration: const InputDecoration(labelText: 'Team Lead'),
+                items: leads.map((m) => DropdownMenuItem(
+                  value: m['uid'].toString(),
+                  child: Text(m['employee_id']?.toString() ?? m['uid'].toString()),
+                )).toList(),
+                onChanged: (v) => setDialogState(() => leadUid = v ?? leadUid),
+              ),
+              const SizedBox(height: 10),
+              const Text('Approved employees only'),
+              ...(_snapshot['approved_employees'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((raw) {
+                    final m = Map<String, dynamic>.from(raw);
+                    final id = m['uid']?.toString() ?? '';
+                    return CheckboxListTile(
+                      dense: true,
+                      value: memberIds.contains(id),
+                      title: Text(m['employee_id']?.toString() ?? id),
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked == true) {
+                          memberIds.add(id);
+                        } else {
+                          memberIds.remove(id);
+                        }
+                      }),
+                    );
+                  }),
+              const SizedBox(height: 8),
+              const Text('Datasets'),
+              ...(_snapshot['datasets'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map((raw) {
+                    final dataset = Map<String, dynamic>.from(raw);
+                    final id = dataset['dataset_id']?.toString() ?? '';
+                    return CheckboxListTile(
+                      dense: true,
+                      value: datasetIds.contains(id),
+                      title: Text(id),
+                      onChanged: (checked) => setDialogState(() {
+                        if (checked == true) {
+                          datasetIds.add(id);
+                        } else {
+                          datasetIds.remove(id);
+                        }
+                      }),
+                    );
+                  }),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delegate')),
+          ],
+        ),
       ),
     );
-    if (result != true) { lead.dispose(); members.dispose(); datasets.dispose(); return; }
-    final memberIds = members.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    final datasetIds = datasets.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (result != true || memberIds.isEmpty || datasetIds.isEmpty) return;
     await _post('delegations', {
       'workspace_id': insightFlowWorkspaceId,
-      'team_lead_uid': lead.text.trim(),
-      'member_ids': memberIds,
-      'dataset_ids': datasetIds,
+      'team_lead_uid': leadUid,
+      'member_ids': memberIds.toList(),
+      'dataset_ids': datasetIds.toList(),
       'permissions': ['dataset.view_original', 'dataset.create_working_copy', 'dataset.share'],
     });
-    lead.dispose(); members.dispose(); datasets.dispose();
     await _load();
   }
   String _itemLabel(Map<String, dynamic> item) {
@@ -304,12 +367,28 @@ class _AuthorizationManagementScreenState
         title: 'DATASET ACCESS',
         children: [
           ..._datasetAccessRows(),
-          if (isOwner || isManager) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
+          if (isOwner) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
         ],
       ),
       _MetadataSection(
         title: 'WORKING COPIES',
-        children: _rows(_snapshot['working_copies']),
+        children: [
+          ..._rows(_snapshot['working_copies']),
+          if (!isManager && !isLead && !isViewer)
+            ...((_snapshot['datasets'] as List? ?? const [])
+                .whereType<Map>()
+                .where((dataset) => dataset['protected_original'] == true)
+                .map((dataset) => TextButton(
+                      onPressed: widget.onStartWorking == null
+                          ? null
+                          : () => widget.onStartWorking!(
+                                dataset['dataset_id'].toString(),
+                              ),
+                      child: Text(
+                        'Start working · \${dataset['dataset_id']}',
+                      ),
+                    ))),
+        ],
       ),
       if (isOwner || isManager)
         _MetadataSection(

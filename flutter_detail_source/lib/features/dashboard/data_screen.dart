@@ -6035,7 +6035,18 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
               tooltip: 'Access management',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => const AuthorizationManagementScreen(),
+                  builder: (_) => AuthorizationManagementScreen(
+                      onStartWorking: (datasetId) async {
+                        final authorized =
+                            await _authorizeMutationAndAdoptWorkingCopy(
+                          action: 'worksheet.modify',
+                          operationLabel: 'working copy',
+                        );
+                        if (authorized && mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
                 ),
               ),
               icon: const Icon(
