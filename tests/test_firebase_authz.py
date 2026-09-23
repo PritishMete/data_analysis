@@ -577,3 +577,50 @@ def test_account_cleanup_revokes_membership_grants_and_delegations(monkeypatch):
     monkeypatch.setattr(service, "audit_event", lambda *args, **kwargs: None)
     result = service.cleanup_account("employee", "employee")
     assert result["revoked_workspaces"] == ["org"]
+
+
+def test_team_lead_promotion_requires_approved_active_employee(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {"status": "active", "roles": {"manager": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "roles": {
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+        "approved_employees": {},
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    with pytest.raises(service.PermissionDenied):
+        service.can_manage_role("org", "manager", "employee", "team_lead", True)
+
+
+def test_account_cleanup_revokes_invitation_matching_authenticated_email(monkeypatch):
+    captured = {}
+    class Ref:
+        def update(self, value):
+            captured.update(value)
+        def set(self, value):
+            captured["set"] = value
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service, "_get", lambda path: {
+        "workspaces": {
+            "org": {
+                "members": {"user": {"status": "active", "roles": {"employee": True}}},
+                "invitations": {
+                    "inv": {"email": "user@example.com", "status": "invited"}
+                },
+            }
+        }
+    }.get(path, {}))
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "user", "email": "user@example.com", "email_verified": True,
+        "auth_time": __import__("time").time(),
+    })
+    monkeypatch.setattr(service, "last_owner_guard", lambda *args: None)
+    monkeypatch.setattr(service.auth, "revoke_refresh_tokens", lambda uid: None)
+    result = service.cleanup_account("user", "token")
+    assert result["revoked_workspaces"] == ["org"]
+    assert captured["workspaces/org/invitations/inv/status"] == "revoked"
