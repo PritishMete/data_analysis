@@ -358,7 +358,7 @@ class _AuthorizationManagementScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: leadUid,
+                  initialValue: leadUid,
                   decoration: const InputDecoration(labelText: 'Team Lead'),
                   items: leads
                       .map(
