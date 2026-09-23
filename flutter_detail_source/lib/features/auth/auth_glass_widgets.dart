@@ -52,15 +52,13 @@ class AuthGlassScaffold extends StatelessWidget {
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                color: CupertinoColors.white
-                                    .withValues(alpha: 0.08),
+                                color: CupertinoColors.white.withValues(alpha: 0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
                                 CupertinoIcons.lock_shield_fill,
                                 size: 16,
-                                color: CupertinoColors.label
-                                    .resolveFrom(context),
+                                color: CupertinoColors.label.resolveFrom(context),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -74,8 +72,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                       height: 1.05,
-                                      color: CupertinoColors.label
-                                          .resolveFrom(context),
+                                      color: CupertinoColors.label.resolveFrom(context),
                                     ),
                                   ),
                                   const SizedBox(height: 3),
@@ -84,8 +81,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 12,
                                       height: 1.15,
-                                      color: CupertinoColors.secondaryLabel
-                                          .resolveFrom(context),
+                                      color: CupertinoColors.secondaryLabel.resolveFrom(context),
                                     ),
                                   ),
                                 ],
@@ -96,9 +92,7 @@ class AuthGlassScaffold extends StatelessWidget {
                       ),
                       Container(
                         height: 1,
-                        color: CupertinoColors.separator
-                            .resolveFrom(context)
-                            .withValues(alpha: .22),
+                        color: CupertinoColors.separator.resolveFrom(context).withValues(alpha: .22),
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -145,89 +139,38 @@ class AuthGlassField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 1, bottom: 6),
-          child: Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              color: TechColors.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        GlassContainer(
-          useOwnLayer: true,
-          quality: _authGlassQuality,
-          settings: TechColors.fieldGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-          padding: EdgeInsets.zero,
-          child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            obscureText: obscureText,
-            enabled: enabled,
-            autofillHints: autofillHints,
-            onSubmitted: onSubmitted,
-            style: TextStyle(
-              color: CupertinoColors.label.resolveFrom(context),
-              fontSize: 14,
-            ),
-            cursorColor: TechColors.borderActive,
-            decoration: InputDecoration(
-              hintText: label,
-              hintStyle: TextStyle(
-                color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                fontSize: 14,
-              ),
-              prefixIcon: Icon(
-                icon,
-                size: 17,
-                color: CupertinoColors.secondaryLabel.resolveFrom(context),
-              ),
-              suffixIcon: suffix,
-              filled: true,
-              fillColor: CupertinoColors.white.withValues(alpha: .025),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: CupertinoColors.separator
-                      .resolveFrom(context)
-                      .withValues(alpha: .58),
-                  width: .8,
-                ),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: CupertinoColors.separator
-                      .resolveFrom(context)
-                      .withValues(alpha: .58),
-                  width: .8,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: TechColors.borderActive.withValues(alpha: .80),
-                  width: 1,
-                ),
-              ),
-              disabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: TechColors.borderMuted.withValues(alpha: .42),
-                ),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
-            ),
-          ),
-        ),
-      ],
+    // Match the actual Pivot Builder custom-sheet-name control:
+    // GlassTextField(controller: ..., placeholder: 'Destination sheet name').
+    // Auth keeps only the behavior-specific additions (icons/password/suffix)
+    // supported by the same native glass field.
+    return GlassTextField(
+      controller: controller,
+      placeholder: label,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      enabled: enabled,
+      onSubmitted: onSubmitted,
+      prefixIcon: Icon(
+        icon,
+        size: 17,
+        color: CupertinoColors.secondaryLabel.resolveFrom(context),
+      ),
+      suffixIcon: suffix,
+      textStyle: TextStyle(
+        color: CupertinoColors.label.resolveFrom(context),
+        fontSize: 14,
+      ),
+      placeholderStyle: TextStyle(
+        color: CupertinoColors.secondaryLabel.resolveFrom(context),
+        fontSize: 14,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+      useOwnLayer: true,
+      quality: _authGlassQuality,
+      settings: TechColors.fieldGlass,
+      glowColor: TechColors.borderActive,
+      glowRadius: 1.5,
     );
   }
 }
@@ -283,9 +226,7 @@ class AuthGlassMessage extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            error
-                ? Icons.error_outline_rounded
-                : Icons.check_circle_outline_rounded,
+            error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
             color: color,
             size: 15,
           ),
