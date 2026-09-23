@@ -33,6 +33,20 @@ class InsightFlowAuthService {
     );
   }
 
+  static Future<UserCredential> createUserWithEmailAndPassword(
+    String email,
+    String password,
+  ) {
+    return auth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+  }
+
+  static Future<void> sendPasswordResetEmail(String email) {
+    return auth.sendPasswordResetEmail(email: email.trim());
+  }
+
   static Future<void> signOut() => auth.signOut();
 
   /// Firebase refreshes an expired token automatically. Passing true is used
@@ -65,7 +79,11 @@ class InsightFlowAuthService {
         case 'network-request-failed':
           return 'Network connection failed. Check your connection and try again.';
         case 'operation-not-allowed':
-          return 'Email/password sign-in is not enabled for this Firebase project.';
+          return 'Email/password authentication is not enabled for this Firebase project.';
+        case 'email-already-in-use':
+          return 'An account already exists for this email.';
+        case 'weak-password':
+          return 'Choose a stronger password and try again.';
         case 'invalid-email':
           return 'Enter a valid email address.';
         default:
