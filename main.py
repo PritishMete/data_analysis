@@ -248,6 +248,7 @@ from sql_cache.routes import sql_cache_router
 from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
+from dataset_storage.routes import router as managed_dataset_router
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
 from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
@@ -2530,6 +2531,7 @@ app.include_router(sql_cache_router)
 app.include_router(memory_engine_router)
 app.include_router(secure_excel_router)
 app.include_router(authz_router)
+app.include_router(managed_dataset_router)
 
 try:
     # Prefer the dedicated Flutter Detail Analysis build when it exists.
