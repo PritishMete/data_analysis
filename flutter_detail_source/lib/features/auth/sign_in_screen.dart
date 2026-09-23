@@ -72,7 +72,9 @@ class _SignInScreenState extends State<SignInScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = InsightFlowAuthService.userFacingAuthError(error));
+      setState(
+        () => _error = InsightFlowAuthService.userFacingAuthError(error),
+      );
     }
   }
 
@@ -166,10 +168,7 @@ class _SignInScreenState extends State<SignInScreen> {
           children: [
             const Text(
               'New to InsightFlow? ',
-              style: TextStyle(
-                color: TechColors.textMuted,
-                fontSize: 10,
-              ),
+              style: TextStyle(color: TechColors.textMuted, fontSize: 10),
             ),
             TextButton(
               onPressed: _loading
