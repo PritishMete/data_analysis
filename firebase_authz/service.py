@@ -203,6 +203,8 @@ def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[
             permissions.update(definition.get("permissions") or [])
     permissions = {p for p in permissions if p in ACTIONS}
     level = _effective_role_level(member)
+    if level >= ROLE_LEVELS["manager"]:
+        permissions.add("dataset.upload")
     if level >= ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
         permissions.add("excel.mutate.original")
     if level >= ROLE_LEVELS["employee"] and level < ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
