@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../app_colors.dart';
+import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_up_screen.dart';
 
@@ -15,8 +17,8 @@ class SignInScreen extends StatefulWidget {
 class _SignInScreenState extends State<SignInScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _loading = false;
-  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -56,6 +58,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
+
     if (email.isEmpty) {
       setState(() => _error = 'Enter your email first to reset your password.');
       return;
@@ -75,75 +78,85 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final passwordQuality =
+        GlassThemeData.of(context).qualityFor(context) ?? GlassQuality.standard;
+
     return AuthGlassScaffold(
       title: 'Sign in',
       subtitle: 'Access your InsightFlow workspace securely.',
       children: [
-        AuthGlassField(
+        const AuthGlassFieldLabel('Email'),
+        GlassTextField(
           controller: _emailController,
-          label: 'Email',
-          icon: Icons.alternate_email,
+          placeholder: 'Email',
           keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.username],
           onSubmitted: (_) => _signIn(),
         ),
-        const SizedBox(height: 8),
-        AuthGlassField(
+        const SizedBox(height: 12),
+        const AuthGlassFieldLabel('Password'),
+        GlassPasswordField(
           controller: _passwordController,
-          label: 'Password',
-          icon: Icons.lock_outline,
-          obscureText: _obscurePassword,
+          placeholder: 'Password',
+          textInputAction: TextInputAction.done,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.password],
-          suffix: IconButton(
-            tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-            onPressed: _loading
-                ? null
-                : () => setState(() => _obscurePassword = !_obscurePassword),
-            icon: Icon(
-              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-              color: TechColors.textMuted,
-              size: 16,
-            ),
-          ),
+          quality: passwordQuality,
           onSubmitted: (_) => _signIn(),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Align(
           alignment: Alignment.centerRight,
-          child: AuthGlassLink(
-            label: 'Forgot password?',
+          child: TextButton(
             onPressed: _loading ? null : _resetPassword,
+            style: TextButton.styleFrom(
+              foregroundColor: TechColors.borderActive,
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Forgot password?',
+              style: TextStyle(
+                color: TechColors.borderActive,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
         if (_error != null) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           AuthGlassMessage(
             text: _error!,
             error: !_error!.startsWith('Password reset email sent'),
           ),
         ],
         const SizedBox(height: 14),
-        AuthGlassPrimaryButton(
-          label: 'Sign In',
-          loading: _loading,
-          onPressed: _loading ? null : _signIn,
+        GlassButton(
+          onTap: _loading ? () {} : _signIn,
+          enabled: !_loading,
+          width: double.infinity,
+          height: 46,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          icon: _loading
+              ? const CupertinoActivityIndicator()
+              : const Icon(CupertinoIcons.arrow_right, size: 17),
+          label: _loading ? 'Please wait…' : 'Sign In',
         ),
-        const SizedBox(height: 14),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
               'New to InsightFlow? ',
               style: TextStyle(
                 color: TechColors.textMuted,
                 fontSize: 10,
-                fontFamily: 'monospace',
               ),
             ),
-            AuthGlassLink(
-              label: 'Create account',
+            TextButton(
               onPressed: _loading
                   ? null
                   : () => Navigator.of(context).push(
@@ -151,6 +164,20 @@ class _SignInScreenState extends State<SignInScreen> {
                           builder: (_) => const SignUpScreen(),
                         ),
                       ),
+              style: TextButton.styleFrom(
+                foregroundColor: TechColors.borderActive,
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+                minimumSize: const Size(0, 28),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Create account',
+                style: TextStyle(
+                  color: TechColors.borderActive,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
