@@ -384,7 +384,7 @@ class _AuthorizationManagementScreenState
       throw StateError('The selected file could not be read.');
     }
     await _sendManagedFile(
-      '/v1/managed-datasets/${datasetId}/versions',
+      '/v1/managed-datasets/$datasetId/versions',
       file.name,
       bytes,
       'New protected version registered.',
