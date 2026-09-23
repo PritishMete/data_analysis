@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'insightflow_auth_service.dart';
+import '../interop/excel_mutation_authorization.dart';
 
 const String insightFlowWorkspaceId =
     String.fromEnvironment('INSIGHTFLOW_WORKSPACE_ID');
@@ -12,9 +13,12 @@ const String insightFlowBackendBaseUrl = String.fromEnvironment(
 );
 
 String _safeResourceId(String raw) {
-  final normalized = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
+  final normalized =
+      raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
   final value = normalized.replaceAll(RegExp(r'_+'), '_');
-  return value.isEmpty ? 'active-sheet' : value.substring(0, value.length > 128 ? 128 : value.length);
+  return value.isEmpty
+      ? 'active-sheet'
+      : value.substring(0, value.length > 128 ? 128 : value.length);
 }
 
 Future<void> attachFirebaseAuth(
@@ -22,7 +26,8 @@ Future<void> attachFirebaseAuth(
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token = await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
+  final token =
+      await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
   request.headers['Authorization'] = 'Bearer $token';
   if (insightFlowWorkspaceId.isNotEmpty) {
     request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
@@ -36,7 +41,8 @@ Future<Map<String, String>> firebaseAuthHeaders({
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token = await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
+  final token =
+      await InsightFlowAuthService.getIdToken(forceRefresh: forceRefresh);
   final headers = <String, String>{
     'Authorization': 'Bearer $token',
   };
@@ -49,6 +55,12 @@ Future<Map<String, String>> firebaseAuthHeaders({
   return headers;
 }
 
+String _excelMutationCapability(String action) {
+  const readOnly = {'data.view', 'history.view', 'organization.view'};
+  return readOnly.contains(action)
+      ? action
+      : 'excel.mutate.original';
+}
 
 Future<bool> authorizeExcelOperation({
   required String backendBaseUrl,
@@ -58,7 +70,8 @@ Future<bool> authorizeExcelOperation({
   if (insightFlowWorkspaceId.isEmpty) {
     return false;
   }
-  final headers = await firebaseAuthHeaders(resourceId: resourceId);
+  final safeResourceId = _safeResourceId(resourceId);
+  final headers = await firebaseAuthHeaders(resourceId: safeResourceId);
   final response = await http.post(
     Uri.parse('$backendBaseUrl/v1/authz/check'),
     headers: {
@@ -68,8 +81,55 @@ Future<bool> authorizeExcelOperation({
     body: jsonEncode({
       'workspace_id': insightFlowWorkspaceId,
       'action': action,
-      'resource_id': _safeResourceId(resourceId),
+      'resource_id': safeResourceId,
     }),
   );
-  return response.statusCode == 200;
+  if (response.statusCode != 200) {
+    return false;
+  }
+
+  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+  await setExcelMutationAuthorization(
+    idToken: token,
+    workspaceId: insightFlowWorkspaceId,
+    resourceId: safeResourceId,
+    action: _excelMutationCapability(action),
+    backendBaseUrl: backendBaseUrl,
+  );
+  return true;
+}
+
+Future<bool> authorizeWorkingCopyExcelMutation({
+  required String backendBaseUrl,
+  required String workingCopyId,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty || workingCopyId.trim().isEmpty) {
+    return false;
+  }
+  final safeResourceId = _safeResourceId(workingCopyId);
+  final headers = await firebaseAuthHeaders(resourceId: safeResourceId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/check'),
+    headers: {
+      ...headers,
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'action': 'excel.mutate.working_copy',
+      'resource_id': safeResourceId,
+    }),
+  );
+  if (response.statusCode != 200) {
+    return false;
+  }
+  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+  await setExcelMutationAuthorization(
+    idToken: token,
+    workspaceId: insightFlowWorkspaceId,
+    resourceId: safeResourceId,
+    action: 'excel.mutate.working_copy',
+    backendBaseUrl: backendBaseUrl,
+  );
+  return true;
 }

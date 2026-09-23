@@ -213,7 +213,8 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     validate_action(action)
     if resource_id is not None:
         validate_id(resource_id, "resource ID")
-    requires_resource = action in {"data.view", "analysis.run", "worksheet.create", "pivot.create", "worksheet.modify", "worksheet.delete", "operation.undo.own", "operation.undo.other"}
+    requires_resource = action in {"data.view", "analysis.run", "worksheet.create", "pivot.create", "worksheet.modify", "worksheet.delete", "operation.undo.own", "operation.undo.other",
+        "excel.mutate.original", "excel.mutate.working_copy"}
     if requires_resource and not resource_id:
         raise PermissionDenied("A resource ID is required for this action.")
     user = _user(uid)

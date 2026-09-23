@@ -492,6 +492,9 @@ async function jsSplitColumnPipeline(sheetName, columnName, delimiter) {
     await window.waitForOfficeReady();
     if (typeof Excel === "undefined") return { success: false, processedRows: 0, error: "Excel context unallocated" };
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
     return await Excel.run(async function (context) {
         const workbook = context.workbook;
         const sheet = sheetName ? workbook.worksheets.getItem(sheetName) : workbook.worksheets.getActiveWorksheet();
@@ -570,7 +573,10 @@ async function jsBuildWrapRowsTable(optionsJson) {
 
     try {
         const opts = JSON.parse(optionsJson);
-        return await Excel.run(async function (context) {
+        if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
+    return await Excel.run(async function (context) {
             const workbook = context.workbook;
             let sourceSheet = opts.sourceSheetName ? workbook.worksheets.getItem(opts.sourceSheetName) : workbook.worksheets.getActiveWorksheet();
 
@@ -649,7 +655,10 @@ async function jsApplyColorScale(optionsJson) {
 
     try {
         const opts = JSON.parse(optionsJson);
-        return await Excel.run(async function (context) {
+        if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
+    return await Excel.run(async function (context) {
             const workbook = context.workbook;
             const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
 
@@ -742,7 +751,10 @@ async function jsAddComputedColumn(optionsJson) {
             };
         }
 
-        return await Excel.run(async function (context) {
+        if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
+    return await Excel.run(async function (context) {
             const workbook = context.workbook;
             const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
 
@@ -876,7 +888,10 @@ async function jsWriteRangeBinningFormulas(optionsJson) {
             };
         }
 
-        return await Excel.run(async function (context) {
+        if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
+    return await Excel.run(async function (context) {
             const workbook = context.workbook;
             const sheet = opts.sheetName ? workbook.worksheets.getItem(opts.sheetName) : workbook.worksheets.getActiveWorksheet();
 
@@ -971,6 +986,9 @@ async function jsAppendStaticColumn(optionsJson) {
 
     const CHUNK_ROWS = 2000;
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
     return await Excel.run(async function (context) {
         const workbook = context.workbook;
         const sheet = opts.sheetName
@@ -1063,6 +1081,9 @@ async function processExcelPipeline(optionsJson) {
         return { success: false, processedRows: 0, error: "Malformed payload parsing configuration block." };
     }
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
     return await Excel.run(async function (context) {
         const workbook = context.workbook;
         let sourceSheet;
@@ -2122,6 +2143,9 @@ async function jsExecuteLocalFilterQuery(optionsJson) {
         return op === "equals" ? cellText === targetText : false;
     };
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
     return await Excel.run(async function(context) {
         let sourceRange;
         if (opts.useActiveSelection) {
@@ -2260,6 +2284,9 @@ async function jsWriteQueryResultToSheet(optionsJson) {
         });
     }
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
     return await Excel.run(async function (context) {
         const workbook = context.workbook;
         const sheetName = String(opts.targetSheetName || "Query_Result").substring(0, 31);
