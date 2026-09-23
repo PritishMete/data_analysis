@@ -65,6 +65,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           );
 
       await credential.user?.updateDisplayName(name);
+      await InsightFlowAuthService.sendEmailVerification();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -74,7 +75,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _error =
+            'Account created. Verification email sent. Verify your email before continuing.';
+      });
+    }
   }
 
   @override

@@ -105,6 +105,11 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             uid = str(claims.get("uid", "")).strip()
             if not uid:
                 raise AuthenticationRequired("Firebase authentication failed.")
+            if claims.get("email_verified") is not True:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Email verification required."},
+                )
 
             workspace_id = request.headers.get("x-insightflow-workspace-id", "").strip()
             if not workspace_id:

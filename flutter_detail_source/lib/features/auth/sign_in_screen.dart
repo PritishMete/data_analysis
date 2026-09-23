@@ -56,6 +56,22 @@ class _SignInScreenState extends State<SignInScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await InsightFlowAuthService.signInWithGoogle();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = InsightFlowAuthService.userFacingAuthError(error);
+      });
+    }
+  }
+
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
 
@@ -159,6 +175,19 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        GlassButton.custom(
+          onTap: _loading ? () {} : _signInWithGoogle,
+          enabled: !_loading,
+          width: double.infinity,
+          height: 42,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'Continue with Google',
+          child: const Text(
+            'Continue with Google',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 12),

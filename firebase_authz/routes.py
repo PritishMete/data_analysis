@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, authorization as authorize_workspace, _user, workspace_memberships
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, authorization as authorize_workspace, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -26,12 +26,23 @@ def _token(value):
     return value[7:].strip()
 
 @router.get("/me")
-def me(authorization: str=Header(default=None)):
+def me(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
     try:
-        claims=verify_id_token(_token(authorization)); uid=str(claims["uid"]); user=_user(uid)
-        return {"uid":uid,"email":claims.get("email"),"suspended":False,"workspaces":workspace_memberships(uid)}
-    except AuthenticationRequired as exc: raise HTTPException(401,str(exc))
-    except AuthzError as exc: raise HTTPException(403,str(exc))
+        claims = verify_id_token(_token(authorization))
+        uid = str(claims["uid"])
+        context = authentication_context(
+            uid,
+            workspace_id.strip() if workspace_id else None,
+            bool(claims.get("email_verified")),
+        )
+        return {"uid": uid, "email": claims.get("email"), **context}
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
 
 @router.post("/bootstrap-owner")
 def bootstrap(req:BootstrapRequest):

@@ -6,6 +6,10 @@ import 'insightflow_auth_service.dart';
 
 const String insightFlowWorkspaceId =
     String.fromEnvironment('INSIGHTFLOW_WORKSPACE_ID');
+const String insightFlowBackendBaseUrl = String.fromEnvironment(
+  'INSIGHTFLOW_BACKEND_URL',
+  defaultValue: 'https://data-analysis-oajs.onrender.com',
+);
 
 String _safeResourceId(String raw) {
   final normalized = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');

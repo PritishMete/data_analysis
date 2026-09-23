@@ -146,3 +146,49 @@ def test_partial_bootstrap_recovers_only_for_same_owner(monkeypatch):
     assert result["owner_uid"] == "alice"
     assert ref.value["members"]["alice"]["roles"]["owner"] is True
     assert "analyst" in ref.value["roles"]
+
+    
+def test_legacy_membership_without_status_is_treated_as_active(monkeypatch):
+    monkeypatch.setattr(service, "_user", lambda uid: {"suspended": False})
+    monkeypatch.setattr(service, "_workspace", lambda wid: {
+        "members": {"u": {"roles": {"viewer": True}}},
+        "roles": {"viewer": {"permissions": ["data.view"]}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}},
+    })
+    assert service.authorization("u", "w", "data.view", "r1")["allowed"] is True
+
+
+def test_non_active_membership_is_denied(monkeypatch):
+    monkeypatch.setattr(service, "_user", lambda uid: {"suspended": False})
+    monkeypatch.setattr(service, "_workspace", lambda wid: {
+        "members": {"u": {"status": "suspended", "roles": {"viewer": True}}},
+        "roles": {"viewer": {"permissions": ["data.view"]}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}},
+    })
+    with pytest.raises(service.PermissionDenied):
+        service.authorization("u", "w", "data.view", "r1")
+
+
+def test_new_user_has_no_authorization_record(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {})
+    monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
+    context = service.authentication_context("new-user", "workspace", email_verified=True)
+    assert context["account_status"] == "pending"
+    assert context["workspace_authorized"] is False
+
+
+def test_suspended_user_is_reported_as_suspended(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {"suspended": True})
+    monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
+    context = service.authentication_context("u", "workspace", email_verified=True)
+    assert context["account_status"] == "suspended"
+    assert context["workspace_authorized"] is False
+
+
+def test_unverified_email_cannot_be_authorized(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [
+        {"workspace_id": "workspace", "membership_status": "active", "role_ids": ["viewer"]},
+    ])
+    context = service.authentication_context("u", "workspace", email_verified=False)
+    assert context["workspace_authorized"] is False

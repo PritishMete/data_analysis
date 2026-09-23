@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../auth/account_management_screen.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -5992,9 +5993,26 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
             ),
             const Spacer(),
             IconButton(
+              tooltip: 'Account',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AccountManagementScreen(),
+                ),
+              ),
+              icon: const Icon(
+                Icons.account_circle_outlined,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
+            ),
+            IconButton(
               tooltip: 'Sign out',
               onPressed: () => InsightFlowAuthService.signOut(),
-              icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
+              icon: const Icon(
+                Icons.logout,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
             ),
           ],
         ),

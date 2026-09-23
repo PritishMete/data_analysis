@@ -23,6 +23,7 @@ _init_lock = threading.Lock()
 
 class AuthzError(Exception): pass
 class AuthenticationRequired(AuthzError): pass
+class EmailVerificationRequired(AuthenticationRequired): pass
 class PermissionDenied(AuthzError): pass
 class BootstrapDenied(AuthzError): pass
 
@@ -71,17 +72,66 @@ def _get(path: str):
     initialize_firebase()
     return db.reference(path).get()
 
-def _user(uid: str):
+def _raw_user(uid: str) -> dict[str, Any]:
     value = _get(f"users/{validate_id(uid, 'user ID')}") or {}
+    return value if isinstance(value, dict) else {}
+
+def _user(uid: str):
+    value = _raw_user(uid)
     if not value:
         raise PermissionDenied("User authorization record is missing.")
-    if value.get("suspended") is True:
+    status = str(value.get("status") or "").strip().lower()
+    if value.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
         raise PermissionDenied("User is suspended.")
     return value
 
-def workspace_memberships(uid: str) -> list[dict[str, Any]]:
+def _membership_status(member: dict[str, Any]) -> str:
+    status = str(member.get("status") or "active").strip().lower()
+    return status if status in {"invited", "approved", "active", "suspended", "removed"} else "active"
+
+def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False) -> dict[str, Any]:
     validate_id(uid, "user ID")
-    _user(uid)
+    if workspace_id:
+        validate_id(workspace_id, "workspace ID")
+    user = _raw_user(uid)
+    if not user:
+        return {
+            "email_verified": bool(email_verified),
+            "account_status": "pending",
+            "membership_status": "none",
+            "workspace_authorized": False,
+            "workspaces": [],
+        }
+    account_status = str(user.get("status") or "").strip().lower()
+    if user.get("suspended") is True or account_status in {"suspended", "disabled", "removed"}:
+        account_status = "suspended"
+    else:
+        account_status = "active"
+
+    memberships = workspace_memberships(uid, include_user=False)
+    selected = next(
+        (item for item in memberships if workspace_id and item["workspace_id"] == workspace_id),
+        None,
+    )
+    membership_status = selected["membership_status"] if selected else "none"
+    workspace_authorized = bool(
+        email_verified
+        and account_status == "active"
+        and membership_status == "active"
+    )
+    return {
+        "email_verified": bool(email_verified),
+        "account_status": account_status,
+        "membership_status": membership_status,
+        "workspace_authorized": workspace_authorized,
+        "workspace_id": workspace_id,
+        "workspaces": memberships,
+    }
+
+def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str, Any]]:
+    validate_id(uid, "user ID")
+    if include_user:
+        _user(uid)
     workspaces = _get("workspaces") or {}
     memberships: list[dict[str, Any]] = []
     for workspace_id, workspace in workspaces.items():
@@ -96,6 +146,7 @@ def workspace_memberships(uid: str) -> list[dict[str, Any]]:
             ]
             memberships.append({
                 "workspace_id": workspace_id,
+                "membership_status": _membership_status(member),
                 "role_ids": role_ids,
             })
     return memberships
@@ -139,6 +190,8 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     member = members.get(uid)
     if not isinstance(member, dict):
         raise PermissionDenied("User is not a member of this workspace.")
+    if _membership_status(member) != "active":
+        raise PermissionDenied("User membership is not active.")
 
     permissions = _role_permissions(workspace, member)
 

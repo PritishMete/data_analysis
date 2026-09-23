@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/account_management_screen.dart';
 
 void main() {
   Future<void> pumpAuthApp(
@@ -54,6 +55,18 @@ void main() {
     expect(find.text('PASSWORD'), findsOneWidget);
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('account management uses shared glass fields', (tester) async {
+    await pumpAuthApp(tester, const AccountManagementScreen());
+
+    expect(find.text('ACCOUNT / PROFILE'), findsOneWidget);
+    expect(find.byType(GlassTextField), findsNWidgets(2));
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.text('Save profile'), findsOneWidget);
+    expect(find.text('Change password'), findsOneWidget);
+    expect(find.text('Delete account'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
