@@ -360,7 +360,7 @@ class AuthGlassPrimaryButton extends StatelessWidget {
 
     return SizedBox(
       height: 48,
-      child: GlassButton(
+      child: GlassButton.custom(
         onTap: enabled ? onPressed : null,
         enabled: enabled,
         style: GlassButtonStyle.prominent,
