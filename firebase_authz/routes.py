@@ -105,7 +105,14 @@ def authorization_check(req: AuthorizationCheck, authorization: str = Header(def
     try:
         token = _token(authorization)
         claims = require_email_verified(verify_id_token(token))
-        return authorize_workspace(str(claims["uid"]), req.workspace_id, req.action, req.resource_id)
+        uid = str(claims["uid"])
+        if req.action in {"excel.mutate.original", "excel.mutate.working_copy"}:
+            if not req.resource_id:
+                raise PermissionDenied("A resource ID is required for Excel mutation authorization.")
+            return authorize_excel_mutation(
+                uid, req.workspace_id, req.action, req.resource_id
+            )
+        return authorize_workspace(uid, req.workspace_id, req.action, req.resource_id)
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
     except AuthzError as exc:
