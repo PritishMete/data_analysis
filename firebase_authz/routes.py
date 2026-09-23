@@ -5,10 +5,7 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
 class BootstrapRequest(BaseModel):
-    id_token:str
-    bootstrap_secret:str
-    workspace_id:str
-    expected_uid:str
+    organization_name: str
 
 class AuthorizationCheck(BaseModel):
     workspace_id: str
@@ -58,6 +55,17 @@ def management(
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
 
+@router.get("/invitations/pending")
+def pending_invitations(authorization: str = Header(default=None)):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        from .service import pending_invitations_for_email
+        return {"invitations": pending_invitations_for_email(str(claims.get("email") or ""))}
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+
 @router.get("/membership")
 def membership(
     authorization: str = Header(default=None),
@@ -96,9 +104,15 @@ def membership(
         raise HTTPException(400, str(exc))
 
 @router.post("/bootstrap-owner")
-def bootstrap(req:BootstrapRequest):
-    try:return bootstrap_owner(req.id_token,req.bootstrap_secret,req.workspace_id,req.expected_uid)
-    except (BootstrapDenied,AuthenticationRequired) as exc: raise HTTPException(403,str(exc))
+def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
+    try:
+        return bootstrap_owner(_token(authorization), req.organization_name)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except BootstrapDenied as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 @router.post("/check")
 def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):
