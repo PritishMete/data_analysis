@@ -6,7 +6,35 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'features/dashboard/data_screen.dart';
+import 'features/auth/auth_screen.dart';
 import 'core/interop/office_host.dart';
+
+
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool authenticated = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (authenticated) {
+      return const DataScreen();
+    }
+
+    return AuthScreen(
+      onAuthenticated: () {
+        if (mounted) {
+          setState(() => authenticated = true);
+        }
+      },
+    );
+  }
+}
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {}
@@ -113,7 +141,7 @@ class ElectricAIApp extends StatelessWidget {
             child: child!,
           ),
         ),
-        home: const DataScreen(),
+        home: const AuthGate(),
       ),
     );
   }
