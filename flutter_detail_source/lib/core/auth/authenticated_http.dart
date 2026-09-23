@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 
 import 'insightflow_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
-import '../interop/excel_source_context.dart';
 
 const String insightFlowWorkspaceId =
     String.fromEnvironment('INSIGHTFLOW_WORKSPACE_ID');
@@ -190,10 +189,7 @@ Future<bool> authorizeExcelOperation({
   final copiedSheet = copied?['sheetName']?.toString();
   if (copiedSheet == null || copiedSheet.isEmpty) return false;
 
-  // The copied worksheet becomes the InsightFlow analytical source. Generated
-  // Pivot/chart/report sheets remain outputs and never replace this source.
-  if (!await setInsightFlowSourceWorksheetName(copiedSheet)) return false;
-
+  // createWorkbookWorkingCopy persists the copied worksheet as the analytical source.
   final workingAllowed = await _checkAuthorization(
     backendBaseUrl: backendBaseUrl,
     action: 'excel.mutate.working_copy',
