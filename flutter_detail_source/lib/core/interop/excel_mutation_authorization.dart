@@ -1,8 +1,6 @@
 import 'dart:js_interop';
 
-import 'package:js/js.dart' as legacy_js;
-
-@legacy_js.JS('insightflowSetMutationAuthorization')
+@JS('insightflowSetMutationAuthorization')
 external void _setMutationAuthorization(
   String idToken,
   String workspaceId,
@@ -11,7 +9,7 @@ external void _setMutationAuthorization(
   String backendBaseUrl,
 );
 
-@legacy_js.JS('insightflowClearMutationAuthorization')
+@JS('insightflowClearMutationAuthorization')
 external void _clearMutationAuthorization();
 
 Future<void> setExcelMutationAuthorization({

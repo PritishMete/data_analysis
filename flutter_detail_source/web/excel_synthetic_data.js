@@ -90,6 +90,16 @@
 
     const outputBase = String(options.outputSheetName || (revenue ? 'Hypothetical_Revenue' : 'Synthetic_Data')).trim();
 
+    if (!await window.insightflowRequireMutationAuthorization()) {
+      return {
+        success: false,
+        route: 'operation',
+        error: 'Excel mutation authorization denied.',
+        local_secure: true,
+        source_mutated: false,
+      };
+    }
+
     try {
       const written = await Excel.run(async context => {
         const workbook = context.workbook;
