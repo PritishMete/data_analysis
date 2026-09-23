@@ -83,33 +83,67 @@ class _AuthorizationManagementScreenState
 
   Future<void> _post(String path, Map<String, dynamic> body) async {
     final headers = await firebaseAuthHeaders();
-    final response = await http.post(Uri.parse('$insightFlowBackendBaseUrl/v1/authz/$path'), headers: {...headers, 'Content-Type': 'application/json'}, body: jsonEncode(body));
+    final response = await http.post(
+      Uri.parse('$insightFlowBackendBaseUrl/v1/authz/$path'),
+      headers: {...headers, 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
     if (response.statusCode != 200) {
       dynamic decoded;
       try { decoded = jsonDecode(response.body); } catch (_) {}
-      throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Authorization change was rejected.');
+      throw StateError(
+        decoded is Map && decoded['detail'] != null
+            ? decoded['detail'].toString()
+            : 'Authorization change was rejected.',
+      );
     }
   }
 
   Future<void> _setMemberStatus(String uid, String status) async {
-    await _post('membership/status', {'workspace_id': insightFlowWorkspaceId, 'target_uid': uid, 'status': status});
+    await _post(
+      'membership/status',
+      {
+        'workspace_id': insightFlowWorkspaceId,
+        'target_uid': uid,
+        'status': status,
+      },
+    );
     await _load();
   }
 
   Future<void> _setRole(String uid, String role, bool enabled) async {
-    await _post('roles/mutate', {'workspace_id': insightFlowWorkspaceId, 'target_uid': uid, 'role_id': role, 'enabled': enabled});
+    await _post(
+      'roles/mutate',
+      {
+        'workspace_id': insightFlowWorkspaceId,
+        'target_uid': uid,
+        'role_id': role,
+        'enabled': enabled,
+      },
+    );
     await _load();
   }
 
   Future<void> _approveEmployee(Map<String, dynamic> member) async {
-    await _post('approved-employees', {'workspace_id': insightFlowWorkspaceId, 'target_uid': member['uid'], 'employee_id': member['employee_id']});
+    await _post(
+      'approved-employees',
+      {
+        'workspace_id': insightFlowWorkspaceId,
+        'target_uid': member['uid'],
+        'employee_id': member['employee_id'],
+      },
+    );
     await _load();
   }
 
   List<Widget> _memberRows() {
-    final members = (_snapshot['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    final members = (_snapshot['members'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
     if (members.isEmpty) return [const _MetaRow('Status', 'No members in this scope.')];
-    final owner = List<String>.from(_snapshot['role_ids'] ?? const []).contains('organization_owner');
+    final owner = List<String>.from(_snapshot['role_ids'] ?? const [])
+        .contains('organization_owner');
     return members.expand<Widget>((member) {
       final uid = member['uid']?.toString() ?? '';
       final status = member['membership_status']?.toString() ?? 'active';
@@ -117,13 +151,41 @@ class _AuthorizationManagementScreenState
       final rows = <Widget>[_MetaRow(member['employee_id']?.toString() ?? uid, '$status · ${memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')}')];
       if (uid != InsightFlowAuthService.currentUser?.uid) {
         rows.add(Wrap(spacing: 6, children: [
-          if (status == 'active') TextButton(onPressed: () => _approveEmployee(member), child: const Text('Approve')),
-          if (status == 'active') TextButton(onPressed: () => _setMemberStatus(uid, 'suspended'), child: const Text('Suspend')),
-          if (status == 'suspended') TextButton(onPressed: () => _setMemberStatus(uid, 'active'), child: const Text('Reactivate')),
-          if (status != 'removed') TextButton(onPressed: () => _setMemberStatus(uid, 'removed'), child: const Text('Remove')),
-          if (!memberRoles.contains('team_lead')) TextButton(onPressed: () => _setRole(uid, 'team_lead', true), child: const Text('Promote Team Lead')),
-          if (memberRoles.contains('team_lead')) TextButton(onPressed: () => _setRole(uid, 'team_lead', false), child: const Text('Remove Team Lead')),
-          if (owner && memberRoles.contains('manager')) TextButton(onPressed: () => _setRole(uid, 'manager', false), child: const Text('Remove Manager')),
+          if (status == 'active')
+            TextButton(
+              onPressed: () => _approveEmployee(member),
+              child: const Text('Approve'),
+            ),
+          if (status == 'active')
+            TextButton(
+              onPressed: () => _setMemberStatus(uid, 'suspended'),
+              child: const Text('Suspend'),
+            ),
+          if (status == 'suspended')
+            TextButton(
+              onPressed: () => _setMemberStatus(uid, 'active'),
+              child: const Text('Reactivate'),
+            ),
+          if (status != 'removed')
+            TextButton(
+              onPressed: () => _setMemberStatus(uid, 'removed'),
+              child: const Text('Remove'),
+            ),
+          if (!memberRoles.contains('team_lead'))
+            TextButton(
+              onPressed: () => _setRole(uid, 'team_lead', true),
+              child: const Text('Promote Team Lead'),
+            ),
+          if (memberRoles.contains('team_lead'))
+            TextButton(
+              onPressed: () => _setRole(uid, 'team_lead', false),
+              child: const Text('Remove Team Lead'),
+            ),
+          if (owner && memberRoles.contains('manager'))
+            TextButton(
+              onPressed: () => _setRole(uid, 'manager', false),
+              child: const Text('Remove Manager'),
+            ),
         ]));
       }
       return rows;
@@ -137,8 +199,14 @@ class _AuthorizationManagementScreenState
       builder: (context) => AlertDialog(
         title: const Text('Invite employee'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: email, decoration: const InputDecoration(labelText: 'Company email')),
-          TextField(controller: employeeId, decoration: const InputDecoration(labelText: 'Employee ID')),
+          TextField(
+            controller: email,
+            decoration: const InputDecoration(labelText: 'Company email'),
+          ),
+          TextField(
+            controller: employeeId,
+            decoration: const InputDecoration(labelText: 'Employee ID'),
+          ),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -163,7 +231,9 @@ class _AuthorizationManagementScreenState
 
   List<Widget> _datasetAccessRows() {
     final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
-    final lead = roles.contains('team_lead') && !roles.contains('manager') && !roles.contains('organization_owner');
+    final lead = roles.contains('team_lead') &&
+        !roles.contains('manager') &&
+        !roles.contains('organization_owner');
     final members = (_snapshot[lead ? 'approved_employees' : 'members'] as List? ?? const [])
         .whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     final datasets = (_snapshot['datasets'] as List? ?? const [])
@@ -261,7 +331,10 @@ class _AuthorizationManagementScreenState
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delegate')),
+            FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delegate'),
+          ),
           ],
         ),
       ),
@@ -351,7 +424,11 @@ class _AuthorizationManagementScreenState
           title: 'TEAM / EMPLOYEES',
           children: [
             ..._memberRows(),
-            if (isOwner || isManager) TextButton(onPressed: _inviteEmployee, child: const Text('Invite employee')),
+            if (isOwner || isManager)
+              TextButton(
+                onPressed: _inviteEmployee,
+                child: const Text('Invite employee'),
+              ),
           ],
         ),
       if (isLead)
@@ -367,7 +444,11 @@ class _AuthorizationManagementScreenState
         title: 'DATASET ACCESS',
         children: [
           ..._datasetAccessRows(),
-          if (isOwner || isManager) TextButton(onPressed: _createDelegation, child: const Text('Manage Team Lead delegation')),
+          if (isOwner || isManager)
+            TextButton(
+              onPressed: _createDelegation,
+              child: const Text('Manage Team Lead delegation'),
+            ),
         ],
       ),
       _MetadataSection(
