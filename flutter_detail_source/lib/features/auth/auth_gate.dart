@@ -1,6 +1,8 @@
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../app_colors.dart';
+import 'auth_glass_widgets.dart';
 import '../dashboard/data_screen.dart';
 import 'sign_in_screen.dart';
 
@@ -35,10 +37,17 @@ class _AuthLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CupertinoPageScaffold(
-      child: Center(
-        child: CupertinoActivityIndicator(radius: 14),
-      ),
+    return const AuthGlassScaffold(
+      title: 'AUTH / INITIALIZING',
+      subtitle: 'CONNECTING TO FIREBASE AUTHENTICATION',
+      children: [
+        Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 1.8,
+            color: TechColors.borderActive,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -48,16 +57,14 @@ class _AuthError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CupertinoPageScaffold(
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Authentication could not be initialized. Please reload the add-in.',
-            textAlign: TextAlign.center,
-          ),
+    return const AuthGlassScaffold(
+      title: 'AUTH / ERROR',
+      subtitle: 'AUTHENTICATION CHANNEL UNAVAILABLE',
+      children: [
+        AuthGlassMessage(
+          text: 'Authentication could not be initialized. Please reload the add-in.',
         ),
-      ),
+      ],
     );
   }
 }
