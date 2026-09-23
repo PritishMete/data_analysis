@@ -1,0 +1,71 @@
+name: Build and publish InsightFlow Flutter web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/flutter-web-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: flutter_detail_source
+        run: flutter pub get
+
+      - name: Build Flutter web
+        working-directory: flutter_detail_source
+        run: flutter build web --release --base-href /data_analysis/
+
+      - name: Checkout published gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-publish
+          fetch-depth: 1
+
+      - name: Replace Flutter web bundle only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf gh-pages-publish/assets
+          rm -rf gh-pages-publish/canvaskit
+          rm -f gh-pages-publish/flutter.js
+          rm -f gh-pages-publish/flutter_bootstrap.js
+          rm -f gh-pages-publish/flutter_service_worker.js
+          rm -f gh-pages-publish/main.dart.js
+          rm -f gh-pages-publish/index.html
+          rm -f gh-pages-publish/version.json
+          cp -R flutter_detail_source/build/web/. gh-pages-publish/
+
+      - name: Commit and publish
+        working-directory: gh-pages-publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No published Flutter changes."
+            exit 0
+          fi
+          git commit -m "deploy: publish latest InsightFlow Flutter web"
+          git push origin gh-pages
