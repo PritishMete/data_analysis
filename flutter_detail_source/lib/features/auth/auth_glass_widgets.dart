@@ -53,21 +53,27 @@ class AuthGlassScaffold extends StatelessWidget {
         builder: (context, constraints) {
           final horizontalPadding = constraints.maxWidth < 420 ? 8.0 : 16.0;
 
+          final availableHeight = constraints.maxHeight.isFinite
+              ? (constraints.maxHeight - 40).clamp(0.0, double.infinity)
+              : 0.0;
+
           return SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              12,
+              20,
               horizontalPadding,
               28,
             ),
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: GlassCard(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: availableHeight),
+              child: Align(
+                alignment: Alignment.center,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: GlassCard(
                     padding: EdgeInsets.zero,
                     shape: const LiquidRoundedSuperellipse(borderRadius: 18),
                     child: Column(
