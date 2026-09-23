@@ -34,6 +34,7 @@ def me(
             uid,
             workspace_id.strip() if workspace_id else None,
             bool(claims.get("email_verified")),
+            str(claims.get("email") or ""),
         )
         return {"uid": uid, "email": claims.get("email"), **context}
     except AuthenticationRequired as exc:
