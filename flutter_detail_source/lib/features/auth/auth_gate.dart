@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -17,7 +18,7 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: InsightFlowAuthService.authStateChanges,
+      stream: InsightFlowAuthService.userChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _AuthLoading();
@@ -102,6 +103,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
             ? error.message
             : 'Authorization status could not be verified. Check your connection and try again.';
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AuthenticatedGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.emailVerified != widget.user.emailVerified ||
+        oldWidget.user.uid != widget.user.uid) {
+      _refresh();
     }
   }
 

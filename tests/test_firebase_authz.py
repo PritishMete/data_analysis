@@ -104,7 +104,7 @@ def test_bootstrap_transaction_is_atomic_and_concurrent(monkeypatch):
                 self.value = fn(self.value)
                 return self.value
     ref = Ref()
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
     monkeypatch.setenv("INSIGHTFLOW_BOOTSTRAP_SECRET", "secret")
@@ -153,7 +153,7 @@ def test_legacy_membership_without_status_is_treated_as_active(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: {
         "members": {"u": {"roles": {"viewer": True}}},
         "roles": {"viewer": {"permissions": ["data.view"]}},
-        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}},
+        "resources": {"r1": {"grants": {"u": {"permissions": ["data.view"]}}}},
     })
     assert service.authorization("u", "w", "data.view", "r1")["allowed"] is True
 

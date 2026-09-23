@@ -40,7 +40,7 @@ def test_invalid_token_is_rejected(monkeypatch):
 
 def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice"})
+    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
         auth_middleware,
         "authorization",

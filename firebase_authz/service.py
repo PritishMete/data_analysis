@@ -209,14 +209,19 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
         "resource_id": resource_id, "role_ids": [r for r,v in (member.get("roles") or {}).items() if v],
     }
 
+def require_email_verified(claims: dict[str, Any]) -> dict[str, Any]:
+    if claims.get("email_verified") is not True:
+        raise EmailVerificationRequired("Email verification required.")
+    return claims
+
 def protected_context(id_token: str, workspace_id: str, action: str, resource_id: str | None = None):
-    claims = verify_id_token(id_token)
+    claims = require_email_verified(verify_id_token(id_token))
     return claims, authorization(str(claims["uid"]), workspace_id, action, resource_id)
 
 def bootstrap_owner(id_token: str, bootstrap_secret: str, workspace_id: str, expected_uid: str):
     validate_id(workspace_id, "workspace ID")
     validate_id(expected_uid, "user ID")
-    claims = verify_id_token(id_token)
+    claims = require_email_verified(verify_id_token(id_token))
     if claims.get("uid") != expected_uid:
         raise BootstrapDenied("Bootstrap identity mismatch.")
     expected = os.environ.get("INSIGHTFLOW_BOOTSTRAP_SECRET")
@@ -270,7 +275,7 @@ def last_owner_guard(workspace_id: str, target_uid: str):
 def mutate_role(target_uid: str, role_id: str, enabled: bool, actor_token: str, workspace_id: str):
     validate_id(target_uid, "user ID")
     validate_id(role_id, "role ID")
-    claims = verify_id_token(actor_token)
+    claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
     authorization(actor, workspace_id, "roles.manage")
     if role_id == "owner" and enabled and target_uid == actor:
@@ -287,7 +292,7 @@ def upsert_role(workspace_id: str, role_id: str, name: str, permissions: list[st
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
         raise ValueError("Invalid role name.")
     permissions = [validate_action(p) for p in permissions]
-    claims = verify_id_token(actor_token)
+    claims = require_email_verified(verify_id_token(actor_token))
     authorization(str(claims["uid"]), workspace_id, "roles.manage")
     initialize_firebase()
     db.reference(f"workspaces/{workspace_id}/roles/{role_id}").set({
@@ -300,7 +305,7 @@ def set_resource_grant(workspace_id: str, resource_id: str, target_uid: str, per
     validate_id(resource_id, "resource ID")
     validate_id(target_uid, "user ID")
     permissions = [validate_action(p) for p in permissions]
-    claims = verify_id_token(actor_token)
+    claims = require_email_verified(verify_id_token(actor_token))
     authorization(str(claims["uid"]), workspace_id, "users.manage")
     workspace = _workspace(workspace_id)
     if target_uid not in (workspace.get("members") or {}):
