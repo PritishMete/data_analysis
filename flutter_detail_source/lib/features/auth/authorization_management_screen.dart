@@ -75,6 +75,54 @@ class _AuthorizationManagementScreenState
     return roles.map((item) => item.toString()).join(', ');
   }
 
+  Future<void> _post(String path, Map<String, dynamic> body) async {
+    final headers = await firebaseAuthHeaders();
+    final response = await http.post(Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/' + path), headers: {...headers, 'Content-Type': 'application/json'}, body: jsonEncode(body));
+    if (response.statusCode != 200) {
+      dynamic decoded;
+      try { decoded = jsonDecode(response.body); } catch (_) {}
+      throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Authorization change was rejected.');
+    }
+  }
+
+  Future<void> _setMemberStatus(String uid, String status) async {
+    await _post('membership/status', {'workspace_id': insightFlowWorkspaceId, 'target_uid': uid, 'status': status});
+    await _load();
+  }
+
+  Future<void> _setRole(String uid, String role, bool enabled) async {
+    await _post('roles/mutate', {'workspace_id': insightFlowWorkspaceId, 'target_uid': uid, 'role_id': role, 'enabled': enabled});
+    await _load();
+  }
+
+  Future<void> _approveEmployee(Map<String, dynamic> member) async {
+    await _post('approved-employees', {'workspace_id': insightFlowWorkspaceId, 'target_uid': member['uid'], 'employee_id': member['employee_id']});
+    await _load();
+  }
+
+  List<Widget> _memberRows() {
+    final members = (_snapshot['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    if (members.isEmpty) return [const _MetaRow('Status', 'No members in this scope.')];
+    final owner = List<String>.from(_snapshot['role_ids'] ?? const []).contains('organization_owner');
+    return members.expand<Widget>((member) {
+      final uid = member['uid']?.toString() ?? '';
+      final status = member['membership_status']?.toString() ?? 'active';
+      final memberRoles = List<String>.from(member['role_ids'] ?? const []);
+      final rows = <Widget>[_MetaRow(member['employee_id']?.toString() ?? uid, status + ' · ' + (memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')))];
+      if (uid != InsightFlowAuthService.currentUser?.uid) {
+        rows.add(Wrap(spacing: 6, children: [
+          if (status == 'active') TextButton(onPressed: () => _approveEmployee(member), child: const Text('Approve')),
+          if (status == 'active') TextButton(onPressed: () => _setMemberStatus(uid, 'suspended'), child: const Text('Suspend')),
+          if (status == 'suspended') TextButton(onPressed: () => _setMemberStatus(uid, 'active'), child: const Text('Reactivate')),
+          if (status != 'removed') TextButton(onPressed: () => _setMemberStatus(uid, 'removed'), child: const Text('Remove')),
+          if (!memberRoles.contains('team_lead')) TextButton(onPressed: () => _setRole(uid, 'team_lead', true), child: const Text('Promote Team Lead')),
+          if (memberRoles.contains('team_lead')) TextButton(onPressed: () => _setRole(uid, 'team_lead', false), child: const Text('Remove Team Lead')),
+          if (owner && memberRoles.contains('manager')) TextButton(onPressed: () => _setRole(uid, 'manager', false), child: const Text('Remove Manager')),
+        ]));
+      }
+      return rows;
+    }).toList();
+  }
   String _itemLabel(Map<String, dynamic> item) {
     final id = item['dataset_id'] ??
         item['working_copy_id'] ??
@@ -146,7 +194,7 @@ class _AuthorizationManagementScreenState
       if (isOwner || isManager)
         _MetadataSection(
           title: 'TEAM / EMPLOYEES',
-          children: _rows(_snapshot['members']),
+          children: _memberRows(),
         ),
       if (isLead)
         _MetadataSection(
