@@ -430,6 +430,7 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service, "_get", lambda path: {"suspended": False} if path.startswith("users/") else None)
     monkeypatch.setattr(service.auth, "revoke_refresh_tokens", lambda uid: None)
     class Ref:
         def set(self, value):

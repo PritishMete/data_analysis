@@ -1055,7 +1055,11 @@ def last_owner_guard(workspace_id: str, target_uid: str):
     members = workspace.get("members") or {}
     active_owners = [
         uid for uid, member in members.items()
-        if isinstance(member, dict) and (member.get("roles") or {}).get("owner") is True
+        if isinstance(member, dict)
+        and any(
+            enabled and ROLE_ALIASES.get(role_id, role_id) == "organization_owner"
+            for role_id, enabled in (member.get("roles") or {}).items()
+        )
         and not ((_get(f"users/{uid}") or {}).get("suspended") is True)
     ]
     if target_uid in active_owners and len(active_owners) <= 1:
