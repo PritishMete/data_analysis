@@ -1,7 +1,9 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../app_colors.dart';
+import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -18,8 +20,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _confirmController = TextEditingController();
 
   bool _loading = false;
-  bool _obscurePassword = true;
-  bool _obscureConfirm = true;
   String? _error;
 
   @override
@@ -41,10 +41,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       setState(() => _error = 'Complete all fields to create your account.');
       return;
     }
+
     if (password.length < 6) {
       setState(() => _error = 'Password must be at least 6 characters.');
       return;
     }
+
     if (password != confirm) {
       setState(() => _error = 'Passwords do not match.');
       return;
@@ -77,91 +79,92 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final passwordQuality =
+        GlassThemeData.of(context).qualityFor(context) ?? GlassQuality.standard;
+
     return AuthGlassScaffold(
       title: 'Create account',
       subtitle: 'Set up your InsightFlow workspace access.',
       children: [
-        AuthGlassField(
+        const AuthGlassFieldLabel('Full name'),
+        GlassTextField(
           controller: _nameController,
-          label: 'Full name',
-          icon: Icons.person_outline,
+          placeholder: 'Full name',
+          textInputAction: TextInputAction.next,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.name],
         ),
-        const SizedBox(height: 8),
-        AuthGlassField(
+        const SizedBox(height: 12),
+        const AuthGlassFieldLabel('Email'),
+        GlassTextField(
           controller: _emailController,
-          label: 'Email',
-          icon: Icons.alternate_email,
+          placeholder: 'Email',
           keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.email],
         ),
-        const SizedBox(height: 8),
-        AuthGlassField(
+        const SizedBox(height: 12),
+        const AuthGlassFieldLabel('Password'),
+        GlassPasswordField(
           controller: _passwordController,
-          label: 'Password',
-          icon: Icons.lock_outline,
-          obscureText: _obscurePassword,
+          placeholder: 'Password',
+          textInputAction: TextInputAction.next,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.newPassword],
-          suffix: IconButton(
-            onPressed: _loading
-                ? null
-                : () => setState(() => _obscurePassword = !_obscurePassword),
-            icon: Icon(
-              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-              color: TechColors.textMuted,
-              size: 16,
-            ),
-          ),
+          quality: passwordQuality,
         ),
-        const SizedBox(height: 8),
-        AuthGlassField(
+        const SizedBox(height: 12),
+        const AuthGlassFieldLabel('Confirm password'),
+        GlassPasswordField(
           controller: _confirmController,
-          label: 'Confirm password',
-          icon: Icons.lock_outline,
-          obscureText: _obscureConfirm,
+          placeholder: 'Confirm password',
+          textInputAction: TextInputAction.done,
           enabled: !_loading,
-          autofillHints: const [AutofillHints.newPassword],
-          suffix: IconButton(
-            onPressed: _loading
-                ? null
-                : () => setState(() => _obscureConfirm = !_obscureConfirm),
-            icon: Icon(
-              _obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-              color: TechColors.textMuted,
-              size: 16,
-            ),
-          ),
+          quality: passwordQuality,
+          onSubmitted: (_) => _signUp(),
         ),
         if (_error != null) ...[
           const SizedBox(height: 10),
           AuthGlassMessage(text: _error!),
         ],
         const SizedBox(height: 14),
-        AuthGlassPrimaryButton(
-          label: 'Create Account',
-          loading: _loading,
-          onPressed: _loading ? null : _signUp,
+        GlassButton(
+          onTap: _loading ? () {} : _signUp,
+          enabled: !_loading,
+          width: double.infinity,
+          height: 46,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          icon: _loading
+              ? const CupertinoActivityIndicator()
+              : const Icon(CupertinoIcons.arrow_right, size: 17),
+          label: _loading ? 'Please wait…' : 'Create Account',
         ),
-        const SizedBox(height: 14),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
               'Already have an account? ',
               style: TextStyle(
                 color: TechColors.textMuted,
                 fontSize: 10,
-                fontFamily: 'monospace',
               ),
             ),
-            AuthGlassLink(
-              label: 'Sign in',
-              onPressed: _loading
-                  ? null
-                  : () => Navigator.of(context).pop(),
+            TextButton(
+              onPressed: _loading ? null : () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: TechColors.borderActive,
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+                minimumSize: const Size(0, 28),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Sign in',
+                style: TextStyle(
+                  color: TechColors.borderActive,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
