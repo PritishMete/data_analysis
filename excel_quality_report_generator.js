@@ -139,7 +139,10 @@ async function jsWriteQualityReportWorksheet(optionsJson) {
     const shouldActivate = opts.activate !== false;
 
     try {
-        return await Excel.run(async function (context) {
+        if (!await window.insightflowRequireMutationAuthorization()) {
+        return { success: false, processedRows: 0, error: "Excel mutation authorization denied." };
+    }
+    return await Excel.run(async function (context) {
             const workbook = context.workbook;
 
             // Only needed when we must restore the view afterwards.

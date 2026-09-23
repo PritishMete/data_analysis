@@ -3,7 +3,7 @@
 <head>
   <base href="/data_analysis/">
   <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="e26a455a07d8ec6012d4d482f773548eda5d2780">
+  <meta name="detail-analysis-build-id" content="0dd34ace93f4713a0697419c2fbc9eb457bdc714">
   <title>electric_ai_app</title>
 
   <!-- Office.js MUST come first -->
@@ -11,6 +11,7 @@
 
   <!-- Local worksheet engines load before Flutter. Secure query execution is
        entirely in-page and never posts workbook rows to a server. -->
+  <script src="excel_authorization_guard.js"></script>
   <script src="excel_data_processor.js"></script>
   <script src="excel_helper.js"></script>
   <script src="excel_schema_bridge.js"></script>
@@ -61,7 +62,7 @@
     // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
     // Office task panes can retain a previous Flutter web bundle after gh-pages
     // has received a new build. CI replaces the marker with the source commit.
-    var buildCommit = "e26a455a07d8ec6012d4d482f773548eda5d2780";
+    var buildCommit = "0dd34ace93f4713a0697419c2fbc9eb457bdc714";
     var script = document.createElement("script");
     script.src = "flutter_bootstrap.js?build=" + buildCommit;
     script.onload = function () {
