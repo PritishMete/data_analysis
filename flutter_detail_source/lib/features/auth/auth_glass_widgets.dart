@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -50,23 +51,22 @@ class AuthGlassScaffold extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
                       child: GlassCard(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                        padding: const EdgeInsets.all(16),
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
                         child: Row(
                           children: [
                             const Icon(
                               Icons.terminal,
-                              color: TechColors.borderActive,
+                              color: CupertinoColors.activeBlue,
                               size: 18,
                             ),
                             const SizedBox(width: 10),
                             const Text(
                               'InsightFlow',
                               style: TextStyle(
-                                color: TechColors.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'monospace',
+                                color: CupertinoColors.label.resolveFrom(context),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -79,11 +79,10 @@ class AuthGlassScaffold extends StatelessWidget {
                             Text(
                               'AUTH',
                               style: const TextStyle(
-                                color: TechColors.textMuted,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'monospace',
-                                letterSpacing: 1.1,
+                                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.4,
                               ),
                             ),
                             const Spacer(),
@@ -93,11 +92,11 @@ class AuthGlassScaffold extends StatelessWidget {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: TechColors.statusGreen.withValues(alpha: 0.06),
+                                color: CupertinoColors.activeGreen.withValues(alpha: 0.15),
                                 border: Border.all(
-                                  color: TechColors.statusGreen.withValues(alpha: 0.20),
+                                  color: CupertinoColors.activeGreen.withValues(alpha: 0.5),
                                 ),
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius: BorderRadius.circular(14),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -111,11 +110,10 @@ class AuthGlassScaffold extends StatelessWidget {
                                   Text(
                                     'SECURE',
                                     style: TextStyle(
-                                      color: TechColors.statusGreen,
-                                      fontSize: 8,
+                                      color: CupertinoColors.activeGreen,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w700,
-                                      fontFamily: 'monospace',
-                                      letterSpacing: 0.8,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
                                 ],
@@ -136,8 +134,8 @@ class AuthGlassScaffold extends StatelessWidget {
                               useOwnLayer: true,
                               quality: glassQuality,
                               settings: TechColors.panelGlass,
-                              shape: const LiquidRoundedSuperellipse(borderRadius: 4),
-                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                              shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                              padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -145,7 +143,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                     children: [
                                       const Icon(
                                         Icons.lock_person_outlined,
-                                        color: TechColors.borderActive,
+                                        color: CupertinoColors.activeBlue,
                                         size: 17,
                                       ),
                                       const SizedBox(width: 9),
@@ -156,11 +154,9 @@ class AuthGlassScaffold extends StatelessWidget {
                                             Text(
                                               title,
                                               style: const TextStyle(
-                                                color: TechColors.textPrimary,
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                fontFamily: 'monospace',
-                                                letterSpacing: 0.35,
+                                                color: CupertinoColors.label.resolveFrom(context),
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
                                               ),
                                             ),
                                             const SizedBox(height: 3),
@@ -240,11 +236,10 @@ class AuthGlassField extends StatelessWidget {
         Text(
           label,
           style: const TextStyle(
-            color: TechColors.textMuted,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            fontFamily: 'monospace',
-            letterSpacing: 0.65,
+            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.4,
           ),
         ),
         const SizedBox(height: 5),
@@ -252,7 +247,7 @@ class AuthGlassField extends StatelessWidget {
           useOwnLayer: true,
           quality: glassQuality,
           settings: TechColors.fieldGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 4),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
           padding: EdgeInsets.zero,
           child: TextField(
             controller: controller,
@@ -263,16 +258,14 @@ class AuthGlassField extends StatelessWidget {
             onSubmitted: onSubmitted,
             style: const TextStyle(
               color: TechColors.textPrimary,
-              fontSize: 11,
-              fontFamily: 'monospace',
+              fontSize: 13,
             ),
             cursorColor: TechColors.borderActive,
             decoration: InputDecoration(
-              hintText: 'Enter $label'.toLowerCase(),
+              hintText: 'Enter ${label.toLowerCase()}',
               hintStyle: const TextStyle(
                 color: TechColors.textMuted,
-                fontSize: 10,
-                fontFamily: 'monospace',
+                fontSize: 11,
               ),
               prefixIcon: Padding(
                 padding: const EdgeInsets.only(left: 4),
@@ -285,28 +278,28 @@ class AuthGlassField extends StatelessWidget {
               prefixIconConstraints: const BoxConstraints(minWidth: 38),
               suffixIcon: suffix,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
-                  color: TechColors.borderMuted.withValues(alpha: 0.75),
-                  width: 0.7,
+                  color: CupertinoColors.separator.withValues(alpha: 0.5),
+                  width: 0.8,
                 ),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
-                  color: TechColors.borderMuted.withValues(alpha: 0.85),
-                  width: 0.7,
+                  color: CupertinoColors.separator.withValues(alpha: 0.5),
+                  width: 0.8,
                 ),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 borderSide: const BorderSide(
-                  color: TechColors.borderActive,
+                  color: CupertinoColors.activeBlue,
                   width: 1,
                 ),
               ),
               disabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
                   color: TechColors.borderMuted.withValues(alpha: 0.45),
                   width: 0.6,
@@ -339,12 +332,12 @@ class AuthGlassPrimaryButton extends StatelessWidget {
     final enabled = onPressed != null && !loading;
 
     return SizedBox(
-      height: 38,
+      height: 48,
       child: GlassButton.custom(
         onTap: enabled ? onPressed : null,
         enabled: enabled,
         style: GlassButtonStyle.prominent,
-        shape: const LiquidRoundedSuperellipse(borderRadius: 4),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         settings: TechColors.sectionGlass,
         quality: kIsWeb || isRunningInsideOffice
             ? GlassQuality.minimal
@@ -367,16 +360,14 @@ class AuthGlassPrimaryButton extends StatelessWidget {
                     label.toUpperCase(),
                     style: const TextStyle(
                       color: TechColors.textPrimary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace',
-                      letterSpacing: 0.8,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 8),
                   const Icon(
                     Icons.arrow_forward_rounded,
-                    color: TechColors.borderActive,
+                    color: CupertinoColors.activeBlue,
                     size: 14,
                   ),
                 ],
@@ -406,7 +397,7 @@ class AuthGlassMessage extends StatelessWidget {
           ? GlassQuality.minimal
           : GlassQuality.standard,
       settings: TechColors.fieldGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 4),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Row(
         children: [
@@ -421,9 +412,8 @@ class AuthGlassMessage extends StatelessWidget {
               text,
               style: TextStyle(
                 color: color,
-                fontSize: 9,
+                fontSize: 11,
                 height: 1.4,
-                fontFamily: 'monospace',
               ),
             ),
           ),
@@ -448,7 +438,7 @@ class AuthGlassLink extends StatelessWidget {
     return TextButton(
       onPressed: onPressed,
       style: TextButton.styleFrom(
-        foregroundColor: TechColors.borderActive,
+        foregroundColor: CupertinoColors.activeBlue,
         padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
         minimumSize: const Size(0, 28),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -456,7 +446,7 @@ class AuthGlassLink extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          color: TechColors.borderActive,
+          color: CupertinoColors.activeBlue,
           fontSize: 9,
           fontWeight: FontWeight.w700,
           fontFamily: 'monospace',
