@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'insightflow_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
+import '../interop/excel_source_context.dart';
 
 const String insightFlowWorkspaceId =
     String.fromEnvironment('INSIGHTFLOW_WORKSPACE_ID');
