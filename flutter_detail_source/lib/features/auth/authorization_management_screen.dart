@@ -155,7 +155,7 @@ class _AuthorizationManagementScreenState
       final rows = <Widget>[
         _MetaRow(
           member['employee_id']?.toString() ?? uid,
-          '$status · \${memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')}',
+          '$status · ${memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')}',
         ),
       ];
       if (uid != InsightFlowAuthService.currentUser?.uid) {
@@ -265,7 +265,7 @@ class _AuthorizationManagementScreenState
       rows.add(
         _MetaRow(
           'Dataset',
-          '$datasetId\${dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : ''}',
+          '$datasetId${dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : ''}',
         ),
       );
       for (final member in members) {
@@ -551,7 +551,7 @@ class _AuthorizationManagementScreenState
                                 dataset['dataset_id'].toString(),
                               ),
                       child: Text(
-                        'Start working · \${dataset['dataset_id']}',
+                        'Start working · ${dataset['dataset_id']}',
                       ),
                     ))),
         ],
