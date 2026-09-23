@@ -181,6 +181,38 @@ class _AuthorizationManagementScreenState
     }
     return rows;
   }
+  Future<void> _createDelegation() async {
+    final lead = TextEditingController();
+    final members = TextEditingController();
+    final datasets = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Manage Team Lead delegation'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: lead, decoration: const InputDecoration(labelText: 'Team Lead UID')),
+          TextField(controller: members, decoration: const InputDecoration(labelText: 'Approved employee UIDs (comma separated)')),
+          TextField(controller: datasets, decoration: const InputDecoration(labelText: 'Dataset IDs (comma separated)')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delegate')),
+        ],
+      ),
+    );
+    if (result != true) { lead.dispose(); members.dispose(); datasets.dispose(); return; }
+    final memberIds = members.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final datasetIds = datasets.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    await _post('delegations', {
+      'workspace_id': insightFlowWorkspaceId,
+      'team_lead_uid': lead.text.trim(),
+      'member_ids': memberIds,
+      'dataset_ids': datasetIds,
+      'permissions': ['dataset.view_original', 'dataset.create_working_copy', 'dataset.share'],
+    });
+    lead.dispose(); members.dispose(); datasets.dispose();
+    await _load();
+  }
   String _itemLabel(Map<String, dynamic> item) {
     final id = item['dataset_id'] ??
         item['working_copy_id'] ??
@@ -260,7 +292,11 @@ class _AuthorizationManagementScreenState
       if (isLead)
         _MetadataSection(
           title: 'TEAM LEAD / APPROVED EMPLOYEES',
-          children: _rows(_snapshot['approved_employees']),
+          children: [
+            ..._rows(_snapshot['approved_employees']),
+            const SizedBox(height: 6),
+            _MetadataSection(title: 'DELEGATION SCOPE', children: _rows(_snapshot['delegations'])),
+          ],
         ),
       _MetadataSection(
         title: 'DATASET ACCESS',
