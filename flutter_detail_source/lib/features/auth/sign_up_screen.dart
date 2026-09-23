@@ -78,7 +78,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return AuthGlassScaffold(
       title: 'AUTH / CREATE ACCOUNT',
-      subtitle: 'Create secure access to your InsightFlow workspace.',
+      subtitle: 'REGISTER CREDENTIALS // FIREBASE AUTH',
       children: [
         AuthGlassField(
           controller: _nameController,
