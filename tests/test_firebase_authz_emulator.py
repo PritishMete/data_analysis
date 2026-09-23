@@ -70,7 +70,7 @@ def test_emulator_concurrent_first_owner_initialization(monkeypatch):
     assert workspace["members"][successes[0]["owner_uid"]]["roles"]["owner"] is True
 
 def test_emulator_partial_bootstrap_recovers_for_same_owner(monkeypatch):
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
     service.db.reference("workspaces/workspace").set({
         "bootstrap": {"initialized": True, "owner_uid": "alice"}
     })
