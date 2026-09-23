@@ -97,11 +97,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       }
     } catch (error) {
       if (!mounted) return;
+      final disabled = error is FirebaseAuthException &&
+          (error.code == 'user-disabled' || error.code == 'user-not-found');
       setState(() {
         _loading = false;
-        _error = error is _AuthorizationGateException
-            ? error.message
-            : 'Authorization status could not be verified. Check your connection and try again.';
+        _error = disabled
+            ? 'ACCOUNT_SUSPENDED'
+            : error is _AuthorizationGateException
+                ? error.message
+                : 'Authorization status could not be verified. Check your connection and try again.';
       });
     }
   }
@@ -122,6 +126,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     final user = InsightFlowAuthService.currentUser ?? widget.user;
     if (!user.emailVerified) {
       return EmailVerificationScreen(user: user);
+    }
+
+    if (_error == 'ACCOUNT_SUSPENDED') {
+      return _AccessStateScreen(
+        title: 'ACCOUNT / SUSPENDED',
+        message: 'This Firebase account is disabled or no longer available. Contact your administrator.',
+        action: InsightFlowAuthService.signOut,
+        actionLabel: 'Sign out',
+      );
     }
 
     final state = _context;

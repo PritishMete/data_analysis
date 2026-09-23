@@ -27,7 +27,7 @@ class InsightFlowAuthService {
 
   static Stream<User?> get authStateChanges => auth.authStateChanges();
   static Stream<User?> get userChanges => auth.userChanges();
-  static User? get currentUser => auth.currentUser;
+  static User? get currentUser => Firebase.apps.isEmpty ? null : auth.currentUser;
 
   static Future<UserCredential> signInWithEmailAndPassword(
     String email,
