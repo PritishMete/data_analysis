@@ -3669,7 +3669,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         await setInsightFlowSourceWorksheetName(sheet);
         return _authorizeMutationAndAdoptWorkingCopy(
           action: 'worksheet.modify',
-            );
+        );
       }
     }
     if (mounted) {
@@ -3683,7 +3683,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   Future<bool> _authorizeMutationAndAdoptWorkingCopy({
     required String action,
-    required String operationLabel,
   }) async {
     final originalSource = activeSheetName;
     final authorized = await authorizeExcelOperation(
