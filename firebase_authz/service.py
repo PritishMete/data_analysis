@@ -506,7 +506,7 @@ def authorize_excel_mutation(
 ):
     validate_id(dataset_id, "dataset ID")
     if action == "excel.mutate.original":
-        decision = authorization(uid, workspace_id, action, dataset_id)
+        decision = authorization(uid, workspace_id, action, None)
         authorize_dataset(uid, workspace_id, dataset_id, "dataset.view_original")
         return decision
     if action == "excel.mutate.working_copy":
