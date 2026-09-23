@@ -350,3 +350,39 @@ def test_delegated_dataset_share_is_scope_bound(monkeypatch):
     assert service._delegated_permission(
         workspace, "lead", "employee", "ds2", "dataset.share"
     ) is False
+
+
+def test_working_copy_provenance_is_metadata_only(monkeypatch):
+    workspace = {
+        "members": {
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "roles": {
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+        "datasets": {
+            "ds1": {
+                "dataset_id": "ds1",
+                "owner_uid": "owner",
+                "protected_original": True,
+                "grants": {
+                    "employee": {"permissions": ["dataset.create_working_copy"]}
+                },
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "employee", "email_verified": True})
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    captured = {}
+    class Ref:
+        def set(self, value): captured.update(value)
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    result = service.create_working_copy("org", "ds1", "token", "wc_test", "7")
+    assert result["working_copy_id"] == "wc_test"
+    assert captured["source_dataset_id"] == "ds1"
+    assert captured["created_by_uid"] == "employee"
+    assert "rows" not in captured
+    assert "values" not in captured
+    assert "workbook" not in captured

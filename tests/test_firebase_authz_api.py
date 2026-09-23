@@ -185,3 +185,22 @@ def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch)
     )
     assert response.status_code == 200
     assert response.json()["dataset_id"] == "ds_opaque"
+
+
+def test_working_copy_endpoint_does_not_accept_workbook_payloads(monkeypatch):
+    from firebase_authz import routes
+    monkeypatch.setattr(routes, "create_working_copy", lambda *args: {
+        "working_copy_id": args[2] if len(args) > 2 else "wc"
+    })
+    from main import app
+    response = TestClient(app).post(
+        "/v1/authz/working-copies",
+        json={
+            "workspace_id": "org",
+            "dataset_id": "ds1",
+            "working_copy_id": "wc1",
+            "source_version": "1",
+        },
+        headers={"Authorization": "Bearer valid"},
+    )
+    assert response.status_code == 200

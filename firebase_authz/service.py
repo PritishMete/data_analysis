@@ -360,6 +360,95 @@ def _delegated_permission(
             return True
     return False
 
+def create_working_copy(
+    workspace_id: str,
+    dataset_id: str,
+    actor_token: str,
+    working_copy_id: str | None = None,
+    source_version: str | None = None,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(dataset_id, "dataset ID")
+    if working_copy_id is not None:
+        validate_id(working_copy_id, "working copy ID")
+    if source_version is not None:
+        validate_id(source_version, "source version")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    authorize_dataset(actor, workspace_id, dataset_id, "dataset.create_working_copy")
+    workspace = _workspace(workspace_id)
+    dataset = _dataset(workspace, dataset_id)
+    copy_id = working_copy_id or f"wc_{uuid.uuid4().hex}"
+    now = int(time.time() * 1000)
+    metadata = {
+        "working_copy_id": copy_id,
+        "organization_id": workspace_id,
+        "source_dataset_id": dataset_id,
+        "source_owner_uid": dataset.get("owner_uid"),
+        "created_by_uid": actor,
+        "status": "active",
+        "source_version": source_version or "1",
+        "version": 1,
+        "created_at": now,
+        "provenance": {
+            "source_dataset_id": dataset_id,
+            "source_version": source_version or "1",
+            "created_by_uid": actor,
+            "created_at": now,
+        },
+        "grants": {
+            actor: {
+                "permissions": [
+                    "working_copy.view",
+                    "working_copy.modify",
+                    "working_copy.delete",
+                ]
+            }
+        },
+    }
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/working_copies/{copy_id}").set(metadata)
+    return {
+        "working_copy_id": copy_id,
+        "organization_id": workspace_id,
+        "source_dataset_id": dataset_id,
+        "source_version": source_version or "1",
+    }
+
+def authorize_working_copy(
+    uid: str,
+    workspace_id: str,
+    working_copy_id: str,
+    action: str,
+):
+    validate_id(working_copy_id, "working copy ID")
+    if action not in {
+        "working_copy.view",
+        "working_copy.modify",
+        "working_copy.delete",
+    }:
+        raise ValueError("Invalid working copy action.")
+    decision = authorization(uid, workspace_id, action, None)
+    workspace = _workspace(workspace_id)
+    copies = workspace.get("working_copies") or {}
+    working_copy = copies.get(working_copy_id)
+    if not isinstance(working_copy, dict):
+        raise PermissionDenied("Working copy is not accessible.")
+    if working_copy.get("status") != "active":
+        raise PermissionDenied("Working copy is not active.")
+    grant = (working_copy.get("grants") or {}).get(uid) or {}
+    if action not in set(grant.get("permissions") or []):
+        if uid != working_copy.get("created_by_uid"):
+            raise PermissionDenied("Permission denied for this working copy.")
+    return {
+        **decision,
+        "working_copy_id": working_copy_id,
+        "source_dataset_id": working_copy.get("source_dataset_id"),
+        "source_version": working_copy.get("source_version"),
+        "version": working_copy.get("version"),
+        "provenance": working_copy.get("provenance"),
+    }
+
 def register_dataset(workspace_id: str, dataset_id: str, owner_uid: str, actor_token: str, protected: bool = True):
     validate_id(workspace_id, "workspace ID")
     validate_id(dataset_id, "dataset ID")

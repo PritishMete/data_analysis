@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -111,6 +111,29 @@ class RoleUpsert(BaseModel):
     role_id: str
     name: str
     permissions: list[str]
+
+class WorkingCopyRequest(BaseModel):
+    workspace_id: str
+    dataset_id: str
+    working_copy_id: str | None = None
+    source_version: str | None = None
+
+@router.post("/working-copies")
+def working_copy_create(req: WorkingCopyRequest, authorization: str = Header(default=None)):
+    try:
+        return create_working_copy(
+            req.workspace_id,
+            req.dataset_id,
+            _token(authorization),
+            req.working_copy_id,
+            req.source_version,
+        )
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 class ApprovedEmployee(BaseModel):
     workspace_id: str
