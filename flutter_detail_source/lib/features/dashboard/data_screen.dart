@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../auth/account_management_screen.dart';
+import '../auth/authorization_management_screen.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -5992,6 +5993,19 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
               ),
             ),
             const Spacer(),
+            IconButton(
+              tooltip: 'Access management',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AuthorizationManagementScreen(),
+                ),
+              ),
+              icon: const Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
+            ),
             IconButton(
               tooltip: 'Account',
               onPressed: () => Navigator.of(context).push(

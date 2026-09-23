@@ -703,6 +703,91 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     )
     return {"accepted": True, "organization_id": workspace_id}
 
+def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> dict[str, Any]:
+    require_email_verified(claims)
+    validate_id(uid, "user ID")
+    validate_id(workspace_id, "workspace ID")
+    authorization(uid, workspace_id, "organization.view")
+    workspace = _workspace(workspace_id)
+    member = (workspace.get("members") or {}).get(uid) or {}
+    capabilities = _role_permissions(workspace, member)
+    result: dict[str, Any] = {
+        "organization_id": workspace_id,
+        "workspace_id": workspace_id,
+        "role_ids": _effective_role_ids(member),
+        "members": [],
+        "datasets": [],
+        "working_copies": [],
+        "invitations": [],
+        "approved_employees": [],
+        "audit": [],
+    }
+    if "membership.view" in capabilities:
+        for member_uid, item in (workspace.get("members") or {}).items():
+            if isinstance(item, dict):
+                result["members"].append({
+                    "uid": member_uid,
+                    "employee_id": item.get("employee_id") or f"emp_{member_uid}",
+                    "membership_status": _membership_status(item),
+                    "role_ids": _effective_role_ids(item),
+                })
+    for dataset_id, dataset in (workspace.get("datasets") or {}).items():
+        if not isinstance(dataset, dict):
+            continue
+        grant = _dataset_grant(dataset, uid)
+        if uid == dataset.get("owner_uid") or "dataset.view_original" in set(grant.get("permissions") or []):
+            result["datasets"].append({
+                "dataset_id": dataset_id,
+                "protected_original": dataset.get("protected_original") is True,
+                "owner_uid": dataset.get("owner_uid"),
+            })
+    for copy_id, item in (workspace.get("working_copies") or {}).items():
+        if isinstance(item, dict) and (
+            item.get("created_by_uid") == uid or uid in (item.get("grants") or {})
+        ):
+            result["working_copies"].append({
+                "working_copy_id": copy_id,
+                "source_dataset_id": item.get("source_dataset_id"),
+                "source_version": item.get("source_version"),
+                "status": item.get("status"),
+                "created_by_uid": item.get("created_by_uid"),
+            })
+    if "invitation.manage" in capabilities:
+        for invitation_id, invitation in (workspace.get("invitations") or {}).items():
+            if isinstance(invitation, dict):
+                result["invitations"].append({
+                    "invitation_id": invitation_id,
+                    "email": invitation.get("email"),
+                    "employee_id": invitation.get("employee_id"),
+                    "role_id": invitation.get("role_id"),
+                    "status": invitation.get("status"),
+                    "expires_at": invitation.get("expires_at"),
+                })
+    if "membership.manage" in capabilities:
+        for member_uid, item in (workspace.get("approved_employees") or {}).items():
+            if isinstance(item, dict):
+                result["approved_employees"].append({
+                    "uid": member_uid,
+                    "employee_id": item.get("employee_id"),
+                    "status": item.get("status"),
+                })
+    if "audit.view" in capabilities:
+        audit = _get(f"audit/{workspace_id}") or {}
+        if isinstance(audit, dict):
+            for event_id, event in list(audit.items())[-100:]:
+                if isinstance(event, dict):
+                    result["audit"].append({
+                        "event_id": event_id,
+                        "actor_uid": event.get("actor_uid"),
+                        "action": event.get("action"),
+                        "outcome": event.get("outcome"),
+                        "target_uid": event.get("target_uid"),
+                        "resource_id": event.get("resource_id"),
+                        "metadata": event.get("metadata") or {},
+                        "created_at": event.get("created_at"),
+                    })
+    return result
+
 def set_membership_status(
     workspace_id: str,
     target_uid: str,

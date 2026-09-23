@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -43,6 +43,20 @@ def me(
         raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
+
+@router.get("/management")
+def management(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not workspace_id:
+            raise ValueError("Workspace authorization context required.")
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        return management_snapshot(str(claims["uid"]), workspace_id.strip(), claims)
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(400, str(exc))
 
 @router.get("/membership")
 def membership(
