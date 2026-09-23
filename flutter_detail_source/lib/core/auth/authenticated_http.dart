@@ -83,38 +83,132 @@ Future<Map<String, dynamic>?> requestWorkingCopy({
   return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
 }
 
+Future<bool> _checkAuthorization({
+  required String backendBaseUrl,
+  required String action,
+  required String resourceId,
+}) async {
+  final headers = await firebaseAuthHeaders(resourceId: resourceId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/check'),
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'action': action,
+      'resource_id': resourceId,
+    }),
+  );
+  return response.statusCode == 200;
+}
+
+Future<String?> _resolveDatasetId(String sourceSheetName) async {
+  final id = await getWorkbookDatasetId(sourceSheetName);
+  if (id == null || id.isEmpty) return null;
+  try {
+    final headers = await firebaseAuthHeaders(resourceId: id);
+    final uid = InsightFlowAuthService.currentUser?.uid;
+    if (uid != null) {
+      await http.post(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/datasets/register'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'workspace_id': insightFlowWorkspaceId,
+          'dataset_id': id,
+          'owner_uid': uid,
+          'protected_original': true,
+        }),
+      );
+    }
+  } catch (_) {}
+  return id;
+}
+
 Future<bool> authorizeExcelOperation({
   required String backendBaseUrl,
   required String action,
   required String resourceId,
 }) async {
-  if (insightFlowWorkspaceId.isEmpty) {
-    return false;
-  }
+  if (insightFlowWorkspaceId.isEmpty) return false;
   final safeResourceId = _safeResourceId(resourceId);
-  final headers = await firebaseAuthHeaders(resourceId: safeResourceId);
-  final response = await http.post(
-    Uri.parse('$backendBaseUrl/v1/authz/check'),
-    headers: {
-      ...headers,
-      'Content-Type': 'application/json',
-    },
-    body: jsonEncode({
-      'workspace_id': insightFlowWorkspaceId,
-      'action': action,
-      'resource_id': safeResourceId,
-    }),
-  );
-  if (response.statusCode != 200) {
-    return false;
+
+  if (action == 'data.view' ||
+      action == 'history.view' ||
+      action == 'organization.view') {
+    return _checkAuthorization(
+      backendBaseUrl: backendBaseUrl,
+      action: action,
+      resourceId: safeResourceId,
+    );
   }
+
+  final datasetId = safeResourceId.startsWith('wc_')
+      ? safeResourceId
+      : await _resolveDatasetId(resourceId);
+  if (datasetId == null) return false;
+
+  if (datasetId.startsWith('wc_')) {
+    final allowed = await _checkAuthorization(
+      backendBaseUrl: backendBaseUrl,
+      action: 'excel.mutate.working_copy',
+      resourceId: datasetId,
+    );
+    if (!allowed) return false;
+    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+    await setExcelMutationAuthorization(
+      idToken: token,
+      workspaceId: insightFlowWorkspaceId,
+      resourceId: datasetId,
+      action: 'excel.mutate.working_copy',
+      backendBaseUrl: backendBaseUrl,
+    );
+    return true;
+  }
+
+  final originalAllowed = await _checkAuthorization(
+    backendBaseUrl: backendBaseUrl,
+    action: 'excel.mutate.original',
+    resourceId: datasetId,
+  );
+  if (originalAllowed) {
+    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+    await setExcelMutationAuthorization(
+      idToken: token,
+      workspaceId: insightFlowWorkspaceId,
+      resourceId: datasetId,
+      action: 'excel.mutate.original',
+      backendBaseUrl: backendBaseUrl,
+    );
+    return true;
+  }
+
+  final copy = await requestWorkingCopy(
+    backendBaseUrl: backendBaseUrl,
+    datasetId: datasetId,
+  );
+  final workingCopyId = copy?['working_copy_id']?.toString();
+  if (workingCopyId == null || workingCopyId.isEmpty) return false;
+
+  final sourceSheet = resourceId;
+  final copied = await createWorkbookWorkingCopy(
+    sourceSheetName: sourceSheet,
+    workingCopyId: workingCopyId,
+  );
+  final copiedSheet = copied?['sheetName']?.toString();
+  if (copiedSheet == null || copiedSheet.isEmpty) return false;
+
+  final workingAllowed = await _checkAuthorization(
+    backendBaseUrl: backendBaseUrl,
+    action: 'excel.mutate.working_copy',
+    resourceId: workingCopyId,
+  );
+  if (!workingAllowed) return false;
 
   final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
   await setExcelMutationAuthorization(
     idToken: token,
     workspaceId: insightFlowWorkspaceId,
-    resourceId: safeResourceId,
-    action: _excelMutationCapability(action),
+    resourceId: workingCopyId,
+    action: 'excel.mutate.working_copy',
     backendBaseUrl: backendBaseUrl,
   );
   return true;
