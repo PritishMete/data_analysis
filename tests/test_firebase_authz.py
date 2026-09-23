@@ -297,3 +297,56 @@ def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     with pytest.raises(KeyError):
         service._dataset(workspace, "not_present")
+
+
+def test_team_lead_delegation_requires_approved_employees(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {"status": "active", "roles": {"manager": True}},
+            "lead": {"status": "active", "roles": {"team_lead": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "roles": {
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+            "team_lead": {"permissions": sorted(service.DEFAULT_ROLES["team_lead"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+        "datasets": {"ds": {"dataset_id": "ds", "owner_uid": "manager", "grants": {}}},
+        "approved_employees": {},
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "manager", "email_verified": True})
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    class Ref:
+        def set(self, value): self.value = value
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    with pytest.raises(service.PermissionDenied):
+        service.set_delegation(
+            "org", "lead", ["employee"], ["ds"],
+            ["dataset.share"], None, "token"
+        )
+
+
+def test_delegated_dataset_share_is_scope_bound(monkeypatch):
+    workspace = {
+        "members": {
+            "lead": {"status": "active", "roles": {"team_lead": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "approved_employees": {"employee": {"status": "active"}},
+        "delegations": {
+            "d1": {
+                "status": "active",
+                "team_lead_uid": "lead",
+                "member_ids": ["employee"],
+                "dataset_ids": ["ds1"],
+                "permissions": ["dataset.share"],
+            }
+        },
+    }
+    assert service._delegated_permission(
+        workspace, "lead", "employee", "ds1", "dataset.share"
+    ) is True
+    assert service._delegated_permission(
+        workspace, "lead", "employee", "ds2", "dataset.share"
+    ) is False

@@ -254,14 +254,126 @@ def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
     grant = (dataset.get("grants") or {}).get(uid) or {}
     return grant if isinstance(grant, dict) else {}
 
+DELEGATED_DATASET_PERMISSIONS = {
+    "dataset.view_original",
+    "dataset.create_working_copy",
+    "dataset.share",
+}
+
+def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
+    record = (workspace.get("approved_employees") or {}).get(uid)
+    return isinstance(record, dict) and str(record.get("status") or "active") == "active"
+
+def set_approved_employee(workspace_id: str, target_uid: str, employee_id: str, actor_token: str):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(target_uid, "user ID")
+    validate_id(employee_id, "employee ID")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "membership.manage")
+    workspace = _workspace(workspace_id)
+    member = (workspace.get("members") or {}).get(target_uid)
+    if not isinstance(member, dict) or _membership_status(member) != "active":
+        raise PermissionDenied("Approved employee must be an active organization member.")
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/approved_employees/{target_uid}").set({
+        "employee_id": employee_id,
+        "status": "active",
+        "approved_at": int(time.time() * 1000),
+        "approved_by": actor,
+    })
+    return True
+
+def set_delegation(
+    workspace_id: str,
+    team_lead_uid: str,
+    member_ids: list[str],
+    dataset_ids: list[str],
+    permissions: list[str],
+    expires_at: int | None,
+    actor_token: str,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(team_lead_uid, "user ID")
+    member_ids = [validate_id(uid, "member ID") for uid in member_ids]
+    dataset_ids = [validate_id(dataset_id, "dataset ID") for dataset_id in dataset_ids]
+    if any(permission not in DELEGATED_DATASET_PERMISSIONS for permission in permissions):
+        raise ValueError("Delegation contains an unsupported capability.")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "delegation.manage")
+    workspace = _workspace(workspace_id)
+    team_lead = (workspace.get("members") or {}).get(team_lead_uid)
+    if not isinstance(team_lead, dict):
+        raise PermissionDenied("Delegated administrator must be an organization member.")
+    if "team_lead" not in _effective_role_ids(team_lead):
+        raise PermissionDenied("Delegation target must have the Team Lead role.")
+    for uid in member_ids:
+        member = (workspace.get("members") or {}).get(uid)
+        if not isinstance(member, dict) or _membership_status(member) != "active":
+            raise PermissionDenied("Delegation scope contains an inactive member.")
+        if not _approved_employee(workspace, uid):
+            raise PermissionDenied("Delegation scope can contain only approved employees.")
+    for dataset_id in dataset_ids:
+        _dataset(workspace, dataset_id)
+    if expires_at is not None and expires_at <= int(time.time() * 1000):
+        raise ValueError("Delegation expiry must be in the future.")
+    initialize_firebase()
+    delegation_id = uuid.uuid4().hex
+    db.reference(f"workspaces/{workspace_id}/delegations/{delegation_id}").set({
+        "delegation_id": delegation_id,
+        "delegated_by": actor,
+        "team_lead_uid": team_lead_uid,
+        "member_ids": sorted(set(member_ids)),
+        "dataset_ids": sorted(set(dataset_ids)),
+        "permissions": sorted(set(permissions)),
+        "expires_at": expires_at,
+        "status": "active",
+        "created_at": int(time.time() * 1000),
+    })
+    return {"delegation_id": delegation_id}
+
+def _delegated_permission(
+    workspace: dict[str, Any],
+    actor_uid: str,
+    target_uid: str,
+    dataset_id: str,
+    action: str,
+) -> bool:
+    now = int(time.time() * 1000)
+    delegations = workspace.get("delegations") or {}
+    for delegation in delegations.values():
+        if not isinstance(delegation, dict):
+            continue
+        if delegation.get("status") != "active":
+            continue
+        if delegation.get("team_lead_uid") != actor_uid:
+            continue
+        expiry = delegation.get("expires_at")
+        if expiry is not None and int(expiry) <= now:
+            continue
+        if target_uid not in (delegation.get("member_ids") or []):
+            continue
+        if dataset_id not in (delegation.get("dataset_ids") or []):
+            continue
+        if action in set(delegation.get("permissions") or []):
+            return True
+    return False
+
 def register_dataset(workspace_id: str, dataset_id: str, owner_uid: str, actor_token: str, protected: bool = True):
     validate_id(workspace_id, "workspace ID")
     validate_id(dataset_id, "dataset ID")
     validate_id(owner_uid, "user ID")
     claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
-    authorization(actor, workspace_id, "dataset.manage_acl")
     workspace = _workspace(workspace_id)
+    try:
+        authorization(actor, workspace_id, "dataset.manage_acl")
+    except PermissionDenied:
+        if not _delegated_permission(
+            workspace, actor, owner_uid, dataset_id, "dataset.create_working_copy"
+        ):
+            raise
     members = workspace.get("members") or {}
     if owner_uid not in members or _membership_status(members[owner_uid]) != "active":
         raise PermissionDenied("Dataset owner must be an active organization member.")
@@ -304,10 +416,19 @@ def set_dataset_grant(
         raise ValueError("Invalid dataset permission.")
     claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
-    authorization(actor, workspace_id, "dataset.manage_acl")
     workspace = _workspace(workspace_id)
+    try:
+        authorization(actor, workspace_id, "dataset.manage_acl")
+    except PermissionDenied:
+        if not _delegated_permission(
+            workspace, actor, target_uid, dataset_id, "dataset.share"
+        ):
+            raise
     if target_uid not in (workspace.get("members") or {}):
         raise PermissionDenied("Grant target is not an organization member.")
+    if _effective_role_level((workspace.get("members") or {}).get(actor, {})) <= ROLE_LEVELS["team_lead"]:
+        if not _approved_employee(workspace, target_uid):
+            raise PermissionDenied("Team Leads may grant dataset access only to approved employees.")
     dataset = _dataset(workspace, dataset_id)
     actor_grant = _dataset_grant(dataset, actor)
     actor_can_manage = "dataset.manage_acl" in set(actor_grant.get("permissions") or [])

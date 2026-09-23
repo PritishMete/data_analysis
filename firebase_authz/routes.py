@@ -112,6 +112,51 @@ class RoleUpsert(BaseModel):
     name: str
     permissions: list[str]
 
+class ApprovedEmployee(BaseModel):
+    workspace_id: str
+    target_uid: str
+    employee_id: str
+
+class DelegationRequest(BaseModel):
+    workspace_id: str
+    team_lead_uid: str
+    member_ids: list[str]
+    dataset_ids: list[str]
+    permissions: list[str]
+    expires_at: int | None = None
+
+@router.post("/approved-employees")
+def approved_employee(req: ApprovedEmployee, authorization: str = Header(default=None)):
+    try:
+        return {"success": set_approved_employee(
+            req.workspace_id, req.target_uid, req.employee_id, _token(authorization)
+        )}
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+@router.post("/delegations")
+def delegation(req: DelegationRequest, authorization: str = Header(default=None)):
+    try:
+        return set_delegation(
+            req.workspace_id,
+            req.team_lead_uid,
+            req.member_ids,
+            req.dataset_ids,
+            req.permissions,
+            req.expires_at,
+            _token(authorization),
+        )
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
 class DatasetRegistration(BaseModel):
     workspace_id: str
     dataset_id: str
