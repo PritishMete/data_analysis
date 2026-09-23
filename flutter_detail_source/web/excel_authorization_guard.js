@@ -23,8 +23,14 @@
     mutationAuthorization = null;
   };
 
-  window.insightflowRequireMutationAuthorization = async function (override) {
-    const authz = override || mutationAuthorization;
+  window.insightflowRequireMutationAuthorization = async function (resourceIdOverride, actionOverride) {
+    const authz = mutationAuthorization
+      ? {
+          ...mutationAuthorization,
+          resourceId: String(resourceIdOverride || mutationAuthorization.resourceId),
+          action: String(actionOverride || mutationAuthorization.action),
+        }
+      : null;
     if (
       !authz ||
       !authz.idToken ||
