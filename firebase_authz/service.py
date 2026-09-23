@@ -567,6 +567,174 @@ def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id:
         raise PermissionDenied("Only the Organization Owner can manage Owner access.")
     return True
 
+def require_recent_auth(claims: dict[str, Any], max_age_seconds: int = 300) -> dict[str, Any]:
+    auth_time = claims.get("auth_time")
+    if auth_time is None:
+        raise PermissionDenied("Recent authentication is required.")
+    try:
+        age = time.time() - float(auth_time)
+    except (TypeError, ValueError):
+        raise PermissionDenied("Recent authentication is required.")
+    if age < 0 or age > max_age_seconds:
+        raise PermissionDenied("Recent authentication is required.")
+    return claims
+
+def audit_event(
+    workspace_id: str,
+    actor_uid: str,
+    action: str,
+    outcome: str,
+    target_uid: str | None = None,
+    resource_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(actor_uid, "user ID")
+    if target_uid:
+        validate_id(target_uid, "target user ID")
+    if resource_id:
+        validate_id(resource_id, "resource ID")
+    safe_metadata = {}
+    for key, value in (metadata or {}).items():
+        key = str(key)
+        if any(token in key.lower() for token in ("row", "value", "cell", "workbook", "sheet", "prompt", "result", "schema")):
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe_metadata[key] = value
+    initialize_firebase()
+    event_id = uuid.uuid4().hex
+    db.reference(f"audit/{workspace_id}/{event_id}").set({
+        "event_id": event_id,
+        "organization_id": workspace_id,
+        "actor_uid": actor_uid,
+        "action": action,
+        "outcome": outcome,
+        "target_uid": target_uid,
+        "resource_id": resource_id,
+        "metadata": safe_metadata,
+        "created_at": int(time.time() * 1000),
+    })
+    return event_id
+
+def _invitation_by_id(workspace: dict[str, Any], invitation_id: str):
+    invitations = workspace.get("invitations") or {}
+    invitation = invitations.get(invitation_id)
+    if not isinstance(invitation, dict):
+        raise PermissionDenied("Invitation is not accessible.")
+    return invitation
+
+def create_invitation(
+    workspace_id: str,
+    email: str,
+    employee_id: str,
+    role_id: str,
+    actor_token: str,
+    expires_at: int | None = None,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(employee_id, "employee ID")
+    validate_id(role_id, "role ID")
+    email = email.strip().lower()
+    if "@" not in email or len(email) > 320:
+        raise ValueError("Invalid invitation email.")
+    normalized_role = ROLE_ALIASES.get(role_id, role_id)
+    if normalized_role not in {"team_lead", "employee", "external_viewer"}:
+        raise PermissionDenied("Invitations cannot directly assign Owner or Manager access.")
+    claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "invitation.manage")
+    workspace = _workspace(workspace_id)
+    if expires_at is not None and expires_at <= int(time.time() * 1000):
+        raise ValueError("Invitation expiry must be in the future.")
+    invitation_id = uuid.uuid4().hex
+    now = int(time.time() * 1000)
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/invitations/{invitation_id}").set({
+        "invitation_id": invitation_id,
+        "organization_id": workspace_id,
+        "email": email,
+        "employee_id": employee_id,
+        "role_id": normalized_role,
+        "status": "invited",
+        "created_by": actor,
+        "created_at": now,
+        "expires_at": expires_at,
+    })
+    audit_event(
+        workspace_id, actor, "invitation.create", "succeeded",
+        metadata={"role_id": normalized_role},
+    )
+    return {"invitation_id": invitation_id, "status": "invited"}
+
+def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(invitation_id, "invitation ID")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    email = str(claims.get("email") or "").strip().lower()
+    workspace = _workspace(workspace_id)
+    invitation = _invitation_by_id(workspace, invitation_id)
+    if invitation.get("status") != "invited":
+        raise PermissionDenied("Invitation is no longer active.")
+    if invitation.get("expires_at") is not None and int(invitation["expires_at"]) <= int(time.time() * 1000):
+        raise PermissionDenied("Invitation has expired.")
+    if invitation.get("email") != email:
+        raise PermissionDenied("Invitation identity does not match the authenticated email.")
+    member_ref = db.reference(f"workspaces/{workspace_id}/members/{actor}")
+    member_ref.set({
+        "employee_id": invitation.get("employee_id") or f"emp_{actor}",
+        "status": "active",
+        "roles": {str(invitation["role_id"]): True},
+    })
+    db.reference(f"workspaces/{workspace_id}/invitations/{invitation_id}").update({
+        "status": "accepted",
+        "accepted_by": actor,
+        "accepted_at": int(time.time() * 1000),
+    })
+    db.reference(f"users/{actor}").set({
+        "status": "active",
+        "email": email,
+        "employee_id": invitation.get("employee_id") or f"emp_{actor}",
+    })
+    audit_event(
+        workspace_id, actor, "invitation.accept", "succeeded",
+        target_uid=actor,
+        metadata={"role_id": invitation.get("role_id")},
+    )
+    return {"accepted": True, "organization_id": workspace_id}
+
+def set_membership_status(
+    workspace_id: str,
+    target_uid: str,
+    status: str,
+    actor_token: str,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(target_uid, "user ID")
+    if status not in {"approved", "active", "suspended", "removed"}:
+        raise ValueError("Invalid membership status.")
+    claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "membership.manage")
+    if status in {"suspended", "removed"}:
+        last_owner_guard(workspace_id, target_uid)
+    workspace = _workspace(workspace_id)
+    member = (workspace.get("members") or {}).get(target_uid)
+    if not isinstance(member, dict):
+        raise PermissionDenied("User is not an organization member.")
+    initialize_firebase()
+    db.reference(f"workspaces/{workspace_id}/members/{target_uid}/status").set(status)
+    if status in {"suspended", "removed"} and auth is not None:
+        try:
+            auth.revoke_refresh_tokens(target_uid)
+        except Exception:
+            pass
+    audit_event(
+        workspace_id, actor, "membership.status", "succeeded",
+        target_uid=target_uid, metadata={"status": status},
+    )
+    return True
+
 def require_email_verified(claims: dict[str, Any]) -> dict[str, Any]:
     if claims.get("email_verified") is not True:
         raise EmailVerificationRequired("Email verification required.")

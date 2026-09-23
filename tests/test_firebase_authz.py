@@ -386,3 +386,41 @@ def test_working_copy_provenance_is_metadata_only(monkeypatch):
     assert "rows" not in captured
     assert "values" not in captured
     assert "workbook" not in captured
+
+
+def test_recent_auth_is_required_for_sensitive_membership_changes():
+    with pytest.raises(service.PermissionDenied):
+        service.require_recent_auth({"uid": "u", "email_verified": True, "auth_time": 1}, max_age_seconds=300)
+
+
+def test_invitation_accept_requires_exact_identity(monkeypatch):
+    workspace = {
+        "members": {},
+        "invitations": {
+            "inv1": {
+                "status": "invited",
+                "email": "employee@example.com",
+                "employee_id": "emp_1",
+                "role_id": "employee",
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "u", "email": "other@example.com", "email_verified": True,
+    })
+    with pytest.raises(service.PermissionDenied):
+        service.accept_invitation("org", "inv1", "token")
+
+
+def test_membership_revocation_protects_last_owner(monkeypatch):
+    workspace = {
+        "members": {"owner": {"roles": {"organization_owner": True}}},
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "owner", "email_verified": True, "auth_time": time.time(),
+    })
+    monkeypatch.setattr(service, "authorization", lambda *args, **kwargs: {"allowed": True})
+    with pytest.raises(service.PermissionDenied):
+        service.set_membership_status("org", "owner", "suspended", "token")

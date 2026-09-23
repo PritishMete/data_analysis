@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -111,6 +111,50 @@ class RoleUpsert(BaseModel):
     role_id: str
     name: str
     permissions: list[str]
+
+class InvitationRequest(BaseModel):
+    workspace_id: str
+    email: str
+    employee_id: str
+    role_id: str
+    expires_at: int | None = None
+
+class InvitationAcceptRequest(BaseModel):
+    workspace_id: str
+    invitation_id: str
+
+class MembershipStatusRequest(BaseModel):
+    workspace_id: str
+    target_uid: str
+    status: str
+
+@router.post("/invitations")
+def invitation_create(req: InvitationRequest, authorization: str = Header(default=None)):
+    try:
+        return create_invitation(
+            req.workspace_id, req.email, req.employee_id, req.role_id,
+            _token(authorization), req.expires_at
+        )
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(400, str(exc))
+
+@router.post("/invitations/accept")
+def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
+    try:
+        return accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+
+@router.post("/membership/status")
+def membership_status(req: MembershipStatusRequest, authorization: str = Header(default=None)):
+    try:
+        return {"success": set_membership_status(
+            req.workspace_id, req.target_uid, req.status, _token(authorization)
+        )}
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except ValueError as exc: raise HTTPException(400, str(exc))
 
 class WorkingCopyRequest(BaseModel):
     workspace_id: str
