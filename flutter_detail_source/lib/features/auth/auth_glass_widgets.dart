@@ -6,11 +6,11 @@ import '../../app_colors.dart';
 import '../../tech_background.dart';
 import '../../core/interop/office_host.dart';
 
-/// Shared Flutter-only shell for authentication.
+/// Shared Flutter-only liquid-glass shell for authentication.
 ///
-/// This deliberately uses the same LiquidGlassScope, TechAnimatedBackground,
-/// GlassCard, GlassContainer and TechColors used by DataScreen. Authentication
-/// is rendered entirely with Flutter widgets.
+/// The authentication surface intentionally follows the same composition as
+/// the main InsightFlow workspace: TechAnimatedBackground -> LiquidGlassScope
+/// -> glass app bar -> elevated glass content surface.
 class AuthGlassScaffold extends StatelessWidget {
   const AuthGlassScaffold({
     super.key,
@@ -35,9 +35,9 @@ class AuthGlassScaffold extends StatelessWidget {
       body: LiquidGlassScope(
         child: Stack(
           children: [
-            const Positioned.fill(
+            Positioned.fill(
               child: GlassBackgroundSource(
-                child: TechAnimatedBackground(),
+                child: const TechAnimatedBackground(),
               ),
             ),
             Positioned.fill(
@@ -45,27 +45,88 @@ class AuthGlassScaffold extends StatelessWidget {
                 child: Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                       child: GlassCard(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                        shape: const LiquidRoundedSuperellipse(
-                          borderRadius: 16,
-                        ),
+                        padding: const EdgeInsets.fromLTRB(18, 12, 14, 12),
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
                         child: Row(
                           children: [
-                            const Icon(
-                              Icons.terminal,
-                              color: TechColors.borderActive,
-                              size: 18,
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: TechColors.borderActive.withValues(alpha: 0.10),
+                                border: Border.all(
+                                  color: TechColors.borderActive.withValues(alpha: 0.35),
+                                ),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                color: TechColors.borderActive,
+                                size: 17,
+                              ),
                             ),
-                            const SizedBox(width: 10),
-                            const Text(
-                              'InsightFlow',
-                              style: TextStyle(
-                                color: TechColors.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'monospace',
+                            const SizedBox(width: 12),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'InsightFlow',
+                                  style: TextStyle(
+                                    color: TechColors.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'AI DATA WORKSPACE',
+                                  style: TextStyle(
+                                    color: TechColors.textMuted,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'monospace',
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: TechColors.statusGreen.withValues(alpha: 0.06),
+                                border: Border.all(
+                                  color: TechColors.statusGreen.withValues(alpha: 0.22),
+                                ),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline,
+                                    size: 11,
+                                    color: TechColors.statusGreen,
+                                  ),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    'SECURE SESSION',
+                                    style: TextStyle(
+                                      color: TechColors.statusGreen,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamily: 'monospace',
+                                      letterSpacing: 0.7,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -74,41 +135,91 @@ class AuthGlassScaffold extends StatelessWidget {
                     ),
                     Expanded(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                         child: Center(
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 520),
+                            constraints: const BoxConstraints(maxWidth: 620),
                             child: GlassContainer(
                               useOwnLayer: true,
                               quality: glassQuality,
-                              settings: TechColors.sectionGlass,
-                              shape: const LiquidRoundedSuperellipse(
-                                borderRadius: 4,
-                              ),
-                              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+                              settings: TechColors.panelGlass,
+                              shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+                              padding: const EdgeInsets.fromLTRB(30, 28, 30, 26),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text(
-                                    title,
-                                    style: const TextStyle(
-                                      color: TechColors.textPrimary,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      fontFamily: 'SFPro',
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 46,
+                                        height: 46,
+                                        decoration: BoxDecoration(
+                                          color: TechColors.borderActive.withValues(alpha: 0.10),
+                                          border: Border.all(
+                                            color: TechColors.borderActive.withValues(alpha: 0.28),
+                                          ),
+                                          borderRadius: BorderRadius.circular(15),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: TechColors.borderActive.withValues(alpha: 0.08),
+                                              blurRadius: 18,
+                                              spreadRadius: 1,
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Icon(
+                                          Icons.fingerprint_rounded,
+                                          color: TechColors.borderActive,
+                                          size: 23,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              style: const TextStyle(
+                                                color: TechColors.textPrimary,
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w700,
+                                                fontFamily: 'SFPro',
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 5),
+                                            Text(
+                                              subtitle,
+                                              style: const TextStyle(
+                                                color: TechColors.textMuted,
+                                                fontSize: 10,
+                                                height: 1.5,
+                                                fontFamily: 'monospace',
+                                                letterSpacing: 0.45,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Container(
+                                    height: 1,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          TechColors.borderActive.withValues(alpha: 0.0),
+                                          TechColors.borderActive.withValues(alpha: 0.28),
+                                          TechColors.borderActive.withValues(alpha: 0.0),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    subtitle,
-                                    style: const TextStyle(
-                                      color: TechColors.textMuted,
-                                      fontSize: 12,
-                                      height: 1.4,
-                                      fontFamily: 'SFPro',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 18),
+                                  const SizedBox(height: 22),
                                   ...children,
                                 ],
                               ),
@@ -155,13 +266,13 @@ class AuthGlassField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final glassQuality =
-        isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard;
+        kIsWeb || isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard;
 
     return GlassContainer(
       useOwnLayer: true,
       quality: glassQuality,
       settings: TechColors.fieldGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 4),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 14),
       padding: EdgeInsets.zero,
       child: TextField(
         controller: controller,
@@ -180,37 +291,51 @@ class AuthGlassField extends StatelessWidget {
           labelText: label,
           labelStyle: const TextStyle(
             color: TechColors.textMuted,
-            fontSize: 11,
+            fontSize: 10,
             fontFamily: 'monospace',
+            letterSpacing: 0.5,
           ),
           floatingLabelStyle: const TextStyle(
             color: TechColors.borderActive,
             fontSize: 10,
             fontFamily: 'monospace',
+            letterSpacing: 0.4,
           ),
-          prefixIcon: Icon(
-            icon,
-            color: TechColors.textMuted,
-            size: 16,
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Icon(icon, color: TechColors.textMuted, size: 17),
           ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 44),
           suffixIcon: suffix,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(4),
-            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.6),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(
+              color: TechColors.borderMuted.withValues(alpha: 0.75),
+              width: 0.7,
+            ),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(4),
-            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.6),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(
+              color: TechColors.borderMuted.withValues(alpha: 0.85),
+              width: 0.7,
+            ),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(4),
-            borderSide: const BorderSide(color: TechColors.borderActive, width: 0.8),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(
+              color: TechColors.borderActive,
+              width: 1.0,
+            ),
           ),
           disabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(4),
-            borderSide: const BorderSide(color: TechColors.borderMuted, width: 0.4),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(
+              color: TechColors.borderMuted.withValues(alpha: 0.45),
+              width: 0.6,
+            ),
           ),
-          contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          contentPadding: const EdgeInsets.fromLTRB(14, 15, 12, 15),
         ),
       ),
     );
@@ -231,40 +356,50 @@ class AuthGlassPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onPressed != null && !loading;
+
     return SizedBox(
-      height: 38,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: TechColors.borderActive.withValues(alpha: 0.14),
-          foregroundColor: TechColors.textPrimary,
-          disabledBackgroundColor: TechColors.borderMuted.withValues(alpha: 0.35),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(4)),
-            side: BorderSide(
-              color: TechColors.borderActive,
-              width: 0.65,
-            ),
-          ),
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-        ),
+      height: 48,
+      child: GlassButton(
+        onTap: enabled ? onPressed : null,
+        enabled: enabled,
+        style: GlassButtonStyle.prominent,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+        settings: TechColors.sectionGlass,
+        quality: kIsWeb || isRunningInsideOffice
+            ? GlassQuality.minimal
+            : GlassQuality.standard,
+        useOwnLayer: true,
+        label: label,
         child: loading
             ? const SizedBox(
-                width: 16,
-                height: 16,
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 1.8,
                   color: TechColors.borderActive,
                 ),
               )
-            : Text(
-                label.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace',
-                ),
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label.toUpperCase(),
+                    style: const TextStyle(
+                      color: TechColors.textPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                      letterSpacing: 0.9,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: TechColors.borderActive,
+                    size: 16,
+                  ),
+                ],
               ),
       ),
     );
@@ -285,21 +420,34 @@ class AuthGlassMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = error ? TechColors.statusRed : TechColors.statusGreen;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.06),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontFamily: 'monospace',
-        ),
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: kIsWeb || isRunningInsideOffice
+          ? GlassQuality.minimal
+          : GlassQuality.standard,
+      settings: TechColors.fieldGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      child: Row(
+        children: [
+          Icon(
+            error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+            color: color,
+            size: 17,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                height: 1.45,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -321,8 +469,8 @@ class AuthGlassLink extends StatelessWidget {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: TechColors.borderActive,
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        minimumSize: const Size(0, 32),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: Text(
@@ -330,7 +478,9 @@ class AuthGlassLink extends StatelessWidget {
         style: const TextStyle(
           color: TechColors.borderActive,
           fontSize: 10,
+          fontWeight: FontWeight.w700,
           fontFamily: 'monospace',
+          letterSpacing: 0.45,
         ),
       ),
     );
