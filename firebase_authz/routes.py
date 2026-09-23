@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -240,7 +240,7 @@ def delegation(req: DelegationRequest, authorization: str = Header(default=None)
 
 class DatasetRegistration(BaseModel):
     workspace_id: str
-    dataset_id: str
+    dataset_id: str | None = None
     owner_uid: str
     protected_original: bool = True
 
@@ -305,3 +305,18 @@ def resource_grant(req: ResourceGrant, authorization: str=Header(default=None)):
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
+
+
+class AccountCleanupRequest(BaseModel):
+    uid: str
+
+@router.post("/account/cleanup")
+def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(default=None)):
+    try:
+        return cleanup_account(req.uid, _token(authorization))
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))

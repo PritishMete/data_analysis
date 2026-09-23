@@ -31,3 +31,38 @@ Future<void> setExcelMutationAuthorization({
 void clearExcelMutationAuthorization() {
   _clearMutationAuthorization();
 }
+
+
+@JS('getInsightFlowWorkbookDatasetId')
+external JSPromise<JSString> _getWorkbookDatasetId(JSString sourceSheetName);
+
+@JS('createInsightFlowWorkingCopy')
+external JSPromise<JSAny?> _createWorkingCopy(
+  JSString sourceSheetName,
+  JSString workingCopyId,
+);
+
+Future<String?> getWorkbookDatasetId(String sourceSheetName) async {
+  try {
+    return (await _getWorkbookDatasetId(sourceSheetName).toDart).toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<Map<String, dynamic>?> createWorkbookWorkingCopy({
+  required String sourceSheetName,
+  required String workingCopyId,
+}) async {
+  try {
+    final result = await _createWorkingCopy(
+      sourceSheetName.toJS,
+      workingCopyId.toJS,
+    ).toDart;
+    return result?.dartify() is Map
+        ? Map<String, dynamic>.from(result!.dartify() as Map)
+        : null;
+  } catch (_) {
+    return null;
+  }
+}

@@ -498,6 +498,21 @@ def register_dataset(workspace_id: str, dataset_id: str, owner_uid: str, actor_t
     })
     return {"dataset_id": dataset_id, "organization_id": workspace_id}
 
+def authorize_excel_mutation(
+    uid: str,
+    workspace_id: str,
+    action: str,
+    dataset_id: str,
+):
+    validate_id(dataset_id, "dataset ID")
+    if action == "excel.mutate.original":
+        decision = authorization(uid, workspace_id, action, dataset_id)
+        authorize_dataset(uid, workspace_id, dataset_id, "dataset.view_original")
+        return decision
+    if action == "excel.mutate.working_copy":
+        return authorize_working_copy(uid, workspace_id, dataset_id, "working_copy.modify")
+    raise ValueError("Unsupported Excel mutation capability.")
+
 def set_dataset_grant(
     workspace_id: str,
     dataset_id: str,
@@ -835,6 +850,54 @@ def require_email_verified(claims: dict[str, Any]) -> dict[str, Any]:
     if claims.get("email_verified") is not True:
         raise EmailVerificationRequired("Email verification required.")
     return claims
+
+def cleanup_account(uid: str, actor_token: str):
+    validate_id(uid, "user ID")
+    claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
+    actor = str(claims["uid"])
+    if actor != uid:
+        raise PermissionDenied("Account cleanup identity mismatch.")
+    initialize_firebase()
+    workspaces = _get("workspaces") or {}
+    affected = []
+    for workspace_id, workspace in workspaces.items():
+        if not isinstance(workspace, dict):
+            continue
+        members = workspace.get("members") or {}
+        if uid not in members:
+            continue
+        last_owner_guard(workspace_id, uid)
+        affected.append(workspace_id)
+        updates = {}
+        updates[f"workspaces/{workspace_id}/members/{uid}/status"] = "removed"
+        updates[f"workspaces/{workspace_id}/approved_employees/{uid}"] = None
+        for dataset_id, dataset in (workspace.get("datasets") or {}).items():
+            if isinstance(dataset, dict):
+                updates[f"workspaces/{workspace_id}/datasets/{dataset_id}/grants/{uid}"] = None
+        for delegation_id, delegation in (workspace.get("delegations") or {}).items():
+            if not isinstance(delegation, dict):
+                continue
+            if delegation.get("team_lead_uid") == uid or uid in (delegation.get("member_ids") or []):
+                updates[f"workspaces/{workspace_id}/delegations/{delegation_id}/status"] = "revoked"
+        for invitation_id, invitation in (workspace.get("invitations") or {}).items():
+            if isinstance(invitation, dict) and (
+                str(invitation.get("target_uid") or "") == uid
+                or str(invitation.get("created_for_uid") or "") == uid
+            ):
+                updates[f"workspaces/{workspace_id}/invitations/{invitation_id}/status"] = "revoked"
+        audit_event(
+            workspace_id, actor, "account.cleanup", "succeeded",
+            target_uid=uid,
+            metadata={"membership_revoked": True, "authorization_state_revoked": True},
+        )
+        db.reference("/").update(updates)
+    if auth is not None:
+        try:
+            auth.revoke_refresh_tokens(uid)
+        except Exception:
+            pass
+    db.reference(f"users/{uid}/status").set("removed")
+    return {"revoked_workspaces": affected}
 
 def protected_context(id_token: str, workspace_id: str, action: str, resource_id: str | None = None):
     claims = require_email_verified(verify_id_token(id_token))

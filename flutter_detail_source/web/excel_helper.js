@@ -2387,3 +2387,46 @@ window.jsWriteQueryResultToSheet = jsWriteQueryResultToSheet;
 // overview-level fields) and by the explicit "Export Full Quality Report"
 // button (which supplies the complete AiReport). See that file for the
 // current implementation.
+
+
+async function getInsightFlowWorkbookDatasetId(sourceSheetName) {
+  const url = (window.Office && Office.context && Office.context.document)
+    ? (Office.context.document.url || "")
+    : "";
+  const seed = "insightflow|dataset|v1|" + url + "|" + String(sourceSheetName || "");
+  if (window.crypto && window.crypto.subtle) {
+    const bytes = new TextEncoder().encode(seed);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return "ds_" + Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return "ds_" + btoa(unescape(encodeURIComponent(seed)))
+    .replace(/[^A-Za-z0-9]/g, "").slice(0, 120);
+}
+
+async function createInsightFlowWorkingCopy(sourceSheetName, workingCopyId) {
+  if (!await window.insightflowRequireMutationAuthorization(
+    workingCopyId,
+    "excel.mutate.working_copy"
+  )) {
+    return { success: false, error: "Working-copy authorization denied." };
+  }
+  return await Excel.run(async (context) => {
+    const source = context.workbook.worksheets.getItem(sourceSheetName);
+    const copy = source.copy(Excel.WorksheetPositionType.after, source);
+    copy.load("name");
+    await context.sync();
+    let name = "IF_Working_" + String(workingCopyId).replace(/[^A-Za-z0-9]/g, "").slice(-12);
+    if (name.length > 31) name = name.slice(0, 31);
+    try {
+      copy.name = name;
+      await context.sync();
+    } catch (_) {}
+    copy.activate();
+    await context.sync();
+    if (typeof window.setInsightFlowSourceWorksheetName === "function") {
+      await window.setInsightFlowSourceWorksheetName(copy.name);
+    }
+    return { success: true, sheetName: copy.name, workingCopyId };
+  });
+}

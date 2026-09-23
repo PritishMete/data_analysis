@@ -7,3 +7,11 @@ Future<void> setExcelMutationAuthorization({
 }) async {}
 
 void clearExcelMutationAuthorization() {}
+
+
+Future<String?> getWorkbookDatasetId(String sourceSheetName) async => null;
+
+Future<Map<String, dynamic>?> createWorkbookWorkingCopy({
+  required String sourceSheetName,
+  required String workingCopyId,
+}) async => null;
