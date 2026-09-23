@@ -253,3 +253,47 @@ def test_owner_can_manage_lower_roles_but_not_self_promote():
     assert service.can_manage_role("org", "owner", "employee", "manager", True) is True
     with pytest.raises(service.PermissionDenied):
         service.can_manage_role("org", "owner", "owner", "manager", True)
+
+
+def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
+    workspace = {
+        "members": {
+            "owner": {"status": "active", "roles": {"organization_owner": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "roles": {
+            "organization_owner": {"permissions": sorted(service.ACTIONS)},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+        "datasets": {
+            "ds_opaque": {
+                "dataset_id": "ds_opaque",
+                "organization_id": "org",
+                "owner_uid": "owner",
+                "protected_original": True,
+                "grants": {
+                    "employee": {
+                        "permissions": ["dataset.view_original", "dataset.create_working_copy"]
+                    }
+                },
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    assert service.authorize_dataset("employee", "org", "ds_opaque", "dataset.view_original")["allowed"] is True
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_dataset("employee", "org", "ds_opaque", "dataset.delete")
+
+
+def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
+    workspace = {
+        "members": {"owner": {"status": "active", "roles": {"organization_owner": True}}},
+        "roles": {"organization_owner": {"permissions": sorted(service.ACTIONS)}},
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "owner", "email_verified": True})
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    with pytest.raises(KeyError):
+        service._dataset(workspace, "not_present")

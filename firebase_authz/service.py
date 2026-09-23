@@ -242,6 +242,99 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
         "role_ids": _effective_role_ids(member),
     }
 
+def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
+    dataset_id = validate_id(dataset_id, "dataset ID")
+    datasets = workspace.get("datasets") or {}
+    value = datasets.get(dataset_id)
+    if not isinstance(value, dict):
+        raise PermissionDenied("Dataset is not accessible.")
+    return value
+
+def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
+    grant = (dataset.get("grants") or {}).get(uid) or {}
+    return grant if isinstance(grant, dict) else {}
+
+def register_dataset(workspace_id: str, dataset_id: str, owner_uid: str, actor_token: str, protected: bool = True):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(dataset_id, "dataset ID")
+    validate_id(owner_uid, "user ID")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "dataset.manage_acl")
+    workspace = _workspace(workspace_id)
+    members = workspace.get("members") or {}
+    if owner_uid not in members or _membership_status(members[owner_uid]) != "active":
+        raise PermissionDenied("Dataset owner must be an active organization member.")
+    initialize_firebase()
+    now = int(time.time() * 1000)
+    db.reference(f"workspaces/{workspace_id}/datasets/{dataset_id}").set({
+        "dataset_id": dataset_id,
+        "organization_id": workspace_id,
+        "owner_uid": owner_uid,
+        "protected_original": bool(protected),
+        "created_at": now,
+        "grants": {
+            owner_uid: {
+                "permissions": [
+                    "dataset.view_original",
+                    "dataset.create_working_copy",
+                    "dataset.manage_acl",
+                ]
+            }
+        },
+    })
+    return {"dataset_id": dataset_id, "organization_id": workspace_id}
+
+def set_dataset_grant(
+    workspace_id: str,
+    dataset_id: str,
+    target_uid: str,
+    permissions: list[str],
+    actor_token: str,
+):
+    validate_id(workspace_id, "workspace ID")
+    validate_id(dataset_id, "dataset ID")
+    validate_id(target_uid, "user ID")
+    allowed = {
+        "dataset.view_original",
+        "dataset.create_working_copy",
+        "dataset.share",
+    }
+    if any(permission not in allowed for permission in permissions):
+        raise ValueError("Invalid dataset permission.")
+    claims = require_email_verified(verify_id_token(actor_token))
+    actor = str(claims["uid"])
+    authorization(actor, workspace_id, "dataset.manage_acl")
+    workspace = _workspace(workspace_id)
+    if target_uid not in (workspace.get("members") or {}):
+        raise PermissionDenied("Grant target is not an organization member.")
+    dataset = _dataset(workspace, dataset_id)
+    actor_grant = _dataset_grant(dataset, actor)
+    actor_can_manage = "dataset.manage_acl" in set(actor_grant.get("permissions") or [])
+    if actor_can_manage is False and actor != dataset.get("owner_uid"):
+        raise PermissionDenied("Dataset ACL management is not delegated to this user.")
+    initialize_firebase()
+    db.reference(
+        f"workspaces/{workspace_id}/datasets/{dataset_id}/grants/{target_uid}"
+    ).set({"permissions": sorted(set(permissions))})
+    return True
+
+def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str):
+    if not action.startswith("dataset."):
+        raise ValueError("Dataset authorization requires a dataset capability.")
+    decision = authorization(uid, workspace_id, action, None)
+    workspace = _workspace(workspace_id)
+    dataset = _dataset(workspace, dataset_id)
+    grants = _dataset_grant(dataset, uid)
+    grant_permissions = set(grants.get("permissions") or [])
+    if action not in grant_permissions:
+        raise PermissionDenied("Permission denied for this dataset.")
+    return {
+        **decision,
+        "dataset_id": dataset_id,
+        "protected_original": dataset.get("protected_original") is True,
+    }
+
 def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id: str, enabled: bool) -> bool:
     validate_id(role_id, "role ID")
     workspace = _workspace(workspace_id)

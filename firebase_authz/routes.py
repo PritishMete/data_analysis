@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, register_dataset, set_dataset_grant, _user, workspace_memberships, authentication_context
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -111,6 +111,52 @@ class RoleUpsert(BaseModel):
     role_id: str
     name: str
     permissions: list[str]
+
+class DatasetRegistration(BaseModel):
+    workspace_id: str
+    dataset_id: str
+    owner_uid: str
+    protected_original: bool = True
+
+class DatasetGrant(BaseModel):
+    workspace_id: str
+    dataset_id: str
+    target_uid: str
+    permissions: list[str]
+
+@router.post("/datasets/register")
+def dataset_register(req: DatasetRegistration, authorization: str = Header(default=None)):
+    try:
+        return register_dataset(
+            req.workspace_id,
+            req.dataset_id,
+            req.owner_uid,
+            _token(authorization),
+            req.protected_original,
+        )
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+@router.post("/datasets/grants")
+def dataset_grant(req: DatasetGrant, authorization: str = Header(default=None)):
+    try:
+        return {"success": set_dataset_grant(
+            req.workspace_id,
+            req.dataset_id,
+            req.target_uid,
+            req.permissions,
+            _token(authorization),
+        )}
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 class ResourceGrant(BaseModel):
     workspace_id: str

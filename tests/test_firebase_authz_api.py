@@ -163,3 +163,25 @@ def test_membership_endpoint_returns_membership_only_for_authenticated_user(monk
     assert response.status_code == 200
     assert response.json()["organization_id"] == "abc"
     assert response.json()["employee_id"] == "emp_1"
+
+
+def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch):
+    from firebase_authz import routes
+    monkeypatch.setattr(routes, "register_dataset", lambda *args: {
+        "dataset_id": args[1],
+        "organization_id": args[0],
+    })
+    monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "owner", "email_verified": True})
+    from main import app
+    response = TestClient(app).post(
+        "/v1/authz/datasets/register",
+        json={
+            "workspace_id": "org",
+            "dataset_id": "ds_opaque",
+            "owner_uid": "owner",
+            "protected_original": True,
+        },
+        headers={"Authorization": "Bearer valid"},
+    )
+    assert response.status_code == 200
+    assert response.json()["dataset_id"] == "ds_opaque"
