@@ -62,6 +62,27 @@ String _excelMutationCapability(String action) {
       : 'excel.mutate.original';
 }
 
+Future<Map<String, dynamic>?> requestWorkingCopy({
+  required String backendBaseUrl,
+  required String datasetId,
+  String? sourceVersion,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty || datasetId.trim().isEmpty) return null;
+  final headers = await firebaseAuthHeaders(resourceId: datasetId);
+  final response = await http.post(
+    Uri.parse('$backendUrl/v1/authz/working-copies'),
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'dataset_id': _safeResourceId(datasetId),
+      if (sourceVersion != null) 'source_version': _safeResourceId(sourceVersion),
+    }),
+  );
+  if (response.statusCode != 200) return null;
+  final decoded = jsonDecode(response.body);
+  return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+}
+
 Future<bool> authorizeExcelOperation({
   required String backendBaseUrl,
   required String action,
