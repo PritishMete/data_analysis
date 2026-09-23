@@ -68,6 +68,26 @@ ROUTE_ACTIONS: list[tuple[str, str, str]] = [
 ]
 
 
+def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | None:
+    base = "/v1/managed-datasets"
+    if path == base and method == "GET":
+        return None
+    if path == base and method == "POST":
+        return "dataset.upload", False
+    if path.startswith(base + "/"):
+        suffix = path[len(base) + 1:]
+        parts = suffix.split("/")
+        if len(parts) == 2 and parts[1] == "download" and method == "GET":
+            return "dataset.view_original", True
+        if len(parts) == 2 and parts[1] == "versions" and method == "POST":
+            return "dataset.upload", False
+        if len(parts) == 2 and parts[1] == "working-copies" and method == "POST":
+            return "dataset.create_working_copy", True
+        if len(parts) == 1 and method == "DELETE":
+            return "dataset.delete", True
+    return None
+
+
 def route_policy(path: str) -> tuple[str, bool] | None:
     if path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
         return None
@@ -89,7 +109,13 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
         }:
             return await call_next(request)
 
-        policy = route_policy(request.url.path)
+        managed_policy = managed_dataset_route_policy(request.method, request.url.path)
+        if managed_policy is not None:
+            policy = managed_policy
+        elif request.url.path == "/v1/managed-datasets" and request.method == "GET":
+            policy = None
+        else:
+            policy = route_policy(request.url.path)
         if policy is None:
             return await call_next(request)
 
