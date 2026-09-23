@@ -78,7 +78,7 @@ class _AuthorizationManagementScreenState
 
   Future<void> _post(String path, Map<String, dynamic> body) async {
     final headers = await firebaseAuthHeaders();
-    final response = await http.post(Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/' + path), headers: {...headers, 'Content-Type': 'application/json'}, body: jsonEncode(body));
+    final response = await http.post(Uri.parse('$insightFlowBackendBaseUrl/v1/authz/$path'), headers: {...headers, 'Content-Type': 'application/json'}, body: jsonEncode(body));
     if (response.statusCode != 200) {
       dynamic decoded;
       try { decoded = jsonDecode(response.body); } catch (_) {}
@@ -221,7 +221,9 @@ class _AuthorizationManagementScreenState
         item['event_id'] ??
         'record';
     final status = item['status'] ?? item['outcome'] ?? '';
-    return '${id.toString()}${status.toString().isEmpty ? '' : ' · ' + status.toString()}';
+    final idText = id.toString();
+    final statusText = status.toString();
+    return '$idText${statusText.isEmpty ? '' : ' · $statusText'}';
   }
 
   List<Widget> _rows(dynamic values) {
@@ -376,7 +378,7 @@ class _MetaRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Text(
-        label + '  ' + value,
+        '$label  $value',
         style: const TextStyle(
           color: TechColors.textMuted,
           fontSize: 11,
