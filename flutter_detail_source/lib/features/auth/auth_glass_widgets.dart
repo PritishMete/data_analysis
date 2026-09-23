@@ -120,13 +120,13 @@ class AuthGlassScaffold extends StatelessWidget {
               child: Center(child: card),
             ),
           );
-        },
-,
+                  },
+                ),
               ),
             ),
           ],
         ),
-      ),),
+      ),
     );
   }
 }
