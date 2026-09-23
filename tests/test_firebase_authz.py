@@ -424,3 +424,75 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
     monkeypatch.setattr(service, "authorization", lambda *args, **kwargs: {"allowed": True})
     with pytest.raises(service.PermissionDenied):
         service.set_membership_status("org", "owner", "suspended", "token")
+
+
+def test_employee_cannot_mutate_original_excel_even_if_operation_capability_exists(monkeypatch):
+    workspace = {
+        "members": {"employee": {"status": "active", "roles": {"employee": True}}},
+        "roles": {
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    with pytest.raises(service.PermissionDenied):
+        service.authorization("employee", "org", "excel.mutate.original", "ds_opaque")
+
+
+def test_manager_can_mutate_original_only_with_dataset_resource_context(monkeypatch):
+    workspace = {
+        "members": {"manager": {"status": "active", "roles": {"manager": True}}},
+        "roles": {
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+        },
+        "resources": {
+            "ds_opaque": {
+                "grants": {
+                    "manager": {"permissions": ["excel.mutate.original"]}
+                }
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    decision = service.authorization(
+        "manager", "org", "excel.mutate.original", "ds_opaque"
+    )
+    assert decision["allowed"] is True
+
+
+def test_suspended_membership_is_immediately_denied_after_revocation(monkeypatch):
+    workspace = {
+        "members": {"employee": {"status": "suspended", "roles": {"employee": True}}},
+        "roles": {
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    with pytest.raises(service.PermissionDenied):
+        service.authorization("employee", "org", "data.view", "ds_opaque")
+
+
+def test_audit_event_filters_workbook_sensitive_metadata(monkeypatch):
+    captured = {}
+    class Ref:
+        def set(self, value):
+            captured.update(value)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    service.audit_event(
+        "org", "actor", "excel.mutate.original", "succeeded",
+        resource_id="ds_opaque",
+        metadata={
+            "operation": "pivot.create",
+            "rows": 500,
+            "workbook": "private.xlsx",
+            "result": "sensitive",
+            "safe": "kept",
+        },
+    )
+    assert "safe" in captured["metadata"]
+    assert "rows" not in captured["metadata"]
+    assert "workbook" not in captured["metadata"]
+    assert "result" not in captured["metadata"]

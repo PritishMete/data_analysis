@@ -204,3 +204,30 @@ def test_working_copy_endpoint_does_not_accept_workbook_payloads(monkeypatch):
         headers={"Authorization": "Bearer valid"},
     )
     assert response.status_code == 200
+
+
+def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monkeypatch):
+    from firebase_authz import routes
+    monkeypatch.setattr(routes, "verify_id_token", lambda token: {
+        "uid": "new-authenticated-user",
+        "email": "new@example.com",
+        "email_verified": True,
+    })
+    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+        "email_verified": True,
+        "account_status": "pending",
+        "membership_status": "none",
+        "workspace_authorized": False,
+        "workspace_id": "org",
+        "workspaces": [],
+    })
+    from main import app
+    response = TestClient(app).get(
+        "/v1/authz/me",
+        headers={
+            "Authorization": "Bearer valid",
+            "X-InsightFlow-Workspace-ID": "org",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["workspace_authorized"] is False
