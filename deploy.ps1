@@ -1,37 +1,104 @@
 param(
   [string]$BaseHref = '/data_analysis/',
-  [string]$RemoteUrl = 'https://github.com/PritishMete/data_analysis.git'
+  [string]$GhPagesBranch = 'gh-pages',
+  [string]$FirebaseWebApiKey = $env:INSIGHTFLOW_FIREBASE_WEB_API_KEY,
+  [string]$FirebaseWebAppId = $env:INSIGHTFLOW_FIREBASE_WEB_APP_ID,
+  [string]$FirebaseWebMessagingSenderId = $env:INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID,
+  [string]$FirebaseWebProjectId = $env:INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID,
+  [string]$FirebaseWebAuthDomain = $env:INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN,
+  [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID
 )
 
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 Push-Location $RepoRoot
+$DeployDir = Join-Path ([System.IO.Path]::GetTempPath()) ("insightflow-gh-pages-" + [guid]::NewGuid().ToString('N'))
 try {
-  flutter build web --base-href $BaseHref
+  $SourceCommit = (git rev-parse HEAD).Trim()
+  $CurrentBranch = (git branch --show-current).Trim()
+  if ($CurrentBranch -ne 'feature/data-workspace') {
+    throw "Refusing deployment from '$CurrentBranch'. Expected feature/data-workspace."
+  }
+
+  $requiredDefines = @{
+    'INSIGHTFLOW_FIREBASE_WEB_API_KEY' = $FirebaseWebApiKey
+    'INSIGHTFLOW_FIREBASE_WEB_APP_ID' = $FirebaseWebAppId
+    'INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID' = $FirebaseWebMessagingSenderId
+    'INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID' = $FirebaseWebProjectId
+    'INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN' = $FirebaseWebAuthDomain
+    'INSIGHTFLOW_WORKSPACE_ID' = $WorkspaceId
+  }
+  $missingDefines = @(
+    $requiredDefines.GetEnumerator() |
+      Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } |
+      ForEach-Object { $_.Key }
+  )
+  if ($missingDefines.Count -gt 0) {
+    throw "Missing Firebase/Workspace build configuration: $($missingDefines -join ', ')"
+  }
+
+  $buildArgs = @('build', 'web', '--release', '--base-href', $BaseHref)
+  foreach ($entry in $requiredDefines.GetEnumerator()) {
+    $buildArgs += "--dart-define=$($entry.Key)=$($entry.Value)"
+  }
+  flutter @buildArgs
 
   $BuildWeb = Join-Path $RepoRoot 'build\web'
-  Push-Location $BuildWeb
+  $IndexPath = Join-Path $BuildWeb 'index.html'
+  if (-not (Test-Path $IndexPath)) {
+    throw "Flutter build did not produce build\web\index.html."
+  }
+
+  $Index = Get-Content -Raw -Path $IndexPath
+  $Index = $Index.Replace('__INSIGHTFLOW_BUILD_COMMIT__', $SourceCommit)
+  Set-Content -Path $IndexPath -Value $Index -NoNewline
+
+  foreach ($Required in @(
+    'index.html',
+    'flutter_bootstrap.js',
+    'main.dart.js',
+    'excel_data_processor.js',
+    'excel_helper.js',
+    'excel_quality_report_generator.js'
+  )) {
+    if (-not (Test-Path (Join-Path $BuildWeb $Required))) {
+      throw "Excel-enabled build is missing required asset: $Required"
+    }
+  }
+
+  if ($Index -notmatch 'https://appsforoffice\.microsoft\.com/lib/1/hosted/office\.js') {
+    throw 'Excel build is missing Office.js.'
+  }
+  if ($Index -notmatch [regex]::Escape($SourceCommit)) {
+    throw 'Excel build source marker was not stamped.'
+  }
+
+  git fetch origin $GhPagesBranch
+  git worktree add --detach $DeployDir ("origin/" + $GhPagesBranch)
   try {
-    if (-not (Test-Path .git)) {
-      git init
+    git -C $DeployDir rm -r --ignore-unmatch .
+    Get-ChildItem -LiteralPath $BuildWeb -Force | ForEach-Object {
+      Copy-Item -LiteralPath $_.FullName -Destination $DeployDir -Recurse -Force
     }
 
-    $originUrl = git remote get-url origin 2>$null
-    if ($LASTEXITCODE -eq 0 -and $originUrl) {
-      git remote remove origin
+    git -C $DeployDir add -A
+    if (git -C $DeployDir diff --cached --quiet) {
+      Write-Host "No deployment changes for $SourceCommit."
+      return
     }
 
-    git remote add origin $RemoteUrl
-    git add -A
-    git commit -m "Deploy production web assets to gh-pages"
-    git branch -M gh-pages
-    git push -f origin gh-pages
+    git -C $DeployDir -c user.name='PritishMete' -c user.email='jaiphotoshoot@gmail.com' `
+      commit -m "Deploy Excel add-in $SourceCommit"
+    git -C $DeployDir push origin ("HEAD:" + $GhPagesBranch)
   }
   finally {
-    Pop-Location
+    git worktree remove --force $DeployDir
   }
 }
 finally {
+  if (Test-Path $DeployDir) {
+    Remove-Item -Recurse -Force $DeployDir -ErrorAction SilentlyContinue
+  }
   Pop-Location
 }
