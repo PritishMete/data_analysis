@@ -26,9 +26,7 @@ class AuthGlassScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
-      background: const GlassBackgroundSource(
-        child: TechAnimatedBackground(),
-      ),
+      background: const TechAnimatedBackground(),
       appBar: GlassAppBar(
         centerTitle: false,
         title: Row(
