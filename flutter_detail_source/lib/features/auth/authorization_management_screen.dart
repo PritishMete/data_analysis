@@ -384,7 +384,7 @@ class _AuthorizationManagementScreenState
       throw StateError('The selected file could not be read.');
     }
     await _sendManagedFile(
-      '/v1/managed-datasets/' + datasetId + '/versions',
+      '/v1/managed-datasets/${datasetId}/versions',
       file.name,
       bytes,
       'New protected version registered.',
@@ -404,7 +404,7 @@ class _AuthorizationManagementScreenState
       }
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse(insightFlowBackendBaseUrl + path),
+        Uri.parse('$insightFlowBackendBaseUrl$path'),
       );
       request.headers.addAll(headers);
       request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
@@ -443,9 +443,9 @@ class _AuthorizationManagementScreenState
       final id = dataset['dataset_id'].toString();
       final version = dataset['current_version']?.toString();
       headers['X-InsightFlow-Resource-ID'] = id;
-      var url = insightFlowBackendBaseUrl + '/v1/managed-datasets/' + id + '/download';
+      var url = '$insightFlowBackendBaseUrl/v1/managed-datasets/$id/download';
       if (version != null && version.isNotEmpty) {
-        url += '?version_id=' + Uri.encodeQueryComponent(version);
+        url += '?version_id=${Uri.encodeQueryComponent(version)}';
       }
       final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode != 200) {
@@ -481,7 +481,7 @@ class _AuthorizationManagementScreenState
       }
       headers['X-InsightFlow-Resource-ID'] = datasetId;
       final response = await http.delete(
-        Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + datasetId),
+        Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId'),
         headers: headers,
       );
       if (response.statusCode != 200) {
@@ -536,8 +536,7 @@ class _AuthorizationManagementScreenState
       final protected = dataset['protected_original'] == true;
       rows.add(_MetaRow(
         name,
-        (dataset['content_type'] ?? 'binary').toString() +
-            ' · ' + version + ' · ' + (protected ? 'PROTECTED ORIGINAL' : 'MANAGED'),
+        '${dataset['content_type'] ?? 'binary'} · $version · ${protected ? 'PROTECTED ORIGINAL' : 'MANAGED'}',
       ));
       rows.add(
         Wrap(
