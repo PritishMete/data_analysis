@@ -644,3 +644,77 @@ def test_account_cleanup_revokes_invitation_matching_authenticated_email(monkeyp
     result = service.cleanup_account("user", "token")
     assert result["revoked_workspaces"] == ["org"]
     assert captured["workspaces/org/invitations/inv/status"] == "revoked"
+
+
+def test_team_lead_dataset_grant_requires_delegated_share(monkeypatch):
+    workspace = {
+        "members": {
+            "lead": {"status": "active", "roles": {"team_lead": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "approved_employees": {
+            "employee": {"status": "active", "employee_id": "E1"},
+        },
+        "datasets": {
+            "ds1": {
+                "owner_uid": "owner",
+                "grants": {},
+            }
+        },
+        "delegations": {
+            "del1": {
+                "team_lead_uid": "lead",
+                "member_ids": ["employee"],
+                "dataset_ids": ["ds1"],
+                "permissions": ["dataset.share"],
+                "status": "active",
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "lead", "email_verified": True, "auth_time": 9999999999,
+    })
+    monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    captured = {}
+    class Ref:
+        def set(self, value): captured["value"] = value
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    assert service.set_dataset_grant(
+        "org", "ds1", "employee",
+        ["dataset.view_original"], "token",
+    )
+    assert captured["value"]["permissions"] == ["dataset.view_original"]
+
+
+def test_team_lead_cannot_grant_outside_delegation(monkeypatch):
+    workspace = {
+        "members": {
+            "lead": {"status": "active", "roles": {"team_lead": True}},
+            "employee": {"status": "active", "roles": {"employee": True}},
+        },
+        "approved_employees": {
+            "employee": {"status": "active", "employee_id": "E1"},
+        },
+        "datasets": {"ds1": {"owner_uid": "owner", "grants": {}}},
+        "delegations": {
+            "del1": {
+                "team_lead_uid": "lead",
+                "member_ids": [],
+                "dataset_ids": ["ds1"],
+                "permissions": ["dataset.share"],
+                "status": "active",
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "lead", "email_verified": True, "auth_time": 9999999999,
+    })
+    monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
+    with pytest.raises(service.PermissionDenied):
+        service.set_dataset_grant(
+            "org", "ds1", "employee",
+            ["dataset.view_original"], "token",
+        )
