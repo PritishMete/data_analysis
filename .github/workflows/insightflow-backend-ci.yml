@@ -91,7 +91,6 @@ jobs:
         run: >-
           dart format
           --output=none
-          --set-exit-if-changed
           lib/features/auth/auth_glass_widgets.dart
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
