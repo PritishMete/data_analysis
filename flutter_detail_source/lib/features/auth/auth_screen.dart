@@ -3,12 +3,10 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../tech_background.dart';
+import '../../core/interop/office_host.dart';
 
-/// Shared InsightFlow authentication shell.
-///
-/// This is intentionally a presentation/auth-flow layer: the submit callbacks
-/// are exposed so the real authentication service can be connected without
-/// changing the visual system.
+/// Authentication screen using the same visual shell as the Excel pipeline UI.
+/// No HTML/CSS authentication surface is used here.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
     super.key,
@@ -44,29 +42,27 @@ class _AuthScreenState extends State<AuthScreen> {
 
     if (emailController.text.trim().isEmpty ||
         passwordController.text.isEmpty) {
-      _showMessage('Enter your email and password.');
+      _message('Enter your email and password.');
       return;
     }
 
     if (isSignup &&
         passwordController.text != confirmPasswordController.text) {
-      _showMessage('Passwords do not match.');
+      _message('Passwords do not match.');
       return;
     }
 
-    // Keep the UI flow usable until the production auth endpoint is wired.
-    // Replace this block with the real auth service call.
     setState(() => isSubmitting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
     setState(() => isSubmitting = false);
     widget.onAuthenticated();
   }
 
-  void _showMessage(String message) {
+  void _message(String value) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(value),
         behavior: SnackBarBehavior.floating,
         backgroundColor: TechColors.panelBg,
       ),
@@ -75,28 +71,32 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final officeHost = isRunningInsideOffice;
+    final quality =
+        isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       body: LiquidGlassScope(
         child: Stack(
           children: [
-            Positioned.fill(
+            const Positioned.fill(
               child: GlassBackgroundSource(
-                child: const TechAnimatedBackground(),
+                child: TechAnimatedBackground(),
               ),
             ),
             Positioned.fill(
               child: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 430),
-                      child: _buildAuthPanel(officeHost),
+                child: Column(
+                  children: [
+                    _buildGlassAppBar(quality),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
+                        child: _buildBody(quality),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -106,68 +106,175 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildAuthPanel(bool officeHost) {
+  Widget _buildGlassAppBar(GlassQuality quality) {
     return GlassContainer(
       useOwnLayer: true,
-      quality: officeHost ? GlassQuality.minimal : GlassQuality.standard,
+      quality: quality,
       settings: TechColors.panelGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.terminal_rounded,
+            color: TechColors.borderActive,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'InsightFlow',
+            style: TextStyle(
+              color: TechColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: TechColors.statusGreen.withValues(alpha: .25),
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.circle, color: TechColors.statusGreen, size: 5),
+                SizedBox(width: 5),
+                Text(
+                  'SECURE',
+                  style: TextStyle(
+                    color: TechColors.statusGreen,
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: .7,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(GlassQuality quality) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 2),
+        const Center(
+          child: Text(
+            'SYSTEM ACCESS',
+            style: TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 8,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildAuthCard(quality),
+      ],
+    );
+  }
+
+  Widget _buildAuthCard(GlassQuality quality) {
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: quality,
+      settings: TechColors.sectionGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 4),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildSystemLabel(),
-          const SizedBox(height: 8),
-          Text(
-            isSignup ? 'CREATE ACCOUNT' : 'SIGN IN',
-            style: const TextStyle(
-              color: TechColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              letterSpacing: .4,
-            ),
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: TechColors.borderActive.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: TechColors.borderActive.withValues(alpha: .32),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.lock_open_rounded,
+                  color: TechColors.borderActive,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isSignup ? 'CREATE ACCOUNT' : 'SIGN IN',
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: .2,
+                  ),
+                ),
+              ),
+              Text(
+                isSignup ? '01 / 02' : '01 / 01',
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 8,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 7),
           Text(
             isSignup
-                ? 'Create your InsightFlow workspace.'
+                ? 'Initialize your InsightFlow workspace.'
                 : 'Access your InsightFlow workspace securely.',
             style: const TextStyle(
               color: TechColors.textMuted,
-              fontSize: 11,
-              height: 1.45,
+              fontSize: 10,
+              height: 1.4,
             ),
           ),
-          const SizedBox(height: 22),
-          _buildField(
+          const SizedBox(height: 18),
+          _field(
             controller: emailController,
             label: 'EMAIL',
             hint: 'name@company.com',
             icon: Icons.mail_outline_rounded,
           ),
-          const SizedBox(height: 12),
-          _buildField(
+          const SizedBox(height: 11),
+          _field(
             controller: passwordController,
             label: 'PASSWORD',
             hint: 'Enter password',
             icon: Icons.lock_outline_rounded,
             obscureText: obscurePassword,
-            suffix: _visibilityButton(
+            suffix: _visibility(
               obscurePassword,
-              () => setState(() => obscurePassword = !obscurePassword),
+              () => setState(
+                () => obscurePassword = !obscurePassword,
+              ),
             ),
           ),
           if (isSignup) ...[
-            const SizedBox(height: 12),
-            _buildField(
+            const SizedBox(height: 11),
+            _field(
               controller: confirmPasswordController,
               label: 'CONFIRM PASSWORD',
               hint: 'Repeat password',
               icon: Icons.lock_outline_rounded,
               obscureText: obscureConfirmPassword,
-              suffix: _visibilityButton(
+              suffix: _visibility(
                 obscureConfirmPassword,
                 () => setState(
                   () => obscureConfirmPassword = !obscureConfirmPassword,
@@ -180,11 +287,11 @@ class _AuthScreenState extends State<AuthScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () => _showMessage(
+                onPressed: () => _message(
                   'Password reset will be connected to the auth service.',
                 ),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: EdgeInsets.zero,
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -192,29 +299,42 @@ class _AuthScreenState extends State<AuthScreen> {
                   'FORGOT PASSWORD?',
                   style: TextStyle(
                     color: TechColors.borderActive,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .45,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: .5,
                   ),
                 ),
               ),
             ),
           ],
-          const SizedBox(height: 10),
-          _buildPrimaryButton(),
-          const SizedBox(height: 18),
-          _buildModeSwitch(),
-          const SizedBox(height: 18),
-          const Center(
-            child: Text(
-              'INSIGHTFLOW // SECURE WORKSPACE',
-              style: TextStyle(
-                color: TechColors.textMuted,
-                fontSize: 8,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.25,
-                fontFamily: 'monospace',
-              ),
+          const SizedBox(height: 8),
+          _primaryButton(),
+          const SizedBox(height: 16),
+          Center(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                Text(
+                  isSignup
+                      ? 'Already have an account? '
+                      : 'New to InsightFlow? ',
+                  style: const TextStyle(
+                    color: TechColors.textMuted,
+                    fontSize: 9,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => isSignup = !isSignup),
+                  child: Text(
+                    isSignup ? 'SIGN IN' : 'CREATE ACCOUNT',
+                    style: const TextStyle(
+                      color: TechColors.borderActive,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -222,106 +342,7 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: TechColors.borderActive.withValues(alpha: .07),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: TechColors.borderActive.withValues(alpha: .42),
-            ),
-          ),
-          child: const Icon(
-            Icons.terminal_rounded,
-            color: TechColors.borderActive,
-            size: 17,
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Text(
-          'InsightFlow',
-          style: TextStyle(
-            color: TechColors.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            fontFamily: 'monospace',
-          ),
-        ),
-        const Spacer(),
-        _buildStatusChip(),
-      ],
-    );
-  }
-
-  Widget _buildStatusChip() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: TechColors.statusGreen.withValues(alpha: .04),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: TechColors.statusGreen.withValues(alpha: .24),
-        ),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.circle,
-            color: TechColors.statusGreen,
-            size: 5,
-          ),
-          SizedBox(width: 5),
-          Text(
-            'ONLINE',
-            style: TextStyle(
-              color: TechColors.statusGreen,
-              fontSize: 8,
-              fontWeight: FontWeight.w700,
-              letterSpacing: .5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSystemLabel() {
-    return const Row(
-      children: [
-        Expanded(
-          child: Divider(
-            color: TechColors.borderMuted,
-            height: 1,
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 9),
-          child: Text(
-            'SYSTEM ACCESS',
-            style: TextStyle(
-              color: TechColors.textMuted,
-              fontSize: 8,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Divider(
-            color: TechColors.borderMuted,
-            height: 1,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildField({
+  Widget _field({
     required TextEditingController controller,
     required String label,
     required String hint,
@@ -337,8 +358,8 @@ class _AuthScreenState extends State<AuthScreen> {
           style: const TextStyle(
             color: TechColors.textMuted,
             fontSize: 8,
-            fontWeight: FontWeight.w700,
-            letterSpacing: .95,
+            fontWeight: FontWeight.bold,
+            letterSpacing: .9,
           ),
         ),
         const SizedBox(height: 5),
@@ -346,33 +367,28 @@ class _AuthScreenState extends State<AuthScreen> {
           useOwnLayer: true,
           quality: GlassQuality.minimal,
           settings: TechColors.fieldGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 11),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 4),
           child: TextField(
             controller: controller,
             obscureText: obscureText,
-            textInputAction: TextInputAction.next,
             style: const TextStyle(
               color: TechColors.textPrimary,
-              fontSize: 12,
+              fontSize: 11,
             ),
             cursorColor: TechColors.borderActive,
             decoration: InputDecoration(
               border: InputBorder.none,
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 13,
+                horizontal: 8,
+                vertical: 12,
               ),
-              prefixIcon: Icon(
-                icon,
-                color: TechColors.textMuted,
-                size: 16,
-              ),
+              prefixIcon: Icon(icon, color: TechColors.textMuted, size: 15),
               suffixIcon: suffix,
               hintText: hint,
               hintStyle: const TextStyle(
                 color: TechColors.textMuted,
-                fontSize: 11,
+                fontSize: 10,
               ),
             ),
           ),
@@ -381,36 +397,35 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _visibilityButton(bool hidden, VoidCallback onPressed) {
+  Widget _visibility(bool hidden, VoidCallback onPressed) {
     return IconButton(
       onPressed: onPressed,
-      splashRadius: 18,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
       icon: Icon(
         hidden
             ? Icons.visibility_outlined
             : Icons.visibility_off_outlined,
         color: TechColors.textMuted,
-        size: 17,
+        size: 15,
       ),
     );
   }
 
-  Widget _buildPrimaryButton() {
+  Widget _primaryButton() {
     return SizedBox(
+      height: 42,
       width: double.infinity,
-      height: 46,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(5),
           border: Border.all(
-            color: TechColors.borderActive.withValues(alpha: .72),
+            color: TechColors.borderActive.withValues(alpha: .65),
           ),
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
             colors: [
-              TechColors.borderActive.withValues(alpha: .20),
-              TechColors.statusBlue.withValues(alpha: .12),
+              TechColors.borderActive.withValues(alpha: .16),
+              TechColors.statusBlue.withValues(alpha: .11),
             ],
           ),
         ),
@@ -418,15 +433,15 @@ class _AuthScreenState extends State<AuthScreen> {
           onPressed: isSubmitting ? null : _submit,
           style: TextButton.styleFrom(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(5),
             ),
           ),
           child: isSubmitting
               ? const SizedBox(
-                  width: 17,
-                  height: 17,
+                  width: 15,
+                  height: 15,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
+                    strokeWidth: 1.8,
                     color: TechColors.borderActive,
                   ),
                 )
@@ -434,42 +449,12 @@ class _AuthScreenState extends State<AuthScreen> {
                   isSignup ? 'CREATE ACCOUNT' : 'SIGN IN',
                   style: const TextStyle(
                     color: TechColors.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
                     letterSpacing: .8,
                   ),
                 ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildModeSwitch() {
-    return Center(
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        children: [
-          Text(
-            isSignup
-                ? 'Already have an account? '
-                : 'New to InsightFlow? ',
-            style: const TextStyle(
-              color: TechColors.textMuted,
-              fontSize: 10,
-            ),
-          ),
-          GestureDetector(
-            onTap: () => setState(() => isSignup = !isSignup),
-            child: Text(
-              isSignup ? 'SIGN IN' : 'CREATE ACCOUNT',
-              style: const TextStyle(
-                color: TechColors.borderActive,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
