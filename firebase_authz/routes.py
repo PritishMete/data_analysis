@@ -108,7 +108,7 @@ def authorization_check(req: AuthorizationCheck, authorization: str = Header(def
         uid = str(claims["uid"])
         if req.action in {"excel.mutate.original", "excel.mutate.working_copy"}:
             if not req.resource_id:
-                raise PermissionDenied("A resource ID is required for Excel mutation authorization.")
+                raise AuthzError("A resource ID is required for Excel mutation authorization.")
             return authorize_excel_mutation(
                 uid, req.workspace_id, req.action, req.resource_id
             )
