@@ -189,6 +189,10 @@ Future<bool> authorizeExcelOperation({
   final copiedSheet = copied?['sheetName']?.toString();
   if (copiedSheet == null || copiedSheet.isEmpty) return false;
 
+  // The copied worksheet becomes the InsightFlow analytical source. Generated
+  // Pivot/chart/report sheets remain outputs and never replace this source.
+  if (!await setInsightFlowSourceWorksheetName(copiedSheet)) return false;
+
   final workingAllowed = await _checkAuthorization(
     backendBaseUrl: backendBaseUrl,
     action: 'excel.mutate.working_copy',

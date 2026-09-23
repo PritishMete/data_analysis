@@ -54,6 +54,7 @@ function mock(){
 
 (async()=>{
   const {context,calls,pivotRange}=mock();
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'..','web','excel_authorization_guard.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','web','excel_native_chart.js'),'utf8'),context);
 
   const placement={

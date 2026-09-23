@@ -1852,10 +1852,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     Map<String, dynamic> parsed,
   ) async {
     final permission = action == "pivot" ? "pivot.create" : "worksheet.modify";
-    final authorized = await authorizeExcelOperation(
-      backendBaseUrl: _backendBaseUrl,
+    final authorized = await _authorizeMutationAndAdoptWorkingCopy(
       action: permission,
-      resourceId: activeSheetName,
+      operationLabel: generatePivotTable ? 'PivotTable' : 'pipeline',
     );
     if (!authorized) {
       if (mounted) {
@@ -3510,6 +3509,46 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     return buffer.toString();
   }
 
+  Future<bool> _authorizeMutationAndAdoptWorkingCopy({
+    required String action,
+    required String operationLabel,
+  }) async {
+    final originalSource = activeSheetName;
+    final authorized = await authorizeExcelOperation(
+      backendBaseUrl: _backendBaseUrl,
+      action: action,
+      resourceId: originalSource,
+    );
+    if (!authorized) {
+      if (mounted) {
+        showNotification(
+          'This protected original cannot be modified and no authorized working copy could be created.',
+          TechColors.statusOrange,
+        );
+      }
+      return false;
+    }
+
+    final persistedSource = await getInsightFlowSourceWorksheetName();
+    if (persistedSource != null &&
+        persistedSource.isNotEmpty &&
+        persistedSource != originalSource &&
+        mounted) {
+      setState(() {
+        useActiveSelection = false;
+        selectedSourceSheet = persistedSource;
+        activeSheetName = persistedSource;
+      });
+      await refreshWorksheetNames();
+      await syncHeadersSilently();
+      showNotification(
+        'Protected original kept unchanged. Started working on $persistedSource.',
+        TechColors.statusGreen,
+      );
+    }
+    return true;
+  }
+
   // ── Agentic command dispatchers ───────────────────────────────────────
   // Each builds the exact options shape executePipeline()/applyColorScale()
   // already expect (see runTransformationPipeline/runColorCodingPipeline
@@ -4815,10 +4854,9 @@ Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
 
   Future<void> runTransformationPipeline() async {
     final permission = generatePivotTable ? "pivot.create" : "worksheet.modify";
-    final authorized = await authorizeExcelOperation(
-      backendBaseUrl: _backendBaseUrl,
+    final authorized = await _authorizeMutationAndAdoptWorkingCopy(
       action: permission,
-      resourceId: activeSheetName,
+      operationLabel: action,
     );
     if (!authorized) {
       showNotification(
