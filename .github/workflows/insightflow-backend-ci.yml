@@ -95,6 +95,12 @@ jobs:
           lib/features/auth/auth_glass_widgets.dart
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
+          lib/features/auth/auth_gate.dart
+          lib/features/auth/account_management_screen.dart
+          lib/features/auth/authorization_management_screen.dart
+          lib/core/auth/insightflow_auth_service.dart
+          lib/core/auth/authenticated_http.dart
+          lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
       - name: Analyze auth UI Flutter sources
@@ -103,6 +109,12 @@ jobs:
           lib/features/auth/auth_glass_widgets.dart
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
+          lib/features/auth/auth_gate.dart
+          lib/features/auth/account_management_screen.dart
+          lib/features/auth/authorization_management_screen.dart
+          lib/core/auth/insightflow_auth_service.dart
+          lib/core/auth/authenticated_http.dart
+          lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
       - name: Run Flutter Auth tests
