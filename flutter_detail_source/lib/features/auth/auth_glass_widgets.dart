@@ -30,9 +30,12 @@ class AuthGlassScaffold extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  GlassCard(
+                  GlassContainer(
+                            useOwnLayer: true,
+                            quality: _authGlassQuality,
+                            settings: TechColors.panelGlass,
                     padding: const EdgeInsets.all(16),
-                    shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                    shape: const LiquidRoundedSuperellipse(borderRadius: 22),
                     child: Row(
                       children: [
                         Container(
@@ -48,9 +51,9 @@ class AuthGlassScaffold extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(title, style: TextStyle(color: CupertinoColors.label.resolveFrom(context), fontSize: 15, fontWeight: FontWeight.w600)),
+                              Text(title.toUpperCase(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700, fontFamily: 'monospace', letterSpacing: 0.6)),
                               const SizedBox(height: 3),
-                              Text(subtitle, style: TextStyle(color: CupertinoColors.secondaryLabel.resolveFrom(context), fontSize: 11)),
+                              Text(subtitle, style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace', letterSpacing: 0.4)), fontSize: 11)),
                             ],
                           ),
                         ),
@@ -67,9 +70,12 @@ class AuthGlassScaffold extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  GlassCard(
+                  GlassContainer(
+                            useOwnLayer: true,
+                            quality: _authGlassQuality,
+                            settings: TechColors.panelGlass,
                     padding: const EdgeInsets.all(16),
-                    shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                    shape: const LiquidRoundedSuperellipse(borderRadius: 22),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
                   ),
                 ],
