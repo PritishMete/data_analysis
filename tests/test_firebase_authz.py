@@ -431,6 +431,10 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.auth, "revoke_refresh_tokens", lambda uid: None)
+    class Ref:
+        def set(self, value):
+            return None
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "owner", "email_verified": True, "auth_time": __import__("time").time(),
     })
@@ -673,6 +677,7 @@ def test_team_lead_dataset_grant_requires_delegated_share(monkeypatch):
         },
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "lead", "email_verified": True, "auth_time": 9999999999,
     })
@@ -710,6 +715,7 @@ def test_team_lead_cannot_grant_outside_delegation(monkeypatch):
         },
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "lead", "email_verified": True, "auth_time": 9999999999,
     })
