@@ -76,7 +76,7 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget build(BuildContext context) {
     return AuthGlassScaffold(
       title: 'AUTH / SIGN IN',
-      subtitle: 'Secure workspace access. Credentials stay within the Flutter auth flow.',
+      subtitle: 'EMAIL/PASSWORD CHANNEL // FIREBASE AUTH',
       children: [
         AuthGlassField(
           controller: _emailController,
