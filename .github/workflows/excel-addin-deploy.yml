@@ -100,14 +100,7 @@ jobs:
               exit 1
             fi
           done
-          flutter build web --release \
-            --base-href "/data_analysis/" \
-            "--dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=${INSIGHTFLOW_FIREBASE_WEB_API_KEY}" \
-            "--dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=${INSIGHTFLOW_FIREBASE_WEB_APP_ID}" \
-            "--dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=${INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID}" \
-            "--dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=${INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID}" \
-            "--dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=${INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN}" \
-            "--dart-define=INSIGHTFLOW_WORKSPACE_ID=${INSIGHTFLOW_WORKSPACE_ID}"
+          flutter build web --release --base-href "/data_analysis/" "--dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=${INSIGHTFLOW_FIREBASE_WEB_API_KEY}" "--dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=${INSIGHTFLOW_FIREBASE_WEB_APP_ID}" "--dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=${INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID}" "--dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=${INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID}" "--dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=${INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN}" "--dart-define=INSIGHTFLOW_WORKSPACE_ID=${INSIGHTFLOW_WORKSPACE_ID}"
 
       - name: Stamp deployed source commit
         working-directory: .
