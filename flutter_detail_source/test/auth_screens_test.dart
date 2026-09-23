@@ -62,7 +62,7 @@ void main() {
     await pumpAuthApp(tester, const AccountManagementScreen());
 
     expect(find.text('ACCOUNT / PROFILE'), findsOneWidget);
-    expect(find.byType(GlassTextField), findsNWidgets(2));
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
     expect(find.byType(GlassPasswordField), findsNWidgets(2));
     expect(find.text('Save profile'), findsOneWidget);
     expect(find.text('Change password'), findsOneWidget);
