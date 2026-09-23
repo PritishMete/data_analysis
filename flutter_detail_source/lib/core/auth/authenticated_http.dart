@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-// Authorization integration formatting checkpoint.
-
 import 'package:http/http.dart' as http;
 
 import 'insightflow_auth_service.dart';
