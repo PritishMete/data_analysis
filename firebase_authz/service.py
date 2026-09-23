@@ -526,6 +526,7 @@ def set_dataset_grant(
     allowed = {
         "dataset.view_original",
         "dataset.create_working_copy",
+        "dataset.edit_working_copy",
         "dataset.share",
     }
     if any(permission not in allowed for permission in permissions):
