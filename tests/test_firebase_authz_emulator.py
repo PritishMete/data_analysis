@@ -53,7 +53,7 @@ def test_emulator_action_and_resource_grants_are_both_required():
     with pytest.raises(service.PermissionDenied): service.authorization("alice", "a", "data.view", "r1")
 
 def test_emulator_concurrent_first_owner_initialization(monkeypatch):
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": token, "email_verified": True})
     results = []
     def bootstrap(uid):
         try:
