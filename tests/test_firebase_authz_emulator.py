@@ -131,3 +131,24 @@ def test_emulator_invited_user_cannot_bootstrap(monkeypatch):
     assert context["authorization_state"] == "pending_invitation"
     with pytest.raises(service.BootstrapDenied):
         service.bootstrap_owner("token", "Should Not Create")
+
+
+def test_emulator_suspended_invited_user_cannot_accept_invitation(monkeypatch):
+    service.db.reference("users/suspended").set({
+        "status": "suspended",
+        "email": "employee@example.com",
+    })
+    service.db.reference("workspaces/existing").set({
+        "organization": {"organization_id": "existing", "name": "Acme"},
+        "invitations": {"inv1": {
+            "status": "invited",
+            "email": "employee@example.com",
+            "role_id": "employee",
+        }},
+        "members": {}, "roles": {}, "resources": {},
+    })
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "suspended", "email": "employee@example.com", "email_verified": True
+    })
+    with pytest.raises(service.PermissionDenied):
+        service.accept_invitation("existing", "inv1", "token")
