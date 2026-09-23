@@ -105,17 +105,52 @@ def _membership_status(member: dict[str, Any]) -> str:
     status = str(member.get("status") or "active").strip().lower()
     return status if status in {"invited", "approved", "active", "suspended", "removed"} else "active"
 
-def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False) -> dict[str, Any]:
+def pending_invitations_for_email(email: str) -> list[dict[str, Any]]:
+    email = str(email or "").strip().lower()
+    if not email or "@" not in email:
+        return []
+    workspaces = _get("workspaces") or {}
+    matches: list[dict[str, Any]] = []
+    now = int(time.time() * 1000)
+    for workspace_id, workspace in workspaces.items():
+        if not isinstance(workspace, dict):
+            continue
+        organization = _organization_record(workspace_id, workspace)
+        for invitation_id, invitation in (workspace.get("invitations") or {}).items():
+            if not isinstance(invitation, dict) or invitation.get("status") != "invited":
+                continue
+            if str(invitation.get("email") or "").strip().lower() != email:
+                continue
+            expires_at = invitation.get("expires_at")
+            if expires_at is not None and int(expires_at) <= now:
+                continue
+            matches.append({
+                "invitation_id": str(invitation.get("invitation_id") or invitation_id),
+                "workspace_id": workspace_id,
+                "organization_id": organization.get("organization_id", workspace_id),
+                "organization_name": organization.get("name") or organization.get("display_name") or organization.get("organization_id", workspace_id),
+                "employee_id": invitation.get("employee_id"),
+                "role_id": ROLE_ALIASES.get(str(invitation.get("role_id") or ""), str(invitation.get("role_id") or "")),
+                "expires_at": expires_at,
+            })
+    return matches
+
+def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False, email: str | None = None) -> dict[str, Any]:
     validate_id(uid, "user ID")
     if workspace_id:
         validate_id(workspace_id, "workspace ID")
     user = _raw_user(uid)
+    account_email = str(email or user.get("email") or "").strip().lower()
+    invitations = pending_invitations_for_email(account_email)
     if not user:
         return {
             "email_verified": bool(email_verified),
             "account_status": "pending",
             "membership_status": "none",
             "workspace_authorized": False,
+            "authorization_state": "pending_invitation" if invitations else "bootstrap_candidate",
+            "has_authorization_record": False,
+            "pending_invitations": invitations,
             "workspaces": [],
         }
     account_status = str(user.get("status") or "").strip().lower()
@@ -123,28 +158,35 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
         account_status = "suspended"
     else:
         account_status = "active"
-
     memberships = workspace_memberships(uid, include_user=False)
-    selected = next(
-        (item for item in memberships if workspace_id and item["workspace_id"] == workspace_id),
-        None,
-    )
+    selected = next((item for item in memberships if workspace_id and item["workspace_id"] == workspace_id), None)
+    if selected is None and not workspace_id:
+        active_memberships = [item for item in memberships if item["membership_status"] == "active"]
+        if len(active_memberships) == 1:
+            selected = active_memberships[0]
     membership_status = selected["membership_status"] if selected else "none"
-    workspace_authorized = bool(
-        email_verified
-        and account_status == "active"
-        and membership_status == "active"
-    )
+    workspace_authorized = bool(email_verified and account_status == "active" and membership_status == "active")
+    if account_status == "suspended":
+        authorization_state = "suspended"
+    elif membership_status == "active" and workspace_authorized:
+        authorization_state = "active_member"
+    elif membership_status in {"invited", "approved"}:
+        authorization_state = "pending_membership"
+    elif invitations:
+        authorization_state = "pending_invitation"
+    else:
+        authorization_state = "no_membership"
     return {
         "email_verified": bool(email_verified),
         "account_status": account_status,
         "membership_status": membership_status,
         "workspace_authorized": workspace_authorized,
-        "workspace_id": workspace_id,
-        "organization_id": (
-            selected.get("organization_id") if selected else None
-        ),
+        "authorization_state": authorization_state,
+        "has_authorization_record": True,
+        "workspace_id": selected.get("workspace_id") if selected else workspace_id,
+        "organization_id": selected.get("organization_id") if selected else None,
         "employee_id": selected.get("employee_id") if selected else None,
+        "pending_invitations": invitations,
         "workspaces": memberships,
     }
 
@@ -297,8 +339,7 @@ def set_approved_employee(workspace_id: str, target_uid: str, employee_id: str, 
     db.reference(f"workspaces/{workspace_id}/approved_employees/{target_uid}").set({
         "employee_id": employee_id,
         "status": "active",
-        "approved_at": int(time.time() * 1000),
-        "approved_by": actor,
+        "approved_at": int(time.time() * 1000),        "approved_by": actor,
     })
     return True
 
@@ -597,8 +638,7 @@ def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id:
     actor = members.get(actor_uid)
     target = members.get(target_uid)
     if not isinstance(actor, dict) or not isinstance(target, dict):
-        raise PermissionDenied("Both users must be organization members.")
-    normalized_role = ROLE_ALIASES.get(role_id, role_id)
+        raise PermissionDenied("Both users must be organization members.")    normalized_role = ROLE_ALIASES.get(role_id, role_id)
     target_level = ROLE_LEVELS.get(normalized_role)
     actor_level = _effective_role_level(actor)
     if target_level is None:
@@ -897,8 +937,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
                     result["audit"].append({
                         "event_id": event_id,
                         "actor_uid": event.get("actor_uid"),
-                        "action": event.get("action"),
-                        "outcome": event.get("outcome"),
+                        "action": event.get("action"),                        "outcome": event.get("outcome"),
                         "target_uid": event.get("target_uid"),
                         "resource_id": event.get("resource_id"),
                         "metadata": event.get("metadata") or {},
@@ -1001,60 +1040,73 @@ def protected_context(id_token: str, workspace_id: str, action: str, resource_id
     claims = require_email_verified(verify_id_token(id_token))
     return claims, authorization(str(claims["uid"]), workspace_id, action, resource_id)
 
-def bootstrap_owner(id_token: str, bootstrap_secret: str, workspace_id: str, expected_uid: str):
-    validate_id(workspace_id, "workspace ID")
-    validate_id(expected_uid, "user ID")
+def bootstrap_owner(id_token: str, organization_name: str):
+    """Create the authenticated user's first organization and Owner membership."""
+    organization_name = str(organization_name or "").strip()
+    if not 1 <= len(organization_name) <= 120:
+        raise ValueError("Organization name must be between 1 and 120 characters.")
     claims = require_email_verified(verify_id_token(id_token))
-    if claims.get("uid") != expected_uid:
-        raise BootstrapDenied("Bootstrap identity mismatch.")
-    expected = os.environ.get("INSIGHTFLOW_BOOTSTRAP_SECRET")
-    if not expected or bootstrap_secret != expected:
-        raise BootstrapDenied("Bootstrap credential rejected.")
+    owner_uid = str(claims["uid"])
+    owner_email = str(claims.get("email") or "").strip().lower()
+    if not owner_email:
+        raise BootstrapDenied("A verified email is required to create an organization.")
     initialize_firebase()
-    ref = db.reference(f"workspaces/{workspace_id}")
+    root_ref = db.reference("/")
     def txn(current):
+        root = dict(current or {})
+        workspaces = dict(root.get("workspaces") or {})
+        users = dict(root.get("users") or {})
+        existing_user = users.get(owner_uid)
+        if isinstance(existing_user, dict):
+            status = str(existing_user.get("status") or "active").strip().lower()
+            if existing_user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
+                raise BootstrapDenied("This account is suspended and cannot bootstrap an organization.")
+        memberships = [
+            workspace_id for workspace_id, workspace in workspaces.items()
+            if isinstance(workspace, dict) and isinstance((workspace.get("members") or {}).get(owner_uid), dict)
+        ]
+        if memberships:
+            raise BootstrapDenied("This account already has organization membership.")
         now = int(time.time() * 1000)
-        roles = {rid: {"name": rid.title(), "permissions": sorted(perms), "system": True}
-                 for rid, perms in DEFAULT_ROLES.items()}
-        if current is None:
-            return {
-                "bootstrap": {"initialized": True, "owner_uid": expected_uid, "initialized_at": now, "nonce": uuid.uuid4().hex},
-                "organization": {
-                    "organization_id": workspace_id,
-                    "status": "active",
-                    "created_at": now,
-                },
-                "roles": roles,
-                "members": {
-                    expected_uid: {
-                        "employee_id": f"emp_{uuid.uuid4().hex}",
-                        "status": "active",
-                        "roles": {"owner": True},
-                    }
-                },
-                "resources": {},
-            }
-        bootstrap = current.get("bootstrap") or {}
-        if bootstrap.get("initialized") is True and bootstrap.get("owner_uid") == expected_uid:
-            current.setdefault("organization", {
-                "organization_id": workspace_id,
-                "status": "active",
-            })
-            current["organization"].setdefault("organization_id", workspace_id)
-            current["organization"].setdefault("status", "active")
-            current.setdefault("roles", {}).update({k: v for k, v in roles.items() if k not in current.get("roles", {})})
-            member = current.setdefault("members", {}).setdefault(
-                expected_uid,
-                {"roles": {"owner": True}},
-            )
-            member.setdefault("status", "active")
-            member.setdefault("employee_id", f"emp_{expected_uid}")
-            current.setdefault("resources", {})
-        return current
-    result = ref.transaction(txn)
-    if not isinstance(result, dict) or (result.get("bootstrap") or {}).get("owner_uid") != expected_uid:
-        raise BootstrapDenied("Workspace initialization was not completed by this bootstrap request.")
-    return {"initialized": True, "owner_uid": expected_uid}
+        for workspace in workspaces.values():
+            if not isinstance(workspace, dict):
+                continue
+            for invitation in (workspace.get("invitations") or {}).values():
+                if isinstance(invitation, dict) and invitation.get("status") == "invited" and str(invitation.get("email") or "").strip().lower() == owner_email:
+                    expires_at = invitation.get("expires_at")
+                    if expires_at is None or int(expires_at) > now:
+                        raise BootstrapDenied("A pending organization invitation must be accepted instead of creating an organization.")
+        workspace_id = f"org_{uuid.uuid4().hex}"
+        roles = {rid: {"name": rid.title(), "permissions": sorted(perms), "system": True} for rid, perms in DEFAULT_ROLES.items()}
+        employee_id = f"emp_{uuid.uuid4().hex}"
+        workspaces[workspace_id] = {
+            "bootstrap": {"initialized": True, "owner_uid": owner_uid, "initialized_at": now},
+            "organization": {"organization_id": workspace_id, "name": organization_name, "status": "active", "created_at": now},
+            "roles": roles,
+            "members": {owner_uid: {"employee_id": employee_id, "status": "active", "roles": {"owner": True}}},
+            "resources": {}, "invitations": {}, "approved_employees": {}, "delegations": {},
+            "datasets": {}, "working_copies": {},
+        }
+        users[owner_uid] = {"status": "active", "email": owner_email, "employee_id": employee_id, "bootstrap_organization_id": workspace_id, "created_at": now}
+        root["workspaces"] = workspaces
+        root["users"] = users
+        return root
+    try:
+        result = root_ref.transaction(txn)
+    except BootstrapDenied:
+        raise
+    except Exception as exc:
+        raise BootstrapDenied("Organization bootstrap could not be completed.") from exc
+    workspace_id = next(
+        (wid for wid, workspace in (result.get("workspaces") or {}).items()
+         if isinstance(workspace, dict)
+         and (workspace.get("bootstrap") or {}).get("owner_uid") == owner_uid
+         and (workspace.get("organization") or {}).get("name") == organization_name),
+        None,
+    )
+    if not workspace_id:
+        raise BootstrapDenied("Organization bootstrap could not be verified.")
+    return {"initialized": True, "owner_uid": owner_uid, "organization_id": workspace_id, "workspace_id": workspace_id}
 
 def ensure_seed_roles(workspace_id: str):
     validate_id(workspace_id, "workspace ID")
