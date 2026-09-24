@@ -962,3 +962,50 @@ def test_relinked_identity_keeps_existing_resource_acl(monkeypatch):
     decision = service.authorization("uid_b", "org_1", "data.view", "ds_1")
     assert decision["allowed"] is True
     assert decision["principal_id"] == "EMP001"
+
+def test_existing_authz_record_without_membership_is_no_organization_access(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {
+        "status": "active",
+        "email": "employee@example.com",
+        "employee_id": "EMP001",
+        "principal_id": "EMP001",
+    })
+    monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
+    monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [])
+    context = service.authentication_context(
+        "uid-a",
+        email_verified=True,
+        email="employee@example.com",
+    )
+    assert context["authorization_state"] == "no_organization_access"
+    assert context["has_authorization_record"] is True
+    assert context["workspace_authorized"] is False
+
+
+def test_removed_authz_record_is_terminal_removed_state(monkeypatch):
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {
+        "status": "removed",
+        "email": "employee@example.com",
+        "employee_id": "EMP001",
+        "principal_id": "EMP001",
+    })
+    context = service.authentication_context(
+        "uid-a",
+        email_verified=True,
+        email="employee@example.com",
+    )
+    assert context["authorization_state"] == "removed"
+    assert context["account_status"] == "removed"
+    assert context["workspace_authorized"] is False
+
+
+def test_backend_lookup_failure_is_not_classified_as_new_company(monkeypatch):
+    def fail(_uid):
+        raise RuntimeError("Realtime Database unavailable")
+    monkeypatch.setattr(service, "_raw_user", fail)
+    with pytest.raises(RuntimeError, match="Realtime Database unavailable"):
+        service.authentication_context(
+            "uid-a",
+            email_verified=True,
+            email="employee@example.com",
+        )
