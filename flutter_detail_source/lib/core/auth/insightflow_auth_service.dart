@@ -11,6 +11,11 @@ class InsightFlowAuthService {
   static FirebaseAuth get auth => FirebaseAuth.instance;
 
   static Future<void> initialize() async {
+    // google_sign_in 7.x requires its singleton to be initialized before
+    // authenticate() or authorizationClient is used. Keep this ahead of
+    // Firebase initialization, matching the proven Lockr startup sequence.
+    await GoogleSignIn.instance.initialize();
+
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
@@ -44,30 +49,72 @@ class InsightFlowAuthService {
       ..addScope('openid')
       ..addScope('profile')
       ..addScope('email');
-    if (kIsWeb) {
-      return auth.signInWithPopup(provider);
+
+    if (!kIsWeb) {
+      return auth.signInWithProvider(provider);
     }
-    return auth.signInWithProvider(provider);
+
+    // Office task panes can reject browser popups even when the same code
+    // works in a normal browser. Prefer Firebase popup, then fall back only
+    // for popup/environment failures. AuthGate still handles the returned
+    // Firebase identity through normal principal resolution.
+    try {
+      return await auth.signInWithPopup(provider);
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint('Microsoft popup sign-in failed: ' + error.code);
+      debugPrintStack(stackTrace: stackTrace);
+      if (error.code == 'popup-blocked' ||
+          error.code == 'operation-not-supported-in-this-environment') {
+        await auth.signInWithRedirect(provider);
+        throw StateError('Microsoft sign-in redirect started.');
+      }
+      rethrow;
+    }
   }
 
   static Future<UserCredential> signInWithGoogle() async {
-    if (kIsWeb) {
-      return auth.signInWithPopup(GoogleAuthProvider());
-    }
+    // Same authentication sequence proven in Lockr:
+    // authenticate -> authorize email/profile -> Firebase credential.
+    final googleSignIn = GoogleSignIn.instance;
 
-    final googleUser = await GoogleSignIn().signIn();
-    if (googleUser == null) {
-      throw FirebaseAuthException(
-        code: 'popup-closed-by-user',
-        message: 'Google sign-in was cancelled.',
+    try {
+      final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
+      final clientAuth = await googleUser.authorizationClient
+          .authorizeScopes(['email', 'profile']);
+
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleUser.authentication.idToken,
+        accessToken: clientAuth.accessToken,
       );
+
+      return await auth.signInWithCredential(credential);
+    } on GoogleSignInException catch (error, stackTrace) {
+      debugPrint(
+        'Google sign-in failed: ' + error.code.name + ': ' + (error.description ?? ''),
+      );
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw FirebaseAuthException(
+          code: 'popup-closed-by-user',
+          message: 'Google sign-in was cancelled.',
+        );
+      }
+      if (error.code == GoogleSignInExceptionCode.uiUnavailable) {
+        throw FirebaseAuthException(
+          code: 'popup-blocked',
+          message: 'The Google sign-in window could not be opened.',
+        );
+      }
+      if (error.code == GoogleSignInExceptionCode.clientConfigurationError ||
+          error.code == GoogleSignInExceptionCode.providerConfigurationError) {
+        throw FirebaseAuthException(
+          code: 'invalid-configuration',
+          message: 'Google sign-in is not configured for this application.',
+        );
+      }
+      rethrow;
     }
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    return auth.signInWithCredential(credential);
   }
 
   static Future<UserCredential> createUserWithEmailAndPassword(
@@ -141,19 +188,29 @@ class InsightFlowAuthService {
       return;
     }
 
-    final googleUser = await GoogleSignIn().signIn();
-    if (googleUser == null) {
-      throw FirebaseAuthException(
-        code: 'popup-closed-by-user',
-        message: 'Google reauthentication was cancelled.',
+    final googleSignIn = GoogleSignIn.instance;
+    try {
+      final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
+      final clientAuth = await googleUser.authorizationClient
+          .authorizeScopes(['email', 'profile']);
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleUser.authentication.idToken,
+        accessToken: clientAuth.accessToken,
       );
+      await user.reauthenticateWithCredential(credential);
+    } on GoogleSignInException catch (error, stackTrace) {
+      debugPrint(
+        'Google reauthentication failed: ' + error.code.name + ': ' + (error.description ?? ''),
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw FirebaseAuthException(
+          code: 'popup-closed-by-user',
+          message: 'Google reauthentication was cancelled.',
+        );
+      }
+      rethrow;
     }
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    await user.reauthenticateWithCredential(credential);
   }
 
   static Future<void> changePassword(String newPassword) async {
@@ -207,6 +264,10 @@ class InsightFlowAuthService {
           return 'Network connection failed. Check your connection and try again.';
         case 'operation-not-allowed':
           return 'This sign-in method is not enabled for this Firebase project.';
+        case 'invalid-configuration':
+          return 'This sign-in provider is not configured correctly. Check the Firebase provider settings.';
+        case 'operation-not-supported-in-this-environment':
+          return 'This sign-in method is not supported in this environment. Try again in a browser window.';
         case 'email-already-in-use':
           return 'An account already exists for this email.';
         case 'weak-password':
