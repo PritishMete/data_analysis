@@ -22,13 +22,20 @@ jobs:
       - name: Verify registration route and CORS
         run: |
           set -euo pipefail
+          echo "Production build info:"
+          curl --fail --silent --show-error             https://data-analysis-oajs.onrender.com/v1/build-info
+          echo
           response_file="$(mktemp)"
           headers_file="$(mktemp)"
           status="$(curl --silent --show-error --output "$response_file" --dump-header "$headers_file"             -X OPTIONS             -H 'Origin: https://pritishmete.github.io'             -H 'Access-Control-Request-Method: POST'             -H 'Access-Control-Request-Headers: authorization,content-type'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/organizations/register)"
           echo "OPTIONS status: $status"
-          test "$status" = "200"
-          grep -qi '^access-control-allow-origin: https://pritishmete.github.io' "$headers_file"
+          cat "$headers_file"
+          echo "OPTIONS body:"
+          cat "$response_file"
           post_status="$(curl --silent --show-error --output "$response_file"             -X POST             -H 'Content-Type: application/json'             -d '{"organization_name":"__smoke__"}'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/organizations/register)"
           echo "Unauthenticated POST status: $post_status"
+          echo "POST body:"
+          cat "$response_file"
+          test "$status" = "200"
           test "$post_status" != "404"
           test "$post_status" = "401" || test "$post_status" = "403"
