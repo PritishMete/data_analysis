@@ -53,6 +53,13 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
 
       final user = InsightFlowAuthService.currentUser;
+      if (user != null) {
+        final resolved = await _resolveIdentityBeforeRegistration();
+        if (!resolved) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+      }
       if (user != null && !user.emailVerified) {
         await InsightFlowAuthService.sendEmailVerification();
         if (mounted) {
@@ -72,6 +79,79 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         _error = true;
         _message = '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
       });
+    }
+  }
+
+  Future<bool> _resolveIdentityBeforeRegistration() async {
+    try {
+      _authDiagnostic?.record('AUTHZ_RESOLUTION_STARTED');
+      final headers = await firebaseAuthHeaders(forceRefresh: true);
+      late final http.Response response;
+      try {
+        response = await http.get(
+          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+          headers: headers,
+        );
+      } on Exception catch (error, stackTrace) {
+        debugPrint('[company-registration-authz] /v1/authz/me network failure: ' + error.runtimeType.toString());
+        debugPrintStack(stackTrace: stackTrace);
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_NETWORK_FAILURE');
+        throw StateError('InsightFlow couldn’t reach the organization service.');
+      }
+      Map<String, dynamic> body = {};
+      if (response.body.trim().isNotEmpty) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
+      }
+      if (response.statusCode == 401) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_401', httpStatus: 401);
+        throw StateError('Your founder authentication is no longer valid. Please sign in again.');
+      }
+      if (response.statusCode == 403) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_403', httpStatus: 403);
+        final detail = body['detail']?.toString().trim();
+        throw StateError(detail?.isNotEmpty == true ? detail! : 'No InsightFlow organization access is assigned to this account.');
+      }
+      if (response.statusCode == 404) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_404', httpStatus: 404);
+        throw StateError('InsightFlow couldn’t reach the organization service.');
+      }
+      if (response.statusCode >= 500) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_5XX', httpStatus: response.statusCode);
+        throw StateError('InsightFlow couldn’t reach the organization service.');
+      }
+      if (response.statusCode != 200) throw StateError('Authorization status could not be verified.');
+      _authDiagnostic?.record('AUTHZ_RESOLUTION_SUCCESS', httpStatus: response.statusCode);
+      switch (body['authorization_state']?.toString() ?? '') {
+        case 'active_member':
+          Navigator.of(context).pop(true);
+          return false;
+        case 'pending_invitation':
+        case 'approved_employee_pending_link':
+          Navigator.of(context).pop(true);
+          return false;
+        case 'suspended':
+          throw StateError('Your InsightFlow access is suspended.');
+        case 'removed':
+          throw StateError('Your InsightFlow access has been removed.');
+        case 'ambiguous_identity':
+          throw StateError('InsightFlow could not safely match this verified identity to one organization member.');
+        case 'new_company_candidate':
+        case 'no_organization_access':
+        case 'no_membership':
+          return true;
+        default:
+          return true;
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = true;
+          _message = error is StateError ? error.message.toString() : 'InsightFlow could not verify organization access.';
+        });
+      }
+      return false;
     }
   }
 
@@ -174,7 +254,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         }
         if (response.statusCode == 404) {
           throw StateError(
-            'InsightFlow couldn’t reach the organization service.',
+            'Organization registration is not available on the current server version.',
           );
         }
         if (response.statusCode >= 500) {
