@@ -28,6 +28,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   String? _message;
   bool _error = false;
   AuthDiagnosticAttempt? _authDiagnostic;
+  OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
   void dispose() {
@@ -82,48 +83,45 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
 
   Future<bool> _resolveIdentityBeforeRegistration() async {
     try {
-      _authDiagnostic?.record('AUTHZ_RESOLUTION_STARTED');
-      final headers = await firebaseAuthHeaders(forceRefresh: true);
-      late final http.Response response;
-      try {
-        response = await http.get(
+      final result = await organizationServiceRequest(
+        method: 'GET',
+        path: '/v1/authz/me',
+        send: (headers) => http.get(
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
           headers: headers,
-        );
-      } on Exception catch (error, stackTrace) {
-        debugPrint('[company-registration-authz] /v1/authz/me network failure: ' + error.runtimeType.toString());
-        debugPrintStack(stackTrace: stackTrace);
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_NETWORK_FAILURE');
-        throw StateError('InsightFlow couldn’t reach the organization service.');
-      }
+        ),
+      );
+      _organizationDiagnostic = result.diagnostic;
+      if (mounted) setState(() {});
+      final response = result.response;
       Map<String, dynamic> body = {};
       if (response.body.trim().isNotEmpty) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map) body = Map<String, dynamic>.from(decoded);
       }
       if (response.statusCode == 401) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_401', httpStatus: 401);
-        throw StateError('Your founder authentication is no longer valid. Please sign in again.');
+        throw StateError('InsightFlow authentication could not be verified.');
       }
       if (response.statusCode == 403) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_403', httpStatus: 403);
         final detail = body['detail']?.toString().trim();
-        throw StateError(detail?.isNotEmpty == true ? detail! : 'No InsightFlow organization access is assigned to this account.');
+        throw StateError(
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'Your InsightFlow account is not authorized for this organization.',
+        );
       }
       if (response.statusCode == 404) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_404', httpStatus: 404);
-        throw StateError('InsightFlow couldn’t reach the organization service.');
+        throw StateError('InsightFlow authorization is unavailable on this server version.');
       }
       if (response.statusCode >= 500) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_5XX', httpStatus: response.statusCode);
-        throw StateError('InsightFlow couldn’t reach the organization service.');
+        throw StateError("InsightFlow's organization service returned a server error.");
       }
-      if (response.statusCode != 200) throw StateError('Authorization status could not be verified.');
-      _authDiagnostic?.record('AUTHZ_RESOLUTION_SUCCESS', httpStatus: response.statusCode);
+      if (response.statusCode != 200) {
+        throw StateError('Authorization status could not be verified.');
+      }
+
       switch (body['authorization_state']?.toString() ?? '') {
         case 'active_member':
-          Navigator.of(context).pop(true);
-          return false;
         case 'pending_invitation':
         case 'approved_employee_pending_link':
           Navigator.of(context).pop(true);
@@ -141,12 +139,24 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         default:
           return true;
       }
+    } on OrganizationServiceRequestException catch (error) {
+      _organizationDiagnostic = error.diagnostic;
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = true;
+          _message = 'InsightFlow couldn’t reach the organization service.';
+        });
+      }
+      return false;
     } catch (error) {
       if (mounted) {
         setState(() {
           _busy = false;
           _error = true;
-          _message = error is StateError ? error.message.toString() : 'InsightFlow could not verify organization access.';
+          _message = error is StateError
+              ? error.message.toString()
+              : 'InsightFlow could not verify organization access.';
         });
       }
       return false;
@@ -184,111 +194,76 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       _error = false;
     });
     try {
-      _authDiagnostic?.record('AUTHZ_RESOLUTION_STARTED');
-      final headers = await firebaseAuthHeaders(forceRefresh: true);
-      late final http.Response response;
-      try {
-        response = await http.post(
+      final result = await organizationServiceRequest(
+        method: 'POST',
+        path: '/v1/authz/organizations/register',
+        contentType: 'application/json',
+        send: (headers) => http.post(
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
-          headers: {...headers, 'Content-Type': 'application/json'},
+          headers: headers,
           body: jsonEncode({'organization_name': name}),
-        );
-      } on Exception catch (error, stackTrace) {
-        debugPrint(
-          '[company-registration] stage=request endpoint='
-          '$insightFlowBackendBaseUrl/v1/authz/organizations/register '
-          'category=network error=${error.runtimeType}',
-        );
-        debugPrintStack(stackTrace: stackTrace);
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_NETWORK_FAILURE');
-        throw StateError('InsightFlow couldn’t reach the organization service.');
-      }
-      final bodyText = response.body.trim();
+        ),
+      );
+      _organizationDiagnostic = result.diagnostic;
+      if (mounted) setState(() {});
+      final response = result.response;
       dynamic decoded;
       try {
-        decoded = bodyText.isEmpty ? <String, dynamic>{} : jsonDecode(bodyText);
+        decoded = response.body.trim().isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
       } catch (_) {
         decoded = null;
       }
+      final detail = decoded is Map ? decoded['detail']?.toString().trim() : null;
       if (response.statusCode == 401) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_401', httpStatus: 401);
-      } else if (response.statusCode == 403) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_403', httpStatus: 403);
-      } else if (response.statusCode == 404) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_404', httpStatus: 404);
-      } else if (response.statusCode >= 500) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_5XX', httpStatus: response.statusCode);
-      } else if (response.statusCode >= 200 && response.statusCode < 300) {
-        _authDiagnostic?.record('AUTHZ_RESOLUTION_SUCCESS', httpStatus: response.statusCode);
+        throw StateError('InsightFlow authentication could not be verified.');
       }
-      debugPrint(
-        '[company-registration] status=${response.statusCode} '
-        'endpoint=$insightFlowBackendBaseUrl/v1/authz/organizations/register '
-        'stage=bootstrap-response '
-        'category=${_registrationResponseCategory(response.statusCode)} '
-        'code=${decoded is Map ? decoded['code']?.toString() ?? 'unstructured' : 'invalid-json'}',
-      );
+      if (response.statusCode == 403) {
+        throw StateError(
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'Your InsightFlow account is not authorized for this organization.',
+        );
+      }
+      if (response.statusCode == 404) {
+        throw StateError('Organization registration is unavailable on this server version.');
+      }
+      if (response.statusCode == 422) {
+        throw StateError('Organization registration request was rejected by the server.');
+      }
+      if (response.statusCode >= 500) {
+        throw StateError("InsightFlow's organization service returned a server error.");
+      }
       if (response.statusCode != 200) {
-        final detail = decoded is Map ? decoded['detail']?.toString() : null;
-        final safeDetail = detail?.trim();
-        if (response.statusCode == 401) {
-          throw StateError(
-            'Your founder authentication is no longer valid. Please sign in again.',
-          );
-        }
-        if (response.statusCode == 403) {
-          throw StateError(
-            safeDetail?.isNotEmpty == true
-                ? safeDetail!
-                : 'This account is not eligible to create an organization.',
-          );
-        }
-        if (response.statusCode == 400) {
-          throw StateError(
-            safeDetail?.isNotEmpty == true
-                ? safeDetail!
-                : 'Enter a valid organization name.',
-          );
-        }
-        if (response.statusCode == 404) {
-          throw StateError(
-            'Organization registration is not available on the current server version.',
-          );
-        }
-        if (response.statusCode >= 500) {
-          throw StateError(
-            'InsightFlow couldn’t create the organization. Please try again.',
-          );
-        }
         throw StateError(
-          safeDetail?.isNotEmpty == true
-              ? safeDetail!
-              : 'InsightFlow couldn’t create the organization. Please try again.',
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'InsightFlow could not create the organization.',
         );
       }
-      final workspaceId = decoded is Map
-          ? decoded['workspace_id']?.toString()
-          : null;
-      final organizationId = decoded is Map
-          ? decoded['organization_id']?.toString()
-          : null;
-      if (workspaceId == null || workspaceId.isEmpty ||
-          organizationId == null || organizationId.isEmpty) {
-        throw StateError(
-          'InsightFlow couldn’t create the organization. Please try again.',
-        );
+      final workspaceId = decoded is Map ? decoded['workspace_id']?.toString() : null;
+      final organizationId = decoded is Map ? decoded['organization_id']?.toString() : null;
+      if (workspaceId == null || workspaceId.isEmpty || organizationId == null || organizationId.isEmpty) {
+        throw StateError('InsightFlow could not create the organization. The server returned an incomplete response.');
       }
-      if (workspaceId != null && workspaceId.isNotEmpty) {
-        await setInsightFlowWorkspaceId(user.uid, workspaceId);
-      }
+      await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
       Navigator.of(context).pop(true);
+    } on OrganizationServiceRequestException catch (error) {
+      _organizationDiagnostic = error.diagnostic;
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = true;
+        _message = 'InsightFlow couldn’t reach the organization service.';
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _busy = false;
         _error = true;
-        _message = '${error is StateError ? error.message.toString() : 'Company registration could not be completed.'}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
+        _message = error is StateError
+            ? error.message.toString()
+            : 'Company registration could not be completed.';
       });
     }
   }
@@ -408,6 +383,10 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         if (_message != null) ...[
           const SizedBox(height: 10),
           AuthGlassMessage(text: _message!, error: _error),
+        ],
+        if (_organizationDiagnostic != null) ...[
+          const SizedBox(height: 10),
+          AuthGlassMessage(text: _organizationDiagnostic!.displayText, error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS'),
         ],
         const SizedBox(height: 8),
         TextButton(
