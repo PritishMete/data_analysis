@@ -21,13 +21,56 @@ void main() async {
   await LiquidGlassWidgets.initialize();
 
   String? firebaseInitError;
+
+  // Keep Firebase configuration validation/core initialization separate from
+  // optional provider initialization. A Google SDK failure must never be
+  // reported as a missing Firebase configuration.
   try {
-    await InsightFlowAuthService.initialize();
-  } catch (_) {
-    // Do not expose configuration values or SDK internals to users. The
-    // browser will show a safe configuration message until the registered
-    // Firebase Web app values are supplied at build time.
-    firebaseInitError = 'Firebase authentication is not configured for this build.';
+    final firebaseOptions =
+        InsightFlowAuthService.validateFirebaseConfiguration();
+    debugPrint('[auth-init] firebase-options: valid');
+    await InsightFlowAuthService.initializeFirebaseCore(firebaseOptions);
+    debugPrint('[auth-init] firebase-core: initialized');
+  } catch (error, stackTrace) {
+    debugPrint(
+      '[auth-init] Firebase startup failed at configuration/core stage: '
+      '${error.runtimeType}',
+    );
+    debugPrintStack(stackTrace: stackTrace);
+    firebaseInitError =
+        'Firebase authentication is not configured for this build.';
+  }
+
+  if (firebaseInitError == null) {
+    try {
+      await InsightFlowAuthService.initializeFirebasePersistence();
+      debugPrint('[auth-init] firebase-persistence: initialized');
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[auth-init] firebase-persistence failed: ${error.runtimeType}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      await InsightFlowAuthService.initializeGoogleSignIn();
+      debugPrint('[auth-init] google-sign-in: initialized');
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[auth-init] google-sign-in failed: ${error.runtimeType}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      await InsightFlowAuthService.initializeRedirectResult();
+      debugPrint('[auth-init] redirect-result: processed');
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[auth-init] redirect-result failed: ${error.runtimeType}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   runApp(ElectricAIApp(firebaseInitError: firebaseInitError));
