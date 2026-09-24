@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../core/config/development_flags.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/auth_diagnostic.dart';
@@ -67,14 +66,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         }
         return;
       }
-      // DEVELOPMENT ONLY: bypass organization-service verification entirely.
-      if (!kDevelopmentOrganizationBypass) {
-        final resolved = await _resolveIdentityBeforeRegistration();
-        if (!resolved) {
-          if (mounted) setState(() => _busy = false);
-          return;
-        }
-      }
       if (mounted) setState(() => _busy = false);
     } catch (error) {
       if (!mounted) return;
@@ -86,87 +77,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     }
   }
 
-  Future<bool> _resolveIdentityBeforeRegistration() async {
-    try {
-      final result = await organizationServiceRequest(
-        method: 'GET',
-        path: '/v1/authz/me',
-        send: (headers) => http.get(
-          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
-          headers: headers,
-        ),
-      );
-      _organizationDiagnostic = result.diagnostic;
-      if (mounted) setState(() {});
-      final response = result.response;
-      Map<String, dynamic> body = {};
-      if (response.body.trim().isNotEmpty) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
-      }
-      if (response.statusCode == 401) {
-        throw StateError('InsightFlow authentication could not be verified.');
-      }
-      if (response.statusCode == 403) {
-        final detail = body['detail']?.toString().trim();
-        throw StateError(
-          detail?.isNotEmpty == true
-              ? detail!
-              : 'Your InsightFlow account is not authorized for this organization.',
-        );
-      }
-      if (response.statusCode == 404) {
-        throw StateError('InsightFlow authorization is unavailable on this server version.');
-      }
-      if (response.statusCode >= 500) {
-        throw StateError("InsightFlow's organization service returned a server error.");
-      }
-      if (response.statusCode != 200) {
-        throw StateError('Authorization status could not be verified.');
-      }
-
-      switch (body['authorization_state']?.toString() ?? '') {
-        case 'active_member':
-        case 'pending_invitation':
-        case 'approved_employee_pending_link':
-          Navigator.of(context).pop(true);
-          return false;
-        case 'suspended':
-          throw StateError('Your InsightFlow access is suspended.');
-        case 'removed':
-          throw StateError('Your InsightFlow access has been removed.');
-        case 'ambiguous_identity':
-          throw StateError('InsightFlow could not safely match this verified identity to one organization member.');
-        case 'new_company_candidate':
-        case 'no_organization_access':
-        case 'no_membership':
-          return true;
-        default:
-          return true;
-      }
-    } on OrganizationServiceRequestException catch (error) {
-      _organizationDiagnostic = error.diagnostic;
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _error = true;
-          _message = 'InsightFlow couldn’t reach the organization service.';
-        });
-      }
-      return false;
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _error = true;
-          _message = error is StateError
-              ? error.message.toString()
-              : 'InsightFlow could not verify organization access.';
-        });
-      }
-      return false;
-    }
-  }
 
   Future<void> _register() async {
     final name = _organizationController.text.trim();
@@ -185,36 +95,13 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       });
       return;
     }
-    if (!user.emailVerified) {
-      setState(() {
-        _error = true;
-        _message = 'Verify your email before registering the company.';
-      });
-      return;
-    }
+
 
     setState(() {
       _busy = true;
       _message = null;
       _error = false;
     });
-
-    if (kDevelopmentOrganizationBypass) {
-      // DEVELOPMENT ONLY: no HTTP request, backend authorization, or fake
-      // backend response is used. Persist only the minimum local UI state.
-      final workspaceId = 'dev_workspace_${user.uid}';
-      await setDevelopmentOrganizationState(
-        uid: user.uid,
-        organizationName: name,
-        workspaceId: workspaceId,
-      );
-      if (!mounted) return;
-      setState(() => _busy = false);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DataScreen()),
-      );
-      return;
-    }
 
     try {
       final result = await organizationServiceRequest(
@@ -407,7 +294,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           const SizedBox(height: 10),
           AuthGlassMessage(text: _message!, error: _error),
         ],
-        if (!kDevelopmentOrganizationBypass && _organizationDiagnostic != null) ...[
+        if (_organizationDiagnostic != null) ...[
           const SizedBox(height: 10),
           AuthGlassMessage(text: _organizationDiagnostic!.displayText, error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS'),
         ],
