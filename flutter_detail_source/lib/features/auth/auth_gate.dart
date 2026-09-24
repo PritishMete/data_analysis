@@ -85,7 +85,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         debugPrint(
           '[authz-me] stage=request '
           'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
-          'category=network error_type=\${error.runtimeType}',
+          'category=network error_type=${error.runtimeType}',
         );
         debugPrintStack(stackTrace: stackTrace);
         throw _AuthorizationGateException(
@@ -102,11 +102,11 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       if (response.statusCode != 200) {
         final detail = body['detail']?.toString().trim();
         debugPrint(
-          '[authz-me] status=\${response.statusCode} '
+          '[authz-me] status=${response.statusCode} '
           'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
           'stage=authorization-response '
-          'category=\${_authorizationResponseCategory(response.statusCode)} '
-          'code=\${body['code']?.toString() ?? 'unstructured'}',
+          'category=${_authorizationResponseCategory(response.statusCode)} '
+          'code=${body['code']?.toString() ?? 'unstructured'}',
         );
         if (response.statusCode == 401) {
           throw _AuthorizationGateException(
