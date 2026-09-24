@@ -10,6 +10,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
 import 'google_web_sign_in_button.dart';
 
@@ -26,6 +27,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   bool _busy = false;
   String? _message;
   bool _error = false;
+  AuthDiagnosticAttempt? _authDiagnostic;
 
   @override
   void dispose() {
@@ -68,7 +70,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       setState(() {
         _busy = false;
         _error = true;
-        _message = InsightFlowAuthService.userFacingAuthError(error);
+        _message = '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
       });
     }
   }
@@ -243,6 +245,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             GoogleWebSignInButton(
               enabled: !_busy,
               onStarted: () {
+                _authDiagnostic = AuthDiagnosticAttempt();
                 if (mounted) {
                   setState(() {
                     _busy = true;
@@ -253,7 +256,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
               },
               onAuthenticated: (account) async {
                 await _authenticate(
-                  () => InsightFlowAuthService.signInWithGoogleAccount(account),
+                  () => InsightFlowAuthService.signInWithGoogleAccount(account, diagnostic: _authDiagnostic),
                 );
               },
               onError: (error) {
