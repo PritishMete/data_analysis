@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
+import '../../core/config/development_flags.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/auth_diagnostic.dart';
@@ -65,10 +66,13 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         }
         return;
       }
-      final resolved = await _resolveIdentityBeforeRegistration();
-      if (!resolved) {
-        if (mounted) setState(() => _busy = false);
-        return;
+      // DEVELOPMENT ONLY: bypass organization-service verification entirely.
+      if (!kDevelopmentOrganizationBypass) {
+        final resolved = await _resolveIdentityBeforeRegistration();
+        if (!resolved) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
       }
       if (mounted) setState(() => _busy = false);
     } catch (error) {
@@ -193,6 +197,24 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       _message = null;
       _error = false;
     });
+
+    if (kDevelopmentOrganizationBypass) {
+      // DEVELOPMENT ONLY: no HTTP request, backend authorization, or fake
+      // backend response is used. Persist only the minimum local UI state.
+      final workspaceId = 'dev_workspace_${user.uid}';
+      await setDevelopmentOrganizationState(
+        uid: user.uid,
+        organizationName: name,
+        workspaceId: workspaceId,
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const DataScreen()),
+      );
+      return;
+    }
+
     try {
       final result = await organizationServiceRequest(
         method: 'POST',
@@ -384,7 +406,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           const SizedBox(height: 10),
           AuthGlassMessage(text: _message!, error: _error),
         ],
-        if (_organizationDiagnostic != null) ...[
+        if (!kDevelopmentOrganizationBypass && _organizationDiagnostic != null) ...[
           const SizedBox(height: 10),
           AuthGlassMessage(text: _organizationDiagnostic!.displayText, error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS'),
         ],
