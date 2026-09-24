@@ -885,7 +885,8 @@ def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id:
     actor = members.get(actor_uid)
     target = members.get(target_uid)
     if not isinstance(actor, dict) or not isinstance(target, dict):
-        raise PermissionDenied("Both users must be organization members.")    normalized_role = ROLE_ALIASES.get(role_id, role_id)
+        raise PermissionDenied("Both users must be organization members.")
+    normalized_role = ROLE_ALIASES.get(role_id, role_id)
     target_level = ROLE_LEVELS.get(normalized_role)
     actor_level = _effective_role_level(actor)
     if target_level is None:
