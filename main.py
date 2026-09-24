@@ -288,8 +288,8 @@ async def build_info():
         frontend_build_id = os.getenv("FRONTEND_BUILD_ID", "unbuilt")
         build_timestamp = None
     return {
-        "backend_commit": os.getenv("BUILD_GIT_SHA", "working-tree"),
-        "backend_git_sha": os.getenv("BUILD_GIT_SHA", "working-tree"),
+        "backend_commit": os.getenv("BUILD_GIT_SHA") or os.getenv("RENDER_GIT_COMMIT") or "working-tree",
+        "backend_git_sha": os.getenv("BUILD_GIT_SHA") or os.getenv("RENDER_GIT_COMMIT") or "working-tree",
         "frontend_build_id": frontend_build_id,
         "build_timestamp": build_timestamp,
     }
