@@ -16,16 +16,6 @@ import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
 import 'google_web_sign_in_button.dart';
 
-class _RegistrationCompleteScreen extends StatelessWidget {
-  const _RegistrationCompleteScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const DataScreen();
-  }
-}
-
-
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
 
@@ -169,7 +159,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const _RegistrationCompleteScreen()),
+        MaterialPageRoute(builder: (_) => const DataScreen()),
       );
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
