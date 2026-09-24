@@ -6,6 +6,7 @@ param(
   [string]$FirebaseWebMessagingSenderId = $env:INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID,
   [string]$FirebaseWebProjectId = $env:INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID,
   [string]$FirebaseWebAuthDomain = $env:INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN,
+  [string]$GoogleWebClientId = $env:INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID,
   [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID
 )
 
@@ -27,6 +28,7 @@ try {
     'INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID' = $FirebaseWebMessagingSenderId
     'INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID' = $FirebaseWebProjectId
     'INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN' = $FirebaseWebAuthDomain
+    'INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID' = $GoogleWebClientId
     'INSIGHTFLOW_WORKSPACE_ID' = $WorkspaceId
   }
   $missingDefines = @(
