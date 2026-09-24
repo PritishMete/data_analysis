@@ -34,6 +34,16 @@ void main() {
   });
 
   group('InsightFlowAuthService provider error mapping', () {
+    test('Google web UI required error is provider-specific', () {
+      expect(InsightFlowAuthService.userFacingAuthError(FirebaseAuthException(code: 'google-web-ui-required')), 'Google sign-in must be started with the Google sign-in button.');
+    });
+
+    test('Google provider error does not expose raw details', () {
+      final message = InsightFlowAuthService.userFacingAuthError(FirebaseAuthException(code: 'google-provider-error', message: 'sensitive provider details'));
+      expect(message, 'Google sign-in could not be completed. Please try again.');
+      expect(message, isNot(contains('sensitive provider details')));
+    });
+
     test('Google cancellation is user-facing cancellation', () {
       final error = GoogleSignInException(
         code: GoogleSignInExceptionCode.canceled,
