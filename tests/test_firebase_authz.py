@@ -787,6 +787,7 @@ def test_verified_recreated_identity_relinks_to_stable_employee(monkeypatch):
                     "principal_id": "EMP001",
                     "status": "active",
                     "roles": {"employee": True},
+                    "identity_bindings": {"google.com": ["google-123"]},
                 }
             },
         }
@@ -822,6 +823,41 @@ def test_verified_recreated_identity_relinks_to_stable_employee(monkeypatch):
     assert writes["users/uid_b"]["linked_member_uid"] == "uid_a"
     assert writes["users/uid_b"]["principal_id"] == "EMP001"
 
+
+
+def test_verified_email_alone_cannot_relink_recreated_identity(monkeypatch):
+    users = {
+        "uid_a": {
+            "status": "active",
+            "email": "employee@example.com",
+            "employee_id": "EMP001",
+        }
+    }
+    workspaces = {
+        "org_1": {
+            "members": {
+                "uid_a": {
+                    "employee_id": "EMP001",
+                    "status": "active",
+                    "roles": {"employee": True},
+                    "identity_bindings": {"google.com": ["different-provider-subject"]},
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        service,
+        "_get",
+        lambda path: users if path == "users" else workspaces if path == "workspaces" else {},
+    )
+    result = service.resolve_principal(
+        "uid_b",
+        "employee@example.com",
+        "google.com",
+        "new-provider-subject",
+        True,
+    )
+    assert result["state"] == "new_company_candidate"
 
 def test_suspended_employee_cannot_relink_recreated_identity(monkeypatch):
     root_users = {
