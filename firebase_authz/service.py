@@ -208,7 +208,7 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
                 continue
             old_user = users.get(member_uid) if isinstance(users, dict) else None
             old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
-            if old_email == email and status in {"active", "approved"}:
+            if old_email == email:
                 candidates.append({
                     "workspace_id": workspace_id,
                     "member_uid": str(member_uid),
@@ -306,11 +306,15 @@ def resolve_principal(
         "relinked": True,
     }
 
-def _member_key_for_workspace(workspace: dict[str, Any], uid: str) -> str | None:
+def _member_key_for_workspace(workspace: dict[str, Any], uid: str, user: dict[str, Any] | None = None) -> str | None:
     members = workspace.get("members") or {}
     if isinstance(members.get(uid), dict):
         return uid
-    user = _raw_user(uid)
+    if user is None:
+        try:
+            user = _raw_user(uid)
+        except RuntimeError:
+            user = {}
     linked_member_uid = str(user.get("linked_member_uid") or "").strip()
     if linked_member_uid and isinstance(members.get(linked_member_uid), dict):
         return linked_member_uid
@@ -399,7 +403,7 @@ def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str,
     for workspace_id, workspace in workspaces.items():
         if not isinstance(workspace, dict):
             continue
-        member_key = _member_key_for_workspace(workspace, uid)
+        member_key = _member_key_for_workspace(workspace, uid, user)
         member = (workspace.get("members") or {}).get(member_key) if member_key else None
         if isinstance(member, dict):
             role_ids = [
@@ -455,9 +459,13 @@ def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[
         permissions.add("excel.mutate.working_copy")
     return permissions
 
-def _stable_identity_keys(uid: str) -> list[str]:
+def _stable_identity_keys(uid: str, user: dict[str, Any] | None = None) -> list[str]:
     keys = [uid]
-    user = _raw_user(uid)
+    if user is None:
+        try:
+            user = _raw_user(uid)
+        except RuntimeError:
+            user = {}
     for value in (user.get("linked_member_uid"), user.get("principal_id"), user.get("employee_id")):
         value = str(value or "").strip()
         if value and value not in keys:
@@ -470,6 +478,9 @@ def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> di
     if not isinstance(resource, dict):
         raise PermissionDenied("Resource is not accessible.")
     grants = resource.get("grants") or {}
+    direct = grants.get(uid)
+    if isinstance(direct, dict):
+        return direct
     for key in _stable_identity_keys(uid):
         grant = grants.get(key)
         if isinstance(grant, dict):
@@ -529,6 +540,9 @@ def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
 
 def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
     grants = dataset.get("grants") or {}
+    direct = grants.get(uid)
+    if isinstance(direct, dict):
+        return direct
     for key in _stable_identity_keys(uid):
         grant = grants.get(key)
         if isinstance(grant, dict):
@@ -543,6 +557,9 @@ DELEGATED_DATASET_PERMISSIONS = {
 
 def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
     records = workspace.get("approved_employees") or {}
+    direct = records.get(uid)
+    if isinstance(direct, dict):
+        return str(direct.get("status") or "active") == "active"
     for key in _stable_identity_keys(uid):
         record = records.get(key)
         if isinstance(record, dict):
