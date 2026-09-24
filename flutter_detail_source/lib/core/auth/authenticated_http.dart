@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +27,130 @@ Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString('insightflow.workspace.$uid', normalized);
 }
+
+class OrganizationServiceDiagnostic {
+  OrganizationServiceDiagnostic({String? id}) : id = id ?? _newId();
+
+  final String id;
+  String stage = 'REQUEST_STARTED';
+  String? method;
+  String? path;
+  String? backendOrigin;
+  int? httpStatus;
+  String? safeBodySummary;
+  String? errorType;
+  String? errorDetail;
+
+  void start({required String method, required String path, required String backendOrigin}) {
+    this.method = method;
+    this.path = path;
+    this.backendOrigin = backendOrigin;
+    stage = 'REQUEST_STARTED';
+    httpStatus = null;
+    safeBodySummary = null;
+    errorType = null;
+    errorDetail = null;
+  }
+
+  String get requestLabel => '${method ?? 'REQUEST'} ${path ?? ''}'.trim();
+
+  String get displayText => [
+        'Organization Service Diagnostic',
+        '',
+        'Backend:',
+        backendOrigin ?? 'unknown',
+        '',
+        'Request:',
+        requestLabel,
+        '',
+        'Status:',
+        httpStatus?.toString() ?? (stage == 'REQUEST_STARTED' ? 'waiting' : 'no HTTP response'),
+        '',
+        'Result:',
+        stage,
+        if (safeBodySummary != null && safeBodySummary!.isNotEmpty) '',
+        if (safeBodySummary != null && safeBodySummary!.isNotEmpty) 'Response: $safeBodySummary',
+        '',
+        'Attempt:',
+        id,
+      ].join('\\n');
+
+  static String _newId() {
+    final value = Random.secure().nextInt(0x10000);
+    return 'ORGREQ-${value.toRadixString(16).padLeft(4, '0').toUpperCase()}';
+  }
+}
+
+class OrganizationServiceResponse {
+  const OrganizationServiceResponse(this.response, this.diagnostic);
+  final http.Response response;
+  final OrganizationServiceDiagnostic diagnostic;
+}
+
+String _safeOrganizationResponseSummary(String body) {
+  if (body.trim().isEmpty) return 'empty response';
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map) {
+      final safe = <String, String>{};
+      for (final key in const ['code', 'detail', 'message', 'authorization_state']) {
+        final value = decoded[key];
+        if (value != null) safe[key] = value.toString();
+      }
+      final summary = safe.entries.map((e) => '${e.key}=${e.value}').join('; ');
+      if (summary.isNotEmpty) return summary.length > 240 ? summary.substring(0, 240) : summary;
+      return 'JSON object response';
+    }
+    return 'JSON response';
+  } catch (_) {
+    return 'non-JSON response';
+  }
+}
+
+String _classifyOrganizationHttp(int status) {
+  if (status >= 200 && status < 300) return 'HTTP_SUCCESS';
+  if (status == 401) return 'HTTP_401';
+  if (status == 403) return 'HTTP_403';
+  if (status == 404) return 'HTTP_404';
+  if (status == 409) return 'HTTP_409';
+  if (status == 422) return 'HTTP_422';
+  if (status >= 500) return 'HTTP_5XX';
+  return 'UNKNOWN_ERROR';
+}
+
+Future<OrganizationServiceResponse> organizationServiceRequest({
+  required String method,
+  required String path,
+  required Future<http.Response> Function(Map<String, String> headers) send,
+  bool forceRefresh = true,
+  String? contentType,
+}) async {
+  final diagnostic = OrganizationServiceDiagnostic();
+  diagnostic.start(method: method, path: path, backendOrigin: insightFlowBackendBaseUrl);
+  try {
+    final headers = await firebaseAuthHeaders(forceRefresh: forceRefresh);
+    if (contentType != null) headers['Content-Type'] = contentType;
+    final response = await send(headers).timeout(const Duration(seconds: 15));
+    diagnostic.httpStatus = response.statusCode;
+    diagnostic.safeBodySummary = _safeOrganizationResponseSummary(response.body);
+    diagnostic.stage = _classifyOrganizationHttp(response.statusCode);
+    return OrganizationServiceResponse(response, diagnostic);
+  } on TimeoutException catch (error) {
+    diagnostic.stage = 'TIMEOUT';
+    diagnostic.errorType = error.runtimeType.toString();
+    rethrow;
+  } on Exception catch (error) {
+    diagnostic.stage = error.toString().contains('Failed to fetch')
+        ? 'NETWORK_OR_CORS'
+        : 'NETWORK_ERROR';
+    diagnostic.errorType = error.runtimeType.toString();
+    diagnostic.errorDetail = error.toString().contains('Failed to fetch')
+        ? 'Browser reported Failed to fetch; this may be network or CORS.'
+        : 'Browser request failed before an HTTP response was received.';
+    rethrow;
+  }
+}
+
 const String insightFlowBackendBaseUrl = String.fromEnvironment(
   'INSIGHTFLOW_BACKEND_URL',
   defaultValue: 'https://data-analysis-oajs.onrender.com',
