@@ -106,23 +106,67 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     try {
       final headers = await firebaseAuthHeaders(forceRefresh: true);
       final response = await http.post(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/register-company'),
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
         headers: {...headers, 'Content-Type': 'application/json'},
         body: jsonEncode({'organization_name': name}),
       );
-      final decoded = response.body.trim().isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(response.body);
+      final bodyText = response.body.trim();
+      dynamic decoded;
+      try {
+        decoded = bodyText.isEmpty ? <String, dynamic>{} : jsonDecode(bodyText);
+      } catch (_) {
+        decoded = null;
+      }
+      debugPrint(
+        '[company-registration] status=${response.statusCode} '
+        'endpoint=/v1/authz/bootstrap-owner stage=bootstrap-response '
+        'code=${decoded is Map ? decoded['code']?.toString() ?? 'unstructured' : 'invalid-json'}',
+      );
       if (response.statusCode != 200) {
+        final detail = decoded is Map ? decoded['detail']?.toString() : null;
+        final safeDetail = detail?.trim();
+        if (response.statusCode == 401) {
+          throw StateError(
+            'Your founder authentication is no longer valid. Please sign in again.',
+          );
+        }
+        if (response.statusCode == 403) {
+          throw StateError(
+            safeDetail?.isNotEmpty == true
+                ? safeDetail!
+                : 'This account is not eligible to create an organization.',
+          );
+        }
+        if (response.statusCode == 400) {
+          throw StateError(
+            safeDetail?.isNotEmpty == true
+                ? safeDetail!
+                : 'Enter a valid organization name.',
+          );
+        }
+        if (response.statusCode == 404 || response.statusCode >= 500) {
+          throw StateError(
+            'InsightFlow couldn’t reach the organization service.',
+          );
+        }
         throw StateError(
-          decoded is Map
-              ? decoded['detail']?.toString() ?? 'Company registration failed.'
-              : 'Company registration failed.',
+          safeDetail?.isNotEmpty == true
+              ? safeDetail!
+              : 'InsightFlow couldn’t create the organization. Please try again.',
         );
       }
       final workspaceId = decoded is Map
           ? decoded['workspace_id']?.toString()
           : null;
+      final organizationId = decoded is Map
+          ? decoded['organization_id']?.toString()
+          : null;
+      if (workspaceId == null || workspaceId.isEmpty ||
+          organizationId == null || organizationId.isEmpty) {
+        throw StateError(
+          'InsightFlow couldn’t create the organization. Please try again.',
+        );
+      }
       if (workspaceId != null && workspaceId.isNotEmpty) {
         await setInsightFlowWorkspaceId(user.uid, workspaceId);
       }
