@@ -86,7 +86,7 @@ dependencies:
   just_audio: ^0.10.5
   onnxruntime: ^1.4.0
   flutter_overlay_window: ^0.5.0
-  google_sign_in: ^6.2.1
+  google_sign_in: ^7.2.0
   local_auth: ^2.3.0
   local_auth_android: ^1.0.53
   camera: ^0.11.2
