@@ -106,6 +106,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       _error = false;
     });
     try {
+      _authDiagnostic?.record('AUTHZ_RESOLUTION_STARTED');
       final headers = await firebaseAuthHeaders(forceRefresh: true);
       late final http.Response response;
       try {
@@ -121,6 +122,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           'category=network error=${error.runtimeType}',
         );
         debugPrintStack(stackTrace: stackTrace);
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_NETWORK_FAILURE');
         throw StateError('InsightFlow couldn’t reach the organization service.');
       }
       final bodyText = response.body.trim();
@@ -129,6 +131,17 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         decoded = bodyText.isEmpty ? <String, dynamic>{} : jsonDecode(bodyText);
       } catch (_) {
         decoded = null;
+      }
+      if (response.statusCode == 401) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_401', httpStatus: 401);
+      } else if (response.statusCode == 403) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_403', httpStatus: 403);
+      } else if (response.statusCode == 404) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_404', httpStatus: 404);
+      } else if (response.statusCode >= 500) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_HTTP_5XX', httpStatus: response.statusCode);
+      } else if (response.statusCode >= 200 && response.statusCode < 300) {
+        _authDiagnostic?.record('AUTHZ_RESOLUTION_SUCCESS', httpStatus: response.statusCode);
       }
       debugPrint(
         '[company-registration] status=${response.statusCode} '
@@ -197,9 +210,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       setState(() {
         _busy = false;
         _error = true;
-        _message = error is StateError
-            ? error.message.toString()
-            : 'Company registration could not be completed.';
+        _message = '${error is StateError ? error.message.toString() : 'Company registration could not be completed.'}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
       });
     }
   }
