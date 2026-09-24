@@ -55,18 +55,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         return;
       }
 
-      final user = InsightFlowAuthService.currentUser;
-      if (user != null && !user.emailVerified) {
-        await InsightFlowAuthService.sendEmailVerification();
-        if (mounted) {
-          setState(() {
-            _message =
-                'Verify your email, then return here to complete company registration.';
-            _busy = false;
-          });
-        }
-        return;
-      }
       if (mounted) setState(() => _busy = false);
     } catch (error) {
       if (!mounted) return;
@@ -92,7 +80,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     if (user == null) {
       setState(() {
         _error = true;
-        _message = 'Authenticate your founder identity before registering.';
+        _message = 'Authenticate your identity before registering.';
       });
       return;
     }
@@ -199,7 +187,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     return AuthGlassScaffold(
       title: 'REGISTER / COMPANY',
       subtitle: authenticated
-          ? 'Create a new organization for the verified founder identity.'
+          ? 'Create a new organization for the authenticated identity.'
           : 'Authenticate the founder identity first.',
       children: [
         if (!authenticated) ...[
