@@ -1008,6 +1008,7 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     claims = require_email_verified(verify_id_token(actor_token))
     actor = str(claims["uid"])
     email = str(claims.get("email") or "").strip().lower()
+    provider, provider_subject = _claims_identity_binding(claims)
     existing_user = _raw_user(actor)
     if existing_user:
         status = str(existing_user.get("status") or "active").strip().lower()
@@ -1022,10 +1023,13 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     if invitation.get("email") != email:
         raise PermissionDenied("Invitation identity does not match the authenticated email.")
     member_ref = db.reference(f"workspaces/{workspace_id}/members/{actor}")
+    employee_id = invitation.get("employee_id") or f"emp_{actor}"
     member_ref.set({
-        "employee_id": invitation.get("employee_id") or f"emp_{actor}",
+        "employee_id": employee_id,
+        "principal_id": employee_id,
         "status": "active",
         "roles": {str(invitation["role_id"]): True},
+        "identity_bindings": {provider: [provider_subject]},
     })
     db.reference(f"workspaces/{workspace_id}/invitations/{invitation_id}").update({
         "status": "accepted",
@@ -1035,7 +1039,12 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     db.reference(f"users/{actor}").set({
         "status": "active",
         "email": email,
-        "employee_id": invitation.get("employee_id") or f"emp_{actor}",
+        "employee_id": employee_id,
+        "principal_id": employee_id,
+        "linked_member_uid": actor,
+        "linked_organization_id": workspace_id,
+        "identity_provider": provider,
+        "identity_provider_subject": provider_subject,
     })
     audit_event(
         workspace_id, actor, "invitation.accept", "succeeded",
