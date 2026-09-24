@@ -49,6 +49,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _context;
+  OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
   void initState() {
@@ -71,59 +72,38 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         return;
       }
 
-      final headers = await firebaseAuthHeaders();
-      if (insightFlowWorkspaceId.isNotEmpty) {
-        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
-      }
-      late final http.Response response;
-      try {
-        response = await http.get(
+      final result = await organizationServiceRequest(
+        method: 'GET',
+        path: '/v1/authz/me',
+        send: (headers) => http.get(
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
           headers: headers,
-        );
-      } on Exception catch (error, stackTrace) {
-        debugPrint(
-          '[authz-me] stage=request '
-          'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
-          'category=network error_type=${error.runtimeType}',
-        );
-        debugPrintStack(stackTrace: stackTrace);
-        throw _AuthorizationGateException(
-          'InsightFlow couldn’t reach the organization service.',
-        );
-      }
+        ),
+      );
+      _organizationDiagnostic = result.diagnostic;
+      final response = result.response;
       Map<String, dynamic> body = {};
       if (response.body.trim().isNotEmpty) {
         final decoded = jsonDecode(response.body);
-        if (decoded is Map) {
-          body = Map<String, dynamic>.from(decoded);
-        }
+        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
       }
       if (response.statusCode != 200) {
         final detail = body['detail']?.toString().trim();
-        debugPrint(
-          '[authz-me] status=${response.statusCode} '
-          'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
-          'stage=authorization-response '
-          'category=${_authorizationResponseCategory(response.statusCode)} '
-          'code=${body['code']?.toString() ?? 'unstructured'}',
-        );
         if (response.statusCode == 401) {
-          throw _AuthorizationGateException(
-            'Your authentication session could not be verified. Sign in again.',
-          );
+          throw _AuthorizationGateException('InsightFlow authentication could not be verified.');
         }
         if (response.statusCode == 403) {
           throw _AuthorizationGateException(
             detail?.isNotEmpty == true
                 ? detail!
-                : 'No InsightFlow organization access is assigned to this account.',
+                : 'Your InsightFlow account is not authorized for this organization.',
           );
         }
-        if (response.statusCode == 404 || response.statusCode >= 500) {
-          throw _AuthorizationGateException(
-            'InsightFlow couldn’t reach the organization service.',
-          );
+        if (response.statusCode == 404) {
+          throw _AuthorizationGateException('InsightFlow authorization is unavailable on this server version.');
+        }
+        if (response.statusCode >= 500) {
+          throw _AuthorizationGateException("InsightFlow's organization service returned a server error.");
         }
         throw _AuthorizationGateException(
           detail?.isNotEmpty == true
@@ -137,6 +117,13 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
           _loading = false;
         });
       }
+    } on OrganizationServiceRequestException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _organizationDiagnostic = error.diagnostic;
+        _error = 'InsightFlow couldn’t reach the organization service.';
+      });
     } catch (error) {
       if (!mounted) return;
       final firebaseDeleted = error is FirebaseAuthException &&
@@ -203,10 +190,34 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
 
     final state = _context;
     if (state == null) {
-      return _AccessStateScreen(
+      return AuthGlassScaffold(
         title: 'AUTHORIZATION / UNAVAILABLE',
-        message: _error ?? 'Organization access could not be established.',
-        action: _refresh,
+        subtitle: 'Authentication is separate from organization authorization.',
+        children: [
+          AuthGlassMessage(text: _error ?? 'Organization access could not be established.'),
+          if (_organizationDiagnostic != null) ...[
+            const SizedBox(height: 10),
+            AuthGlassMessage(
+              text: _organizationDiagnostic!.displayText,
+              error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS',
+            ),
+          ],
+          const SizedBox(height: 14),
+          GlassButton.custom(
+            onTap: _refresh,
+            enabled: true,
+            width: double.infinity,
+            height: 44,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Retry',
+            child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: InsightFlowAuthService.signOut,
+            child: const Text('Sign out'),
+          ),
+        ],
       );
     }
 
