@@ -106,7 +106,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     try {
       final headers = await firebaseAuthHeaders(forceRefresh: true);
       final response = await http.post(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
         headers: {...headers, 'Content-Type': 'application/json'},
         body: jsonEncode({'organization_name': name}),
       );
