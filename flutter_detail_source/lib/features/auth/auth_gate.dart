@@ -407,3 +407,80 @@ class _NoOrganizationAccessScreen extends StatelessWidget {
 class _AccessStateScreen extends StatelessWidget {
   const _AccessStateScreen({
     required this.title,
+    required this.message,
+    required this.action,
+    this.actionLabel = 'Retry',
+  });
+
+  final String title;
+  final String message;
+  final Future<void> Function() action;
+  final String actionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthGlassScaffold(
+      title: title,
+      subtitle: 'Authentication is separate from organization authorization.',
+      children: [
+        AuthGlassMessage(text: message),
+        const SizedBox(height: 14),
+        GlassButton.custom(
+          onTap: action,
+          enabled: true,
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: actionLabel,
+          child: Text(
+            actionLabel,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: InsightFlowAuthService.signOut,
+          child: const Text('Sign out'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthLoading extends StatelessWidget {
+  const _AuthLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AuthGlassScaffold(
+      title: 'AUTH / INITIALIZING',
+      subtitle: 'CHECKING IDENTITY AND WORKSPACE AUTHORIZATION',
+      children: [
+        Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 1.8,
+            color: TechColors.borderActive,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthError extends StatelessWidget {
+  const _AuthError();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AuthGlassScaffold(
+      title: 'AUTH / ERROR',
+      subtitle: 'AUTHENTICATION CHANNEL UNAVAILABLE',
+      children: [
+        AuthGlassMessage(
+          text:
+              'Authentication could not be initialized. Please reload the add-in.',
+        ),
+      ],
+    );
+  }
+}
