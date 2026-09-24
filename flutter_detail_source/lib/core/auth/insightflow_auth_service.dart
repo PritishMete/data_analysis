@@ -198,6 +198,23 @@ class InsightFlowAuthService {
         return result;
       } on FirebaseAuthException catch (error) {
         diagnostic?.record('FIREBASE_SIGN_IN_FAILED', code: error.code);
+        if (_isStaleFirebaseSessionError(error.code) && before == 'PRESENT') {
+          diagnostic?.record('FIREBASE_STALE_SESSION_DETECTED', code: error.code);
+          await auth.signOut();
+          diagnostic?.record('FIREBASE_STALE_SESSION_CLEARED');
+          diagnostic?.record('FIREBASE_SIGN_IN_RETRY_STARTED');
+          try {
+            final retry = await auth.signInWithCredential(credential);
+            diagnostic?.record('FIREBASE_SIGN_IN_SUCCESS');
+            final retryAfter = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+            diagnostic?.currentUserAfter = retryAfter;
+            diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
+            return retry;
+          } on FirebaseAuthException catch (retryError) {
+            diagnostic?.record('FIREBASE_SIGN_IN_RETRY_FAILED', code: retryError.code);
+            rethrow;
+          }
+        }
         rethrow;
       }
     } on GoogleSignInException catch (error, stackTrace) {
@@ -209,7 +226,15 @@ class InsightFlowAuthService {
       rethrow;
     }
   }
-  static void _logGoogleException(String stage, GoogleSignInException error, StackTrace stackTrace) {
+  static bool _isStaleFirebaseSessionError(String code) {
+    return <String>{
+      'user-not-found',
+      'user-token-expired',
+      'invalid-user-token',
+    }.contains(code);
+  }
+
+$marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
     debugPrint('[$stage] GoogleSignInExceptionCode=${error.code.name} type=${error.runtimeType}');
     debugPrintStack(stackTrace: stackTrace);
   }
