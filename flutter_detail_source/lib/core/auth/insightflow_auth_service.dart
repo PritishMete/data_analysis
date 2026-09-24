@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../firebase_options.dart';
+import 'auth_diagnostic.dart';
 
 class InsightFlowAuthService {
   InsightFlowAuthService._();
@@ -157,8 +158,10 @@ class InsightFlowAuthService {
   /// must not start another interactive Google authorization request.
   static Future<UserCredential> signInWithGoogleAccount(
     GoogleSignInAccount googleUser,
+    {AuthDiagnosticAttempt? diagnostic},
   ) async {
     try {
+      diagnostic?.record('GOOGLE_ID_TOKEN_PRESENT');
       final idToken = googleUser.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
         debugPrint('[firebase-google-credential] missing Google ID token');
@@ -169,8 +172,27 @@ class InsightFlowAuthService {
       }
       debugPrint('[firebase-google-credential] creating Firebase credential');
       final credential = GoogleAuthProvider.credential(idToken: idToken);
-      debugPrint('[firebase-google-credential] signing into Firebase');
-      return await auth.signInWithCredential(credential);
+      diagnostic?.record('FIREBASE_CREDENTIAL_CREATED');
+      final before = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+      debugPrint('[auth-diagnostic] currentUserBefore=$before');
+      diagnostic?.record('FIREBASE_SIGN_IN_STARTED');
+      try {
+        final result = await auth.signInWithCredential(credential);
+        diagnostic?.record('FIREBASE_SIGN_IN_SUCCESS');
+        final after = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+        debugPrint('[auth-diagnostic] currentUserAfter=$after');
+        diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
+        final user = auth.currentUser;
+        if (user != null) {
+          diagnostic?.record('FIREBASE_ID_TOKEN_REFRESH_STARTED');
+          await user.getIdToken(true);
+          diagnostic?.record('FIREBASE_ID_TOKEN_REFRESH_SUCCESS');
+        }
+        return result;
+      } on FirebaseAuthException catch (error) {
+        diagnostic?.record('FIREBASE_SIGN_IN_FAILED', code: error.code);
+        rethrow;
+      }
     } on GoogleSignInException catch (error, stackTrace) {
       _logGoogleException('google-authentication', error, stackTrace);
       throw _mapGoogleSignInException(error);
@@ -217,10 +239,15 @@ class InsightFlowAuthService {
     await user.sendEmailVerification();
   }
 
-  static Future<bool> reloadCurrentUser() async {
+  static Future<bool> reloadCurrentUser({AuthDiagnosticAttempt? diagnostic}) async {
     final user = auth.currentUser;
     if (user == null) return false;
-    await user.reload();
+    try {
+      await user.reload();
+    } on FirebaseAuthException catch (error) {
+      diagnostic?.record('FIREBASE_USER_RELOAD_FAILED', code: error.code);
+      rethrow;
+    }
     return auth.currentUser?.emailVerified ?? false;
   }
 
