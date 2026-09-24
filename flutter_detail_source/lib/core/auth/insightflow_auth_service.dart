@@ -174,12 +174,14 @@ class InsightFlowAuthService {
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       diagnostic?.record('FIREBASE_CREDENTIAL_CREATED');
       final before = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+      diagnostic?.currentUserBefore = before;
       debugPrint('[auth-diagnostic] currentUserBefore=$before');
       diagnostic?.record('FIREBASE_SIGN_IN_STARTED');
       try {
         final result = await auth.signInWithCredential(credential);
         diagnostic?.record('FIREBASE_SIGN_IN_SUCCESS');
         final after = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+        diagnostic?.currentUserAfter = after;
         debugPrint('[auth-diagnostic] currentUserAfter=$after');
         diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
         final user = auth.currentUser;
