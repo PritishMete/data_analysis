@@ -57,6 +57,8 @@ def test_upload_generates_opaque_id_and_stores_metadata_only(monkeypatch):
         @staticmethod
         def reference(path): return Ref()
     monkeypatch.setattr(service, "db", DB(), raising=False)
+    from firebase_admin import db as firebase_db
+    monkeypatch.setattr(firebase_db, "reference", lambda path: Ref())
     class Provider:
         def upload(self, **kwargs):
             return StoredDatasetObject("organizations/org/datasets/ds_x/versions/v1/source", len(kwargs["data"]), kwargs["content_type"], "checksum")
@@ -86,6 +88,8 @@ def test_new_version_does_not_overwrite_v1(monkeypatch):
         @staticmethod
         def reference(path): return Ref()
     monkeypatch.setattr(service, "db", DB(), raising=False)
+    from firebase_admin import db as firebase_db
+    monkeypatch.setattr(firebase_db, "reference", lambda path: Ref())
     class Provider:
         def upload(self, **kwargs): return StoredDatasetObject("new/source", len(kwargs["data"]), "application/octet-stream", "new")
     result = service.upload_managed_dataset(
