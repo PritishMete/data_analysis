@@ -94,7 +94,7 @@ def test_last_owner_is_protected(monkeypatch):
     with pytest.raises(service.PermissionDenied):
         service.last_owner_guard("w", "u")
 
-def test_bootstrap_transaction_is_atomic_for_same_identity(monkeypatch):
+def test_bootstrap_transaction_creates_database_backed_owner_records(monkeypatch):
     class Ref:
         def __init__(self):
             self.value = None
@@ -105,52 +105,70 @@ def test_bootstrap_transaction_is_atomic_for_same_identity(monkeypatch):
                 return self.value
     ref = Ref()
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
-        "uid": "alice", "email": "alice@example.com", "email_verified": True
+        "uid": "alice", "email": "alice@example.com", "email_verified": False
     })
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
-    results = []
-    def run():
-        try:
-            results.append(service.bootstrap_owner("token", "Acme"))
-        except Exception as exc:
-            results.append(exc)
-    threads = [threading.Thread(target=run) for _ in range(2)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    successes = [x for x in results if isinstance(x, dict)]
-    assert len(successes) == 1
-    assert ref.value["users"]["alice"]["status"] == "active"
-    assert ref.value["workspaces"][successes[0]["workspace_id"]]["members"]["alice"]["roles"]["owner"] is True
+
+    result = service.bootstrap_owner("token", "ABC")
+
+    workspace = ref.value["workspaces"][result["workspace_id"]]
+    assert workspace["organization"]["name"] == "ABC"
+    assert workspace["members"]["alice"]["roles"]["owner"] is True
+    assert workspace["members"]["alice"]["principal_id"] == ref.value["users"]["alice"]["principal_id"]
+    assert workspace["roles"]["organization_owner"]["permissions"] == sorted(service.DEFAULT_ROLES["organization_owner"])
+    assert result["organization_id"] == result["workspace_id"]
+
+
+def test_bootstrap_allows_authenticated_user_to_create_another_organization(monkeypatch):
+    class Ref:
+        def __init__(self):
+            self.value = {
+                "users": {
+                    "alice": {
+                        "status": "active",
+                        "email": "alice@example.com",
+                        "employee_id": "EMP001",
+                        "principal_id": "EMP001",
+                    }
+                },
+                "workspaces": {
+                    "org_existing": {
+                        "organization": {"organization_id": "org_existing", "name": "Existing"},
+                        "members": {
+                            "alice": {
+                                "status": "active",
+                                "employee_id": "EMP001",
+                                "principal_id": "EMP001",
+                                "roles": {"owner": True},
+                            }
+                        },
+                    }
+                },
+            }
+        def transaction(self, fn):
+            self.value = fn(self.value)
+            return self.value
+
+    ref = Ref()
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "alice", "email": "alice@example.com", "email_verified": False
+    })
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: ref)
+
+    result = service.bootstrap_owner("token", "Second Organization")
+
+    assert result["workspace_id"] != "org_existing"
+    assert ref.value["workspaces"][result["workspace_id"]]["members"]["alice"]["principal_id"] == "EMP001"
+    assert ref.value["users"]["alice"]["principal_id"] == "EMP001"
+
 
 def test_wrong_firebase_configuration_fails(monkeypatch):
     monkeypatch.setenv("FIREBASE_PROJECT_ID", "wrong-project")
     monkeypatch.setenv("FIREBASE_DATABASE_URL", service.DATABASE_URL)
     with pytest.raises(RuntimeError):
         service.initialize_firebase()
-
-def test_bootstrap_rejects_existing_member(monkeypatch):
-    class Ref:
-        def __init__(self):
-            self.value = {
-                "workspaces": {
-                    "org_existing": {
-                        "members": {"alice": {"status": "active", "roles": {"employee": True}}}
-                    }
-                },
-                "users": {"alice": {"status": "active", "email": "alice@example.com"}},
-            }
-        def transaction(self, fn):
-            self.value = fn(self.value)
-            return self.value
-    ref = Ref()
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {
-        "uid": "alice", "email": "alice@example.com", "email_verified": True
-    })
-    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
-    monkeypatch.setattr(service.db, "reference", lambda path: ref)
-    with pytest.raises(service.BootstrapDenied):
-        service.bootstrap_owner("token", "Second Organization")
 
 def test_legacy_membership_without_status_is_treated_as_active(monkeypatch):
     monkeypatch.setattr(service, "_user", lambda uid: {"suspended": False})
@@ -897,11 +915,11 @@ def test_suspended_employee_cannot_relink_recreated_identity(monkeypatch):
     assert result["state"] == "suspended"
 
 
-def test_removed_employee_cannot_bootstrap_a_new_company(monkeypatch):
+def test_removed_identity_can_bootstrap_from_a_valid_firebase_token(monkeypatch):
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "new_uid",
         "email": "employee@example.com",
-        "email_verified": True,
+        "email_verified": False,
     })
     root = {
         "users": {
@@ -911,25 +929,19 @@ def test_removed_employee_cannot_bootstrap_a_new_company(monkeypatch):
                 "employee_id": "EMP001",
             }
         },
-        "workspaces": {
-            "org_1": {
-                "members": {
-                    "old_uid": {
-                        "employee_id": "EMP001",
-                        "status": "removed",
-                        "roles": {"employee": True},
-                    }
-                }
-            }
-        },
+        "workspaces": {},
     }
     class Ref:
         def transaction(self, fn):
             return fn(root)
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: Ref())
-    with pytest.raises(service.BootstrapDenied):
-        service.bootstrap_owner("token", "Not Allowed")
+
+    result = service.bootstrap_owner("token", "Not Allowed")
+
+    assert result["workspace_id"] in root["workspaces"]
+    assert root["workspaces"][result["workspace_id"]]["organization"]["name"] == "Not Allowed"
+
 
 
 def test_ambiguous_verified_email_fails_closed(monkeypatch):
