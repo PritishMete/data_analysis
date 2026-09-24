@@ -752,19 +752,27 @@ def register_dataset(workspace_id: str, dataset_id: str, owner_uid: str, actor_t
             workspace, actor, owner_uid, dataset_id, "dataset.create_working_copy"
         ):
             raise
+    owner_member_uid = _member_key_for_workspace(workspace, owner_uid)
     members = workspace.get("members") or {}
-    if owner_uid not in members or _membership_status(members[owner_uid]) != "active":
+    owner_member = members.get(owner_member_uid) if owner_member_uid else None
+    if not isinstance(owner_member, dict) or _membership_status(owner_member) != "active":
         raise PermissionDenied("Dataset owner must be an active organization member.")
+    principal_id = str(
+        owner_member.get("principal_id")
+        or owner_member.get("employee_id")
+        or owner_member_uid
+    )
     initialize_firebase()
     now = int(time.time() * 1000)
     db.reference(f"workspaces/{workspace_id}/datasets/{dataset_id}").set({
         "dataset_id": dataset_id,
         "organization_id": workspace_id,
-        "owner_uid": owner_uid,
+        "owner_uid": owner_member_uid,
+        "owner_principal_id": principal_id,
         "protected_original": bool(protected),
         "created_at": now,
         "grants": {
-            owner_uid: {
+            owner_member_uid: {
                 "permissions": [
                     "dataset.view_original",
                     "dataset.create_working_copy",
@@ -819,29 +827,36 @@ def set_dataset_grant(
     claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
     actor = str(claims["uid"])
     workspace = _workspace(workspace_id)
+    target_member_uid = _member_key_for_workspace(workspace, target_uid)
+    if not target_member_uid:
+        raise PermissionDenied("Grant target is not an organization member.")
     try:
         authorization(actor, workspace_id, "dataset.manage_acl")
     except PermissionDenied:
         if not _delegated_permission(
-            workspace, actor, target_uid, dataset_id, "dataset.share"
+            workspace, actor, target_member_uid, dataset_id, "dataset.share"
         ):
             raise
-    if target_uid not in (workspace.get("members") or {}):
-        raise PermissionDenied("Grant target is not an organization member.")    if _effective_role_level((workspace.get("members") or {}).get(actor, {})) <= ROLE_LEVELS["team_lead"]:
-        if not _approved_employee(workspace, target_uid):
+    actor_member_uid = _member_key_for_workspace(workspace, actor)
+    actor_member = (workspace.get("members") or {}).get(actor_member_uid) if actor_member_uid else None
+    if not isinstance(actor_member, dict):
+        raise PermissionDenied("Grant actor is not an organization member.")
+    if _effective_role_level(actor_member) <= ROLE_LEVELS["team_lead"]:
+        if not _approved_employee(workspace, target_member_uid):
             raise PermissionDenied("Team Leads may grant dataset access only to approved employees.")
     dataset = _dataset(workspace, dataset_id)
     actor_grant = _dataset_grant(dataset, actor)
     actor_can_manage = "dataset.manage_acl" in set(actor_grant.get("permissions") or [])
     delegated_share = _delegated_permission(
-        workspace, actor, target_uid, dataset_id, "dataset.share"
+        workspace, actor_member_uid, target_member_uid, dataset_id, "dataset.share"
     )
-    if actor_can_manage is False and actor != dataset.get("owner_uid") and not delegated_share:
+    if (
+        actor_can_manage is False
+        and actor_member_uid != dataset.get("owner_uid")
+        and not delegated_share
+    ):
         raise PermissionDenied("Dataset ACL management is not delegated to this user.")
     initialize_firebase()
-    target_member_uid = _member_key_for_workspace(workspace, target_uid)
-    if not target_member_uid:
-        raise PermissionDenied("Target user is not an organization member.")
     db.reference(
         f"workspaces/{workspace_id}/datasets/{dataset_id}/grants/{target_member_uid}"
     ).set({"permissions": sorted(set(permissions))})
@@ -1076,7 +1091,14 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         if not isinstance(dataset, dict):
             continue
         grant = _dataset_grant(dataset, uid)
-        if _stable_identity_keys(uid) and (is_manager or dataset.get("owner_uid") in _stable_identity_keys(uid) or dataset.get("owner_principal_id") in _stable_identity_keys(uid) or dataset_id in delegated_dataset_ids) or "dataset.view_original" in set(grant.get("permissions") or []):
+        identity_keys = _stable_identity_keys(uid)
+        if (
+            is_manager
+            or dataset.get("owner_uid") in identity_keys
+            or dataset.get("owner_principal_id") in identity_keys
+            or dataset_id in delegated_dataset_ids
+            or "dataset.view_original" in set(grant.get("permissions") or [])
+        ):
             result["datasets"].append({
                 "dataset_id": dataset_id,
                 "display_name": dataset.get("display_name") or dataset.get("original_filename") or dataset_id,
