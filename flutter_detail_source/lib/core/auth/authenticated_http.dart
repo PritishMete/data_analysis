@@ -87,6 +87,12 @@ class OrganizationServiceResponse {
   final OrganizationServiceDiagnostic diagnostic;
 }
 
+class OrganizationServiceRequestException implements Exception {
+  const OrganizationServiceRequestException(this.diagnostic, this.cause);
+  final OrganizationServiceDiagnostic diagnostic;
+  final Object cause;
+}
+
 String _safeOrganizationResponseSummary(String body) {
   if (body.trim().isEmpty) return 'empty response';
   try {
@@ -138,7 +144,7 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
   } on TimeoutException catch (error) {
     diagnostic.stage = 'TIMEOUT';
     diagnostic.errorType = error.runtimeType.toString();
-    rethrow;
+    throw OrganizationServiceRequestException(diagnostic, error);
   } on Exception catch (error) {
     diagnostic.stage = error.toString().contains('Failed to fetch')
         ? 'NETWORK_OR_CORS'
@@ -147,7 +153,7 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
     diagnostic.errorDetail = error.toString().contains('Failed to fetch')
         ? 'Browser reported Failed to fetch; this may be network or CORS.'
         : 'Browser request failed before an HTTP response was received.';
-    rethrow;
+    throw OrganizationServiceRequestException(diagnostic, error);
   }
 }
 
