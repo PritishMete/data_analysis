@@ -135,29 +135,193 @@ def pending_invitations_for_email(email: str) -> list[dict[str, Any]]:
             })
     return matches
 
-def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False, email: str | None = None) -> dict[str, Any]:
+def authenticated_identity(claims: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the Firebase-authenticated identity without coupling RBAC to a provider."""
+    firebase_claims = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
+    provider = str(firebase_claims.get("sign_in_provider") or "firebase").strip().lower()
+    identities = firebase_claims.get("identities") if isinstance(firebase_claims.get("identities"), dict) else {}
+    subjects = identities.get(provider) if isinstance(identities, dict) else None
+    provider_subject = str(subjects[0]) if isinstance(subjects, list) and subjects else str(claims.get("sub") or claims.get("uid") or "")
+    return {
+        "provider": provider,
+        "provider_subject": provider_subject,
+        "verified_email": str(claims.get("email") or "").strip().lower(),
+        "firebase_uid": str(claims.get("uid") or ""),
+        "display_name": claims.get("name"),
+    }
+
+def _identity_candidates(email: str, provider: str, provider_subject: str) -> list[dict[str, Any]]:
+    """Find eligible existing company members for a verified identity relink."""
+    email = str(email or "").strip().lower()
+    if not email:
+        return []
+    workspaces = _get("workspaces") or {}
+    users = _get("users") or {}
+    candidates: list[dict[str, Any]] = []
+    for workspace_id, workspace in workspaces.items():
+        if not isinstance(workspace, dict):
+            continue
+        for member_uid, member in (workspace.get("members") or {}).items():
+            if not isinstance(member, dict):
+                continue
+            status = _membership_status(member)
+            if status in {"suspended", "removed"}:
+                continue
+            employee_id = str(member.get("employee_id") or "").strip()
+            if not employee_id:
+                continue
+            linked = member.get("identity_bindings") or {}
+            provider_values = linked.get(provider) if isinstance(linked, dict) else None
+            if isinstance(provider_values, list) and provider_subject and provider_subject in {str(v) for v in provider_values}:
+                candidates.append({
+                    "workspace_id": workspace_id,
+                    "member_uid": str(member_uid),
+                    "employee_id": employee_id,
+                    "match": "provider_subject",
+                })
+                continue
+            old_user = users.get(member_uid) if isinstance(users, dict) else None
+            old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
+            if old_email == email and status in {"active", "approved"}:
+                candidates.append({
+                    "workspace_id": workspace_id,
+                    "member_uid": str(member_uid),
+                    "employee_id": employee_id,
+                    "match": "verified_email",
+                })
+    unique = {(item["workspace_id"], item["member_uid"]) : item for item in candidates}
+    return list(unique.values())
+
+def resolve_principal(
+    uid: str,
+    email: str | None = None,
+    provider: str = "firebase",
+    provider_subject: str | None = None,
+    email_verified: bool = False,
+) -> dict[str, Any]:
+    """Resolve the authenticated identity to the stable organization member identity."""
+    uid = validate_id(uid, "user ID")
+    normalized_email = str(email or "").strip().lower()
+    subject = str(provider_subject or uid)
+    user = _raw_user(uid)
+    if user:
+        status = str(user.get("status") or "active").strip().lower()
+        if user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
+            return {"state": "suspended", "firebase_uid": uid, "principal_id": user.get("principal_id")}
+        principal_id = str(user.get("principal_id") or user.get("employee_id") or "").strip()
+        return {
+            "state": "active_identity",
+            "firebase_uid": uid,
+            "principal_id": principal_id or uid,
+            "member_uid": str(user.get("linked_member_uid") or uid),
+            "relinked": False,
+        }
+    if not email_verified or not normalized_email:
+        return {"state": "new_company_candidate", "firebase_uid": uid, "principal_id": uid}
+    candidates = _identity_candidates(normalized_email, provider, subject)
+    if len(candidates) != 1:
+        if len(candidates) > 1:
+            return {"state": "ambiguous_identity", "firebase_uid": uid, "principal_id": uid}
+        return {"state": "new_company_candidate", "firebase_uid": uid, "principal_id": uid}
+    candidate = candidates[0]
+    if candidate["match"] == "provider_subject":
+        safe_relink = True
+    else:
+        # Email is only a development/testing fallback: exactly one existing,
+        # eligible company member with a verified email binding may be relinked.
+        safe_relink = candidate["workspace_id"] and candidate["employee_id"]
+    if not safe_relink:
+        return {"state": "new_company_candidate", "firebase_uid": uid, "principal_id": uid}
+    initialize_firebase()
+    now = int(time.time() * 1000)
+    member_path = f"workspaces/{candidate['workspace_id']}/members/{candidate['member_uid']}"
+    member = _get(member_path) or {}
+    bindings = dict(member.get("identity_bindings") or {})
+    values = list(bindings.get(provider) or [])
+    if subject and subject not in values:
+        values.append(subject)
+    bindings[provider] = sorted(set(str(v) for v in values))
+    db.reference(member_path).update({
+        "principal_id": candidate["employee_id"],
+        "identity_bindings": bindings,
+        "identity_relinked_at": now,
+        "identity_relinked_from": candidate["member_uid"],
+    })
+    db.reference(f"users/{uid}").set({
+        "status": "active",
+        "email": normalized_email,
+        "employee_id": candidate["employee_id"],
+        "principal_id": candidate["employee_id"],
+        "linked_member_uid": candidate["member_uid"],
+        "linked_organization_id": candidate["workspace_id"],
+        "identity_provider": provider,
+        "identity_provider_subject": subject,
+        "created_at": now,
+    })
+    audit_event(
+        candidate["workspace_id"], uid, "identity.relink", "succeeded",
+        target_uid=candidate["member_uid"],
+        metadata={"provider": provider, "match": candidate["match"]},
+    )
+    return {
+        "state": "relinked",
+        "firebase_uid": uid,
+        "principal_id": candidate["employee_id"],
+        "member_uid": candidate["member_uid"],
+        "workspace_id": candidate["workspace_id"],
+        "relinked": True,
+    }
+
+def _member_key_for_workspace(workspace: dict[str, Any], uid: str) -> str | None:
+    members = workspace.get("members") or {}
+    if isinstance(members.get(uid), dict):
+        return uid
+    user = _raw_user(uid)
+    linked_member_uid = str(user.get("linked_member_uid") or "").strip()
+    if linked_member_uid and isinstance(members.get(linked_member_uid), dict):
+        return linked_member_uid
+    principal_id = str(user.get("principal_id") or user.get("employee_id") or "").strip()
+    if principal_id:
+        matches = [
+            key for key, member in members.items()
+            if isinstance(member, dict)
+            and str(member.get("principal_id") or member.get("employee_id") or "").strip() == principal_id
+            and _membership_status(member) not in {"removed"}
+        ]
+        if len(matches) == 1:
+            return str(matches[0])
+    return None
+
+def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False, email: str | None = None, provider: str = "firebase", provider_subject: str | None = None) -> dict[str, Any]:
     validate_id(uid, "user ID")
     if workspace_id:
         validate_id(workspace_id, "workspace ID")
-    user = _raw_user(uid)
-    account_email = str(email or user.get("email") or "").strip().lower()
-    invitations = pending_invitations_for_email(account_email)
-    if not user:
+    principal = resolve_principal(uid, email, provider, provider_subject, email_verified)
+    if principal["state"] == "suspended":
+        return {
+            "email_verified": bool(email_verified),
+            "account_status": "suspended",
+            "membership_status": "suspended",
+            "workspace_authorized": False,
+            "authorization_state": "suspended",
+            "has_authorization_record": True,
+            "principal_id": principal.get("principal_id"),
+            "workspaces": [],
+            "pending_invitations": [],
+        }
+    if principal["state"] == "ambiguous_identity":
         return {
             "email_verified": bool(email_verified),
             "account_status": "pending",
             "membership_status": "none",
             "workspace_authorized": False,
-            "authorization_state": "pending_invitation" if invitations else "bootstrap_candidate",
+            "authorization_state": "ambiguous_identity",
             "has_authorization_record": False,
-            "pending_invitations": invitations,
+            "principal_id": uid,
+            "pending_invitations": [],
             "workspaces": [],
         }
-    account_status = str(user.get("status") or "").strip().lower()
-    if user.get("suspended") is True or account_status in {"suspended", "disabled", "removed"}:
-        account_status = "suspended"
-    else:
-        account_status = "active"
+    invitations = pending_invitations_for_email(str(email or ""))
     memberships = workspace_memberships(uid, include_user=False)
     selected = next((item for item in memberships if workspace_id and item["workspace_id"] == workspace_id), None)
     if selected is None and not workspace_id:
@@ -165,27 +329,29 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
         if len(active_memberships) == 1:
             selected = active_memberships[0]
     membership_status = selected["membership_status"] if selected else "none"
+    account_status = "active" if principal["state"] in {"active_identity", "relinked"} else "pending"
     workspace_authorized = bool(email_verified and account_status == "active" and membership_status == "active")
-    if account_status == "suspended":
-        authorization_state = "suspended"
-    elif membership_status == "active" and workspace_authorized:
+    if membership_status == "active" and workspace_authorized:
         authorization_state = "active_member"
     elif membership_status in {"invited", "approved"}:
-        authorization_state = "pending_membership"
+        authorization_state = "approved_employee_pending_link"
     elif invitations:
         authorization_state = "pending_invitation"
+    elif principal["state"] in {"relinked"}:
+        authorization_state = "active_member" if workspace_authorized else "no_organization_access"
     else:
-        authorization_state = "no_membership"
+        authorization_state = "new_company_candidate"
     return {
         "email_verified": bool(email_verified),
         "account_status": account_status,
         "membership_status": membership_status,
         "workspace_authorized": workspace_authorized,
         "authorization_state": authorization_state,
-        "has_authorization_record": True,
+        "has_authorization_record": principal["state"] in {"active_identity", "relinked"},
+        "principal_id": principal.get("principal_id"),
         "workspace_id": selected.get("workspace_id") if selected else workspace_id,
         "organization_id": selected.get("organization_id") if selected else None,
-        "employee_id": selected.get("employee_id") if selected else None,
+        "employee_id": selected.get("employee_id") if selected else principal.get("principal_id"),
         "pending_invitations": invitations,
         "workspaces": memberships,
     }
@@ -199,7 +365,8 @@ def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str,
     for workspace_id, workspace in workspaces.items():
         if not isinstance(workspace, dict):
             continue
-        member = (workspace.get("members") or {}).get(uid)
+        member_key = _member_key_for_workspace(workspace, uid)
+        member = (workspace.get("members") or {}).get(member_key) if member_key else None
         if isinstance(member, dict):
             role_ids = [
                 role_id
@@ -211,7 +378,8 @@ def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str,
                 "workspace_id": workspace_id,
                 "organization_id": organization["organization_id"],
                 "membership_status": _membership_status(member),
-                "employee_id": str(member.get("employee_id") or f"emp_{uid}"),
+                "employee_id": str(member.get("employee_id") or f"emp_{member_key or uid}"),
+                "principal_id": str(member.get("principal_id") or member.get("employee_id") or member_key or uid),
                 "role_ids": role_ids,
             })
     return memberships
@@ -274,7 +442,8 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     user = _user(uid)
     workspace = _workspace(workspace_id)
     members = workspace.get("members") or {}
-    member = members.get(uid)
+    member_key = _member_key_for_workspace(workspace, uid)
+    member = members.get(member_key) if member_key else None
     if not isinstance(member, dict):
         raise PermissionDenied("User is not a member of this workspace.")
     if _membership_status(member) != "active":
@@ -297,7 +466,8 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     if action not in permissions:
         raise PermissionDenied("Permission denied.")
     return {
-        "allowed": True, "uid": uid, "workspace_id": workspace_id, "action": action,        "resource_id": resource_id,
+        "allowed": True, "uid": uid, "principal_id": str(member.get("principal_id") or member.get("employee_id") or member_key or uid),
+        "workspace_id": workspace_id, "action": action, "resource_id": resource_id,
         "role_ids": _effective_role_ids(member),
     }
 
@@ -1085,11 +1255,11 @@ def bootstrap_owner(id_token: str, organization_name: str):
             "bootstrap": {"initialized": True, "owner_uid": owner_uid, "initialized_at": now},
             "organization": {"organization_id": workspace_id, "name": organization_name, "status": "active", "created_at": now},
             "roles": roles,
-            "members": {owner_uid: {"employee_id": employee_id, "status": "active", "roles": {"owner": True}}},
+            "members": {owner_uid: {"employee_id": employee_id, "principal_id": employee_id, "status": "active", "roles": {"owner": True}, "identity_bindings": {str((claims.get("firebase") or {}).get("sign_in_provider") or "firebase"): [str((claims.get("firebase") or {}).get("sign_in_provider") and ((claims.get("firebase") or {}).get("identities") or {}).get(str((claims.get("firebase") or {}).get("sign_in_provider") or ""), [owner_uid])[0] or owner_uid)]}}},
             "resources": {}, "invitations": {}, "approved_employees": {}, "delegations": {},
             "datasets": {}, "working_copies": {},
         }
-        users[owner_uid] = {"status": "active", "email": owner_email, "employee_id": employee_id, "bootstrap_organization_id": workspace_id, "created_at": now}
+        users[owner_uid] = {"status": "active", "email": owner_email, "employee_id": employee_id, "principal_id": employee_id, "linked_member_uid": owner_uid, "bootstrap_organization_id": workspace_id, "created_at": now}
         root["workspaces"] = workspaces
         root["users"] = users
         return root
