@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -47,9 +44,6 @@ class _AuthenticatedGate extends StatefulWidget {
 
 class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
-  String? _error;
-  Map<String, dynamic>? _context;
-  OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
   void initState() {
@@ -59,63 +53,21 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
 
   Future<void> _refresh() async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+    setState(() => _loading = true);
     try {
       // Company registration is the organization-creation entry point. Do not
       // probe /v1/authz/me before the user has submitted an organization name.
       await loadInsightFlowWorkspaceId(widget.user.uid);
-      final verified = await InsightFlowAuthService.reloadCurrentUser();
-      if (!verified) {
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-
       if (mounted) setState(() => _loading = false);
-      return;
-    } on OrganizationServiceRequestException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _organizationDiagnostic = error.diagnostic;
-        _error = 'InsightFlow couldn’t reach the organization service.';
-      });
-    } catch (error) {
-      if (!mounted) return;
-      final firebaseDeleted = error is FirebaseAuthException &&
-          error.code == 'user-not-found';
-      final firebaseDisabled = error is FirebaseAuthException &&
-          error.code == 'user-disabled';
-      setState(() {
-        _loading = false;
-        _error = firebaseDeleted
-            ? 'FIREBASE_ACCOUNT_MISSING'
-            : firebaseDisabled
-                ? 'FIREBASE_ACCOUNT_DISABLED'
-                : error is _AuthorizationGateException
-                ? error.message
-                : 'Authorization status could not be verified. Check your connection and try again.';
-      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
     }
-  }
-
-  String _authorizationResponseCategory(int statusCode) {
-    if (statusCode == 401) return 'authentication';
-    if (statusCode == 403) return 'authorization';
-    if (statusCode == 404) return 'route-not-found';
-    if (statusCode >= 500) return 'server-error';
-    if (statusCode >= 400) return 'client-error';
-    return 'success';
   }
 
   @override
   void didUpdateWidget(covariant _AuthenticatedGate oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.user.emailVerified != widget.user.emailVerified ||
-        oldWidget.user.uid != widget.user.uid) {
+    if (oldWidget.user.uid != widget.user.uid) {
       _refresh();
     }
   }
@@ -131,149 +83,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       );
     }
     return const CompanyRegistrationScreen();
-
-
-    if (_error == 'FIREBASE_ACCOUNT_MISSING') {
-      return _AccessStateScreen(
-        title: 'AUTH / ACCOUNT NOT FOUND',
-        message: 'This Firebase account no longer exists. Sign in again to create or restore access.',
-        action: InsightFlowAuthService.signOut,
-        actionLabel: 'Sign out',
-      );
-    }
-
-    if (_error == 'FIREBASE_ACCOUNT_DISABLED') {
-      return _AccessStateScreen(
-        title: 'AUTH / ACCOUNT DISABLED',
-        message: 'This Firebase account is disabled.',
-        action: InsightFlowAuthService.signOut,
-        actionLabel: 'Sign out',
-      );
-    }
-
-    final state = _context;
-    if (state == null) {
-      return AuthGlassScaffold(
-        title: 'AUTHORIZATION / UNAVAILABLE',
-        subtitle: 'Authentication is separate from organization authorization.',
-        children: [
-          AuthGlassMessage(text: _error ?? 'Organization access could not be established.'),
-          if (_organizationDiagnostic != null) ...[
-            const SizedBox(height: 10),
-            AuthGlassMessage(
-              text: _organizationDiagnostic!.displayText,
-              error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS',
-            ),
-          ],
-          const SizedBox(height: 14),
-          GlassButton.custom(
-            onTap: _refresh,
-            enabled: true,
-            width: double.infinity,
-            height: 44,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Retry',
-            child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: InsightFlowAuthService.signOut,
-            child: const Text('Sign out'),
-          ),
-        ],
-      );
-    }
-
-    final accountStatus = state['account_status']?.toString() ?? 'pending';
-    final membershipStatus =
-        state['membership_status']?.toString() ?? 'none';
-    final workspaceAuthorized = state['workspace_authorized'] == true;
-
-    if (accountStatus == 'suspended') {
-      return _AccessStateScreen(
-        title: 'ACCOUNT / SUSPENDED',
-        message:
-            'This account is suspended. Contact your organization administrator.',
-        action: InsightFlowAuthService.signOut,
-        actionLabel: 'Sign out',
-      );
-    }
-
-    final authorizationState = state['authorization_state']?.toString() ?? '';
-    if (authorizationState == 'suspended' || membershipStatus == 'suspended') {
-      return _AccessStateScreen(
-        title: 'ACCESS / SUSPENDED',
-        message: 'Your organization access is suspended. Contact your organization administrator.',
-        action: InsightFlowAuthService.signOut,
-        actionLabel: 'Sign out',
-      );
-    }
-
-    if (authorizationState == 'removed' || membershipStatus == 'removed') {
-      return _AccessStateScreen(
-        title: 'ACCESS / REMOVED',
-        message: 'This account has been removed from its organization. Signing in again will not restore company access.',
-        action: InsightFlowAuthService.signOut,
-        actionLabel: 'Sign out',
-      );
-    }
-
-    if (authorizationState == 'pending_invitation' ||
-        authorizationState == 'approved_employee_pending_link' ||
-        membershipStatus == 'invited' ||
-        membershipStatus == 'approved') {
-      return OrganizationOnboardingScreen(
-        state: state,
-        onCompleted: _refresh,
-      );
-    }
-
-    if (authorizationState == 'new_company_candidate' ||
-        authorizationState == 'no_organization_access' ||
-        authorizationState == 'no_membership') {
-      return _NoOrganizationAccessScreen(
-        onRegisterCompany: () async {
-          final registered = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (_) => const CompanyRegistrationScreen(),
-            ),
-          );
-          if (registered == true) {
-            await _refresh();
-          }
-        },
-      );
-    }
-
-    if (authorizationState == 'ambiguous_identity') {
-      return const _AccessStateScreen(
-        title: 'ACCESS / IDENTITY REVIEW',
-        message:
-            'This verified identity could not be safely matched to one company member. Contact your organization administrator.',
-        actionLabel: 'Sign out',
-        action: InsightFlowAuthService.signOut,
-      );
-    }
-
-    if (membershipStatus != 'active' || !workspaceAuthorized) {
-      return _AccessStateScreen(
-        title: 'WORKSPACE / ACCESS PENDING',
-        message: 'Your organization membership is not active yet. Check your access again or contact your organization administrator.',
-        action: _refresh,
-        actionLabel: 'Check access again',
-      );
-    }
-
-    final resolvedWorkspaceId = state['workspace_id']?.toString();
-    if (resolvedWorkspaceId != null && resolvedWorkspaceId.isNotEmpty) {
-      setInsightFlowWorkspaceId(user.uid, resolvedWorkspaceId);
-    }
-
-    return DataScreen(
-      key: ValueKey(
-        '${user.uid}:${state['workspace_id'] ?? insightFlowWorkspaceId}',
-      ),
-    );
   }
 }
 
