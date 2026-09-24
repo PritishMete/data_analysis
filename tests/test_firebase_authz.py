@@ -178,7 +178,7 @@ def test_new_user_without_invitation_is_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
     monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [])
     context = service.authentication_context("new-user", "workspace", email_verified=True, email="new@example.com")
-    assert context["authorization_state"] == "bootstrap_candidate"
+    assert context["authorization_state"] == "new_company_candidate"
     assert context["has_authorization_record"] is False
     assert context["workspace_authorized"] is False
 
@@ -746,3 +746,178 @@ def test_team_lead_cannot_grant_outside_delegation(monkeypatch):
             "org", "ds1", "employee",
             ["dataset.view_original"], "token",
         )
+
+
+def test_unknown_verified_identity_is_not_a_technical_missing_record(monkeypatch):
+    monkeypatch.setattr(service, "_get", lambda path: {} if path in {"users", "workspaces"} else {})
+    context = service.authentication_context(
+        "fresh",
+        email_verified=True,
+        email="fresh@example.com",
+        provider="google.com",
+        provider_subject="google-fresh",
+    )
+    assert context["authorization_state"] == "new_company_candidate"
+    assert context["has_authorization_record"] is False
+
+
+def test_verified_recreated_identity_relinks_to_stable_employee(monkeypatch):
+    root_users = {
+        "uid_a": {
+            "status": "active",
+            "email": "employee@example.com",
+            "employee_id": "EMP001",
+            "principal_id": "EMP001",
+        }
+    }
+    root_workspaces = {
+        "org_1": {
+            "organization": {"organization_id": "org_1", "name": "Acme"},
+            "members": {
+                "uid_a": {
+                    "employee_id": "EMP001",
+                    "principal_id": "EMP001",
+                    "status": "active",
+                    "roles": {"employee": True},
+                }
+            },
+        }
+    }
+    writes = {}
+    class Ref:
+        def __init__(self, path):
+            self.path = path
+        def update(self, value):
+            writes[self.path] = value
+        def set(self, value):
+            writes[self.path] = value
+    def fake_get(path):
+        if path == "users": return root_users
+        if path == "workspaces": return root_workspaces
+        if path == "workspaces/org_1/members/uid_a":
+            return root_workspaces["org_1"]["members"]["uid_a"]
+        return {}
+    monkeypatch.setattr(service, "_get", fake_get)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service, "audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref(path))
+    result = service.resolve_principal(
+        "uid_b",
+        "employee@example.com",
+        "google.com",
+        "google-123",
+        True,
+    )
+    assert result["state"] == "relinked"
+    assert result["principal_id"] == "EMP001"
+    assert result["member_uid"] == "uid_a"
+    assert writes["users/uid_b"]["linked_member_uid"] == "uid_a"
+    assert writes["users/uid_b"]["principal_id"] == "EMP001"
+
+
+def test_suspended_employee_cannot_relink_recreated_identity(monkeypatch):
+    root_users = {
+        "uid_a": {
+            "status": "suspended",
+            "email": "employee@example.com",
+            "employee_id": "EMP001",
+        }
+    }
+    root_workspaces = {
+        "org_1": {
+            "members": {
+                "uid_a": {
+                    "employee_id": "EMP001",
+                    "status": "suspended",
+                    "roles": {"employee": True},
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        service,
+        "_get",
+        lambda path: root_users if path == "users" else root_workspaces if path == "workspaces" else (
+            root_workspaces["org_1"]["members"]["uid_a"]
+            if path == "workspaces/org_1/members/uid_a"
+            else {}
+        ),
+    )
+    result = service.resolve_principal(
+        "uid_b",
+        "employee@example.com",
+        "google.com",
+        "google-123",
+        True,
+    )
+    assert result["state"] == "suspended"
+
+
+def test_removed_employee_cannot_bootstrap_a_new_company(monkeypatch):
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "new_uid",
+        "email": "employee@example.com",
+        "email_verified": True,
+    })
+    root = {
+        "users": {
+            "old_uid": {
+                "status": "active",
+                "email": "employee@example.com",
+                "employee_id": "EMP001",
+            }
+        },
+        "workspaces": {
+            "org_1": {
+                "members": {
+                    "old_uid": {
+                        "employee_id": "EMP001",
+                        "status": "removed",
+                        "roles": {"employee": True},
+                    }
+                }
+            }
+        },
+    }
+    class Ref:
+        def transaction(self, fn):
+            return fn(root)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+    with pytest.raises(service.BootstrapDenied):
+        service.bootstrap_owner("token", "Not Allowed")
+
+
+def test_ambiguous_verified_email_fails_closed(monkeypatch):
+    users = {
+        "uid_a": {"status": "active", "email": "same@example.com", "employee_id": "EMP001"},
+        "uid_b": {"status": "active", "email": "same@example.com", "employee_id": "EMP002"},
+    }
+    workspaces = {
+        "org_a": {"members": {"uid_a": {"employee_id": "EMP001", "status": "active"}}},
+        "org_b": {"members": {"uid_b": {"employee_id": "EMP002", "status": "active"}}},
+    }
+    monkeypatch.setattr(service, "_get", lambda path: users if path == "users" else workspaces if path == "workspaces" else {})
+    result = service.resolve_principal(
+        "uid_c",
+        "same@example.com",
+        "google.com",
+        "google-c",
+        True,
+    )
+    assert result["state"] == "ambiguous_identity"
+
+
+def test_unverified_identity_cannot_link_existing_employee(monkeypatch):
+    monkeypatch.setattr(service, "_get", lambda path: {
+        "users": {"uid_a": {"status": "active", "email": "employee@example.com", "employee_id": "EMP001"}},
+        "workspaces": {"org": {"members": {"uid_a": {"employee_id": "EMP001", "status": "active"}}}},
+    }.get(path, {}))
+    result = service.resolve_principal(
+        "uid_b",
+        "employee@example.com",
+        "google.com",
+        "google-b",
+        False,
+    )
+    assert result["state"] == "new_company_candidate"
