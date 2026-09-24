@@ -83,7 +83,34 @@ def _raw_user(uid: str) -> dict[str, Any]:
 def _user(uid: str):
     value = _raw_user(uid)
     if not value:
-        raise PermissionDenied("User authorization record is missing.")
+        # Resolve a recreated Firebase account at the authorization boundary too.
+        # This keeps Web/Power BI/future clients independent from an earlier /me call.
+        try:
+            initialize_firebase()
+            firebase_user = auth.get_user(uid)
+            provider = "firebase"
+            provider_subject = uid
+            for provider_data in (firebase_user.provider_data or []):
+                if provider_data.provider_id:
+                    provider = str(provider_data.provider_id)
+                    provider_subject = str(provider_data.uid or uid)
+                    break
+            resolved = resolve_principal(
+                uid,
+                str(firebase_user.email or ""),
+                provider,
+                provider_subject,
+                bool(firebase_user.email_verified),
+            )
+            if resolved.get("state") == "suspended":
+                raise PermissionDenied("This account is suspended.")
+            value = _raw_user(uid)
+        except PermissionDenied:
+            raise
+        except Exception:
+            value = {}
+    if not value:
+        raise PermissionDenied("No InsightFlow organization access is assigned to this account.")
     status = str(value.get("status") or "").strip().lower()
     if value.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
         raise PermissionDenied("User is suspended.")
