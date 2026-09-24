@@ -8,20 +8,27 @@ void main() {
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
 
-    expect(source, contains("import 'google_web_sign_in_button.dart';"));
-    expect(source, contains('if (kIsWeb)'));
-    expect(source, contains('GoogleWebSignInButton('));
+    final webBranchStart = source.indexOf('if (kIsWeb)');
+    final nativeGoogleBranchStart = source.indexOf(
+      'else\n            GlassButton.custom(',
+      webBranchStart,
+    );
+
+    expect(webBranchStart, greaterThanOrEqualTo(0));
+    expect(nativeGoogleBranchStart, greaterThan(webBranchStart));
+
+    final webBranch = source.substring(webBranchStart, nativeGoogleBranchStart);
+    expect(webBranch, contains('GoogleWebSignInButton('));
     expect(
-      source,
+      webBranch,
       contains('InsightFlowAuthService.signInWithGoogleAccount(account)'),
     );
+    expect(webBranch, isNot(contains('InsightFlowAuthService.signInWithGoogle')));
+
+    final nativeGoogleBranch = source.substring(nativeGoogleBranchStart);
     expect(
-      source,
-      isNot(contains('InsightFlowAuthService.signInWithGoogle),')),
-    );
-    expect(
-      source,
-      isNot(contains('InsightFlowAuthService.signInWithGoogle);')),
+      nativeGoogleBranch,
+      contains('InsightFlowAuthService.signInWithGoogle'),
     );
   });
 }
