@@ -12,6 +12,7 @@ class InsightFlowAuthService {
 
   static bool _googleSignInInitialized = false;
   static Object? _googleSignInInitializationError;
+  static const String _googleWebClientId = String.fromEnvironment('INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID');
 
   /// Resolves the build-provided Firebase configuration without initializing
   /// Firebase or logging any configuration values.
@@ -50,7 +51,9 @@ class InsightFlowAuthService {
   /// Firebase Auth, email/password, or Microsoft authentication.
   static Future<void> initializeGoogleSignIn() async {
     try {
-      await GoogleSignIn.instance.initialize();
+      await GoogleSignIn.instance.initialize(
+        clientId: kIsWeb && _googleWebClientId.isNotEmpty ? _googleWebClientId : null,
+      );
       _googleSignInInitialized = true;
       _googleSignInInitializationError = null;
     } catch (error, stackTrace) {
@@ -123,61 +126,69 @@ class InsightFlowAuthService {
   }
 
   static Future<UserCredential> signInWithGoogle() async {
-    // Same authentication sequence proven in Lockr:
-    // authenticate -> authorize email/profile -> Firebase credential.
     if (!_googleSignInInitialized) {
       final cause = _googleSignInInitializationError;
-      debugPrint(
-        'Google sign-in requested before successful SDK initialization: '
-        '${cause?.runtimeType ?? 'unknown'}',
-      );
+      debugPrint('[google-authenticate] initialization unavailable: ' + (cause?.runtimeType.toString() ?? 'unknown'));
       throw FirebaseAuthException(
         code: 'google-sign-in-initialization-failed',
-        message: 'Google sign-in is unavailable because its provider '
-            'initialization failed.',
+        message: 'Google sign-in is unavailable because its provider initialization failed.',
       );
     }
-
-    final googleSignIn = GoogleSignIn.instance;
-
+    if (kIsWeb) {
+      debugPrint('[google-authenticate] web authenticate is unsupported; use renderButton');
+      throw FirebaseAuthException(
+        code: 'google-web-ui-required',
+        message: 'Google Web sign-in must be started by the Google provider button.',
+      );
+    }
     try {
-      final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
-      final clientAuth = await googleUser.authorizationClient
-          .authorizeScopes(['email', 'profile']);
+      debugPrint('[google-authenticate] native authenticate');
+      final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
+      return await signInWithGoogleAccount(googleUser);
+    } on GoogleSignInException catch (error, stackTrace) {
+      _logGoogleException('google-authenticate', error, stackTrace);
+      throw _mapGoogleSignInException(error);
+    }
+  }
 
+  static Future<UserCredential> signInWithGoogleAccount(GoogleSignInAccount googleUser) async {
+    try {
+      debugPrint('[google-authorize-scopes] requesting email/profile');
+      final clientAuth = await googleUser.authorizationClient.authorizeScopes(['email', 'profile']);
+      debugPrint('[firebase-google-credential] creating Firebase credential');
       final credential = GoogleAuthProvider.credential(
         idToken: googleUser.authentication.idToken,
         accessToken: clientAuth.accessToken,
       );
-
+      debugPrint('[firebase-google-credential] signing into Firebase');
       return await auth.signInWithCredential(credential);
     } on GoogleSignInException catch (error, stackTrace) {
-      debugPrint(
-        'Google sign-in failed: ${error.code.name}: ${error.description ?? ''}',
-      );
+      _logGoogleException('google-authorize-scopes', error, stackTrace);
+      throw _mapGoogleSignInException(error);
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint('[firebase-google-credential] FirebaseAuthException: ' + error.code);
       debugPrintStack(stackTrace: stackTrace);
-
-      if (error.code == GoogleSignInExceptionCode.canceled) {
-        throw FirebaseAuthException(
-          code: 'popup-closed-by-user',
-          message: 'Google sign-in was cancelled.',
-        );
-      }
-      if (error.code == GoogleSignInExceptionCode.uiUnavailable) {
-        throw FirebaseAuthException(
-          code: 'popup-blocked',
-          message: 'The Google sign-in window could not be opened.',
-        );
-      }
-      if (error.code == GoogleSignInExceptionCode.clientConfigurationError ||
-          error.code == GoogleSignInExceptionCode.providerConfigurationError) {
-        throw FirebaseAuthException(
-          code: 'invalid-configuration',
-          message: 'Google sign-in is not configured for this application.',
-        );
-      }
       rethrow;
     }
+  }
+
+  static void _logGoogleException(String stage, GoogleSignInException error, StackTrace stackTrace) {
+    debugPrint('[' + stage + '] GoogleSignInExceptionCode=' + error.code.name + ' type=' + error.runtimeType.toString());
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  static FirebaseAuthException _mapGoogleSignInException(GoogleSignInException error) {
+    if (error.code == GoogleSignInExceptionCode.canceled) {
+      return FirebaseAuthException(code: 'popup-closed-by-user', message: 'Google sign-in was cancelled.');
+    }
+    if (error.code == GoogleSignInExceptionCode.uiUnavailable) {
+      return FirebaseAuthException(code: 'popup-blocked', message: 'The Google sign-in window could not be opened.');
+    }
+    if (error.code == GoogleSignInExceptionCode.clientConfigurationError ||
+        error.code == GoogleSignInExceptionCode.providerConfigurationError) {
+      return FirebaseAuthException(code: 'invalid-configuration', message: 'Google sign-in is not configured for this application.');
+    }
+    return FirebaseAuthException(code: 'google-provider-error', message: 'Google sign-in could not be completed.');
   }
 
   static Future<UserCredential> createUserWithEmailAndPassword(
@@ -345,6 +356,10 @@ class InsightFlowAuthService {
           return 'This sign-in provider is not configured correctly. Check the Firebase provider settings.';
         case 'google-sign-in-initialization-failed':
           return 'Google sign-in could not start. Try email/password or Microsoft sign-in, or try Google again later.';
+        case 'google-web-ui-required':
+          return 'Google sign-in must be started with the Google sign-in button.';
+        case 'google-provider-error':
+          return 'Google sign-in could not be completed. Please try again.';
         case 'operation-not-supported-in-this-environment':
           return 'This sign-in method is not supported in this environment. Try again in a browser window.';
         case 'email-already-in-use':
