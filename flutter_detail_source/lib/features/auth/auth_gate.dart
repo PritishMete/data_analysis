@@ -81,6 +81,17 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         ),
       );
       _organizationDiagnostic = result.diagnostic;
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.diagnostic.displayText),
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        });
+      }
       final response = result.response;
       Map<String, dynamic> body = {};
       if (response.body.trim().isNotEmpty) {
