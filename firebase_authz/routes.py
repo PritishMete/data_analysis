@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
@@ -8,10 +8,8 @@ class BootstrapRequest(BaseModel):
     organization_name: str
 
 class FounderOrganizationRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     organization_name: str
-
-    class Config:
-        extra = "forbid"
 
 class AuthorizationCheck(BaseModel):
     workspace_id: str
