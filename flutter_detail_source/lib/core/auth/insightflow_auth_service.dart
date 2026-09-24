@@ -191,6 +191,27 @@ class InsightFlowAuthService {
             await user.getIdToken(true);
           } on FirebaseAuthException catch (error) {
             diagnostic?.record('FIREBASE_TOKEN_REFRESH_FAILED', code: error.code);
+            if (shouldRecoverStaleSession(
+              code: error.code,
+              currentUserPresent: before == 'PRESENT',
+              retryAttempted: false,
+            )) {
+              diagnostic?.record('FIREBASE_STALE_SESSION_DETECTED', code: error.code);
+              await auth.signOut();
+              diagnostic?.record('FIREBASE_STALE_SESSION_CLEARED');
+              diagnostic?.record('FIREBASE_SIGN_IN_RETRY_STARTED');
+              try {
+                final retry = await auth.signInWithCredential(credential);
+                diagnostic?.record('FIREBASE_SIGN_IN_SUCCESS');
+                final retryAfter = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+                diagnostic?.currentUserAfter = retryAfter;
+                diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
+                return retry;
+              } on FirebaseAuthException catch (retryError) {
+                diagnostic?.record('FIREBASE_SIGN_IN_RETRY_FAILED', code: retryError.code);
+                rethrow;
+              }
+            }
             rethrow;
           }
           diagnostic?.record('FIREBASE_ID_TOKEN_REFRESH_SUCCESS');
