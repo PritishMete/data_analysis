@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  // Registration endpoint diagnostics must ship with the production web build.
   test('company registration uses the shared Web Google provider path', () {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
