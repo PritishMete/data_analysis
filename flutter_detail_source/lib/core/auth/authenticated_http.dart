@@ -15,8 +15,17 @@ String insightFlowWorkspaceId = String.fromEnvironment(
 Future<void> loadInsightFlowWorkspaceId(String uid) async {
   final prefs = await SharedPreferences.getInstance();
   final stored = prefs.getString('insightflow.workspace.$uid');
-  if (stored != null && stored.trim().isNotEmpty) {
-    insightFlowWorkspaceId = stored.trim();
+  final normalized = stored?.trim() ?? '';
+  if (normalized.startsWith('dev_workspace_')) {
+    // Remove workspace identifiers created by the retired frontend-only
+    // registration bypass so they can never be treated as real database state.
+    insightFlowWorkspaceId = '';
+    await prefs.remove('insightflow.workspace.$uid');
+    await prefs.remove('insightflow.dev.organization.$uid');
+    return;
+  }
+  if (normalized.isNotEmpty) {
+    insightFlowWorkspaceId = normalized;
   }
 }
 
