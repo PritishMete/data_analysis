@@ -177,12 +177,18 @@ def authenticated_identity(claims: dict[str, Any]) -> dict[str, Any]:
     }
 
 def _identity_candidates(email: str, provider: str, provider_subject: str) -> list[dict[str, Any]]:
-    """Find eligible existing company members for a verified identity relink."""
+    """Find eligible existing members by verified provider subject only.
+
+    Recreated Firebase UIDs are relinked through the stable provider subject
+    retained in the member identity binding. Email alone is intentionally not
+    sufficient proof of continuity.
+    """
     email = str(email or "").strip().lower()
-    if not email:
+    provider = str(provider or "").strip().lower()
+    provider_subject = str(provider_subject or "").strip()
+    if not provider or not provider_subject:
         return []
     workspaces = _get("workspaces") or {}
-    users = _get("users") or {}
     candidates: list[dict[str, Any]] = []
     for workspace_id, workspace in workspaces.items():
         if not isinstance(workspace, dict):
@@ -196,26 +202,18 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
                 continue
             linked = member.get("identity_bindings") or {}
             provider_values = linked.get(provider) if isinstance(linked, dict) else None
-            if isinstance(provider_values, list) and provider_subject and provider_subject in {str(v) for v in provider_values}:
-                candidates.append({
-                    "workspace_id": workspace_id,
-                    "member_uid": str(member_uid),
-                    "employee_id": employee_id,
-                    "status": status,
-                    "match": "provider_subject",
-                })
+            if not isinstance(provider_values, list):
                 continue
-            old_user = users.get(member_uid) if isinstance(users, dict) else None
-            old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
-            if old_email == email:
-                candidates.append({
-                    "workspace_id": workspace_id,
-                    "member_uid": str(member_uid),
-                    "employee_id": employee_id,
-                    "status": status,
-                    "match": "verified_email",
-                })
-    unique = {(item["workspace_id"], item["member_uid"]) : item for item in candidates}
+            if provider_subject not in {str(value) for value in provider_values}:
+                continue
+            candidates.append({
+                "workspace_id": workspace_id,
+                "member_uid": str(member_uid),
+                "employee_id": employee_id,
+                "status": status,
+                "match": "provider_subject",
+            })
+    unique = {(item["workspace_id"], item["member_uid"]): item for item in candidates}
     return list(unique.values())
 
 def resolve_principal(
@@ -300,13 +298,7 @@ def resolve_principal(
             "principal_id": candidate.get("employee_id"),
             "member_uid": candidate.get("member_uid"),
         }
-    if candidate["match"] == "provider_subject":
-        safe_relink = True
-    else:
-        # Email is only a development/testing fallback: exactly one existing,
-        # eligible company member with a verified email binding may be relinked.
-        safe_relink = candidate["workspace_id"] and candidate["employee_id"]
-    if not safe_relink:
+    if candidate["match"] != "provider_subject":
         return {"state": "new_company_candidate", "firebase_uid": uid, "principal_id": uid}
     initialize_firebase()
     now = int(time.time() * 1000)
