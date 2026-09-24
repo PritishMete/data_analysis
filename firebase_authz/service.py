@@ -1275,6 +1275,19 @@ def bootstrap_owner(id_token: str, organization_name: str):
         ]
         if memberships:
             raise BootstrapDenied("This account already has organization membership.")
+        existing_employee_matches = []
+        for workspace_id, workspace in workspaces.items():
+            if not isinstance(workspace, dict):
+                continue
+            for member_uid, member in (workspace.get("members") or {}).items():
+                if not isinstance(member, dict) or _membership_status(member) not in {"active", "approved"}:
+                    continue
+                old_user = users.get(member_uid)
+                old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
+                if old_email and old_email == owner_email:
+                    existing_employee_matches.append((workspace_id, member_uid))
+        if existing_employee_matches:
+            raise BootstrapDenied("This verified identity already belongs to an organization member.")
         now = int(time.time() * 1000)
         for workspace in workspaces.values():
             if not isinstance(workspace, dict):
