@@ -39,6 +39,17 @@ class InsightFlowAuthService {
     );
   }
 
+  static Future<UserCredential> signInWithMicrosoft() async {
+    final provider = OAuthProvider('microsoft.com')
+      ..addScope('openid')
+      ..addScope('profile')
+      ..addScope('email');
+    if (kIsWeb) {
+      return auth.signInWithPopup(provider);
+    }
+    return auth.signInWithProvider(provider);
+  }
+
   static Future<UserCredential> signInWithGoogle() async {
     if (kIsWeb) {
       return auth.signInWithPopup(GoogleAuthProvider());
