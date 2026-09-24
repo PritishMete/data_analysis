@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
+import '../../core/config/development_flags.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../dashboard/data_screen.dart';
@@ -65,6 +66,19 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     });
 
     try {
+      if (kDevelopmentOrganizationBypass) {
+        // DEVELOPMENT ONLY: skip all organization-service checks and let the
+        // local Company Registration flow establish the temporary UI state.
+        await loadInsightFlowWorkspaceId(widget.user.uid);
+        final verified = await InsightFlowAuthService.reloadCurrentUser();
+        if (!verified) {
+          if (mounted) setState(() => _loading = false);
+          return;
+        }
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
       await loadInsightFlowWorkspaceId(widget.user.uid);
       final verified = await InsightFlowAuthService.reloadCurrentUser();
       if (!verified) {
@@ -179,6 +193,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     final user = InsightFlowAuthService.currentUser ?? widget.user;
     if (!user.emailVerified) {
       return EmailVerificationScreen(user: user);
+    }
+
+    if (kDevelopmentOrganizationBypass) {
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        return DataScreen(
+          key: ValueKey('${user.uid}:$insightFlowWorkspaceId'),
+        );
+      }
+      return const CompanyRegistrationScreen();
     }
 
     if (_error == 'FIREBASE_ACCOUNT_MISSING') {
