@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -188,7 +189,10 @@ class _SignInScreenState extends State<SignInScreen> {
                     _error = null;
                   });
                   try {
-                    await InsightFlowAuthService.signInWithMicrosoft();
+                    final result = await InsightFlowAuthService.signInWithMicrosoft();
+                    if (result == null && mounted) {
+                      setState(() => _loading = false);
+                    }
                   } catch (error) {
                     if (!mounted) return;
                     setState(() {
