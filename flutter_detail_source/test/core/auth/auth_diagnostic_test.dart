@@ -52,7 +52,6 @@ void main() {
     expect(output, isNot(contains('access_token')));
     expect(output, isNot(contains('refresh_token')));
   });
-}
 
   test('stale Firebase recovery is allowed only once for stale-session codes', () {
     expect(
@@ -88,3 +87,5 @@ void main() {
       isFalse,
     );
   });
+
+}
