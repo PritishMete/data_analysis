@@ -13,6 +13,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
+import '../dashboard/data_screen.dart';
 import 'google_web_sign_in_button.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
