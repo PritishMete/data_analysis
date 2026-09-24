@@ -178,6 +178,7 @@ def test_new_user_without_invitation_is_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, provider_subject: [])
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
     monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [])
+    monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, subject: [])
     context = service.authentication_context("new-user", "workspace", email_verified=True, email="new@example.com")
     assert context["authorization_state"] == "new_company_candidate"
     assert context["has_authorization_record"] is False
@@ -187,6 +188,7 @@ def test_new_user_with_invitation_is_not_a_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "_raw_user", lambda uid: {})
     monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, provider_subject: [])
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
+    monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, subject: [])
     monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [{
         "invitation_id": "inv1",
         "workspace_id": "org1",
@@ -353,6 +355,7 @@ def test_team_lead_delegation_requires_approved_employees(monkeypatch):
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     class Ref:
         def set(self, value): self.value = value
+        def get(self): return {}
     monkeypatch.setattr(service.db, "reference", lambda path: Ref())
     with pytest.raises(service.PermissionDenied):
         service.set_delegation(
@@ -440,6 +443,7 @@ def test_invitation_accept_requires_exact_identity(monkeypatch):
         },
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_raw_user", lambda uid: {})
     monkeypatch.setattr(service, "verify_id_token", lambda token: {
         "uid": "u", "email": "other@example.com", "email_verified": True,
     })
@@ -710,6 +714,7 @@ def test_team_lead_dataset_grant_requires_delegated_share(monkeypatch):
     captured = {}
     class Ref:
         def set(self, value): captured["value"] = value
+        def get(self): return {}
     monkeypatch.setattr(service.db, "reference", lambda path: Ref())
     assert service.set_dataset_grant(
         "org", "ds1", "employee",
