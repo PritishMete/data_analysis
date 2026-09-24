@@ -61,3 +61,20 @@ def test_founder_registration_cannot_accept_privileged_client_fields():
         headers={"Authorization": "Bearer verified-firebase-token"},
     )
     assert response.status_code == 422
+
+
+def test_production_cors_allows_github_pages_authorized_post():
+    from main import app
+    from fastapi.testclient import TestClient
+
+    response = TestClient(app).options(
+        "/v1/authz/organizations/register",
+        headers={
+            "Origin": "https://pritishmete.github.io",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://pritishmete.github.io"
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()
