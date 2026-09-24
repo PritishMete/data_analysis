@@ -50,4 +50,16 @@ void main() {
     expect(source, contains('firebaseAuthHeaders(forceRefresh: true)'));
     expect(source, contains('response.statusCode == 404'));
   });
+
+  test('company registration distinguishes backend status from network failure', () {
+    final source = File(
+      'lib/features/auth/company_registration_screen.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('category=network'));
+    expect(source, contains("response.statusCode == 404"));
+    expect(source, contains("response.statusCode >= 500"));
+    expect(source, contains('route-not-found'));
+    expect(source, contains('server-error'));
+  });
 }
