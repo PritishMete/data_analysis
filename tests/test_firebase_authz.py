@@ -921,3 +921,36 @@ def test_unverified_identity_cannot_link_existing_employee(monkeypatch):
         False,
     )
     assert result["state"] == "new_company_candidate"
+
+
+def test_relinked_identity_keeps_existing_resource_acl(monkeypatch):
+    workspace = {
+        "members": {
+            "uid_a": {
+                "employee_id": "EMP001",
+                "principal_id": "EMP001",
+                "status": "active",
+                "roles": {"employee": True},
+            }
+        },
+        "roles": {
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+        },
+        "resources": {
+            "ds_1": {
+                "grants": {
+                    "uid_a": {"permissions": ["data.view"]},
+                }
+            }
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {
+        "status": "active",
+        "principal_id": "EMP001",
+        "employee_id": "EMP001",
+        "linked_member_uid": "uid_a",
+    })
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    decision = service.authorization("uid_b", "org_1", "data.view", "ds_1")
+    assert decision["allowed"] is True
+    assert decision["principal_id"] == "EMP001"
