@@ -75,10 +75,23 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       if (insightFlowWorkspaceId.isNotEmpty) {
         headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
       }
-      final response = await http.get(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
-        headers: headers,
-      );
+      late final http.Response response;
+      try {
+        response = await http.get(
+          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+          headers: headers,
+        );
+      } on Exception catch (error, stackTrace) {
+        debugPrint(
+          '[authz-me] stage=request endpoint=' +
+          '$insightFlowBackendBaseUrl/v1/authz/me category=network',
+        );
+        debugPrint('error_type=' + error.runtimeType.toString());
+        debugPrintStack(stackTrace: stackTrace);
+        throw _AuthorizationGateException(
+          'InsightFlow couldn’t reach the organization service.',
+        );
+      }
       Map<String, dynamic> body = {};
       if (response.body.trim().isNotEmpty) {
         final decoded = jsonDecode(response.body);
@@ -87,9 +100,35 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
       }
       if (response.statusCode != 200) {
+        final detail = body['detail']?.toString().trim();
+        debugPrint(
+          '[authz-me] status=' + response.statusCode.toString() +
+          ' endpoint=$insightFlowBackendBaseUrl/v1/authz/me ' +
+          'stage=authorization-response category=' +
+          _authorizationResponseCategory(response.statusCode) +
+          ' code=' + (body['code']?.toString() ?? 'unstructured'),
+        );
+        if (response.statusCode == 401) {
+          throw _AuthorizationGateException(
+            'Your authentication session could not be verified. Sign in again.',
+          );
+        }
+        if (response.statusCode == 403) {
+          throw _AuthorizationGateException(
+            detail?.isNotEmpty == true
+                ? detail!
+                : 'No InsightFlow organization access is assigned to this account.',
+          );
+        }
+        if (response.statusCode == 404 || response.statusCode >= 500) {
+          throw _AuthorizationGateException(
+            'InsightFlow couldn’t reach the organization service.',
+          );
+        }
         throw _AuthorizationGateException(
-          body['detail']?.toString() ??
-              'Authorization status could not be verified.',
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'Authorization status could not be verified.',
         );
       }
       if (mounted) {
@@ -111,6 +150,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
                 : 'Authorization status could not be verified. Check your connection and try again.';
       });
     }
+  }
+
+  String _authorizationResponseCategory(int statusCode) {
+    if (statusCode == 401) return 'authentication';
+    if (statusCode == 403) return 'authorization';
+    if (statusCode == 404) return 'route-not-found';
+    if (statusCode >= 500) return 'server-error';
+    if (statusCode >= 400) return 'client-error';
+    return 'success';
   }
 
   @override
