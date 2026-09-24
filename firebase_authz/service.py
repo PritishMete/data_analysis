@@ -543,7 +543,7 @@ def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str, user:
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
-    for key in _stable_identity_keys(uid):
+    for key in _stable_identity_keys(uid, user):
         grant = grants.get(key)
         if isinstance(grant, dict):
             return grant
