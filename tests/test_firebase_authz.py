@@ -235,6 +235,7 @@ def test_membership_context_exposes_stable_organization_and_employee_ids(monkeyp
         "organization_id": "org_w",
         "membership_status": "active",
         "employee_id": "emp_123",
+        "principal_id": "emp_123",
         "role_ids": ["employee"],
     }]
 
