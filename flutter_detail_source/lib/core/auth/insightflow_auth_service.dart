@@ -97,7 +97,7 @@ class InsightFlowAuthService {
     );
   }
 
-  static Future<UserCredential> signInWithMicrosoft() async {
+  static Future<UserCredential?> signInWithMicrosoft() async {
     final provider = OAuthProvider('microsoft.com')
       ..addScope('openid')
       ..addScope('profile')
@@ -107,19 +107,20 @@ class InsightFlowAuthService {
       return auth.signInWithProvider(provider);
     }
 
-    // Office task panes can reject browser popups even when the same code
-    // works in a normal browser. Prefer Firebase popup, then fall back only
-    // for popup/environment failures. AuthGate still handles the returned
-    // Firebase identity through normal principal resolution.
     try {
+      debugPrint('[microsoft-popup] opening Firebase Microsoft provider');
       return await auth.signInWithPopup(provider);
     } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint('Microsoft popup sign-in failed: ${error.code}');
+      debugPrint('[microsoft-popup] FirebaseAuthException: ' + error.code);
       debugPrintStack(stackTrace: stackTrace);
       if (error.code == 'popup-blocked' ||
           error.code == 'operation-not-supported-in-this-environment') {
+        debugPrint('[microsoft-redirect] initiating Firebase OAuth redirect');
         await auth.signInWithRedirect(provider);
-        throw StateError('Microsoft sign-in redirect started.');
+        // Redirect initiation is a successful hand-off, not an auth failure.
+        // The browser will leave this page and initialize() will process the
+        // result when Firebase returns to InsightFlow.
+        return null;
       }
       rethrow;
     }
@@ -304,6 +305,22 @@ class InsightFlowAuthService {
   }
 
   static Future<void> signOut() => auth.signOut();
+
+  static Map<String, String?> currentProviderIdentity(String providerId) {
+    final user = auth.currentUser;
+    final provider = user?.providerData.where((p) => p.providerId == providerId).cast<UserInfo?>().firstWhere(
+          (p) => p != null,
+          orElse: () => null,
+        );
+    return {
+      'firebase_uid': user?.uid,
+      'provider_id': provider?.providerId,
+      'provider_subject': provider?.uid,
+      'verified_email': user?.email,
+      'display_name': provider?.displayName ?? user?.displayName,
+      'photo_url': provider?.photoURL ?? user?.photoURL,
+    };
+  }
 
   static bool hasProvider(String providerId) {
     final user = auth.currentUser;
