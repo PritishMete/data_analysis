@@ -22,6 +22,8 @@ class AuthDiagnosticAttempt {
     final parts = <String>['Stage: $stage'];
     if (code != null && code!.isNotEmpty) parts.add('Code: $code');
     if (httpStatus != null) parts.add('HTTP: $httpStatus');
+    if (currentUserBefore != null) parts.add('CurrentUserBefore: $currentUserBefore');
+    if (currentUserAfter != null) parts.add('CurrentUserAfter: $currentUserAfter');
     parts.add('Attempt: $id');
     return parts.join('\\n');
   }
