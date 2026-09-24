@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../core/config/development_flags.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../dashboard/data_screen.dart';
@@ -66,19 +65,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     });
 
     try {
-      if (kDevelopmentOrganizationBypass) {
-        // DEVELOPMENT ONLY: skip all organization-service checks and let the
-        // local Company Registration flow establish the temporary UI state.
-        await loadInsightFlowWorkspaceId(widget.user.uid);
-        final verified = await InsightFlowAuthService.reloadCurrentUser();
-        if (!verified) {
-          if (mounted) setState(() => _loading = false);
-          return;
-        }
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-
+      // Company registration is the organization-creation entry point. Do not
+      // probe /v1/authz/me before the user has submitted an organization name.
       await loadInsightFlowWorkspaceId(widget.user.uid);
       final verified = await InsightFlowAuthService.reloadCurrentUser();
       if (!verified) {
@@ -86,62 +74,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         return;
       }
 
-      final result = await organizationServiceRequest(
-        method: 'GET',
-        path: '/v1/authz/me',
-        send: (headers) => http.get(
-          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
-          headers: headers,
-        ),
-      );
-      _organizationDiagnostic = result.diagnostic;
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result.diagnostic.displayText),
-              duration: const Duration(seconds: 8),
-            ),
-          );
-        });
-      }
-      final response = result.response;
-      Map<String, dynamic> body = {};
-      if (response.body.trim().isNotEmpty) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map) body = Map<String, dynamic>.from(decoded);
-      }
-      if (response.statusCode != 200) {
-        final detail = body['detail']?.toString().trim();
-        if (response.statusCode == 401) {
-          throw _AuthorizationGateException('InsightFlow authentication could not be verified.');
-        }
-        if (response.statusCode == 403) {
-          throw _AuthorizationGateException(
-            detail?.isNotEmpty == true
-                ? detail!
-                : 'Your InsightFlow account is not authorized for this organization.',
-          );
-        }
-        if (response.statusCode == 404) {
-          throw _AuthorizationGateException('InsightFlow authorization is unavailable on this server version.');
-        }
-        if (response.statusCode >= 500) {
-          throw _AuthorizationGateException("InsightFlow's organization service returned a server error.");
-        }
-        throw _AuthorizationGateException(
-          detail?.isNotEmpty == true
-              ? detail!
-              : 'Authorization status could not be verified.',
-        );
-      }
-      if (mounted) {
-        setState(() {
-          _context = body;
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _loading = false);
+      return;
     } on OrganizationServiceRequestException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -191,18 +125,13 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     if (_loading) return const _AuthLoading();
 
     final user = InsightFlowAuthService.currentUser ?? widget.user;
-    if (!user.emailVerified) {
-      return EmailVerificationScreen(user: user);
+    if (insightFlowWorkspaceId.isNotEmpty) {
+      return DataScreen(
+        key: ValueKey('${user.uid}:$insightFlowWorkspaceId'),
+      );
     }
+    return const CompanyRegistrationScreen();
 
-    if (kDevelopmentOrganizationBypass) {
-      if (insightFlowWorkspaceId.isNotEmpty) {
-        return DataScreen(
-          key: ValueKey('${user.uid}:$insightFlowWorkspaceId'),
-        );
-      }
-      return const CompanyRegistrationScreen();
-    }
 
     if (_error == 'FIREBASE_ACCOUNT_MISSING') {
       return _AccessStateScreen(
