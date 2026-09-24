@@ -431,10 +431,12 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
         authorization_state = "pending_invitation"
     elif principal["state"] in {"relinked"}:
         authorization_state = "active_member" if workspace_authorized else "no_organization_access"
-    elif principal["state"] in {"no_organization_access"}:
-        authorization_state = "no_organization_access"
-    elif principal["state"] in {"pending_employee"}:
-        authorization_state = "approved_employee_pending_link"
+    elif principal["state"] in {"no_organization_access", "active_identity", "pending_employee"}:
+        authorization_state = (
+            "approved_employee_pending_link"
+            if principal["state"] == "pending_employee"
+            else "no_organization_access"
+        )
     else:
         authorization_state = "new_company_candidate"
     return {
