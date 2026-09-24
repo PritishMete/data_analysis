@@ -472,7 +472,7 @@ def _stable_identity_keys(uid: str, user: dict[str, Any] | None = None) -> list[
             keys.append(value)
     return keys
 
-def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> dict[str, Any]:
+def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str, user: dict[str, Any] | None = None) -> dict[str, Any]:
     resource_id = validate_id(resource_id, "resource ID")
     resource = (workspace.get("resources") or {}).get(resource_id)
     if not isinstance(resource, dict):
@@ -481,7 +481,7 @@ def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> di
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
-    for key in _stable_identity_keys(uid):
+    for key in _stable_identity_keys(uid, user):
         grant = grants.get(key)
         if isinstance(grant, dict):
             return grant
@@ -511,7 +511,7 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     permissions = _role_permissions(workspace, member)
 
     if resource_id:
-        grant = _resource_grant(workspace, uid, resource_id)
+        grant = _resource_grant(workspace, uid, resource_id, user)
         grant_permissions = {p for p in (grant.get("permissions") or []) if p in ACTIONS}
         level = _effective_role_level(member)
         if action == "excel.mutate.original" and level >= ROLE_LEVELS["manager"] and "worksheet.modify" in grant_permissions:
@@ -538,12 +538,12 @@ def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
         raise PermissionDenied("Dataset is not accessible.")
     return value
 
-def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
+def _dataset_grant(dataset: dict[str, Any], uid: str, user: dict[str, Any] | None = None) -> dict[str, Any]:
     grants = dataset.get("grants") or {}
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
-    for key in _stable_identity_keys(uid):
+    for key in _stable_identity_keys(uid, user):
         grant = grants.get(key)
         if isinstance(grant, dict):
             return grant
@@ -555,12 +555,14 @@ DELEGATED_DATASET_PERMISSIONS = {
     "dataset.share",
 }
 
-def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
+def _approved_employee(workspace: dict[str, Any], uid: str, user: dict[str, Any] | None = None) -> bool:
     records = workspace.get("approved_employees") or {}
+    if not records:
+        return False
     direct = records.get(uid)
     if isinstance(direct, dict):
         return str(direct.get("status") or "active") == "active"
-    for key in _stable_identity_keys(uid):
+    for key in _stable_identity_keys(uid, user):
         record = records.get(key)
         if isinstance(record, dict):
             return str(record.get("status") or "active") == "active"
@@ -1027,7 +1029,10 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     actor = str(claims["uid"])
     email = str(claims.get("email") or "").strip().lower()
     provider, provider_subject = _claims_identity_binding(claims)
-    existing_user = _raw_user(actor)
+    try:
+        existing_user = _raw_user(actor)
+    except RuntimeError:
+        existing_user = {}
     if existing_user:
         status = str(existing_user.get("status") or "active").strip().lower()
         if existing_user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
