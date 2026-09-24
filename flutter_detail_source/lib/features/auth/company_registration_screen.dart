@@ -105,11 +105,22 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     });
     try {
       final headers = await firebaseAuthHeaders(forceRefresh: true);
-      final response = await http.post(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'organization_name': name}),
-      );
+      late final http.Response response;
+      try {
+        response = await http.post(
+          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
+          headers: {...headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({'organization_name': name}),
+        );
+      } on Exception catch (error, stackTrace) {
+        debugPrint(
+          '[company-registration] stage=request endpoint='
+          '$insightFlowBackendBaseUrl/v1/authz/organizations/register '
+          'category=network error=${error.runtimeType}',
+        );
+        debugPrintStack(stackTrace: stackTrace);
+        throw StateError('InsightFlow couldn’t reach the organization service.');
+      }
       final bodyText = response.body.trim();
       dynamic decoded;
       try {
@@ -144,7 +155,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
                 : 'Enter a valid organization name.',
           );
         }
-        if (response.statusCode == 404 || response.statusCode >= 500) {
+        if (response.statusCode == 404) {
           throw StateError(
             'InsightFlow couldn’t reach the organization service.',
           );
@@ -154,6 +165,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
               ? safeDetail!
               : 'InsightFlow couldn’t create the organization. Please try again.',
         );
+      }
+      if (response.statusCode >= 500) {
+        throw StateError('InsightFlow couldn’t create the organization. Please try again.');
       }
       final workspaceId = decoded is Map
           ? decoded['workspace_id']?.toString()
