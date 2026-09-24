@@ -161,7 +161,6 @@ class InsightFlowAuthService {
     {AuthDiagnosticAttempt? diagnostic},
   ) async {
     try {
-      diagnostic?.record('GOOGLE_ID_TOKEN_PRESENT');
       final idToken = googleUser.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
         debugPrint('[firebase-google-credential] missing Google ID token');
@@ -170,6 +169,7 @@ class InsightFlowAuthService {
           message: 'Google authentication did not provide an ID token.',
         );
       }
+      diagnostic?.record('GOOGLE_ID_TOKEN_PRESENT');
       debugPrint('[firebase-google-credential] creating Firebase credential');
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       diagnostic?.record('FIREBASE_CREDENTIAL_CREATED');
