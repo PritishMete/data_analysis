@@ -112,7 +112,7 @@ def test_emulator_fresh_user_is_onboarding_candidate(monkeypatch):
         "uid": "fresh", "email": "fresh@example.com", "email_verified": True
     })
     context = service.authentication_context("fresh", email_verified=True, email="fresh@example.com")
-    assert context["authorization_state"] == "bootstrap_candidate"
+    assert context["authorization_state"] == "new_company_candidate"
     assert context["has_authorization_record"] is False
 
 def test_emulator_invited_user_cannot_bootstrap(monkeypatch):
