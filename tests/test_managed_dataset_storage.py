@@ -74,7 +74,7 @@ def test_new_version_does_not_overwrite_v1(monkeypatch):
         "datasets": {"ds_1": {"dataset_id": "ds_1", "owner_uid": "manager", "protected_original": True,
         "status": "active", "version": 1, "current_version": "v1",
         "versions": {"v1": {"storage_object_id": "old/source"}},
-        "grants": {"manager": {"permissions": ["dataset.view_original", "dataset.create_working_copy", "dataset.manage_acl"]}}}}
+        "grants": {"manager": {"permissions": ["dataset.view_original", "dataset.create_working_copy", "dataset.manage_acl"]}}}}}
     monkeypatch.setattr(service, "_claims", lambda token: {"uid": "manager", "email_verified": True})
     monkeypatch.setattr(service, "authorization", lambda *args, **kwargs: {"allowed": True})
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
