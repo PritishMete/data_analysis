@@ -152,19 +152,27 @@ class InsightFlowAuthService {
     }
   }
 
-  static Future<UserCredential> signInWithGoogleAccount(GoogleSignInAccount googleUser) async {
+  /// Completes Firebase authentication from an already-authenticated Google
+  /// account. On Web this is called from the GIS rendered-button event, so it
+  /// must not start another interactive Google authorization request.
+  static Future<UserCredential> signInWithGoogleAccount(
+    GoogleSignInAccount googleUser,
+  ) async {
     try {
-      debugPrint('[google-authorize-scopes] requesting email/profile');
-      final clientAuth = await googleUser.authorizationClient.authorizeScopes(['email', 'profile']);
+      final idToken = googleUser.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        debugPrint('[firebase-google-credential] missing Google ID token');
+        throw FirebaseAuthException(
+          code: 'google-id-token-missing',
+          message: 'Google authentication did not provide an ID token.',
+        );
+      }
       debugPrint('[firebase-google-credential] creating Firebase credential');
-      final credential = GoogleAuthProvider.credential(
-        idToken: googleUser.authentication.idToken,
-        accessToken: clientAuth.accessToken,
-      );
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
       debugPrint('[firebase-google-credential] signing into Firebase');
       return await auth.signInWithCredential(credential);
     } on GoogleSignInException catch (error, stackTrace) {
-      _logGoogleException('google-authorize-scopes', error, stackTrace);
+      _logGoogleException('google-authentication', error, stackTrace);
       throw _mapGoogleSignInException(error);
     } on FirebaseAuthException catch (error, stackTrace) {
       debugPrint('[firebase-google-credential] FirebaseAuthException: ${error.code}');
@@ -172,7 +180,6 @@ class InsightFlowAuthService {
       rethrow;
     }
   }
-
   static void _logGoogleException(String stage, GoogleSignInException error, StackTrace stackTrace) {
     debugPrint('[$stage] GoogleSignInExceptionCode=${error.code.name} type=${error.runtimeType}');
     debugPrintStack(stackTrace: stackTrace);
