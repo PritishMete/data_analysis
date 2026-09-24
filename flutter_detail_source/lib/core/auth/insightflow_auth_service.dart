@@ -27,6 +27,15 @@ class InsightFlowAuthService {
     // restarts instead of becoming a session-only login.
     if (kIsWeb) {
       await auth.setPersistence(Persistence.LOCAL);
+      // Completes any Firebase OAuth redirect that returned to the task pane
+      // after a popup was unavailable. Auth state then flows normally into
+      // AuthGate and stable principal resolution.
+      try {
+        await auth.getRedirectResult();
+      } on FirebaseAuthException catch (error, stackTrace) {
+        debugPrint('Firebase redirect sign-in failed: ' + error.code);
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
   }
 
