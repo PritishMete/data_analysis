@@ -110,7 +110,7 @@ def test_bootstrap_transaction_creates_database_backed_owner_records(monkeypatch
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
 
-    result = service.bootstrap_owner("token", "ABC")
+    result = service.bootstrap_owner("token", "ABC", allow_any_authenticated=True)
 
     workspace = ref.value["workspaces"][result["workspace_id"]]
     assert workspace["organization"]["name"] == "ABC"
@@ -157,7 +157,7 @@ def test_bootstrap_allows_authenticated_user_to_create_another_organization(monk
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: ref)
 
-    result = service.bootstrap_owner("token", "Second Organization")
+    result = service.bootstrap_owner("token", "Second Organization", allow_any_authenticated=True)
 
     assert result["workspace_id"] != "org_existing"
     assert ref.value["workspaces"][result["workspace_id"]]["members"]["alice"]["principal_id"] == "EMP001"
@@ -937,7 +937,7 @@ def test_removed_identity_can_bootstrap_from_a_valid_firebase_token(monkeypatch)
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: Ref())
 
-    result = service.bootstrap_owner("token", "Not Allowed")
+    result = service.bootstrap_owner("token", "Not Allowed", allow_any_authenticated=True)
 
     assert result["workspace_id"] in root["workspaces"]
     assert root["workspaces"][result["workspace_id"]]["organization"]["name"] == "Not Allowed"
