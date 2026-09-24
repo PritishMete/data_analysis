@@ -23,7 +23,10 @@ void main() {
       webBranch,
       contains('InsightFlowAuthService.signInWithGoogleAccount(account)'),
     );
-    expect(webBranch, isNot(contains('InsightFlowAuthService.signInWithGoogle')));
+    expect(
+      RegExp(r'InsightFlowAuthService\\.signInWithGoogle\\(').hasMatch(webBranch),
+      isFalse,
+    );
 
     final nativeGoogleBranch = source.substring(nativeGoogleBranchStart);
     expect(
