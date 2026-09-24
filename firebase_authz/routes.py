@@ -141,7 +141,7 @@ def founder_organization_register(
     generated and assigned by the trusted bootstrap service.
     """
     try:
-        return bootstrap_owner(_token(authorization), req.organization_name)
+        return bootstrap_owner(_token(authorization), req.organization_name, allow_any_authenticated=True)
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
     except BootstrapDenied as exc:
