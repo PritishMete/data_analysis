@@ -1395,7 +1395,7 @@ def _claims_identity_binding(claims: dict[str, Any]) -> tuple[str, str]:
     subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or claims.get("uid") or "")
     return provider, subject
 
-def bootstrap_owner(id_token: str, organization_name: str):
+def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticated: bool = False):
     """Create an authenticated user's organization and Owner membership.
 
     Registration is intentionally based only on a valid Firebase bearer token
@@ -1409,9 +1409,13 @@ def bootstrap_owner(id_token: str, organization_name: str):
         raise ValueError("Organization name contains invalid control characters.")
 
     claims = verify_id_token(id_token)
+    if not allow_any_authenticated:
+        claims = require_email_verified(claims)
     owner_uid = validate_id(str(claims["uid"]), "user ID")
     owner_email = str(claims.get("email") or "").strip().lower()
     provider, provider_subject = _claims_identity_binding(claims)
+    if not allow_any_authenticated and not owner_email:
+        raise BootstrapDenied("A verified email is required to create an organization.")
 
     initialize_firebase()
     root_ref = db.reference("/")
@@ -1422,6 +1426,55 @@ def bootstrap_owner(id_token: str, organization_name: str):
         users = dict(root.get("users") or {})
         existing_user = users.get(owner_uid)
         existing_user = dict(existing_user) if isinstance(existing_user, dict) else {}
+
+        if not allow_any_authenticated:
+            status = str(existing_user.get("status") or "active").strip().lower()
+            if existing_user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
+                raise BootstrapDenied("This account is suspended and cannot bootstrap an organization.")
+
+            memberships = [
+                workspace_id
+                for workspace_id, workspace in workspaces.items()
+                if isinstance(workspace, dict)
+                and isinstance((workspace.get("members") or {}).get(owner_uid), dict)
+            ]
+            if memberships:
+                raise BootstrapDenied("This account already has organization membership.")
+
+            existing_employee_matches = []
+            for workspace_id, workspace in workspaces.items():
+                if not isinstance(workspace, dict):
+                    continue
+                for member_uid, member in (workspace.get("members") or {}).items():
+                    if not isinstance(member, dict):
+                        continue
+                    old_user = users.get(member_uid)
+                    old_email = (
+                        str(old_user.get("email") or "").strip().lower()
+                        if isinstance(old_user, dict)
+                        else ""
+                    )
+                    if old_email and old_email == owner_email:
+                        existing_employee_matches.append((workspace_id, member_uid))
+            if existing_employee_matches:
+                raise BootstrapDenied(
+                    "This verified identity already belongs to an organization member."
+                )
+
+            for workspace in workspaces.values():
+                if not isinstance(workspace, dict):
+                    continue
+                for invitation in (workspace.get("invitations") or {}).values():
+                    if (
+                        isinstance(invitation, dict)
+                        and invitation.get("status") == "invited"
+                        and str(invitation.get("email") or "").strip().lower() == owner_email
+                    ):
+                        expires_at = invitation.get("expires_at")
+                        if expires_at is None or int(expires_at) > int(time.time() * 1000):
+                            raise BootstrapDenied(
+                                "A pending organization invitation must be accepted instead of creating an organization."
+                            )
 
         principal_id = str(
             existing_user.get("principal_id")
