@@ -11,7 +11,8 @@ def emulator_config(monkeypatch):
     monkeypatch.setenv("FIREBASE_PROJECT_ID", service.PROJECT_ID)
     monkeypatch.setenv("FIREBASE_DATABASE_URL", service.DATABASE_URL)
     monkeypatch.setenv("FIREBASE_DATABASE_EMULATOR_HOST", "127.0.0.1:9000")
-        service.firebase_admin.delete_app(service.firebase_admin.get_app()) if service.firebase_admin and service.firebase_admin._apps else None
+    if service.firebase_admin and service.firebase_admin._apps:
+        service.firebase_admin.delete_app(service.firebase_admin.get_app())
     service.initialize_firebase()
     service.db.reference("/").delete()
     yield
