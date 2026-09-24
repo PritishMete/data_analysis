@@ -428,8 +428,9 @@ $marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
         case 'invalid-credential':
         case 'invalid-login-credentials':
         case 'wrong-password':
-        case 'user-not-found':
           return 'Email or password is incorrect.';
+        case 'user-not-found':
+          return 'Firebase authentication could not be completed. Please sign in again.';
         case 'user-disabled':
           return 'This account is disabled.';
         case 'too-many-requests':
