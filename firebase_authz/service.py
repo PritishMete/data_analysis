@@ -403,7 +403,7 @@ def workspace_memberships(uid: str, include_user: bool = True) -> list[dict[str,
     for workspace_id, workspace in workspaces.items():
         if not isinstance(workspace, dict):
             continue
-        member_key = _member_key_for_workspace(workspace, uid, user)
+        member_key = _member_key_for_workspace(workspace, uid)
         member = (workspace.get("members") or {}).get(member_key) if member_key else None
         if isinstance(member, dict):
             role_ids = [
@@ -501,7 +501,7 @@ def authorization(uid: str, workspace_id: str, action: str, resource_id: str | N
     user = _user(uid)
     workspace = _workspace(workspace_id)
     members = workspace.get("members") or {}
-    member_key = _member_key_for_workspace(workspace, uid)
+    member_key = _member_key_for_workspace(workspace, uid, user)
     member = members.get(member_key) if member_key else None
     if not isinstance(member, dict):
         raise PermissionDenied("User is not a member of this workspace.")
