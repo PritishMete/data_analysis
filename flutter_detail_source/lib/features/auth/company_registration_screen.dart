@@ -53,13 +53,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
 
       final user = InsightFlowAuthService.currentUser;
-      if (user != null) {
-        final resolved = await _resolveIdentityBeforeRegistration();
-        if (!resolved) {
-          if (mounted) setState(() => _busy = false);
-          return;
-        }
-      }
       if (user != null && !user.emailVerified) {
         await InsightFlowAuthService.sendEmailVerification();
         if (mounted) {
@@ -69,6 +62,11 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             _busy = false;
           });
         }
+        return;
+      }
+      final resolved = await _resolveIdentityBeforeRegistration();
+      if (!resolved) {
+        if (mounted) setState(() => _busy = false);
         return;
       }
       if (mounted) setState(() => _busy = false);
