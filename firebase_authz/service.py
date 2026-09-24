@@ -165,8 +165,6 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
             if not isinstance(member, dict):
                 continue
             status = _membership_status(member)
-            if status in {"suspended", "removed"}:
-                continue
             employee_id = str(member.get("employee_id") or "").strip()
             if not employee_id:
                 continue
@@ -177,6 +175,7 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
                     "workspace_id": workspace_id,
                     "member_uid": str(member_uid),
                     "employee_id": employee_id,
+                    "status": status,
                     "match": "provider_subject",
                 })
                 continue
@@ -187,6 +186,7 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
                     "workspace_id": workspace_id,
                     "member_uid": str(member_uid),
                     "employee_id": employee_id,
+                    "status": status,
                     "match": "verified_email",
                 })
     unique = {(item["workspace_id"], item["member_uid"]) : item for item in candidates}
@@ -224,6 +224,13 @@ def resolve_principal(
             return {"state": "ambiguous_identity", "firebase_uid": uid, "principal_id": uid}
         return {"state": "new_company_candidate", "firebase_uid": uid, "principal_id": uid}
     candidate = candidates[0]
+    if candidate.get("status") in {"suspended", "removed"}:
+        return {
+            "state": "suspended",
+            "firebase_uid": uid,
+            "principal_id": candidate.get("employee_id"),
+            "member_uid": candidate.get("member_uid"),
+        }
     if candidate["match"] == "provider_subject":
         safe_relink = True
     else:
@@ -1280,7 +1287,7 @@ def bootstrap_owner(id_token: str, organization_name: str):
             if not isinstance(workspace, dict):
                 continue
             for member_uid, member in (workspace.get("members") or {}).items():
-                if not isinstance(member, dict) or _membership_status(member) not in {"active", "approved"}:
+                if not isinstance(member, dict):
                     continue
                 old_user = users.get(member_uid)
                 old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
