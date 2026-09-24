@@ -13,12 +13,7 @@ void main() {
       );
 
       expect(
-        InsightFlowAuthService.userFacingAuthError(
-          FirebaseAuthException(
-            code: 'popup-closed-by-user',
-            message: error.description,
-          ),
-        ),
+        InsightFlowAuthService.userFacingAuthError(error),
         'Sign-in was cancelled.',
       );
     });
