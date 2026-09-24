@@ -99,13 +99,13 @@ String _safeOrganizationResponseSummary(String body) {
     final decoded = jsonDecode(body);
     if (decoded is Map) {
       final safe = <String, String>{};
-      for (final key in const ['code', 'detail', 'message', 'authorization_state']) {
+      for (final key in const ['code', 'authorization_state']) {
         final value = decoded[key];
         if (value != null) safe[key] = value.toString();
       }
       final summary = safe.entries.map((e) => '${e.key}=${e.value}').join('; ');
       if (summary.isNotEmpty) return summary.length > 240 ? summary.substring(0, 240) : summary;
-      return 'JSON object response';
+      return 'JSON object response (sensitive fields omitted)';
     }
     return 'JSON response';
   } catch (_) {
