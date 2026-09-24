@@ -28,6 +28,22 @@ Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
   await prefs.setString('insightflow.workspace.$uid', normalized);
 }
 
+Future<void> setDevelopmentOrganizationState({
+  required String uid,
+  required String organizationName,
+  required String workspaceId,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('insightflow.dev.organization.$uid', organizationName.trim());
+  await setInsightFlowWorkspaceId(uid, workspaceId);
+}
+
+Future<String?> loadDevelopmentOrganizationName(String uid) async {
+  final prefs = await SharedPreferences.getInstance();
+  final value = prefs.getString('insightflow.dev.organization.$uid');
+  return value?.trim().isEmpty == true ? null : value?.trim();
+}
+
 class OrganizationServiceDiagnostic {
   OrganizationServiceDiagnostic({String? id}) : id = id ?? _newId();
 
