@@ -5,6 +5,34 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:liquid_glass_widgets/core/auth/insightflow_auth_service.dart';
 
 void main() {
+  group('InsightFlowAuthService startup boundaries', () {
+    test('Google initialization failure maps to a provider-specific error', () {
+      final message = InsightFlowAuthService.userFacingAuthError(
+        FirebaseAuthException(
+          code: 'google-sign-in-initialization-failed',
+          message: 'Google SDK initialization failed internally',
+        ),
+      );
+
+      expect(
+        message,
+        'Google sign-in could not start. Try email/password or Microsoft sign-in, or try Google again later.',
+      );
+      expect(message, isNot(contains('Firebase authentication is not configured for this build.')));
+    });
+
+    test('Firebase configuration error message is not used for Google provider errors', () {
+      final googleError = FirebaseAuthException(
+        code: 'google-sign-in-initialization-failed',
+      );
+
+      expect(
+        InsightFlowAuthService.userFacingAuthError(googleError),
+        isNot('Firebase authentication is not configured for this build.'),
+      );
+    });
+  });
+
   group('InsightFlowAuthService provider error mapping', () {
     test('Google cancellation is user-facing cancellation', () {
       final error = GoogleSignInException(
