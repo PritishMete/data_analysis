@@ -536,6 +536,8 @@ def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str, user:
     if not isinstance(resource, dict):
         raise PermissionDenied("Resource is not accessible.")
     grants = resource.get("grants") or {}
+    if not grants:
+        return {}
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
@@ -598,6 +600,8 @@ def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
 
 def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
     grants = dataset.get("grants") or {}
+    if not grants:
+        return {}
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
