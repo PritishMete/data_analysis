@@ -6,6 +6,7 @@ import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
+import 'google_web_sign_in_button.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -208,18 +209,38 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        GlassButton.custom(
-          onTap: _loading ? () {} : _signInWithGoogle,
-          enabled: !_loading,
-          width: double.infinity,
-          height: 42,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: 'Continue with Google',
-          child: const Text(
-            'Continue with Google',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        if (kIsWeb)
+          GoogleWebSignInButton(
+            enabled: !_loading,
+            onStarted: () {
+              if (mounted) setState(() { _loading = true; _error = null; });
+            },
+            onAuthenticated: (account) async {
+              try {
+                await InsightFlowAuthService.signInWithGoogleAccount(account);
+              } catch (error) {
+                if (!mounted) return;
+                setState(() { _loading = false; _error = InsightFlowAuthService.userFacingAuthError(error); });
+              }
+            },
+            onError: (error) {
+              if (!mounted) return;
+              setState(() { _loading = false; _error = InsightFlowAuthService.userFacingAuthError(error); });
+            },
+          )
+        else
+          GlassButton.custom(
+            onTap: _loading ? () {} : _signInWithGoogle,
+            enabled: !_loading,
+            width: double.infinity,
+            height: 42,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Continue with Google',
+            child: const Text(
+              'Continue with Google',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
         const SizedBox(height: 14),
         const Divider(height: 1),
         const SizedBox(height: 10),
