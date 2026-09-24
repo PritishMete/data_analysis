@@ -258,6 +258,20 @@ class InsightFlowAuthService {
   }
 
   static String userFacingAuthError(Object error) {
+    if (error is GoogleSignInException) {
+      switch (error.code) {
+        case GoogleSignInExceptionCode.canceled:
+          return 'Sign-in was cancelled.';
+        case GoogleSignInExceptionCode.uiUnavailable:
+          return 'The sign-in window could not be opened. Allow pop-ups and try again.';
+        case GoogleSignInExceptionCode.clientConfigurationError:
+        case GoogleSignInExceptionCode.providerConfigurationError:
+          return 'Google sign-in is not configured correctly for this application.';
+        default:
+          return 'Google sign-in could not be completed. Please try again.';
+      }
+    }
+
     if (error is FirebaseAuthException) {
       switch (error.code) {
         case 'invalid-credential':
