@@ -130,7 +130,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
       debugPrint(
         '[company-registration] status=${response.statusCode} '
-        'endpoint=/v1/authz/organizations/register stage=bootstrap-response '
+        'endpoint=$insightFlowBackendBaseUrl/v1/authz/organizations/register '
+        'stage=bootstrap-response '
+        'category=${_registrationResponseCategory(response.statusCode)} '
         'code=${decoded is Map ? decoded['code']?.toString() ?? 'unstructured' : 'invalid-json'}',
       );
       if (response.statusCode != 200) {
@@ -160,14 +162,16 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             'InsightFlow couldn’t reach the organization service.',
           );
         }
+        if (response.statusCode >= 500) {
+          throw StateError(
+            'InsightFlow couldn’t create the organization. Please try again.',
+          );
+        }
         throw StateError(
           safeDetail?.isNotEmpty == true
               ? safeDetail!
               : 'InsightFlow couldn’t create the organization. Please try again.',
         );
-      }
-      if (response.statusCode >= 500) {
-        throw StateError('InsightFlow couldn’t create the organization. Please try again.');
       }
       final workspaceId = decoded is Map
           ? decoded['workspace_id']?.toString()
@@ -196,6 +200,16 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             : 'Company registration could not be completed.';
       });
     }
+  }
+
+  String _registrationResponseCategory(int statusCode) {
+    if (statusCode == 401) return 'authentication';
+    if (statusCode == 403) return 'authorization';
+    if (statusCode == 404) return 'route-not-found';
+    if (statusCode == 422) return 'validation';
+    if (statusCode >= 500) return 'server-error';
+    if (statusCode >= 400) return 'client-error';
+    return 'success';
   }
 
   @override
