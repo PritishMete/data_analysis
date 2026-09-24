@@ -84,6 +84,7 @@ jobs:
           INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
           INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
           INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
           INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
         run: |
           set -euo pipefail
@@ -93,6 +94,7 @@ jobs:
             INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID
             INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID
             INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN
+            INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
           )
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
@@ -140,6 +142,7 @@ jobs:
           commit = os.environ['SOURCE_COMMIT']
           if marker not in text:
               raise SystemExit(f'missing {marker} in generated index.html')
+          text = text.replace(google_marker, google_client_id)
           index.write_text(text.replace(marker, commit), encoding='utf-8')
           PY
 
