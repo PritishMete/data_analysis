@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/core/auth/auth_diagnostic.dart';
+import 'package:liquid_glass_widgets/core/auth/insightflow_auth_service.dart';
 
 void main() {
   test('Firebase sign-in failure exposes safe stage and code', () {
@@ -52,3 +53,38 @@ void main() {
     expect(output, isNot(contains('refresh_token')));
   });
 }
+
+  test('stale Firebase recovery is allowed only once for stale-session codes', () {
+    expect(
+      InsightFlowAuthService.shouldRecoverStaleSession(
+        code: 'user-not-found',
+        currentUserPresent: true,
+        retryAttempted: false,
+      ),
+      isTrue,
+    );
+    expect(
+      InsightFlowAuthService.shouldRecoverStaleSession(
+        code: 'user-not-found',
+        currentUserPresent: true,
+        retryAttempted: true,
+      ),
+      isFalse,
+    );
+    expect(
+      InsightFlowAuthService.shouldRecoverStaleSession(
+        code: 'invalid-credential',
+        currentUserPresent: true,
+        retryAttempted: false,
+      ),
+      isFalse,
+    );
+    expect(
+      InsightFlowAuthService.shouldRecoverStaleSession(
+        code: 'user-token-expired',
+        currentUserPresent: false,
+        retryAttempted: false,
+      ),
+      isFalse,
+    );
+  });
