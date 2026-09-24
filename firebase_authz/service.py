@@ -421,13 +421,27 @@ def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[
         permissions.add("excel.mutate.working_copy")
     return permissions
 
+def _stable_identity_keys(uid: str) -> list[str]:
+    keys = [uid]
+    user = _raw_user(uid)
+    for value in (user.get("linked_member_uid"), user.get("principal_id"), user.get("employee_id")):
+        value = str(value or "").strip()
+        if value and value not in keys:
+            keys.append(value)
+    return keys
+
 def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str) -> dict[str, Any]:
     resource_id = validate_id(resource_id, "resource ID")
     resource = (workspace.get("resources") or {}).get(resource_id)
     if not isinstance(resource, dict):
         raise PermissionDenied("Resource is not accessible.")
-    grants = (resource.get("grants") or {}).get(uid) or {}
-    return grants if isinstance(grants, dict) else {}
+    grants = resource.get("grants") or {}
+    for key in _stable_identity_keys(uid):
+        grant = grants.get(key)
+        if isinstance(grant, dict):
+            return grant
+    return {}
+
 
 def authorization(uid: str, workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
     validate_id(uid, "user ID")
@@ -480,8 +494,12 @@ def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
     return value
 
 def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
-    grant = (dataset.get("grants") or {}).get(uid) or {}
-    return grant if isinstance(grant, dict) else {}
+    grants = dataset.get("grants") or {}
+    for key in _stable_identity_keys(uid):
+        grant = grants.get(key)
+        if isinstance(grant, dict):
+            return grant
+    return {}
 
 DELEGATED_DATASET_PERMISSIONS = {
     "dataset.view_original",
@@ -490,8 +508,12 @@ DELEGATED_DATASET_PERMISSIONS = {
 }
 
 def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
-    record = (workspace.get("approved_employees") or {}).get(uid)
-    return isinstance(record, dict) and str(record.get("status") or "active") == "active"
+    records = workspace.get("approved_employees") or {}
+    for key in _stable_identity_keys(uid):
+        record = records.get(key)
+        if isinstance(record, dict):
+            return str(record.get("status") or "active") == "active"
+    return False
 
 def set_approved_employee(workspace_id: str, target_uid: str, employee_id: str, actor_token: str):
     validate_id(workspace_id, "workspace ID")
@@ -664,9 +686,14 @@ def authorize_working_copy(
         raise PermissionDenied("Working copy is not accessible.")
     if working_copy.get("status") != "active":
         raise PermissionDenied("Working copy is not active.")
-    grant = (working_copy.get("grants") or {}).get(uid) or {}
+    grant = {}
+    for key in _stable_identity_keys(uid):
+        candidate = (working_copy.get("grants") or {}).get(key)
+        if isinstance(candidate, dict):
+            grant = candidate
+            break
     if action not in set(grant.get("permissions") or []):
-        if uid != working_copy.get("created_by_uid"):
+        if working_copy.get("created_by_uid") not in _stable_identity_keys(uid):
             raise PermissionDenied("Permission denied for this working copy.")
     return {
         **decision,
@@ -1212,6 +1239,14 @@ def protected_context(id_token: str, workspace_id: str, action: str, resource_id
     claims = require_email_verified(verify_id_token(id_token))
     return claims, authorization(str(claims["uid"]), workspace_id, action, resource_id)
 
+def _claims_identity_binding(claims: dict[str, Any]) -> tuple[str, str]:
+    firebase_claims = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
+    provider = str(firebase_claims.get("sign_in_provider") or "firebase").strip().lower()
+    identities = firebase_claims.get("identities") if isinstance(firebase_claims.get("identities"), dict) else {}
+    values = identities.get(provider) if isinstance(identities, dict) else None
+    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or claims.get("uid") or "")
+    return provider, subject
+
 def bootstrap_owner(id_token: str, organization_name: str):
     """Create the authenticated user's first organization and Owner membership."""
     organization_name = str(organization_name or "").strip()
@@ -1220,6 +1255,7 @@ def bootstrap_owner(id_token: str, organization_name: str):
     claims = require_email_verified(verify_id_token(id_token))
     owner_uid = str(claims["uid"])
     owner_email = str(claims.get("email") or "").strip().lower()
+    provider, provider_subject = _claims_identity_binding(claims)
     if not owner_email:
         raise BootstrapDenied("A verified email is required to create an organization.")
     initialize_firebase()
@@ -1255,7 +1291,7 @@ def bootstrap_owner(id_token: str, organization_name: str):
             "bootstrap": {"initialized": True, "owner_uid": owner_uid, "initialized_at": now},
             "organization": {"organization_id": workspace_id, "name": organization_name, "status": "active", "created_at": now},
             "roles": roles,
-            "members": {owner_uid: {"employee_id": employee_id, "principal_id": employee_id, "status": "active", "roles": {"owner": True}, "identity_bindings": {str((claims.get("firebase") or {}).get("sign_in_provider") or "firebase"): [str((claims.get("firebase") or {}).get("sign_in_provider") and ((claims.get("firebase") or {}).get("identities") or {}).get(str((claims.get("firebase") or {}).get("sign_in_provider") or ""), [owner_uid])[0] or owner_uid)]}}},
+            "members": {owner_uid: {"employee_id": employee_id, "principal_id": employee_id, "status": "active", "roles": {"owner": True}, "identity_bindings": {provider: [provider_subject]}}},
             "resources": {}, "invitations": {}, "approved_employees": {}, "delegations": {},
             "datasets": {}, "working_copies": {},
         }
