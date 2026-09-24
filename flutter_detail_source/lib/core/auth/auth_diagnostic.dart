@@ -25,7 +25,7 @@ class AuthDiagnosticAttempt {
     if (currentUserBefore != null) parts.add('CurrentUserBefore: $currentUserBefore');
     if (currentUserAfter != null) parts.add('CurrentUserAfter: $currentUserAfter');
     parts.add('Attempt: $id');
-    return parts.join('\\n');
+    return parts.join('\n');
   }
 
   static String _newId() {
