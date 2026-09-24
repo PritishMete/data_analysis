@@ -83,10 +83,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
       } on Exception catch (error, stackTrace) {
         debugPrint(
-          '[authz-me] stage=request endpoint=' +
-          '$insightFlowBackendBaseUrl/v1/authz/me category=network',
+          '[authz-me] stage=request '
+          'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
+          'category=network error_type=\${error.runtimeType}',
         );
-        debugPrint('error_type=' + error.runtimeType.toString());
         debugPrintStack(stackTrace: stackTrace);
         throw _AuthorizationGateException(
           'InsightFlow couldn’t reach the organization service.',
@@ -102,11 +102,11 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       if (response.statusCode != 200) {
         final detail = body['detail']?.toString().trim();
         debugPrint(
-          '[authz-me] status=' + response.statusCode.toString() +
-          ' endpoint=$insightFlowBackendBaseUrl/v1/authz/me ' +
-          'stage=authorization-response category=' +
-          _authorizationResponseCategory(response.statusCode) +
-          ' code=' + (body['code']?.toString() ?? 'unstructured'),
+          '[authz-me] status=\${response.statusCode} '
+          'endpoint=$insightFlowBackendBaseUrl/v1/authz/me '
+          'stage=authorization-response '
+          'category=\${_authorizationResponseCategory(response.statusCode)} '
+          'code=\${body['code']?.toString() ?? 'unstructured'}',
         );
         if (response.statusCode == 401) {
           throw _AuthorizationGateException(
