@@ -1396,86 +1396,127 @@ def _claims_identity_binding(claims: dict[str, Any]) -> tuple[str, str]:
     return provider, subject
 
 def bootstrap_owner(id_token: str, organization_name: str):
-    """Create the authenticated user's first organization and Owner membership."""
+    """Create an authenticated user's organization and Owner membership.
+
+    Registration is intentionally based only on a valid Firebase bearer token
+    and a safe organization name. The caller cannot choose organization IDs,
+    principal IDs, roles, or permissions.
+    """
     organization_name = str(organization_name or "").strip()
     if not 1 <= len(organization_name) <= 120:
         raise ValueError("Organization name must be between 1 and 120 characters.")
-    claims = require_email_verified(verify_id_token(id_token))
-    owner_uid = str(claims["uid"])
+    if any(ord(char) < 32 or ord(char) == 127 for char in organization_name):
+        raise ValueError("Organization name contains invalid control characters.")
+
+    claims = verify_id_token(id_token)
+    owner_uid = validate_id(str(claims["uid"]), "user ID")
     owner_email = str(claims.get("email") or "").strip().lower()
     provider, provider_subject = _claims_identity_binding(claims)
-    if not owner_email:
-        raise BootstrapDenied("A verified email is required to create an organization.")
+
     initialize_firebase()
     root_ref = db.reference("/")
+
     def txn(current):
         root = dict(current or {})
         workspaces = dict(root.get("workspaces") or {})
         users = dict(root.get("users") or {})
         existing_user = users.get(owner_uid)
-        if isinstance(existing_user, dict):
-            status = str(existing_user.get("status") or "active").strip().lower()
-            if existing_user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
-                raise BootstrapDenied("This account is suspended and cannot bootstrap an organization.")
-        memberships = [
-            workspace_id for workspace_id, workspace in workspaces.items()
-            if isinstance(workspace, dict) and isinstance((workspace.get("members") or {}).get(owner_uid), dict)
-        ]
-        if memberships:
-            raise BootstrapDenied("This account already has organization membership.")
-        existing_employee_matches = []
-        for workspace_id, workspace in workspaces.items():
-            if not isinstance(workspace, dict):
-                continue
-            for member_uid, member in (workspace.get("members") or {}).items():
-                if not isinstance(member, dict):
-                    continue
-                old_user = users.get(member_uid)
-                old_email = str(old_user.get("email") or "").strip().lower() if isinstance(old_user, dict) else ""
-                if old_email and old_email == owner_email:
-                    existing_employee_matches.append((workspace_id, member_uid))
-        if existing_employee_matches:
-            raise BootstrapDenied("This verified identity already belongs to an organization member.")
+        existing_user = dict(existing_user) if isinstance(existing_user, dict) else {}
+
+        principal_id = str(
+            existing_user.get("principal_id")
+            or existing_user.get("employee_id")
+            or ""
+        ).strip()
+        if not principal_id:
+            principal_id = f"emp_{uuid.uuid4().hex}"
+
         now = int(time.time() * 1000)
-        for workspace in workspaces.values():
-            if not isinstance(workspace, dict):
-                continue
-            for invitation in (workspace.get("invitations") or {}).values():
-                if isinstance(invitation, dict) and invitation.get("status") == "invited" and str(invitation.get("email") or "").strip().lower() == owner_email:
-                    expires_at = invitation.get("expires_at")
-                    if expires_at is None or int(expires_at) > now:
-                        raise BootstrapDenied("A pending organization invitation must be accepted instead of creating an organization.")
         workspace_id = f"org_{uuid.uuid4().hex}"
-        roles = {rid: {"name": rid.title(), "permissions": sorted(perms), "system": True} for rid, perms in DEFAULT_ROLES.items()}
-        employee_id = f"emp_{uuid.uuid4().hex}"
-        workspaces[workspace_id] = {
-            "bootstrap": {"initialized": True, "owner_uid": owner_uid, "initialized_at": now},
-            "organization": {"organization_id": workspace_id, "name": organization_name, "status": "active", "created_at": now},
-            "roles": roles,
-            "members": {owner_uid: {"employee_id": employee_id, "principal_id": employee_id, "status": "active", "roles": {"owner": True}, "identity_bindings": {provider: [provider_subject]}}},
-            "resources": {}, "invitations": {}, "approved_employees": {}, "delegations": {},
-            "datasets": {}, "working_copies": {},
+        roles = {
+            rid: {
+                "name": rid.title(),
+                "permissions": sorted(perms),
+                "system": True,
+            }
+            for rid, perms in DEFAULT_ROLES.items()
         }
-        users[owner_uid] = {"status": "active", "email": owner_email, "employee_id": employee_id, "principal_id": employee_id, "linked_member_uid": owner_uid, "bootstrap_organization_id": workspace_id, "created_at": now}
+
+        workspaces[workspace_id] = {
+            "bootstrap": {
+                "initialized": True,
+                "owner_uid": owner_uid,
+                "initialized_at": now,
+            },
+            "organization": {
+                "organization_id": workspace_id,
+                "name": organization_name,
+                "status": "active",
+                "created_at": now,
+            },
+            "roles": roles,
+            "members": {
+                owner_uid: {
+                    "employee_id": principal_id,
+                    "principal_id": principal_id,
+                    "status": "active",
+                    "roles": {"owner": True},
+                    "identity_bindings": {
+                        provider: [provider_subject],
+                    },
+                },
+            },
+            "resources": {},
+            "invitations": {},
+            "approved_employees": {},
+            "delegations": {},
+            "datasets": {},
+            "working_copies": {},
+        }
+
+        updated_user = dict(existing_user)
+        updated_user.update({
+            "status": "active",
+            "email": owner_email or str(existing_user.get("email") or "").strip().lower(),
+            "employee_id": principal_id,
+            "principal_id": principal_id,
+            "linked_member_uid": owner_uid,
+            "identity_provider": provider,
+            "identity_provider_subject": provider_subject,
+        })
+        updated_user.setdefault("created_at", now)
+        users[owner_uid] = updated_user
+
         root["workspaces"] = workspaces
         root["users"] = users
         return root
+
     try:
         result = root_ref.transaction(txn)
-    except BootstrapDenied:
-        raise
     except Exception as exc:
         raise BootstrapDenied("Organization bootstrap could not be completed.") from exc
+
     workspace_id = next(
-        (wid for wid, workspace in (result.get("workspaces") or {}).items()
-         if isinstance(workspace, dict)
-         and (workspace.get("bootstrap") or {}).get("owner_uid") == owner_uid
-         and (workspace.get("organization") or {}).get("name") == organization_name),
+        (
+            wid
+            for wid, workspace in (result.get("workspaces") or {}).items()
+            if isinstance(workspace, dict)
+            and (workspace.get("bootstrap") or {}).get("owner_uid") == owner_uid
+            and (workspace.get("organization") or {}).get("name") == organization_name
+        ),
         None,
     )
     if not workspace_id:
         raise BootstrapDenied("Organization bootstrap could not be verified.")
-    return {"initialized": True, "owner_uid": owner_uid, "organization_id": workspace_id, "workspace_id": workspace_id}
+
+    return {
+        "initialized": True,
+        "owner_uid": owner_uid,
+        "organization_id": workspace_id,
+        "workspace_id": workspace_id,
+        "membership_status": "active",
+        "role_ids": ["owner"],
+    }
 
 def ensure_seed_roles(workspace_id: str):
     validate_id(workspace_id, "workspace ID")
