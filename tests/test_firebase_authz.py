@@ -175,6 +175,7 @@ def test_non_active_membership_is_denied(monkeypatch):
 
 def test_new_user_without_invitation_is_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "_raw_user", lambda uid: {})
+    monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, provider_subject: [])
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
     monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [])
     context = service.authentication_context("new-user", "workspace", email_verified=True, email="new@example.com")
@@ -184,6 +185,7 @@ def test_new_user_without_invitation_is_bootstrap_candidate(monkeypatch):
 
 def test_new_user_with_invitation_is_not_a_bootstrap_candidate(monkeypatch):
     monkeypatch.setattr(service, "_raw_user", lambda uid: {})
+    monkeypatch.setattr(service, "_identity_candidates", lambda email, provider, provider_subject: [])
     monkeypatch.setattr(service, "workspace_memberships", lambda uid, include_user=False: [])
     monkeypatch.setattr(service, "pending_invitations_for_email", lambda email: [{
         "invitation_id": "inv1",
