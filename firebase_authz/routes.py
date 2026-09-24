@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 
@@ -35,6 +35,8 @@ def me(
             workspace_id.strip() if workspace_id else None,
             bool(claims.get("email_verified")),
             str(claims.get("email") or ""),
+            authenticated_identity(claims)["provider"],
+            authenticated_identity(claims)["provider_subject"],
         )
         return {"uid": uid, "email": claims.get("email"), **context}
     except AuthenticationRequired as exc:
@@ -105,6 +107,7 @@ def membership(
         raise HTTPException(400, str(exc))
 
 @router.post("/bootstrap-owner")
+@router.post("/register-company")
 def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
     try:
         return bootstrap_owner(_token(authorization), req.organization_name)
