@@ -7,13 +7,24 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import '../dashboard/data_screen.dart';
+
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
-import '../dashboard/data_screen.dart';
 import 'google_web_sign_in_button.dart';
+
+class _RegistrationCompleteScreen extends StatelessWidget {
+  const _RegistrationCompleteScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DataScreen();
+  }
+}
+
 
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
@@ -157,7 +168,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
       await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const _RegistrationCompleteScreen()),
+      );
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
       if (!mounted) return;
