@@ -1,0 +1,34 @@
+name: InsightFlow Production Backend Smoke
+
+on:
+  push:
+    branches: [feature/data-workspace]
+    paths:
+      - 'main.py'
+      - 'firebase_authz/**'
+      - 'render.yaml'
+      - '.github/workflows/production-backend-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify production health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 5             https://data-analysis-oajs.onrender.com/health
+      - name: Verify registration route and CORS
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          headers_file="$(mktemp)"
+          status="$(curl --silent --show-error --output "$response_file" --dump-header "$headers_file"             -X OPTIONS             -H 'Origin: https://pritishmete.github.io'             -H 'Access-Control-Request-Method: POST'             -H 'Access-Control-Request-Headers: authorization,content-type'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/organizations/register)"
+          echo "OPTIONS status: $status"
+          test "$status" = "200"
+          grep -qi '^access-control-allow-origin: https://pritishmete.github.io' "$headers_file"
+          post_status="$(curl --silent --show-error --output "$response_file"             -X POST             -H 'Content-Type: application/json'             -d '{"organization_name":"__smoke__"}'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/organizations/register)"
+          echo "Unauthenticated POST status: $post_status"
+          test "$post_status" != "404"
+          test "$post_status" = "401" || test "$post_status" = "403"
