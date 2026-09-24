@@ -24,7 +24,7 @@ void main() {
       contains('InsightFlowAuthService.signInWithGoogleAccount(account)'),
     );
     expect(
-      RegExp(r'InsightFlowAuthService\\.signInWithGoogle\\(').hasMatch(webBranch),
+      RegExp(r'InsightFlowAuthService\.signInWithGoogle\(').hasMatch(webBranch),
       isFalse,
     );
 
