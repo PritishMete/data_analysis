@@ -43,9 +43,9 @@ void main() {
 
     expect(
       source,
-      contains(r'$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
+      contains(r'$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
     );
-    expect(source, isNot(contains('/v1/authz/register-company')));
+    expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
     expect(source, contains("'organization_name': name"));
     expect(source, contains('firebaseAuthHeaders(forceRefresh: true)'));
     expect(source, contains('response.statusCode == 404'));
