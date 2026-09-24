@@ -839,8 +839,11 @@ def set_dataset_grant(
     if actor_can_manage is False and actor != dataset.get("owner_uid") and not delegated_share:
         raise PermissionDenied("Dataset ACL management is not delegated to this user.")
     initialize_firebase()
+    target_member_uid = _member_key_for_workspace(workspace, target_uid)
+    if not target_member_uid:
+        raise PermissionDenied("Target user is not an organization member.")
     db.reference(
-        f"workspaces/{workspace_id}/datasets/{dataset_id}/grants/{target_uid}"
+        f"workspaces/{workspace_id}/datasets/{dataset_id}/grants/{target_member_uid}"
     ).set({"permissions": sorted(set(permissions))})
     return True
 
@@ -1032,7 +1035,8 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
     validate_id(workspace_id, "workspace ID")
     authorization(uid, workspace_id, "organization.view")
     workspace = _workspace(workspace_id)
-    member = (workspace.get("members") or {}).get(uid) or {}
+    member_key = _member_key_for_workspace(workspace, uid)
+    member = (workspace.get("members") or {}).get(member_key) or {}
     capabilities = _role_permissions(workspace, member)
     result: dict[str, Any] = {
         "organization_id": workspace_id,
@@ -1072,7 +1076,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
         if not isinstance(dataset, dict):
             continue
         grant = _dataset_grant(dataset, uid)
-        if is_manager or uid == dataset.get("owner_uid") or dataset_id in delegated_dataset_ids or "dataset.view_original" in set(grant.get("permissions") or []):
+        if _stable_identity_keys(uid) and (is_manager or dataset.get("owner_uid") in _stable_identity_keys(uid) or dataset.get("owner_principal_id") in _stable_identity_keys(uid) or dataset_id in delegated_dataset_ids) or "dataset.view_original" in set(grant.get("permissions") or []):
             result["datasets"].append({
                 "dataset_id": dataset_id,
                 "display_name": dataset.get("display_name") or dataset.get("original_filename") or dataset_id,
@@ -1098,7 +1102,7 @@ def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> 
             })
     for copy_id, item in (workspace.get("working_copies") or {}).items():
         if isinstance(item, dict) and (
-            item.get("created_by_uid") == uid or uid in (item.get("grants") or {})
+            item.get("created_by_uid") in _stable_identity_keys(uid) or any(key in (item.get("grants") or {}) for key in _stable_identity_keys(uid))
         ):
             result["working_copies"].append({
                 "working_copy_id": copy_id,
