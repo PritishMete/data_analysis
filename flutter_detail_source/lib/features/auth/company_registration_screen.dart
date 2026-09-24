@@ -275,7 +275,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
                 setState(() {
                   _busy = false;
                   _error = true;
-                  _message = InsightFlowAuthService.userFacingAuthError(error);
+                  _message = '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
                 });
               },
             )
