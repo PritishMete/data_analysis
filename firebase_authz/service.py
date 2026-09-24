@@ -1419,6 +1419,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
 
     initialize_firebase()
     root_ref = db.reference("/")
+    workspace_id = f"org_{uuid.uuid4().hex}"
 
     def txn(current):
         root = dict(current or {})
@@ -1485,7 +1486,6 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
             principal_id = f"emp_{uuid.uuid4().hex}"
 
         now = int(time.time() * 1000)
-        workspace_id = f"org_{uuid.uuid4().hex}"
         roles = {
             rid: {
                 "name": rid.title(),
@@ -1549,17 +1549,10 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
     except Exception as exc:
         raise BootstrapDenied("Organization bootstrap could not be completed.") from exc
 
-    workspace_id = next(
-        (
-            wid
-            for wid, workspace in (result.get("workspaces") or {}).items()
-            if isinstance(workspace, dict)
-            and (workspace.get("bootstrap") or {}).get("owner_uid") == owner_uid
-            and (workspace.get("organization") or {}).get("name") == organization_name
-        ),
-        None,
-    )
-    if not workspace_id:
+    workspace = (result.get("workspaces") or {}).get(workspace_id)
+    if not isinstance(workspace, dict):
+        raise BootstrapDenied("Organization bootstrap could not be verified.")
+    if (workspace.get("organization") or {}).get("name") != organization_name:
         raise BootstrapDenied("Organization bootstrap could not be verified.")
 
     return {
