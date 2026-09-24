@@ -308,10 +308,13 @@ class InsightFlowAuthService {
 
   static Map<String, String?> currentProviderIdentity(String providerId) {
     final user = auth.currentUser;
-    final provider = user?.providerData.where((p) => p.providerId == providerId).cast<UserInfo?>().firstWhere(
-          (p) => p != null,
-          orElse: () => null,
-        );
+    UserInfo? provider;
+    for (final item in user?.providerData ?? const <UserInfo>[]) {
+      if (item.providerId == providerId) {
+        provider = item;
+        break;
+      }
+    }
     return {
       'firebase_uid': user?.uid,
       'provider_id': provider?.providerId,
