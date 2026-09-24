@@ -8,6 +8,8 @@ class AuthDiagnosticAttempt {
   String? code;
   int? httpStatus;
   String? outcome;
+  String? currentUserBefore;
+  String? currentUserAfter;
 
   void record(String nextStage, {String? code, int? httpStatus, String? outcome}) {
     stage = nextStage;
