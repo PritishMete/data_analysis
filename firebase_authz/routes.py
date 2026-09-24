@@ -38,7 +38,13 @@ def me(
             authenticated_identity(claims)["provider"],
             authenticated_identity(claims)["provider_subject"],
         )
-        return {"uid": uid, "email": claims.get("email"), **context}
+        identity = authenticated_identity(claims)
+        return {
+            "uid": uid,
+            "email": claims.get("email"),
+            "identity": identity,
+            **context,
+        }
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
     except AuthzError as exc:
