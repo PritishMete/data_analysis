@@ -96,10 +96,10 @@ class _OrganizationOnboardingScreenState
       children: [
         if (primary != null) ...[
           AuthGlassMessage(
-            text:
-                'You have an active invitation to $organization. Role: $role${employeeId == null ? '' : ' · Employee ID: $employeeId'}',
-          ),
-          const SizedBox(height: 14),
+            text: 'You have an active invitation to ' +
+                organization + '. Role: ' + role +
+                (employeeId == null ? '' : ' · Employee ID: ' + employeeId),
+          ),          const SizedBox(height: 14),
           GlassButton.custom(
             onTap: _busy ? () {} : () => _acceptInvitation(primary),
             enabled: !_busy,
