@@ -10,6 +10,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
+import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'sign_in_screen.dart';
 
@@ -173,14 +174,40 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       );
     }
 
-    if (authorizationState == 'bootstrap_candidate' ||
-        authorizationState == 'pending_invitation' ||
-        authorizationState == 'no_membership' ||
+    if (authorizationState == 'pending_invitation' ||
+        authorizationState == 'approved_employee_pending_link' ||
         membershipStatus == 'invited' ||
         membershipStatus == 'approved') {
       return OrganizationOnboardingScreen(
         state: state,
         onCompleted: _refresh,
+      );
+    }
+
+    if (authorizationState == 'new_company_candidate' ||
+        authorizationState == 'no_organization_access' ||
+        authorizationState == 'no_membership') {
+      return _NoOrganizationAccessScreen(
+        onRegisterCompany: () async {
+          final registered = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (_) => const CompanyRegistrationScreen(),
+            ),
+          );
+          if (registered == true) {
+            await _refresh();
+          }
+        },
+      );
+    }
+
+    if (authorizationState == 'ambiguous_identity') {
+      return const _AccessStateScreen(
+        title: 'ACCESS / IDENTITY REVIEW',
+        message:
+            'This verified identity could not be safely matched to one company member. Contact your organization administrator.',
+        actionLabel: 'Sign out',
+        action: InsightFlowAuthService.signOut,
       );
     }
 
@@ -323,6 +350,44 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         const SizedBox(height: 8),
         TextButton(
           onPressed: _busy ? null : InsightFlowAuthService.signOut,
+          child: const Text('Sign out'),
+        ),
+      ],
+    );
+  }
+}
+
+class _NoOrganizationAccessScreen extends StatelessWidget {
+  const _NoOrganizationAccessScreen({required this.onRegisterCompany});
+
+  final Future<void> Function() onRegisterCompany;
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthGlassScaffold(
+      title: 'ORGANIZATION / ACCESS',
+      subtitle: 'Authentication succeeded, but no company access is assigned.',
+      children: [
+        const AuthGlassMessage(
+          text:
+              'No InsightFlow organization access is assigned to this account. Employees must be approved by an organization administrator.',
+        ),
+        const SizedBox(height: 14),
+        GlassButton.custom(
+          onTap: onRegisterCompany,
+          enabled: true,
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'Register Company',
+          child: const Text(
+            'Register Company',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: InsightFlowAuthService.signOut,
           child: const Text('Sign out'),
         ),
       ],
