@@ -198,7 +198,7 @@ class InsightFlowAuthService {
         return result;
       } on FirebaseAuthException catch (error) {
         diagnostic?.record('FIREBASE_SIGN_IN_FAILED', code: error.code);
-        if (_isStaleFirebaseSessionError(error.code) && before == 'PRESENT') {
+        if (shouldRecoverStaleSession(code: error.code, currentUserPresent: before == 'PRESENT', retryAttempted: false)) {
           diagnostic?.record('FIREBASE_STALE_SESSION_DETECTED', code: error.code);
           await auth.signOut();
           diagnostic?.record('FIREBASE_STALE_SESSION_CLEARED');
@@ -226,7 +226,12 @@ class InsightFlowAuthService {
       rethrow;
     }
   }
-  static bool _isStaleFirebaseSessionError(String code) {
+  static bool shouldRecoverStaleSession({
+    required String code,
+    required bool currentUserPresent,
+    required bool retryAttempted,
+  }) {
+    if (!currentUserPresent || retryAttempted) return false;
     return <String>{
       'user-not-found',
       'user-token-expired',
