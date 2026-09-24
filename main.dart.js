@@ -114945,7 +114945,7 @@ p=4
 s=7
 return A.i(A.kx(!0,null),$async$rg)
 case 7:l=a8
-b=A.dt("https://data-analysis-oajs.onrender.com/v1/authz/bootstrap-owner",0,null)
+b=A.dt("https://data-analysis-oajs.onrender.com/v1/authz/organizations/register",0,null)
 a=t.N
 k=A.fj(l,a,a)
 J.bC(k,"Content-Type","application/json")
@@ -114960,7 +114960,7 @@ b=t.f
 if(b.b(h)){a=J.y(h,"code")
 a=a==null?null:J.D(a)
 if(a==null)a="unstructured"}else a="invalid-json"
-A.dR().$1("[company-registration] status="+k+" endpoint=/v1/authz/bootstrap-owner stage=bootstrap-response code="+a)
+A.dR().$1("[company-registration] status="+k+" endpoint=/v1/authz/organizations/register stage=bootstrap-response code="+a)
 if(j.b!==200){if(b.b(h)){k=J.y(h,"detail")
 a1=k==null?null:J.D(k)}else a1=null
 g=a1
