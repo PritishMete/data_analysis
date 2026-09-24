@@ -85,9 +85,12 @@ def _user(uid: str):
     if not value:
         # Resolve a recreated Firebase account at the authorization boundary too.
         # This keeps Web/Power BI/future clients independent from an earlier /me call.
+        initialize_firebase()
         try:
-            initialize_firebase()
             firebase_user = auth.get_user(uid)
+        except auth.UserNotFoundError:
+            firebase_user = None
+        if firebase_user is not None:
             provider = "firebase"
             provider_subject = uid
             for provider_data in (firebase_user.provider_data or []):
@@ -102,13 +105,9 @@ def _user(uid: str):
                 provider_subject,
                 bool(firebase_user.email_verified),
             )
-            if resolved.get("state") == "suspended":
+            if resolved.get("state") in {"suspended", "removed"}:
                 raise PermissionDenied("This account is suspended.")
             value = _raw_user(uid)
-        except PermissionDenied:
-            raise
-        except Exception:
-            value = {}
     if not value:
         raise PermissionDenied("No InsightFlow organization access is assigned to this account.")
     status = str(value.get("status") or "").strip().lower()
@@ -233,14 +232,57 @@ def resolve_principal(
     user = _raw_user(uid)
     if user:
         status = str(user.get("status") or "active").strip().lower()
-        if user.get("suspended") is True or status in {"suspended", "disabled", "removed"}:
+        if user.get("suspended") is True or status in {"suspended", "disabled"}:
             return {"state": "suspended", "firebase_uid": uid, "principal_id": user.get("principal_id")}
+        if status == "removed":
+            return {"state": "removed", "firebase_uid": uid, "principal_id": user.get("principal_id")}
         principal_id = str(user.get("principal_id") or user.get("employee_id") or "").strip()
+        linked_member_uid = str(user.get("linked_member_uid") or uid).strip()
+        linked_workspace_id = str(
+            user.get("linked_organization_id")
+            or user.get("bootstrap_organization_id")
+            or ""
+        ).strip()
+        if linked_workspace_id:
+            workspace = _workspace(linked_workspace_id)
+            member = (workspace.get("members") or {}).get(linked_member_uid)
+            if isinstance(member, dict):
+                member_status = _membership_status(member)
+                if member_status in {"suspended", "removed"}:
+                    return {
+                        "state": "suspended" if member_status == "suspended" else "removed",
+                        "firebase_uid": uid,
+                        "principal_id": principal_id or member.get("principal_id") or member.get("employee_id"),
+                        "member_uid": linked_member_uid,
+                        "workspace_id": linked_workspace_id,
+                    }
+                if member_status in {"invited", "approved"}:
+                    return {
+                        "state": "pending_employee",
+                        "firebase_uid": uid,
+                        "principal_id": principal_id or member.get("principal_id") or member.get("employee_id"),
+                        "member_uid": linked_member_uid,
+                        "workspace_id": linked_workspace_id,
+                    }
+                if member_status == "active":
+                    return {
+                        "state": "active_identity",
+                        "firebase_uid": uid,
+                        "principal_id": principal_id or member.get("principal_id") or member.get("employee_id") or uid,
+                        "member_uid": linked_member_uid,
+                        "workspace_id": linked_workspace_id,
+                        "relinked": False,
+                    }
+            return {
+                "state": "no_organization_access",
+                "firebase_uid": uid,
+                "principal_id": principal_id or uid,
+            }
         return {
             "state": "active_identity",
             "firebase_uid": uid,
             "principal_id": principal_id or uid,
-            "member_uid": str(user.get("linked_member_uid") or uid),
+            "member_uid": linked_member_uid,
             "relinked": False,
         }
     if not email_verified or not normalized_email:
@@ -347,6 +389,18 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
             "workspaces": [],
             "pending_invitations": [],
         }
+    if principal["state"] == "removed":
+        return {
+            "email_verified": bool(email_verified),
+            "account_status": "removed",
+            "membership_status": "removed",
+            "workspace_authorized": False,
+            "authorization_state": "removed",
+            "has_authorization_record": True,
+            "principal_id": principal.get("principal_id"),
+            "workspaces": [],
+            "pending_invitations": [],
+        }
     if principal["state"] == "ambiguous_identity":
         return {
             "email_verified": bool(email_verified),
@@ -377,6 +431,10 @@ def authentication_context(uid: str, workspace_id: str | None = None, email_veri
         authorization_state = "pending_invitation"
     elif principal["state"] in {"relinked"}:
         authorization_state = "active_member" if workspace_authorized else "no_organization_access"
+    elif principal["state"] in {"no_organization_access"}:
+        authorization_state = "no_organization_access"
+    elif principal["state"] in {"pending_employee"}:
+        authorization_state = "approved_employee_pending_link"
     else:
         authorization_state = "new_company_candidate"
     return {
@@ -481,7 +539,7 @@ def _resource_grant(workspace: dict[str, Any], uid: str, resource_id: str, user:
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
-    for key in _stable_identity_keys(uid, user):
+    for key in _stable_identity_keys(uid):
         grant = grants.get(key)
         if isinstance(grant, dict):
             return grant
@@ -538,12 +596,12 @@ def _dataset(workspace: dict[str, Any], dataset_id: str) -> dict[str, Any]:
         raise PermissionDenied("Dataset is not accessible.")
     return value
 
-def _dataset_grant(dataset: dict[str, Any], uid: str, user: dict[str, Any] | None = None) -> dict[str, Any]:
+def _dataset_grant(dataset: dict[str, Any], uid: str) -> dict[str, Any]:
     grants = dataset.get("grants") or {}
     direct = grants.get(uid)
     if isinstance(direct, dict):
         return direct
-    for key in _stable_identity_keys(uid, user):
+    for key in _stable_identity_keys(uid):
         grant = grants.get(key)
         if isinstance(grant, dict):
             return grant
@@ -555,14 +613,12 @@ DELEGATED_DATASET_PERMISSIONS = {
     "dataset.share",
 }
 
-def _approved_employee(workspace: dict[str, Any], uid: str, user: dict[str, Any] | None = None) -> bool:
+def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
     records = workspace.get("approved_employees") or {}
-    if not records:
-        return False
     direct = records.get(uid)
     if isinstance(direct, dict):
         return str(direct.get("status") or "active") == "active"
-    for key in _stable_identity_keys(uid, user):
+    for key in _stable_identity_keys(uid):
         record = records.get(key)
         if isinstance(record, dict):
             return str(record.get("status") or "active") == "active"
@@ -898,6 +954,8 @@ def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str)
     }
 
 def can_manage_role(workspace_id: str, actor_uid: str, target_uid: str, role_id: str, enabled: bool) -> bool:
+    validate_id(role_id, "role ID")
+    workspace = _workspace(workspace_id)
     validate_id(role_id, "role ID")
     workspace = _workspace(workspace_id)
     members = workspace.get("members") or {}
