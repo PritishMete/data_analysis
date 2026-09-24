@@ -10,32 +10,73 @@ class InsightFlowAuthService {
 
   static FirebaseAuth get auth => FirebaseAuth.instance;
 
-  static Future<void> initialize() async {
-    // google_sign_in 7.x requires its singleton to be initialized before
-    // authenticate() or authorizationClient is used. Keep this ahead of
-    // Firebase initialization, matching the proven Lockr startup sequence.
-    await GoogleSignIn.instance.initialize();
+  static bool _googleSignInInitialized = false;
+  static Object? _googleSignInInitializationError;
 
+  /// Resolves the build-provided Firebase configuration without initializing
+  /// Firebase or logging any configuration values.
+  static FirebaseOptions validateFirebaseConfiguration() {
+    return DefaultFirebaseOptions.currentPlatform;
+  }
+
+  /// Initializes Firebase Core only. This is the only startup stage that
+  /// makes the app eligible for the Firebase-configuration error screen.
+  static Future<void> initializeFirebaseCore(FirebaseOptions options) async {
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      await Firebase.initializeApp(options: options);
     }
+  }
 
-    // Native Firebase Auth persists sessions by default. On web, explicitly
-    // select LOCAL so a successful sign-in survives page reloads/browser
-    // restarts instead of becoming a session-only login.
-    if (kIsWeb) {
-      await auth.setPersistence(Persistence.LOCAL);
-      // Completes any Firebase OAuth redirect that returned to the task pane
-      // after a popup was unavailable. Auth state then flows normally into
-      // AuthGate and stable principal resolution.
-      try {
-        await auth.getRedirectResult();
-      } on FirebaseAuthException catch (error, stackTrace) {
-        debugPrint('Firebase redirect sign-in failed: ${error.code}');
-        debugPrintStack(stackTrace: stackTrace);
-      }
+  /// Configures Firebase Auth persistence independently of Firebase Core.
+  static Future<void> initializeFirebasePersistence() async {
+    if (!kIsWeb) return;
+    await auth.setPersistence(Persistence.LOCAL);
+  }
+
+  /// Processes a pending Firebase OAuth redirect independently of Firebase
+  /// configuration and provider SDK initialization.
+  static Future<void> initializeRedirectResult() async {
+    if (!kIsWeb) return;
+    try {
+      await auth.getRedirectResult();
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint('Firebase redirect sign-in failed: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Initializes the Google SDK independently. A failure here does not block
+  /// Firebase Auth, email/password, or Microsoft authentication.
+  static Future<void> initializeGoogleSignIn() async {
+    try {
+      await GoogleSignIn.instance.initialize();
+      _googleSignInInitialized = true;
+      _googleSignInInitializationError = null;
+    } catch (error, stackTrace) {
+      _googleSignInInitialized = false;
+      _googleSignInInitializationError = error;
+      debugPrint('Google SDK initialization failed: ${error.runtimeType}');
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Compatibility entry point for callers that still initialize the whole
+  /// auth service. Each stage remains independently diagnosable.
+  static Future<void> initialize() async {
+    final options = validateFirebaseConfiguration();
+    await initializeFirebaseCore(options);
+    await initializeFirebasePersistence();
+    try {
+      await initializeGoogleSignIn();
+    } catch (_) {
+      // Google is optional for Firebase Auth startup.
+    }
+    try {
+      await initializeRedirectResult();
+    } catch (_) {
+      // A failed redirect result is not a Firebase configuration failure.
     }
   }
 
@@ -84,6 +125,19 @@ class InsightFlowAuthService {
   static Future<UserCredential> signInWithGoogle() async {
     // Same authentication sequence proven in Lockr:
     // authenticate -> authorize email/profile -> Firebase credential.
+    if (!_googleSignInInitialized) {
+      final cause = _googleSignInInitializationError;
+      debugPrint(
+        'Google sign-in requested before successful SDK initialization: '
+        '${cause?.runtimeType ?? 'unknown'}',
+      );
+      throw FirebaseAuthException(
+        code: 'google-sign-in-initialization-failed',
+        message: 'Google sign-in is unavailable because its provider '
+            'initialization failed.',
+      );
+    }
+
     final googleSignIn = GoogleSignIn.instance;
 
     try {
@@ -289,6 +343,8 @@ class InsightFlowAuthService {
           return 'This sign-in method is not enabled for this Firebase project.';
         case 'invalid-configuration':
           return 'This sign-in provider is not configured correctly. Check the Firebase provider settings.';
+        case 'google-sign-in-initialization-failed':
+          return 'Google sign-in could not start. Try email/password or Microsoft sign-in, or try Google again later.';
         case 'operation-not-supported-in-this-environment':
           return 'This sign-in method is not supported in this environment. Try again in a browser window.';
         case 'email-already-in-use':
