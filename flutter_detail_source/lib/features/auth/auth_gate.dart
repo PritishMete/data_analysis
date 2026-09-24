@@ -139,13 +139,17 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       }
     } catch (error) {
       if (!mounted) return;
-      final disabled = error is FirebaseAuthException &&
-          (error.code == 'user-disabled' || error.code == 'user-not-found');
+      final firebaseDeleted = error is FirebaseAuthException &&
+          error.code == 'user-not-found';
+      final firebaseDisabled = error is FirebaseAuthException &&
+          error.code == 'user-disabled';
       setState(() {
         _loading = false;
-        _error = disabled
-            ? 'ACCOUNT_SUSPENDED'
-            : error is _AuthorizationGateException
+        _error = firebaseDeleted
+            ? 'FIREBASE_ACCOUNT_MISSING'
+            : firebaseDisabled
+                ? 'FIREBASE_ACCOUNT_DISABLED'
+                : error is _AuthorizationGateException
                 ? error.message
                 : 'Authorization status could not be verified. Check your connection and try again.';
       });
@@ -179,10 +183,19 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       return EmailVerificationScreen(user: user);
     }
 
-    if (_error == 'ACCOUNT_SUSPENDED') {
+    if (_error == 'FIREBASE_ACCOUNT_MISSING') {
       return _AccessStateScreen(
-        title: 'ACCOUNT / SUSPENDED',
-        message: 'This Firebase account is disabled or no longer available. Contact your administrator.',
+        title: 'AUTH / ACCOUNT NOT FOUND',
+        message: 'This Firebase account no longer exists. Sign in again to create or restore access.',
+        action: InsightFlowAuthService.signOut,
+        actionLabel: 'Sign out',
+      );
+    }
+
+    if (_error == 'FIREBASE_ACCOUNT_DISABLED') {
+      return _AccessStateScreen(
+        title: 'AUTH / ACCOUNT DISABLED',
+        message: 'This Firebase account is disabled.',
         action: InsightFlowAuthService.signOut,
         actionLabel: 'Sign out',
       );
