@@ -123,6 +123,8 @@ jobs:
             --dart-define
             "INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=$(clean_env INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN)"
             --dart-define
+            "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID=$(clean_env INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID)"
+            --dart-define
             "INSIGHTFLOW_WORKSPACE_ID=$(clean_env INSIGHTFLOW_WORKSPACE_ID)"
           )
           flutter "${build_args[@]}"
@@ -131,6 +133,7 @@ jobs:
         working-directory: .
         env:
           SOURCE_COMMIT: ${{ github.sha }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
         run: |
           python - <<'PY'
           import os
@@ -140,6 +143,12 @@ jobs:
           text = index.read_text(encoding='utf-8')
           marker = '__INSIGHTFLOW_BUILD_COMMIT__'
           commit = os.environ['SOURCE_COMMIT']
+          google_marker = '__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__'
+          google_client_id = os.environ.get('INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID', '').strip()
+          if not google_client_id:
+              raise SystemExit('missing INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID')
+          if google_marker not in text:
+              raise SystemExit(f'missing {google_marker} in generated index.html')
           if marker not in text:
               raise SystemExit(f'missing {marker} in generated index.html')
           text = text.replace(google_marker, google_client_id)
@@ -157,6 +166,7 @@ jobs:
         working-directory: .
         env:
           SOURCE_COMMIT: ${{ github.sha }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           git fetch origin gh-pages:refs/remotes/origin/gh-pages
