@@ -185,7 +185,12 @@ class InsightFlowAuthService {
         final user = auth.currentUser;
         if (user != null) {
           diagnostic?.record('FIREBASE_ID_TOKEN_REFRESH_STARTED');
-          await user.getIdToken(true);
+          try {
+            await user.getIdToken(true);
+          } on FirebaseAuthException catch (error) {
+            diagnostic?.record('FIREBASE_TOKEN_REFRESH_FAILED', code: error.code);
+            rethrow;
+          }
           diagnostic?.record('FIREBASE_ID_TOKEN_REFRESH_SUCCESS');
         }
         return result;
