@@ -43,7 +43,7 @@ void main() {
 
     expect(
       source,
-      contains('\\$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
+      contains(r'$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
     );
     expect(source, isNot(contains('/v1/authz/register-company')));
     expect(source, contains("'organization_name': name"));
