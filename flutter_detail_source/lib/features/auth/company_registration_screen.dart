@@ -119,7 +119,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
       debugPrint(
         '[company-registration] status=${response.statusCode} '
-        'endpoint=/v1/authz/bootstrap-owner stage=bootstrap-response '
+        'endpoint=/v1/authz/organizations/register stage=bootstrap-response '
         'code=${decoded is Map ? decoded['code']?.toString() ?? 'unstructured' : 'invalid-json'}',
       );
       if (response.statusCode != 200) {
