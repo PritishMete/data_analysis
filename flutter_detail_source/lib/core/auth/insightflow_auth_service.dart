@@ -33,7 +33,7 @@ class InsightFlowAuthService {
       try {
         await auth.getRedirectResult();
       } on FirebaseAuthException catch (error, stackTrace) {
-        debugPrint('Firebase redirect sign-in failed: ' + error.code);
+        debugPrint('Firebase redirect sign-in failed: ${error.code}');
         debugPrintStack(stackTrace: stackTrace);
       }
     }
@@ -70,7 +70,7 @@ class InsightFlowAuthService {
     try {
       return await auth.signInWithPopup(provider);
     } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint('Microsoft popup sign-in failed: ' + error.code);
+      debugPrint('Microsoft popup sign-in failed: ${error.code}');
       debugPrintStack(stackTrace: stackTrace);
       if (error.code == 'popup-blocked' ||
           error.code == 'operation-not-supported-in-this-environment') {
@@ -99,7 +99,7 @@ class InsightFlowAuthService {
       return await auth.signInWithCredential(credential);
     } on GoogleSignInException catch (error, stackTrace) {
       debugPrint(
-        'Google sign-in failed: ' + error.code.name + ': ' + (error.description ?? ''),
+        'Google sign-in failed: ${error.code.name}: ${error.description ?? ''}',
       );
       debugPrintStack(stackTrace: stackTrace);
 
@@ -209,7 +209,7 @@ class InsightFlowAuthService {
       await user.reauthenticateWithCredential(credential);
     } on GoogleSignInException catch (error, stackTrace) {
       debugPrint(
-        'Google reauthentication failed: ' + error.code.name + ': ' + (error.description ?? ''),
+        'Google reauthentication failed: ${error.code.name}: ${error.description ?? ''}',
       );
       debugPrintStack(stackTrace: stackTrace);
       if (error.code == GoogleSignInExceptionCode.canceled) {
