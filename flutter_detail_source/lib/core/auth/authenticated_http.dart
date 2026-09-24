@@ -73,7 +73,7 @@ class OrganizationServiceDiagnostic {
         '',
         'Attempt:',
         id,
-      ].join('\\n');
+      ].join('\n');
 
   static String _newId() {
     final value = Random.secure().nextInt(0x10000);
