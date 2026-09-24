@@ -7,6 +7,12 @@ router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 class BootstrapRequest(BaseModel):
     organization_name: str
 
+class FounderOrganizationRegistration(BaseModel):
+    organization_name: str
+
+    class Config:
+        extra = "forbid"
+
 class AuthorizationCheck(BaseModel):
     workspace_id: str
     action: str
@@ -115,6 +121,27 @@ def membership(
 @router.post("/bootstrap-owner")
 @router.post("/register-company")
 def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
+    try:
+        return bootstrap_owner(_token(authorization), req.organization_name)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except BootstrapDenied as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/organizations/register")
+def founder_organization_register(
+    req: FounderOrganizationRegistration,
+    authorization: str = Header(default=None),
+):
+    """Public founder registration contract.
+
+    Firebase identity is supplied only in the Authorization bearer token.
+    Organization/workspace IDs, principal identity, Owner role and RBAC are
+    generated and assigned by the trusted bootstrap service.
+    """
     try:
         return bootstrap_owner(_token(authorization), req.organization_name)
     except AuthenticationRequired as exc:
