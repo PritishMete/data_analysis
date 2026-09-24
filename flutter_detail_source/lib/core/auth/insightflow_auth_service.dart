@@ -111,7 +111,7 @@ class InsightFlowAuthService {
       debugPrint('[microsoft-popup] opening Firebase Microsoft provider');
       return await auth.signInWithPopup(provider);
     } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint('[microsoft-popup] FirebaseAuthException: ' + error.code);
+      debugPrint('[microsoft-popup] FirebaseAuthException: ${error.code}');
       debugPrintStack(stackTrace: stackTrace);
       if (error.code == 'popup-blocked' ||
           error.code == 'operation-not-supported-in-this-environment') {
@@ -129,7 +129,7 @@ class InsightFlowAuthService {
   static Future<UserCredential> signInWithGoogle() async {
     if (!_googleSignInInitialized) {
       final cause = _googleSignInInitializationError;
-      debugPrint('[google-authenticate] initialization unavailable: ' + (cause?.runtimeType.toString() ?? 'unknown'));
+      debugPrint('[google-authenticate] initialization unavailable: ${cause?.runtimeType ?? 'unknown'}');
       throw FirebaseAuthException(
         code: 'google-sign-in-initialization-failed',
         message: 'Google sign-in is unavailable because its provider initialization failed.',
@@ -167,14 +167,14 @@ class InsightFlowAuthService {
       _logGoogleException('google-authorize-scopes', error, stackTrace);
       throw _mapGoogleSignInException(error);
     } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint('[firebase-google-credential] FirebaseAuthException: ' + error.code);
+      debugPrint('[firebase-google-credential] FirebaseAuthException: ${error.code}');
       debugPrintStack(stackTrace: stackTrace);
       rethrow;
     }
   }
 
   static void _logGoogleException(String stage, GoogleSignInException error, StackTrace stackTrace) {
-    debugPrint('[' + stage + '] GoogleSignInExceptionCode=' + error.code.name + ' type=' + error.runtimeType.toString());
+    debugPrint('[$stage] GoogleSignInExceptionCode=${error.code.name} type=${error.runtimeType}');
     debugPrintStack(stackTrace: stackTrace);
   }
 
