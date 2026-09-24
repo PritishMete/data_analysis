@@ -34,4 +34,20 @@ void main() {
       contains('InsightFlowAuthService.signInWithGoogle'),
     );
   });
+
+
+  test('company registration posts to the authoritative bootstrap endpoint', () {
+    final source = File(
+      'lib/features/auth/company_registration_screen.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains('\\$insightFlowBackendBaseUrl/v1/authz/bootstrap-owner'),
+    );
+    expect(source, isNot(contains('/v1/authz/register-company')));
+    expect(source, contains("'organization_name': name"));
+    expect(source, contains('firebaseAuthHeaders(forceRefresh: true)'));
+    expect(source, contains('response.statusCode == 404'));
+  });
 }
