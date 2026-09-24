@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -10,6 +11,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import 'auth_glass_widgets.dart';
+import 'google_web_sign_in_button.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
@@ -31,14 +33,23 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     super.dispose();
   }
 
-  Future<void> _authenticate(Future<UserCredential> Function() action) async {
+  Future<void> _authenticate(Future<Object?> Function() action) async {
     setState(() {
       _busy = true;
       _message = null;
       _error = false;
     });
     try {
-      await action();
+      final result = await action();
+
+      // Firebase redirect initiation legitimately returns null because the
+      // browser leaves the page before authentication completes. Do not turn
+      // that hand-off into a company-registration error.
+      if (result == null) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+
       final user = InsightFlowAuthService.currentUser;
       if (user != null && !user.emailVerified) {
         await InsightFlowAuthService.sendEmailVerification();
@@ -156,20 +167,47 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          GlassButton.custom(
-            onTap: _busy
-                ? () {}
-                : () => _authenticate(InsightFlowAuthService.signInWithGoogle),
-            enabled: !_busy,
-            width: double.infinity,
-            height: 44,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Continue with Google',
-            child: const Text(
-              'Continue with Google',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          if (kIsWeb)
+            GoogleWebSignInButton(
+              enabled: !_busy,
+              onStarted: () {
+                if (mounted) {
+                  setState(() {
+                    _busy = true;
+                    _message = null;
+                    _error = false;
+                  });
+                }
+              },
+              onAuthenticated: (account) async {
+                await _authenticate(
+                  () => InsightFlowAuthService.signInWithGoogleAccount(account),
+                );
+              },
+              onError: (error) {
+                if (!mounted) return;
+                setState(() {
+                  _busy = false;
+                  _error = true;
+                  _message = InsightFlowAuthService.userFacingAuthError(error);
+                });
+              },
+            )
+          else
+            GlassButton.custom(
+              onTap: _busy
+                  ? () {}
+                  : () => _authenticate(InsightFlowAuthService.signInWithGoogle),
+              enabled: !_busy,
+              width: double.infinity,
+              height: 44,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: 'Continue with Google',
+              child: const Text(
+                'Continue with Google',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
         ] else ...[
           const AuthGlassFieldLabel('Company / Organization Name'),
           GlassTextField(
