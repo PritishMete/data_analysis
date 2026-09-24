@@ -166,7 +166,7 @@ def test_bootstrap_allows_authenticated_user_to_create_another_organization(monk
 
 def test_registration_name_has_only_basic_safety_validation(monkeypatch):
     monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "alice"})
-    for invalid in ("", " " + "A" * 120, "A\x00B"):
+    for invalid in ("", "A" * 121, "A\x00B"):
         with pytest.raises(ValueError):
             service.bootstrap_owner("token", invalid, allow_any_authenticated=True)
 
