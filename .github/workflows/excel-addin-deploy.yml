@@ -86,6 +86,8 @@ jobs:
           INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
           INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
           INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
+          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
           required=(
@@ -95,6 +97,8 @@ jobs:
             INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID
             INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN
             INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
+            INSIGHTFLOW_SUPABASE_URL
+            INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY
           )
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
@@ -127,6 +131,10 @@ jobs:
             "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID=$(clean_env INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID)"
             --dart-define
             "INSIGHTFLOW_WORKSPACE_ID=$(clean_env INSIGHTFLOW_WORKSPACE_ID)"
+            --dart-define
+            "INSIGHTFLOW_SUPABASE_URL=$(clean_env INSIGHTFLOW_SUPABASE_URL)"
+            --dart-define
+            "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
           )
           flutter "${build_args[@]}"
 
