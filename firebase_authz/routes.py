@@ -1,9 +1,12 @@
+import logging
 import os
+import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
+logger = logging.getLogger(__name__)
 
 class BootstrapRequest(BaseModel):
     organization_name: str
@@ -26,6 +29,23 @@ class RoleMutation(BaseModel):
 def _token(value):
     if not value or not value.startswith("Bearer "): raise HTTPException(401,"Firebase authentication required.")
     return value[7:].strip()
+
+
+@router.get("/provider-diagnostics")
+def provider_diagnostics(authorization: str = Header(default=None)):
+    """Return minimal authenticated runtime information for provider diagnosis."""
+    try:
+        verify_id_token(_token(authorization))
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+    return {
+        "provider": provider,
+        "environment_variable_present": "AUTHZ_PERSISTENCE_PROVIDER" in os.environ,
+        "backend_commit": os.environ.get("BUILD_GIT_SHA", "working-tree")[:40],
+        "python_version": sys.version.split()[0],
+        "module": __name__,
+    }
 
 @router.get("/me")
 def me(
@@ -162,7 +182,9 @@ def founder_organization_register(
     generated and assigned by the trusted bootstrap service.
     """
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+        logger.info("organization_register provider=%s", provider)
+        if provider == "supabase":
             from .supabase_provider import register_organization
             return register_organization(verify_id_token(_token(authorization)), req.organization_name)
         return bootstrap_owner(_token(authorization), req.organization_name, allow_any_authenticated=True)
