@@ -23,9 +23,19 @@ void main() {
     expect(button, contains('authenticationEvents'));
     expect(button, contains('onAuthenticated(event.user)'));
     expect(signIn, contains('GoogleWebSignInButton('));
-    expect(signIn, contains('InsightFlowAuthService.signInWithGoogleAccount(account)'));
+    expect(
+      RegExp(
+        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*(?:,\s*diagnostic:\s*_authDiagnostic\s*)?\)',
+      ).hasMatch(signIn),
+      isTrue,
+    );
     expect(company, contains('GoogleWebSignInButton('));
-    expect(company, contains('InsightFlowAuthService.signInWithGoogleAccount(account)'));
+    expect(
+      RegExp(
+        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*,\s*diagnostic:\s*_authDiagnostic\s*,',
+      ).hasMatch(company),
+      isTrue,
+    );
   });
 
   test('native Google path still uses authenticate and account completion', () {
@@ -33,7 +43,15 @@ void main() {
     final start = source.indexOf('static Future<UserCredential> signInWithGoogle()');
     final end = source.indexOf('static Future<UserCredential> signInWithGoogleAccount', start);
     final method = source.substring(start, end);
-    expect(method, contains('GoogleSignIn.instance.authenticate()'));
-    expect(method, contains('signInWithGoogleAccount(googleUser)'));
+    expect(
+      method,
+      matches(RegExp(r'GoogleSignIn\.instance\s*\.authenticate\(\)')),
+    );
+    expect(
+      method,
+      matches(RegExp(
+        r'return\s+await\s+signInWithGoogleAccount\(\s*googleUser\s*\)',
+      )),
+    );
   });
 }

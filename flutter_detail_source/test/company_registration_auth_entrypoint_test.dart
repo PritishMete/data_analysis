@@ -21,8 +21,10 @@ void main() {
     final webBranch = source.substring(webBranchStart, nativeGoogleBranchStart);
     expect(webBranch, contains('GoogleWebSignInButton('));
     expect(
-      webBranch,
-      contains('InsightFlowAuthService.signInWithGoogleAccount(account)'),
+      RegExp(
+        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*,\s*diagnostic:\s*_authDiagnostic\s*,',
+      ).hasMatch(webBranch),
+      isTrue,
     );
     expect(
       RegExp(r'InsightFlowAuthService\.signInWithGoogle\(').hasMatch(webBranch),
@@ -41,6 +43,9 @@ void main() {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
+    final authSource = File(
+      'lib/core/auth/authenticated_http.dart',
+    ).readAsStringSync();
 
     expect(
       source,
@@ -48,7 +53,8 @@ void main() {
     );
     expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
     expect(source, contains("'organization_name': name"));
-    expect(source, contains('firebaseAuthHeaders(forceRefresh: true)'));
+    expect(source, contains('organizationServiceRequest('));
+    expect(authSource, contains('Future<Map<String, String>> supabaseAuthHeaders'));
     expect(source, contains('response.statusCode == 404'));
   });
 
@@ -56,8 +62,13 @@ void main() {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
+    final authSource = File(
+      'lib/core/auth/authenticated_http.dart',
+    ).readAsStringSync();
 
-    expect(source, contains('category=network'));
+    expect(authSource, contains("diagnostic.stage = error.toString().contains('Failed to fetch')"));
+    expect(authSource, contains("'NETWORK_OR_CORS'"));
+    expect(authSource, contains("'NETWORK_ERROR'"));
     expect(source, contains("response.statusCode == 404"));
     expect(source, contains("response.statusCode >= 500"));
     expect(source, contains('route-not-found'));
