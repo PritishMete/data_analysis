@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../firebase_options.dart';
 import 'auth_diagnostic.dart';
+import 'supabase_auth_service.dart';
 
 class InsightFlowAuthService {
   InsightFlowAuthService._();
@@ -13,7 +14,9 @@ class InsightFlowAuthService {
 
   static bool _googleSignInInitialized = false;
   static Object? _googleSignInInitializationError;
-  static const String _googleWebClientId = String.fromEnvironment('INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID');
+  static const String _googleWebClientId = String.fromEnvironment(
+    'INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID',
+  );
 
   /// Resolves the build-provided Firebase configuration without initializing
   /// Firebase or logging any configuration values.
@@ -53,7 +56,9 @@ class InsightFlowAuthService {
   static Future<void> initializeGoogleSignIn() async {
     try {
       await GoogleSignIn.instance.initialize(
-        clientId: kIsWeb && _googleWebClientId.isNotEmpty ? _googleWebClientId : null,
+        clientId: kIsWeb && _googleWebClientId.isNotEmpty
+            ? _googleWebClientId
+            : null,
       );
       _googleSignInInitialized = true;
       _googleSignInInitializationError = null;
@@ -86,7 +91,8 @@ class InsightFlowAuthService {
 
   static Stream<User?> get authStateChanges => auth.authStateChanges();
   static Stream<User?> get userChanges => auth.userChanges();
-  static User? get currentUser => Firebase.apps.isEmpty ? null : auth.currentUser;
+  static User? get currentUser =>
+      Firebase.apps.isEmpty ? null : auth.currentUser;
 
   static Future<UserCredential> signInWithEmailAndPassword(
     String email,
@@ -130,22 +136,29 @@ class InsightFlowAuthService {
   static Future<UserCredential> signInWithGoogle() async {
     if (!_googleSignInInitialized) {
       final cause = _googleSignInInitializationError;
-      debugPrint('[google-authenticate] initialization unavailable: ${cause?.runtimeType ?? 'unknown'}');
+      debugPrint(
+        '[google-authenticate] initialization unavailable: ${cause?.runtimeType ?? 'unknown'}',
+      );
       throw FirebaseAuthException(
         code: 'google-sign-in-initialization-failed',
-        message: 'Google sign-in is unavailable because its provider initialization failed.',
+        message:
+            'Google sign-in is unavailable because its provider initialization failed.',
       );
     }
     if (kIsWeb) {
-      debugPrint('[google-authenticate] web authenticate is unsupported; use renderButton');
+      debugPrint(
+        '[google-authenticate] web authenticate is unsupported; use renderButton',
+      );
       throw FirebaseAuthException(
         code: 'google-web-ui-required',
-        message: 'Google Web sign-in must be started by the Google provider button.',
+        message:
+            'Google Web sign-in must be started by the Google provider button.',
       );
     }
     try {
       debugPrint('[google-authenticate] native authenticate');
-      final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
+      final GoogleSignInAccount googleUser = await GoogleSignIn.instance
+          .authenticate();
       return await signInWithGoogleAccount(googleUser);
     } on GoogleSignInException catch (error, stackTrace) {
       _logGoogleException('google-authenticate', error, stackTrace);
@@ -157,9 +170,9 @@ class InsightFlowAuthService {
   /// account. On Web this is called from the GIS rendered-button event, so it
   /// must not start another interactive Google authorization request.
   static Future<UserCredential> signInWithGoogleAccount(
-    GoogleSignInAccount googleUser,
-    {AuthDiagnosticAttempt? diagnostic},
-  ) async {
+    GoogleSignInAccount googleUser, {
+    AuthDiagnosticAttempt? diagnostic,
+  }) async {
     try {
       final idToken = googleUser.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
@@ -190,25 +203,36 @@ class InsightFlowAuthService {
           try {
             await user.getIdToken(true);
           } on FirebaseAuthException catch (error) {
-            diagnostic?.record('FIREBASE_TOKEN_REFRESH_FAILED', code: error.code);
+            diagnostic?.record(
+              'FIREBASE_TOKEN_REFRESH_FAILED',
+              code: error.code,
+            );
             if (shouldRecoverStaleSession(
               code: error.code,
               currentUserPresent: before == 'PRESENT',
               retryAttempted: false,
             )) {
-              diagnostic?.record('FIREBASE_STALE_SESSION_DETECTED', code: error.code);
+              diagnostic?.record(
+                'FIREBASE_STALE_SESSION_DETECTED',
+                code: error.code,
+              );
               await auth.signOut();
               diagnostic?.record('FIREBASE_STALE_SESSION_CLEARED');
               diagnostic?.record('FIREBASE_SIGN_IN_RETRY_STARTED');
               try {
                 final retry = await auth.signInWithCredential(credential);
                 diagnostic?.record('FIREBASE_SIGN_IN_SUCCESS');
-                final retryAfter = auth.currentUser != null ? 'PRESENT' : 'ABSENT';
+                final retryAfter = auth.currentUser != null
+                    ? 'PRESENT'
+                    : 'ABSENT';
                 diagnostic?.currentUserAfter = retryAfter;
                 diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
                 return retry;
               } on FirebaseAuthException catch (retryError) {
-                diagnostic?.record('FIREBASE_SIGN_IN_RETRY_FAILED', code: retryError.code);
+                diagnostic?.record(
+                  'FIREBASE_SIGN_IN_RETRY_FAILED',
+                  code: retryError.code,
+                );
                 rethrow;
               }
             }
@@ -219,8 +243,15 @@ class InsightFlowAuthService {
         return result;
       } on FirebaseAuthException catch (error) {
         diagnostic?.record('FIREBASE_SIGN_IN_FAILED', code: error.code);
-        if (shouldRecoverStaleSession(code: error.code, currentUserPresent: before == 'PRESENT', retryAttempted: false)) {
-          diagnostic?.record('FIREBASE_STALE_SESSION_DETECTED', code: error.code);
+        if (shouldRecoverStaleSession(
+          code: error.code,
+          currentUserPresent: before == 'PRESENT',
+          retryAttempted: false,
+        )) {
+          diagnostic?.record(
+            'FIREBASE_STALE_SESSION_DETECTED',
+            code: error.code,
+          );
           await auth.signOut();
           diagnostic?.record('FIREBASE_STALE_SESSION_CLEARED');
           diagnostic?.record('FIREBASE_SIGN_IN_RETRY_STARTED');
@@ -232,7 +263,10 @@ class InsightFlowAuthService {
             diagnostic?.record('FIREBASE_CURRENT_USER_PRESENT');
             return retry;
           } on FirebaseAuthException catch (retryError) {
-            diagnostic?.record('FIREBASE_SIGN_IN_RETRY_FAILED', code: retryError.code);
+            diagnostic?.record(
+              'FIREBASE_SIGN_IN_RETRY_FAILED',
+              code: retryError.code,
+            );
             rethrow;
           }
         }
@@ -242,11 +276,14 @@ class InsightFlowAuthService {
       _logGoogleException('google-authentication', error, stackTrace);
       throw _mapGoogleSignInException(error);
     } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint('[firebase-google-credential] FirebaseAuthException: ${error.code}');
+      debugPrint(
+        '[firebase-google-credential] FirebaseAuthException: ${error.code}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       rethrow;
     }
   }
+
   static bool shouldRecoverStaleSession({
     required String code,
     required bool currentUserPresent,
@@ -260,23 +297,43 @@ class InsightFlowAuthService {
     }.contains(code);
   }
 
-$marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
-    debugPrint('[$stage] GoogleSignInExceptionCode=${error.code.name} type=${error.runtimeType}');
+  static void _logGoogleException(
+    String stage,
+    GoogleSignInException error,
+    StackTrace stackTrace,
+  ) {
+    debugPrint(
+      '[$stage] GoogleSignInExceptionCode=${error.code.name} type=${error.runtimeType}',
+    );
     debugPrintStack(stackTrace: stackTrace);
   }
 
-  static FirebaseAuthException _mapGoogleSignInException(GoogleSignInException error) {
+  static FirebaseAuthException _mapGoogleSignInException(
+    GoogleSignInException error,
+  ) {
     if (error.code == GoogleSignInExceptionCode.canceled) {
-      return FirebaseAuthException(code: 'popup-closed-by-user', message: 'Google sign-in was cancelled.');
+      return FirebaseAuthException(
+        code: 'popup-closed-by-user',
+        message: 'Google sign-in was cancelled.',
+      );
     }
     if (error.code == GoogleSignInExceptionCode.uiUnavailable) {
-      return FirebaseAuthException(code: 'popup-blocked', message: 'The Google sign-in window could not be opened.');
+      return FirebaseAuthException(
+        code: 'popup-blocked',
+        message: 'The Google sign-in window could not be opened.',
+      );
     }
     if (error.code == GoogleSignInExceptionCode.clientConfigurationError ||
         error.code == GoogleSignInExceptionCode.providerConfigurationError) {
-      return FirebaseAuthException(code: 'invalid-configuration', message: 'Google sign-in is not configured for this application.');
+      return FirebaseAuthException(
+        code: 'invalid-configuration',
+        message: 'Google sign-in is not configured for this application.',
+      );
     }
-    return FirebaseAuthException(code: 'google-provider-error', message: 'Google sign-in could not be completed.');
+    return FirebaseAuthException(
+      code: 'google-provider-error',
+      message: 'Google sign-in could not be completed.',
+    );
   }
 
   static Future<UserCredential> createUserWithEmailAndPassword(
@@ -297,7 +354,9 @@ $marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
     await user.sendEmailVerification();
   }
 
-  static Future<bool> reloadCurrentUser({AuthDiagnosticAttempt? diagnostic}) async {
+  static Future<bool> reloadCurrentUser({
+    AuthDiagnosticAttempt? diagnostic,
+  }) async {
     final user = auth.currentUser;
     if (user == null) return false;
     try {
@@ -358,8 +417,10 @@ $marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
     final googleSignIn = GoogleSignIn.instance;
     try {
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
-      final clientAuth = await googleUser.authorizationClient
-          .authorizeScopes(['email', 'profile']);
+      final clientAuth = await googleUser.authorizationClient.authorizeScopes([
+        'email',
+        'profile',
+      ]);
       final credential = GoogleAuthProvider.credential(
         idToken: googleUser.authentication.idToken,
         accessToken: clientAuth.accessToken,
@@ -396,7 +457,13 @@ $marker(String stage, GoogleSignInException error, StackTrace stackTrace) {
     await user.delete();
   }
 
-  static Future<void> signOut() => auth.signOut();
+  static Future<void> signOut() async {
+    if (InsightFlowSupabaseAuthService.isInitialized) {
+      await InsightFlowSupabaseAuthService.signOut();
+      return;
+    }
+    await auth.signOut();
+  }
 
   static Map<String, String?> currentProviderIdentity(String providerId) {
     final user = auth.currentUser;

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'insightflow_auth_service.dart';
+import 'supabase_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
 
 String insightFlowWorkspaceId = String.fromEnvironment(
@@ -37,7 +38,6 @@ Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
   await prefs.setString('insightflow.workspace.$uid', normalized);
 }
 
-
 class OrganizationServiceDiagnostic {
   OrganizationServiceDiagnostic({String? id}) : id = id ?? _newId();
 
@@ -51,7 +51,11 @@ class OrganizationServiceDiagnostic {
   String? errorType;
   String? errorDetail;
 
-  void start({required String method, required String path, required String backendOrigin}) {
+  void start({
+    required String method,
+    required String path,
+    required String backendOrigin,
+  }) {
     this.method = method;
     this.path = path;
     this.backendOrigin = backendOrigin;
@@ -65,25 +69,27 @@ class OrganizationServiceDiagnostic {
   String get requestLabel => '${method ?? 'REQUEST'} ${path ?? ''}'.trim();
 
   String get displayText => [
-        'Organization Service Diagnostic',
-        '',
-        'Backend:',
-        backendOrigin ?? 'unknown',
-        '',
-        'Request:',
-        requestLabel,
-        '',
-        'Status:',
-        httpStatus?.toString() ?? (stage == 'REQUEST_STARTED' ? 'waiting' : 'no HTTP response'),
-        '',
-        'Result:',
-        stage,
-        if (safeBodySummary != null && safeBodySummary!.isNotEmpty) '',
-        if (safeBodySummary != null && safeBodySummary!.isNotEmpty) 'Response: $safeBodySummary',
-        '',
-        'Attempt:',
-        id,
-      ].join('\n');
+    'Organization Service Diagnostic',
+    '',
+    'Backend:',
+    backendOrigin ?? 'unknown',
+    '',
+    'Request:',
+    requestLabel,
+    '',
+    'Status:',
+    httpStatus?.toString() ??
+        (stage == 'REQUEST_STARTED' ? 'waiting' : 'no HTTP response'),
+    '',
+    'Result:',
+    stage,
+    if (safeBodySummary != null && safeBodySummary!.isNotEmpty) '',
+    if (safeBodySummary != null && safeBodySummary!.isNotEmpty)
+      'Response: $safeBodySummary',
+    '',
+    'Attempt:',
+    id,
+  ].join('\n');
 
   static String _newId() {
     final value = Random.secure().nextInt(0x10000);
@@ -114,7 +120,8 @@ String _safeOrganizationResponseSummary(String body) {
         if (value != null) safe[key] = value.toString();
       }
       final summary = safe.entries.map((e) => '${e.key}=${e.value}').join('; ');
-      if (summary.isNotEmpty) return summary.length > 240 ? summary.substring(0, 240) : summary;
+      if (summary.isNotEmpty)
+        return summary.length > 240 ? summary.substring(0, 240) : summary;
       return 'JSON object response (sensitive fields omitted)';
     }
     return 'JSON response';
@@ -142,13 +149,19 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
   String? contentType,
 }) async {
   final diagnostic = OrganizationServiceDiagnostic();
-  diagnostic.start(method: method, path: path, backendOrigin: insightFlowBackendBaseUrl);
+  diagnostic.start(
+    method: method,
+    path: path,
+    backendOrigin: insightFlowBackendBaseUrl,
+  );
   try {
-    final headers = await firebaseAuthHeaders(forceRefresh: forceRefresh);
+    final headers = await supabaseAuthHeaders();
     if (contentType != null) headers['Content-Type'] = contentType;
     final response = await send(headers).timeout(const Duration(seconds: 15));
     diagnostic.httpStatus = response.statusCode;
-    diagnostic.safeBodySummary = _safeOrganizationResponseSummary(response.body);
+    diagnostic.safeBodySummary = _safeOrganizationResponseSummary(
+      response.body,
+    );
     diagnostic.stage = _classifyOrganizationHttp(response.statusCode);
     return OrganizationServiceResponse(response, diagnostic);
   } on TimeoutException catch (error) {
@@ -185,9 +198,9 @@ Future<void> attachFirebaseAuth(
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token = await InsightFlowAuthService.getIdToken(
-    forceRefresh: forceRefresh,
-  );
+  final token = InsightFlowSupabaseAuthService.accessToken;
+  if (token == null || token.isEmpty)
+    throw StateError('Supabase authentication required.');
   request.headers['Authorization'] = 'Bearer $token';
   if (insightFlowWorkspaceId.isNotEmpty) {
     request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
@@ -201,9 +214,13 @@ Future<Map<String, String>> firebaseAuthHeaders({
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final token = await InsightFlowAuthService.getIdToken(
-    forceRefresh: forceRefresh,
-  );
+  return supabaseAuthHeaders(resourceId: resourceId);
+}
+
+Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
+  final token = InsightFlowSupabaseAuthService.accessToken;
+  if (token == null || token.isEmpty)
+    throw StateError('Supabase authentication required.');
   final headers = <String, String>{'Authorization': 'Bearer $token'};
   if (insightFlowWorkspaceId.isNotEmpty) {
     headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;

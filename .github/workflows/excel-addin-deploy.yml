@@ -110,6 +110,7 @@ jobs:
             build
             web
             --release
+            --no-wasm-dry-run
             --base-href
             "/data_analysis/"
             --dart-define

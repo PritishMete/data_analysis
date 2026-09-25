@@ -48,6 +48,13 @@ def _claims(token: str) -> dict[str, Any]:
     return require_email_verified(verify_id_token(token))
 
 
+def _authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str):
+    if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        from firebase_authz.supabase_provider import authorize_dataset as provider_authorize_dataset
+        return provider_authorize_dataset(claims, workspace_id, dataset_id, action)
+    return authorize_dataset(str(claims["uid"]), workspace_id, dataset_id, action)
+
+
 def _audit_safely(workspace_id: str, actor_uid: str, action: str, outcome: str, **kwargs) -> None:
     try:
         audit_event(workspace_id, actor_uid, action, outcome, **kwargs)
@@ -244,7 +251,7 @@ def download_managed_dataset(
     claims = _claims(token)
     actor = str(claims["uid"])
     try:
-        authorize_dataset(actor, workspace_id, dataset_id, "dataset.view_original")
+        _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
         workspace = _workspace(workspace_id)
         dataset = _dataset(workspace, dataset_id)
         if dataset.get("status") in {"deleted", "deleting"}:
@@ -305,7 +312,7 @@ def create_managed_working_copy(
 ) -> dict[str, Any]:
     claims = _claims(token)
     actor = str(claims["uid"])
-    authorize_dataset(actor, workspace_id, dataset_id, "dataset.create_working_copy")
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     workspace = _workspace(workspace_id)
     dataset = _dataset(workspace, dataset_id)
     version_id = str(dataset.get("current_version") or "v1")
@@ -317,9 +324,11 @@ def create_managed_working_copy(
         version_id=version_id,
         working_copy_id=working_copy_id,
     )
-    metadata = create_working_copy(
-        workspace_id, dataset_id, token, working_copy_id, version_id
-    )
+    if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        from firebase_authz.supabase_provider import create_working_copy as provider_create_working_copy
+        metadata = provider_create_working_copy(claims, workspace_id, dataset_id, working_copy_id, version_id)
+    else:
+        metadata = create_working_copy(workspace_id, dataset_id, token, working_copy_id, version_id)
     initialize_firebase()
     from firebase_admin import db
     db.reference(

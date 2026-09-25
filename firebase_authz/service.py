@@ -66,6 +66,13 @@ def initialize_firebase():
 def verify_id_token(id_token: str) -> dict[str, Any]:
     if not id_token:
         raise AuthenticationRequired("Firebase authentication required.")
+    mode = os.getenv("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
+    if mode in {"supabase", "dual"}:
+        # Supabase JWTs have three dot-separated segments. Firebase remains the
+        # default and is selected for all other tokens in dual mode.
+        if mode == "supabase" or id_token.count(".") == 2:
+            from .supabase_auth import verify_supabase_access_token
+            return verify_supabase_access_token(id_token)
     initialize_firebase()
     try:
         return auth.verify_id_token(id_token, check_revoked=True)

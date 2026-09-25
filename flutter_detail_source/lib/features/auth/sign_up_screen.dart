@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -58,14 +59,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
     });
 
     try {
-      final credential =
-          await InsightFlowAuthService.createUserWithEmailAndPassword(
-            email,
-            password,
-          );
-
-      await credential.user?.updateDisplayName(name);
-      await InsightFlowAuthService.sendEmailVerification();
+      await InsightFlowSupabaseAuthService.signUp(
+        email: email,
+        password: password,
+        displayName: name,
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {

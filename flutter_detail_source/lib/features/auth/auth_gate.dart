@@ -1,10 +1,11 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
@@ -16,8 +17,8 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: InsightFlowAuthService.userChanges,
+    return StreamBuilder<AuthState>(
+      stream: InsightFlowSupabaseAuthService.authStateChanges,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _AuthLoading();
@@ -25,7 +26,7 @@ class AuthGate extends StatelessWidget {
         if (snapshot.hasError) {
           return const _AuthError();
         }
-        final user = snapshot.data;
+        final user = InsightFlowSupabaseAuthService.currentUser;
         if (user == null) return const SignInScreen();
         return _AuthenticatedGate(user: user);
       },
@@ -36,7 +37,7 @@ class AuthGate extends StatelessWidget {
 class _AuthenticatedGate extends StatefulWidget {
   const _AuthenticatedGate({required this.user});
 
-  final User user;
+  final SupabaseAuthUser user;
 
   @override
   State<_AuthenticatedGate> createState() => _AuthenticatedGateState();
@@ -76,11 +77,9 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   Widget build(BuildContext context) {
     if (_loading) return const _AuthLoading();
 
-    final user = InsightFlowAuthService.currentUser ?? widget.user;
+    final user = InsightFlowSupabaseAuthService.currentUser ?? widget.user;
     if (insightFlowWorkspaceId.isNotEmpty) {
-      return DataScreen(
-        key: ValueKey('${user.uid}:$insightFlowWorkspaceId'),
-      );
+      return DataScreen(key: ValueKey('${user.uid}:$insightFlowWorkspaceId'));
     }
     return const CompanyRegistrationScreen();
   }
@@ -97,7 +96,8 @@ class EmailVerificationScreen extends StatefulWidget {
   final User user;
 
   @override
-  State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
+  State<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
 }
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
@@ -114,8 +114,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       await InsightFlowAuthService.sendEmailVerification();
       if (!mounted) return;
       setState(() {
-        _message =
-            'Verification email sent. Check your inbox and spam folder.';
+        _message = 'Verification email sent. Check your inbox and spam folder.';
         _error = false;
       });
     } catch (error) {
@@ -170,7 +169,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       subtitle: widget.user.email ?? 'Verify your email address to continue.',
       children: [
         AuthGlassMessage(
-          text: _message ??
+          text:
+              _message ??
               'InsightFlow requires a verified email before organization or workspace authorization can begin.',
           error: _error,
         ),

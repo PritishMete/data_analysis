@@ -5,6 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'google_web_sign_in_button.dart';
@@ -45,7 +46,10 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
-      await InsightFlowAuthService.signInWithEmailAndPassword(email, password);
+      await InsightFlowSupabaseAuthService.signInWithPassword(
+        email: email,
+        password: password,
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -83,7 +87,7 @@ class _SignInScreenState extends State<SignInScreen> {
     }
 
     try {
-      await InsightFlowAuthService.sendPasswordResetEmail(email);
+      await InsightFlowSupabaseAuthService.resetPassword(email);
       if (!mounted) return;
       setState(() {
         _error = 'Password reset email sent. Check your inbox.';
@@ -189,7 +193,8 @@ class _SignInScreenState extends State<SignInScreen> {
                     _error = null;
                   });
                   try {
-                    final result = await InsightFlowAuthService.signInWithMicrosoft();
+                    final result =
+                        await InsightFlowAuthService.signInWithMicrosoft();
                     if (result == null && mounted) {
                       setState(() => _loading = false);
                     }
@@ -197,8 +202,9 @@ class _SignInScreenState extends State<SignInScreen> {
                     if (!mounted) return;
                     setState(() {
                       _loading = false;
-                      _error =
-                          InsightFlowAuthService.userFacingAuthError(error);
+                      _error = InsightFlowAuthService.userFacingAuthError(
+                        error,
+                      );
                     });
                   }
                 },
@@ -217,19 +223,29 @@ class _SignInScreenState extends State<SignInScreen> {
           GoogleWebSignInButton(
             enabled: !_loading,
             onStarted: () {
-              if (mounted) setState(() { _loading = true; _error = null; });
+              if (mounted)
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
             },
             onAuthenticated: (account) async {
               try {
                 await InsightFlowAuthService.signInWithGoogleAccount(account);
               } catch (error) {
                 if (!mounted) return;
-                setState(() { _loading = false; _error = InsightFlowAuthService.userFacingAuthError(error); });
+                setState(() {
+                  _loading = false;
+                  _error = InsightFlowAuthService.userFacingAuthError(error);
+                });
               }
             },
             onError: (error) {
               if (!mounted) return;
-              setState(() { _loading = false; _error = InsightFlowAuthService.userFacingAuthError(error); });
+              setState(() {
+                _loading = false;
+                _error = InsightFlowAuthService.userFacingAuthError(error);
+              });
             },
           )
         else

@@ -14,5 +14,6 @@ python-dotenv
 duckdb
 sqlalchemy>=2.0
 psycopg2-binary
+PyJWT>=2.8
 # Location enrichment uses the Python standard-library HTTP client; no extra geocoder dependency is required.
 google-genai

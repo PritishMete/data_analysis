@@ -155,7 +155,11 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             if resource_id:
                 validate_id(resource_id, "resource ID")
 
-            decision = authorization(uid, workspace_id, action, resource_id or None)
+            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+                from .supabase_provider import authorize as provider_authorize
+                decision = provider_authorize(claims, workspace_id, action, resource_id or None)
+            else:
+                decision = authorization(uid, workspace_id, action, resource_id or None)
             request.state.firebase_uid = uid
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None

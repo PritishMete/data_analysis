@@ -12,6 +12,7 @@ import '../dashboard/data_screen.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
 import 'google_web_sign_in_button.dart';
@@ -61,11 +62,11 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       setState(() {
         _busy = false;
         _error = true;
-        _message = '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
+        _message =
+            '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
       });
     }
   }
-
 
   Future<void> _register() async {
     final name = _organizationController.text.trim();
@@ -76,7 +77,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       });
       return;
     }
-    final user = InsightFlowAuthService.currentUser;
+    final user = InsightFlowSupabaseAuthService.currentUser;
     if (user == null) {
       setState(() {
         _error = true;
@@ -84,7 +85,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       });
       return;
     }
-
 
     setState(() {
       _busy = true;
@@ -98,7 +98,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         path: '/v1/authz/organizations/register',
         contentType: 'application/json',
         send: (headers) => http.post(
-          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
+          Uri.parse(
+            '$insightFlowBackendBaseUrl/v1/authz/organizations/register',
+          ),
           headers: headers,
           body: jsonEncode({'organization_name': name}),
         ),
@@ -108,11 +110,15 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       final response = result.response;
       dynamic decoded;
       try {
-        decoded = response.body.trim().isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+        decoded = response.body.trim().isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(response.body);
       } catch (_) {
         decoded = null;
       }
-      final detail = decoded is Map ? decoded['detail']?.toString().trim() : null;
+      final detail = decoded is Map
+          ? decoded['detail']?.toString().trim()
+          : null;
       if (response.statusCode == 401) {
         throw StateError('InsightFlow authentication could not be verified.');
       }
@@ -124,13 +130,19 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         );
       }
       if (response.statusCode == 404) {
-        throw StateError('Organization registration is unavailable on this server version.');
+        throw StateError(
+          'Organization registration is unavailable on this server version.',
+        );
       }
       if (response.statusCode == 422) {
-        throw StateError('Organization registration request was rejected by the server.');
+        throw StateError(
+          'Organization registration request was rejected by the server.',
+        );
       }
       if (response.statusCode >= 500) {
-        throw StateError("InsightFlow's organization service returned a server error.");
+        throw StateError(
+          "InsightFlow's organization service returned a server error.",
+        );
       }
       if (response.statusCode != 200) {
         throw StateError(
@@ -139,16 +151,25 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
               : 'InsightFlow could not create the organization.',
         );
       }
-      final workspaceId = decoded is Map ? decoded['workspace_id']?.toString() : null;
-      final organizationId = decoded is Map ? decoded['organization_id']?.toString() : null;
-      if (workspaceId == null || workspaceId.isEmpty || organizationId == null || organizationId.isEmpty) {
-        throw StateError('InsightFlow could not create the organization. The server returned an incomplete response.');
+      final workspaceId = decoded is Map
+          ? decoded['workspace_id']?.toString()
+          : null;
+      final organizationId = decoded is Map
+          ? decoded['organization_id']?.toString()
+          : null;
+      if (workspaceId == null ||
+          workspaceId.isEmpty ||
+          organizationId == null ||
+          organizationId.isEmpty) {
+        throw StateError(
+          'InsightFlow could not create the organization. The server returned an incomplete response.',
+        );
       }
       await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DataScreen()),
-      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const DataScreen()));
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
       if (!mounted) return;
@@ -181,7 +202,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = InsightFlowAuthService.currentUser;
+    final user = InsightFlowSupabaseAuthService.currentUser;
     final authenticated = user != null;
 
     return AuthGlassScaffold(
@@ -194,7 +215,8 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           GlassButton.custom(
             onTap: _busy
                 ? () {}
-                : () => _authenticate(InsightFlowAuthService.signInWithMicrosoft),
+                : () =>
+                      _authenticate(InsightFlowAuthService.signInWithMicrosoft),
             enabled: !_busy,
             width: double.infinity,
             height: 44,
@@ -221,7 +243,10 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
               },
               onAuthenticated: (account) async {
                 await _authenticate(
-                  () => InsightFlowAuthService.signInWithGoogleAccount(account, diagnostic: _authDiagnostic),
+                  () => InsightFlowAuthService.signInWithGoogleAccount(
+                    account,
+                    diagnostic: _authDiagnostic,
+                  ),
                 );
               },
               onError: (error) {
@@ -229,7 +254,8 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
                 setState(() {
                   _busy = false;
                   _error = true;
-                  _message = '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
+                  _message =
+                      '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
                 });
               },
             )
@@ -237,7 +263,8 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             GlassButton.custom(
               onTap: _busy
                   ? () {}
-                  : () => _authenticate(InsightFlowAuthService.signInWithGoogle),
+                  : () =>
+                        _authenticate(InsightFlowAuthService.signInWithGoogle),
               enabled: !_busy,
               width: double.infinity,
               height: 44,
@@ -287,7 +314,10 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         ],
         if (_organizationDiagnostic != null) ...[
           const SizedBox(height: 10),
-          AuthGlassMessage(text: _organizationDiagnostic!.displayText, error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS'),
+          AuthGlassMessage(
+            text: _organizationDiagnostic!.displayText,
+            error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS',
+          ),
         ],
         const SizedBox(height: 8),
         TextButton(

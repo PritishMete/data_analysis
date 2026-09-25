@@ -40,7 +40,7 @@ try {
     throw "Missing Firebase/Workspace build configuration: $($missingDefines -join ', ')"
   }
 
-  $buildArgs = @('build', 'web', '--release', '--base-href', $BaseHref)
+  $buildArgs = @('build', 'web', '--release', '--no-wasm-dry-run', '--base-href', $BaseHref)
   foreach ($entry in $requiredDefines.GetEnumerator()) {
     $buildArgs += "--dart-define=$($entry.Key)=$($entry.Value)"
   }
