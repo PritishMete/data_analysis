@@ -48,7 +48,7 @@ def list_locations(claims,workspace_id,include_inactive=False):
         rows=db.execute(text("""SELECT location_id,organization_id,name,status,created_at,updated_at
             FROM locations WHERE organization_id=:org AND (:include_inactive OR status='active')
             ORDER BY lower(name),location_id"""),
-            {"org":org,"include_inactive":include_inactive}).mappings().all()
+            {"org":org,"include_inactive":include_inactive,"location":location_id}).mappings().all()
     return {"organization_id":org,"locations":[dict(r) for r in rows]}
 
 def create_location(claims,workspace_id,name):
@@ -84,34 +84,43 @@ def update_location(claims,workspace_id,location_id,name=None,status=None):
             raise
     return {"location_id":location_id,"organization_id":org,"name":new_name,"status":new_status}
 
-def list_sections(claims,workspace_id,include_inactive=False):
+def list_sections(claims,workspace_id,include_inactive=False,location_id=None):
     with SessionLocal() as db:
         actor,org=_actor(db,claims,workspace_id)
-        rows=db.execute(text("""SELECT section_id,organization_id,name,status,created_at,updated_at
-            FROM sections WHERE organization_id=:org AND (:include_inactive OR status='active')
-            ORDER BY lower(name),section_id"""),
+        rows=db.execute(text("""SELECT section_id,organization_id,location_id,name,status,created_at,updated_at
+            FROM sections WHERE organization_id=:org
+              AND (:include_inactive OR status='active')
+              AND (:location IS NULL OR location_id=:location)
+            ORDER BY location_id,lower(name),section_id"""),
             {"org":org,"include_inactive":include_inactive}).mappings().all()
     return {"organization_id":org,"sections":[dict(r) for r in rows]}
 
-def create_section(claims,workspace_id,name):
+def create_section(claims,workspace_id,name,location_id):
     name=_clean_name(name,"Section name",120)
+    location_id=str(location_id or "").strip()
+    if not location_id: raise ValueError("location_id is required for a section.")
     with SessionLocal.begin() as db:
         actor,org=_require_manager_or_owner(db,claims,workspace_id)
+        if not db.execute(text("""SELECT 1 FROM locations
+            WHERE organization_id=:org AND location_id=:location AND status='active'"""),
+            {"org":org,"location":location_id}).scalar_one_or_none():
+            raise AuthzError("Location is not accessible.")
         section_id=_id("sec")
         try:
-            db.execute(text("INSERT INTO sections(section_id,organization_id,name) VALUES (:id,:org,:name)"),
-                       {"id":section_id,"org":org,"name":name})
+            db.execute(text("""INSERT INTO sections(section_id,organization_id,location_id,name)
+                VALUES (:id,:org,:location,:name)"""),
+                       {"id":section_id,"org":org,"location":location_id,"name":name})
         except Exception as exc:
             if "unique" in str(exc).lower(): raise ValueError("An active section with this name already exists.") from exc
             raise
-    return {"section_id":section_id,"organization_id":org,"name":name,"status":"active"}
+    return {"section_id":section_id,"organization_id":org,"location_id":location_id,"name":name,"status":"active"}
 
 def update_section(claims,workspace_id,section_id,name=None,status=None):
     if status is not None and status not in ACTIVE_STATUSES: raise ValueError("Invalid section status.")
     if name is None and status is None: raise ValueError("At least one section field must be supplied.")
     with SessionLocal.begin() as db:
         actor,org=_require_manager_or_owner(db,claims,workspace_id)
-        row=db.execute(text("""SELECT name,status FROM sections
+        row=db.execute(text("""SELECT name,status,location_id FROM sections
             WHERE organization_id=:org AND section_id=:section FOR UPDATE"""),
             {"org":org,"section":section_id}).mappings().first()
         if not row: raise AuthzError("Section is not accessible.")
@@ -124,13 +133,14 @@ def update_section(claims,workspace_id,section_id,name=None,status=None):
         except Exception as exc:
             if "unique" in str(exc).lower(): raise ValueError("An active section with this name already exists.") from exc
             raise
-    return {"section_id":section_id,"organization_id":org,"name":new_name,"status":new_status}
+    return {"section_id":section_id,"organization_id":org,"location_id":row["location_id"],"name":new_name,"status":new_status}
 
 def list_assignments(claims,workspace_id,include_inactive=False):
     with SessionLocal() as db:
         actor,org=_actor(db,claims,workspace_id)
         rows=db.execute(text("""SELECT a.assignment_id,a.organization_id,a.principal_id,a.location_id,
             l.name AS location_name,a.role_id,a.section_id,s.name AS section_name,
+            s.location_id AS section_location_id,
             a.reports_to_assignment_id,a.status,a.created_at,a.updated_at
             FROM organizational_assignments a
             LEFT JOIN locations l ON l.organization_id=a.organization_id AND l.location_id=a.location_id
@@ -165,8 +175,9 @@ def create_assignment(claims,workspace_id,principal_id,role_id,location_id=None,
             {"org":org,"location":location_id}).scalar_one_or_none():
             raise AuthzError("Location is not accessible.")
         if section_id and not db.execute(text("""SELECT 1 FROM sections
-            WHERE organization_id=:org AND section_id=:section AND status='active'"""),
-            {"org":org,"section":section_id}).scalar_one_or_none():
+            WHERE organization_id=:org AND section_id=:section AND status='active'
+              AND location_id=:location"""),
+            {"org":org,"section":section_id,"location":location_id}).scalar_one_or_none():
             raise AuthzError("Section is not accessible.")
         if reports_to_assignment_id:
             parent=db.execute(text("""SELECT assignment_id,role_id,location_id,section_id
