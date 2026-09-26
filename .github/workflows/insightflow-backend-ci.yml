@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace]
+    branches: [main, feature/data-workspace, org-structure-foundation]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -51,6 +51,9 @@ jobs:
 
       - name: Run Firebase authorization unit tests
         run: pytest -q tests/test_firebase_authz.py tests/test_firebase_authz_api.py tests/test_office_mutation_boundary.py
+
+      - name: Run Organizational Structure tests
+        run: pytest -q tests/test_organizational_structure_migration.py tests/test_organizational_structure_api.py
 
       - name: Run Data Workspace focused tests
         run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
