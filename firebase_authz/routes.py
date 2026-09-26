@@ -189,8 +189,9 @@ def founder_organization_register(
         logger.info("organization_register provider=%s", provider)
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
+            from .supabase_auth import verify_supabase_access_token
             from .supabase_provider import register_organization
-            claims = verify_id_token(_token(authorization))
+            claims = verify_supabase_access_token(_token(authorization), require_email_verified=False)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
             result = register_organization(claims, req.organization_name)
             registration_diagnostics.stage("REGISTRATION_COMPLETE")
