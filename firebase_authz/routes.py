@@ -4,6 +4,7 @@ import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
+from . import registration_diagnostics
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -182,18 +183,30 @@ def founder_organization_register(
     generated and assigned by the trusted bootstrap service.
     """
     try:
+        registration_diagnostics.begin()
+        registration_diagnostics.stage("REGISTRATION_START")
         provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
         logger.info("organization_register provider=%s", provider)
+        registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
             from .supabase_provider import register_organization
-            return register_organization(verify_id_token(_token(authorization)), req.organization_name)
-        return bootstrap_owner(_token(authorization), req.organization_name, allow_any_authenticated=True)
+            claims = verify_id_token(_token(authorization))
+            registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
+            result = register_organization(claims, req.organization_name)
+            registration_diagnostics.stage("REGISTRATION_COMPLETE")
+            return result
+        claims = _token(authorization)
+        result = bootstrap_owner(claims, req.organization_name, allow_any_authenticated=True)
+        registration_diagnostics.stage("REGISTRATION_COMPLETE")
+        return result
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
     except BootstrapDenied as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    finally:
+        registration_diagnostics.end()
 
 @router.post("/check")
 def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):

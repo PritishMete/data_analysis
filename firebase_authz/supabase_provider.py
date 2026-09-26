@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .service import AuthzError
+from . import registration_diagnostics
 
 
 def _id(prefix: str) -> str:
@@ -39,11 +40,13 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
     workspace_id = organization_id
     employee_id = _id("emp")
 
+    registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
         existing = db.execute(
             text("SELECT principal_id FROM identity_bindings WHERE provider=:provider AND provider_subject=:subject"),
             {"provider": provider, "subject": subject},
         ).scalar_one_or_none()
+        registration_diagnostics.stage("IDENTITY_LOOKUP_COMPLETE")
         if existing:
             principal_id = str(existing)
         else:
@@ -51,18 +54,22 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
             db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
                              VALUES (:provider, :subject, :uid, :principal)"""),
                        {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
+        registration_diagnostics.stage("PRINCIPAL_SETUP_COMPLETE")
 
         db.execute(text("""INSERT INTO organizations(organization_id, name, created_by_principal_id)
                          VALUES (:id, :name, :principal)"""),
                    {"id": organization_id, "name": name, "principal": principal_id})
+        registration_diagnostics.stage("ORGANIZATION_CREATED")
         db.execute(text("""INSERT INTO workspaces(workspace_id, organization_id)
                          VALUES (:workspace, :organization)"""),
                    {"workspace": workspace_id, "organization": organization_id})
+        registration_diagnostics.stage("WORKSPACE_CREATED")
         db.execute(text("""INSERT INTO organization_members
                          (organization_id, workspace_id, principal_id, employee_id)
                          VALUES (:organization, :workspace, :principal, :employee)"""),
                    {"organization": organization_id, "workspace": workspace_id,
                     "principal": principal_id, "employee": employee_id})
+        registration_diagnostics.stage("MEMBERSHIP_CREATED")
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
                          VALUES (:organization, :principal, 'organization_owner')"""),
                    {"organization": organization_id, "principal": principal_id})
@@ -70,7 +77,9 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
                          (event_id, organization_id, actor_principal_id, action, outcome)
                          VALUES (:event, :organization, :principal, 'organization.register', 'succeeded')"""),
                    {"event": _id("evt"), "organization": organization_id, "principal": principal_id})
+        registration_diagnostics.stage("AUDIT_EVENT_CREATED")
 
+    registration_diagnostics.stage("DB_COMMIT_COMPLETE")
     return {"initialized": True, "organization_id": organization_id,
             "workspace_id": workspace_id, "membership_status": "active",
             "role_ids": ["organization_owner"]}

@@ -10,6 +10,7 @@ import jwt
 from jwt import PyJWKClient
 
 from .service import AuthenticationRequired
+from . import registration_diagnostics
 
 JWT_CLOCK_SKEW_LEEWAY_SECONDS = 10
 
@@ -42,6 +43,7 @@ def _jwks_client(url: str) -> PyJWKClient:
 
 def _confirmed_supabase_user(token: str, subject: str) -> bool:
     """Read confirmed state from Supabase Auth, never from client claims."""
+    registration_diagnostics.stage("SUPABASE_USER_LOOKUP_START")
     key = _publishable_key()
     if not key:
         raise AuthenticationRequired("Supabase authentication is not configured.")
@@ -60,6 +62,7 @@ def _confirmed_supabase_user(token: str, subject: str) -> bool:
         raise AuthenticationRequired("Supabase user state could not be verified.") from exc
     if not isinstance(user, dict) or str(user.get("id") or "").strip() != subject:
         raise AuthenticationRequired("Supabase user identity does not match the token.")
+    registration_diagnostics.stage("SUPABASE_USER_LOOKUP_COMPLETE")
     return bool(user.get("email_confirmed_at"))
 
 
@@ -81,6 +84,7 @@ def verify_supabase_access_token(token: str) -> dict[str, Any]:
             leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
             options={"require": ["sub", "exp", "iat"]},
         )
+        registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
     except Exception as exc:
         raise AuthenticationRequired("Supabase authentication failed.") from exc
     subject = str(claims.get("sub") or "").strip()
