@@ -22,6 +22,9 @@ void main() {
     final authSource = File(
       'lib/core/auth/authenticated_http.dart',
     ).readAsStringSync();
+    final supabaseAuthSource = File(
+      'lib/core/auth/supabase_auth_service.dart',
+    ).readAsStringSync();
 
     expect(
       source,
@@ -36,9 +39,15 @@ void main() {
     );
     expect(source, contains('response.statusCode == 404'));
     expect(source, contains('InsightFlowSupabaseAuthService.ensureSession()'));
-    expect(authSource, contains('static Future<Session?> ensureSession'));
-    expect(authSource, contains('refreshSession()'));
-    expect(authSource, contains('if (session.accessToken.isEmpty) return null;'));
+    expect(
+      supabaseAuthSource,
+      contains('static Future<Session?> ensureSession'),
+    );
+    expect(supabaseAuthSource, contains('refreshSession()'));
+    expect(
+      supabaseAuthSource,
+      contains('if (session?.accessToken.isEmpty ?? true) return null;'),
+    );
   });
 
   test('company registration reports session restoration failure clearly', () {

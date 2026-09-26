@@ -102,7 +102,7 @@ class InsightFlowSupabaseAuthService {
         return null;
       }
     }
-    if (session.accessToken.isEmpty) return null;
+    if (session?.accessToken.isEmpty ?? true) return null;
     return session;
   }
 
