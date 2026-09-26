@@ -12,6 +12,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
+import 'sign_in_screen.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
@@ -258,9 +259,22 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           ),
         ],
         const SizedBox(height: 8),
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Back'),
+        GlassButton.custom(
+          onTap: _busy
+              ? () {}
+              : () => Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const SignInScreen()),
+                  (route) => false,
+                ),
+          enabled: !_busy,
+          width: double.infinity,
+          height: 42,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'Cancel onboarding',
+          child: const Text(
+            'Cancel onboarding',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
