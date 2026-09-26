@@ -501,6 +501,7 @@ class LocationUpdateRequest(OrganizationWorkspaceRequest):
 
 class SectionCreateRequest(OrganizationWorkspaceRequest):
     name: str
+    location_id: str
 
 class SectionUpdateRequest(OrganizationWorkspaceRequest):
     name: str | None = None
@@ -548,17 +549,17 @@ def organization_location_update(location_id:str,req:LocationUpdateRequest,autho
     except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
 
 @router.get("/organizations/sections")
-def organization_sections(workspace_id:str,include_inactive:bool=False,authorization:str=Header(default=None)):
+def organization_sections(workspace_id:str,location_id:str|None=None,include_inactive:bool=False,authorization:str=Header(default=None)):
     try:
         _require_structure_provider()
-        return list_sections(verify_id_token(_token(authorization)),workspace_id,include_inactive)
+        return list_sections(verify_id_token(_token(authorization)),workspace_id,include_inactive,location_id)
     except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
 
 @router.post("/organizations/sections")
 def organization_section_create(req:SectionCreateRequest,authorization:str=Header(default=None)):
     try:
         _require_structure_provider()
-        return create_section(verify_id_token(_token(authorization)),req.workspace_id,req.name)
+        return create_section(verify_id_token(_token(authorization)),req.workspace_id,req.name,req.location_id)
     except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
 
 @router.patch("/organizations/sections/{section_id}")
