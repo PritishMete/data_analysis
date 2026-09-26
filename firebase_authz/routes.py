@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 from . import registration_diagnostics
+from .organizational_structure import list_locations, create_location, update_location, list_sections, create_section, update_section, list_assignments, create_assignment, update_assignment_status
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -486,3 +487,104 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
         raise HTTPException(403, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+class OrganizationWorkspaceRequest(BaseModel):
+    workspace_id: str
+
+class LocationCreateRequest(OrganizationWorkspaceRequest):
+    name: str
+
+class LocationUpdateRequest(OrganizationWorkspaceRequest):
+    name: str | None = None
+    status: str | None = None
+
+class SectionCreateRequest(OrganizationWorkspaceRequest):
+    name: str
+
+class SectionUpdateRequest(OrganizationWorkspaceRequest):
+    name: str | None = None
+    status: str | None = None
+
+class OrganizationalAssignmentCreateRequest(OrganizationWorkspaceRequest):
+    principal_id: str
+    role_id: str
+    location_id: str | None = None
+    section_id: str | None = None
+    reports_to_assignment_id: str | None = None
+
+class OrganizationalAssignmentStatusRequest(OrganizationWorkspaceRequest):
+    status: str
+
+def _organization_error(exc):
+    if isinstance(exc, AuthenticationRequired): return HTTPException(401,str(exc))
+    if isinstance(exc,AuthzError): return HTTPException(403,str(exc))
+    if isinstance(exc,ValueError): return HTTPException(400,str(exc))
+    raise exc
+
+def _require_structure_provider():
+    if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER","firebase").strip().lower()!="supabase":
+        raise AuthzError("Organizational structure requires the Supabase persistence provider.")
+
+@router.get("/organizations/locations")
+def organization_locations(workspace_id:str,include_inactive:bool=False,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return list_locations(verify_id_token(_token(authorization)),workspace_id,include_inactive)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.post("/organizations/locations")
+def organization_location_create(req:LocationCreateRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return create_location(verify_id_token(_token(authorization)),req.workspace_id,req.name)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.patch("/organizations/locations/{location_id}")
+def organization_location_update(location_id:str,req:LocationUpdateRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return update_location(verify_id_token(_token(authorization)),req.workspace_id,location_id,req.name,req.status)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.get("/organizations/sections")
+def organization_sections(workspace_id:str,include_inactive:bool=False,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return list_sections(verify_id_token(_token(authorization)),workspace_id,include_inactive)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.post("/organizations/sections")
+def organization_section_create(req:SectionCreateRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return create_section(verify_id_token(_token(authorization)),req.workspace_id,req.name)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.patch("/organizations/sections/{section_id}")
+def organization_section_update(section_id:str,req:SectionUpdateRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return update_section(verify_id_token(_token(authorization)),req.workspace_id,section_id,req.name,req.status)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.get("/organizations/assignments")
+def organization_assignments(workspace_id:str,include_inactive:bool=False,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return list_assignments(verify_id_token(_token(authorization)),workspace_id,include_inactive)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.post("/organizations/assignments")
+def organization_assignment_create(req:OrganizationalAssignmentCreateRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return create_assignment(verify_id_token(_token(authorization)),req.workspace_id,req.principal_id,req.role_id,req.location_id,req.section_id,req.reports_to_assignment_id)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
+
+@router.patch("/organizations/assignments/{assignment_id}")
+def organization_assignment_status(assignment_id:str,req:OrganizationalAssignmentStatusRequest,authorization:str=Header(default=None)):
+    try:
+        _require_structure_provider()
+        return update_assignment_status(verify_id_token(_token(authorization)),req.workspace_id,assignment_id,req.status)
+    except (AuthenticationRequired,AuthzError,ValueError) as exc: raise _organization_error(exc)
