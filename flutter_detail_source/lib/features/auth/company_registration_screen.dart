@@ -1,8 +1,6 @@
 import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -11,11 +9,8 @@ import '../dashboard/data_screen.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
-import '../../core/auth/auth_diagnostic.dart';
 import 'auth_glass_widgets.dart';
-import 'google_web_sign_in_button.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
@@ -30,42 +25,12 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   bool _busy = false;
   String? _message;
   bool _error = false;
-  AuthDiagnosticAttempt? _authDiagnostic;
   OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
   void dispose() {
     _organizationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _authenticate(Future<Object?> Function() action) async {
-    setState(() {
-      _busy = true;
-      _message = null;
-      _error = false;
-    });
-    try {
-      final result = await action();
-
-      // Firebase redirect initiation legitimately returns null because the
-      // browser leaves the page before authentication completes. Do not turn
-      // that hand-off into a company-registration error.
-      if (result == null) {
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-
-      if (mounted) setState(() => _busy = false);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = true;
-        _message =
-            '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
-      });
-    }
   }
 
   Future<void> _register() async {
@@ -212,69 +177,15 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           : 'Authenticate the founder identity first.',
       children: [
         if (!authenticated) ...[
-          GlassButton.custom(
-            onTap: _busy
-                ? () {}
-                : () =>
-                      _authenticate(InsightFlowAuthService.signInWithMicrosoft),
-            enabled: !_busy,
-            width: double.infinity,
-            height: 44,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Continue with Microsoft',
-            child: const Text(
-              'Continue with Microsoft',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
+          const AuthGlassMessage(
+            text:
+                'Sign in first, then return here to create your company or organization.',
           ),
-          const SizedBox(height: 8),
-          if (kIsWeb)
-            GoogleWebSignInButton(
-              enabled: !_busy,
-              onStarted: () {
-                _authDiagnostic = AuthDiagnosticAttempt();
-                if (mounted) {
-                  setState(() {
-                    _busy = true;
-                    _message = null;
-                    _error = false;
-                  });
-                }
-              },
-              onAuthenticated: (account) async {
-                await _authenticate(
-                  () => InsightFlowAuthService.signInWithGoogleAccount(
-                    account,
-                    diagnostic: _authDiagnostic,
-                  ),
-                );
-              },
-              onError: (error) {
-                if (!mounted) return;
-                setState(() {
-                  _busy = false;
-                  _error = true;
-                  _message =
-                      '${InsightFlowAuthService.userFacingAuthError(error)}\n\nDiagnostic:\n${_authDiagnostic?.failureSummary ?? 'Stage: UNKNOWN\nAttempt: unavailable'}';
-                });
-              },
-            )
-          else
-            GlassButton.custom(
-              onTap: _busy
-                  ? () {}
-                  : () =>
-                        _authenticate(InsightFlowAuthService.signInWithGoogle),
-              enabled: !_busy,
-              width: double.infinity,
-              height: 44,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: 'Continue with Google',
-              child: const Text(
-                'Continue with Google',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Back to sign in'),
+          ),
         ] else ...[
           const AuthGlassFieldLabel('Company / Organization Name'),
           GlassTextField(

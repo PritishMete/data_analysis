@@ -4,40 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   // Registration endpoint diagnostics must ship with the production web build.
-  test('company registration uses the shared Web Google provider path', () {
+  test('company registration does not require a second provider sign-in', () {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
 
-    final webBranchStart = source.indexOf('if (kIsWeb)');
-    final nativeGoogleBranchStart = source.indexOf(
-      'else\n            GlassButton.custom(',
-      webBranchStart,
-    );
-
-    expect(webBranchStart, greaterThanOrEqualTo(0));
-    expect(nativeGoogleBranchStart, greaterThan(webBranchStart));
-
-    final webBranch = source.substring(webBranchStart, nativeGoogleBranchStart);
-    expect(webBranch, contains('GoogleWebSignInButton('));
+    expect(source, contains('Company / Organization Name'));
     expect(
-      RegExp(
-        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*,\s*diagnostic:\s*_authDiagnostic\s*,',
-      ).hasMatch(webBranch),
-      isTrue,
+      source,
+      contains('Sign in first, then return here to create your company'),
     );
-    expect(
-      RegExp(r'InsightFlowAuthService\.signInWithGoogle\(').hasMatch(webBranch),
-      isFalse,
-    );
-
-    final nativeGoogleBranch = source.substring(nativeGoogleBranchStart);
-    expect(
-      nativeGoogleBranch,
-      contains('InsightFlowAuthService.signInWithGoogle'),
-    );
+    expect(source, isNot(contains('GoogleWebSignInButton(')));
+    expect(source, isNot(contains('signInWithMicrosoft')));
+    expect(source, isNot(contains('signInWithGoogleAccount')));
   });
-
 
   test('company registration posts to the authoritative bootstrap endpoint', () {
     final source = File(
@@ -54,7 +34,10 @@ void main() {
     expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
     expect(source, contains("'organization_name': name"));
     expect(source, contains('organizationServiceRequest('));
-    expect(authSource, contains('Future<Map<String, String>> supabaseAuthHeaders'));
+    expect(
+      authSource,
+      contains('Future<Map<String, String>> supabaseAuthHeaders'),
+    );
     expect(source, contains('response.statusCode == 404'));
   });
 
@@ -66,7 +49,10 @@ void main() {
       'lib/core/auth/authenticated_http.dart',
     ).readAsStringSync();
 
-    expect(authSource, contains("diagnostic.stage = error.toString().contains('Failed to fetch')"));
+    expect(
+      authSource,
+      contains("diagnostic.stage = error.toString().contains('Failed to fetch')"),
+    );
     expect(authSource, contains("'NETWORK_OR_CORS'"));
     expect(authSource, contains("'NETWORK_ERROR'"));
     expect(source, contains("response.statusCode == 404"));

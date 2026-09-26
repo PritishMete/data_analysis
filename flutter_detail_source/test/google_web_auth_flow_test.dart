@@ -19,7 +19,6 @@ void main() {
   test('Google Web UI uses authenticationEvents and the shared account callback', () {
     final button = File('lib/features/auth/google_web_sign_in_button_web.dart').readAsStringSync();
     final signIn = File('lib/features/auth/sign_in_screen.dart').readAsStringSync();
-    final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
     expect(button, contains('authenticationEvents'));
     expect(button, contains('onAuthenticated(event.user)'));
     expect(signIn, contains('GoogleWebSignInButton('));
@@ -27,13 +26,6 @@ void main() {
       RegExp(
         r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*(?:,\s*diagnostic:\s*_authDiagnostic\s*)?\)',
       ).hasMatch(signIn),
-      isTrue,
-    );
-    expect(company, contains('GoogleWebSignInButton('));
-    expect(
-      RegExp(
-        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*,\s*diagnostic:\s*_authDiagnostic\s*,',
-      ).hasMatch(company),
       isTrue,
     );
   });
