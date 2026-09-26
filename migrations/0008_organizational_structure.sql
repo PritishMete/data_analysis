@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sections (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (organization_id, section_id),
+    UNIQUE (organization_id, location_id, section_id),
     CONSTRAINT fk_section_location_same_org
         FOREIGN KEY (organization_id, location_id)
         REFERENCES locations(organization_id, location_id)
@@ -75,9 +76,9 @@ CREATE TABLE IF NOT EXISTS organizational_assignments (
         REFERENCES locations(organization_id, location_id),
 
     -- A section must belong to this same organization.
-    CONSTRAINT fk_assignment_section_same_org
-        FOREIGN KEY (organization_id, section_id)
-        REFERENCES sections(organization_id, section_id),
+    CONSTRAINT fk_assignment_section_same_location
+        FOREIGN KEY (organization_id, location_id, section_id)
+        REFERENCES sections(organization_id, location_id, section_id),
 
     -- A reporting assignment must belong to this same organization.
     CONSTRAINT fk_assignment_parent_same_org
