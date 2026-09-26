@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../dashboard/data_screen.dart';
 
@@ -31,6 +32,26 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   void dispose() {
     _organizationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _startGoogleSignIn() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+      _error = false;
+    });
+    try {
+      await InsightFlowSupabaseAuthService.signInWithOAuth(
+        OAuthProvider.google,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = true;
+        _message = 'Google sign-in could not be started.';
+      });
+    }
   }
 
   Future<void> _register() async {
@@ -177,14 +198,14 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           : 'Authenticate the founder identity first.',
       children: [
         if (!authenticated) ...[
-          const AuthGlassMessage(
-            text:
-                'Sign in first, then return here to create your company or organization.',
-          ),
-          const SizedBox(height: 10),
-          TextButton(
-            onPressed: _busy ? null : () => Navigator.of(context).pop(),
-            child: const Text('Back to sign in'),
+          GlassButton.custom(
+            onTap: _busy ? () {} : _startGoogleSignIn,
+            enabled: !_busy,
+            width: double.infinity,
+            height: 44,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Continue with Google',
+            child: const Text('Continue with Google'),
           ),
         ] else ...[
           const AuthGlassFieldLabel('Company / Organization Name'),

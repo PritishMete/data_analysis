@@ -4,19 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   // Registration endpoint diagnostics must ship with the production web build.
-  test('company registration does not require a second provider sign-in', () {
+  test('company registration starts Google auth for unauthenticated users', () {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
 
     expect(source, contains('Company / Organization Name'));
-    expect(
-      source,
-      contains('Sign in first, then return here to create your company'),
-    );
-    expect(source, isNot(contains('GoogleWebSignInButton(')));
-    expect(source, isNot(contains('signInWithMicrosoft')));
-    expect(source, isNot(contains('signInWithGoogleAccount')));
+    expect(source, contains("InsightFlowSupabaseAuthService.signInWithOAuth("));
+    expect(source, contains('OAuthProvider.google'));
+    expect(source, contains("label: 'Continue with Google'"));
   });
 
   test('company registration posts to the authoritative bootstrap endpoint', () {
