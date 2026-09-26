@@ -28,6 +28,8 @@ def test_locations_and_sections_are_company_scoped():
     ) in sql
     assert "uq_locations_active_name" in sql
     assert "uq_sections_active_name" in sql
+    assert "location_id TEXT NOT NULL" in sql
+    assert "UNIQUE (organization_id, location_id, section_id)" in sql
 
 
 def test_assignment_separates_person_from_organizational_context():
@@ -42,10 +44,10 @@ def test_assignment_separates_person_from_organizational_context():
 def test_assignment_rejects_cross_company_location_section_or_parent():
     sql = migration_text()
     assert "fk_assignment_location_same_org" in sql
-    assert "fk_assignment_section_same_org" in sql
+    assert "fk_assignment_section_same_location" in sql
     assert "fk_assignment_parent_same_org" in sql
     assert "FOREIGN KEY (organization_id, location_id)" in sql
-    assert "FOREIGN KEY (organization_id, section_id)" in sql
+    assert "FOREIGN KEY (organization_id, location_id, section_id)" in sql
     assert "FOREIGN KEY (organization_id, reports_to_assignment_id)" in sql
 
 
