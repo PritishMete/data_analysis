@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS locations (
     name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 160),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (organization_id, location_id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_locations_active_name
