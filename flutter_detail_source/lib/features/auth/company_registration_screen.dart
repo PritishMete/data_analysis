@@ -63,15 +63,6 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       });
       return;
     }
-    final user = InsightFlowSupabaseAuthService.currentUser;
-    if (user == null) {
-      setState(() {
-        _error = true;
-        _message = 'Authenticate your identity before registering.';
-      });
-      return;
-    }
-
     setState(() {
       _busy = true;
       _message = null;
@@ -79,6 +70,21 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
     });
 
     try {
+      final session = await InsightFlowSupabaseAuthService.ensureSession();
+      final user = session == null
+          ? null
+          : InsightFlowSupabaseAuthService.currentUser;
+      if (session == null || user == null) {
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _error = true;
+            _message =
+                'Your Google sign-in session could not be restored. Please sign in again.';
+          });
+        }
+        return;
+      }
       final result = await organizationServiceRequest(
         method: 'POST',
         path: '/v1/authz/organizations/register',

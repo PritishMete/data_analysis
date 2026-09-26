@@ -35,6 +35,19 @@ void main() {
       contains('Future<Map<String, String>> supabaseAuthHeaders'),
     );
     expect(source, contains('response.statusCode == 404'));
+    expect(source, contains('InsightFlowSupabaseAuthService.ensureSession()'));
+    expect(authSource, contains('static Future<Session?> ensureSession'));
+    expect(authSource, contains('refreshSession()'));
+    expect(authSource, contains('if (session.accessToken.isEmpty) return null;'));
+  });
+
+  test('company registration reports session restoration failure clearly', () {
+    final source = File(
+      'lib/features/auth/company_registration_screen.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('Your Google sign-in session could not be restored.'));
+    expect(source, contains('if (session == null || user == null)'));
   });
 
   test('company registration distinguishes backend status from network failure', () {
