@@ -66,7 +66,7 @@ def _confirmed_supabase_user(token: str, subject: str) -> bool:
     return bool(user.get("email_confirmed_at"))
 
 
-def verify_supabase_access_token(token: str) -> dict[str, Any]:
+def verify_supabase_access_token(token: str, require_email_verified: bool = True) -> dict[str, Any]:
     """Verify a Supabase Auth access token without using a signing secret."""
     if not token:
         raise AuthenticationRequired("Supabase authentication required.")
@@ -92,7 +92,13 @@ def verify_supabase_access_token(token: str) -> dict[str, Any]:
         raise AuthenticationRequired("Supabase authentication failed.")
     claims["uid"] = subject
     claims["provider"] = "supabase"
-    claims["email_verified"] = _confirmed_supabase_user(token, subject)
-    if not claims["email_verified"]:
-        raise AuthenticationRequired("Email verification required.")
+    if require_email_verified:
+        claims["email_verified"] = _confirmed_supabase_user(token, subject)
+        if not claims["email_verified"]:
+            raise AuthenticationRequired("Email verification required.")
+    else:
+        # Registration only requires a valid Supabase Auth session. It does not
+        # perform email/KYC/company verification; organization membership is
+        # created by the onboarding transaction.
+        claims["email_verified"] = bool(claims.get("email_verified"))
     return claims

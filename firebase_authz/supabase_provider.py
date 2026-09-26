@@ -38,6 +38,7 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
     principal_id = _id("prn")
     organization_id = _id("org")
     workspace_id = organization_id
+    location_id = _id("loc")
     employee_id = _id("emp")
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
@@ -64,6 +65,11 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
                          VALUES (:workspace, :organization)"""),
                    {"workspace": workspace_id, "organization": organization_id})
         registration_diagnostics.stage("WORKSPACE_CREATED")
+        db.execute(text("""INSERT INTO locations(location_id, organization_id, name)
+                         VALUES (:location, :organization, :name)"""),
+                   {"location": location_id, "organization": organization_id,
+                    "name": "Main Location"})
+        registration_diagnostics.stage("LOCATION_CREATED")
         db.execute(text("""INSERT INTO organization_members
                          (organization_id, workspace_id, principal_id, employee_id)
                          VALUES (:organization, :workspace, :principal, :employee)"""),
@@ -81,7 +87,8 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
 
     registration_diagnostics.stage("DB_COMMIT_COMPLETE")
     return {"initialized": True, "organization_id": organization_id,
-            "workspace_id": workspace_id, "membership_status": "active",
+            "workspace_id": workspace_id, "location_id": location_id,
+            "membership_status": "active",
             "role_ids": ["organization_owner"]}
 
 

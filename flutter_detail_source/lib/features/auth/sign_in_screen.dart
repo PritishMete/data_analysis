@@ -7,7 +7,7 @@ import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
-import 'company_registration_screen.dart';
+import 'sign_up_screen.dart';
 import 'google_web_sign_in_button.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -275,7 +275,7 @@ class _SignInScreenState extends State<SignInScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
-              'New organization? ',
+              'New to InsightFlow? ',
               style: TextStyle(color: TechColors.textMuted, fontSize: 10),
             ),
             TextButton(
@@ -283,7 +283,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   ? null
                   : () => Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => const CompanyRegistrationScreen(),
+                        builder: (_) => const SignUpScreen(),
                       ),
                     ),
               style: TextButton.styleFrom(
@@ -293,7 +293,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               child: const Text(
-                'Register Company',
+                'Create account',
                 style: TextStyle(
                   color: TechColors.borderActive,
                   fontSize: 10,
