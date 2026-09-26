@@ -31,20 +31,27 @@ CREATE TABLE IF NOT EXISTS sections (
     section_id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL
         REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    location_id TEXT NOT NULL,
     name TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK (status IN ('active', 'inactive')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (organization_id, section_id)
+    UNIQUE (organization_id, section_id),
+    CONSTRAINT fk_section_location_same_org
+        FOREIGN KEY (organization_id, location_id)
+        REFERENCES locations(organization_id, location_id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sections_active_name
-    ON sections (organization_id, lower(name))
+    ON sections (organization_id, location_id, lower(name))
     WHERE status = 'active';
 
 CREATE INDEX IF NOT EXISTS idx_sections_organization_status
     ON sections (organization_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_sections_location_status
+    ON sections (organization_id, location_id, status);
 
 CREATE TABLE IF NOT EXISTS organizational_assignments (
     assignment_id TEXT PRIMARY KEY,
