@@ -57,11 +57,11 @@ void main() {
 
     expect(
       source,
-      contains('client.auth.onAuthStateChange.handleError'),
+      contains('yield* client.auth.onAuthStateChange'),
     );
     expect(
       source,
-      contains("[supabase-auth] auth-state stream error:"),
+      contains('yield AuthState(AuthChangeEvent.initialSession, currentSession);'),
     );
   });
 
