@@ -266,6 +266,34 @@ from ai_analyst import (
 )
 
 app = FastAPI()
+
+
+def _run_production_authz_migrations() -> None:
+    """Ensure the Supabase authorization schema exists before serving requests.
+
+    Render's service-level Build Command can lag behind render.yaml, so the
+    application also performs the existing versioned migration runner during
+    startup when the live service is configured for Supabase authorization.
+    The runner is idempotent and uses a PostgreSQL advisory lock, so this does
+    not create a second migration system or alter migration files.
+    """
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+    if provider != "supabase":
+        return
+    if not os.environ.get("DATABASE_URL", "").strip():
+        logger.error("[authz] DATABASE_URL is missing; production migrations cannot run.")
+        return
+    try:
+        from tools.run_authz_migrations import run_migrations
+
+        run_migrations()
+        logger.info("[authz] Production authorization migrations verified successfully.")
+    except Exception:
+        logger.exception("[authz] Production authorization migration verification failed.")
+        raise
+
+
+_run_production_authz_migrations()
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
