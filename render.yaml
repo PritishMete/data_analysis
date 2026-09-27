@@ -10,3 +10,9 @@ services:
     envVars:
       - key: INSIGHTFLOW_PRIVACY_MODE
         value: local_only
+      - key: AUTHZ_PERSISTENCE_PROVIDER
+        value: supabase
+      - key: AUTHN_PROVIDER_MODE
+        value: supabase
+      - key: INSIGHTFLOW_AUTH_REQUIRED
+        value: "true"
