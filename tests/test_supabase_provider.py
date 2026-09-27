@@ -59,6 +59,33 @@ def test_supabase_registration_rejects_invalid_organization_or_branch_names():
         register_organization({"uid": "u"}, "ABC", "bad\nbranch", "BAD-01")
 
 
+def test_supabase_registration_allows_special_branch_identifier_characters():
+    from firebase_authz.supabase_provider import register_organization
+    from core.db import SessionLocal
+
+    identifier = "tcs@singur_1!#$%^&*+=?"
+    result = register_organization(
+        {"uid": "special-branch-id-test"},
+        "Special Identifier Test",
+        "Singur",
+        identifier,
+    )
+    try:
+        assert result["branch_identifier"] == identifier
+        with SessionLocal() as session:
+            stored = session.execute(
+                text("SELECT branch_identifier FROM locations WHERE location_id=:id"),
+                {"id": result["location_id"]},
+            ).scalar_one()
+        assert stored == identifier
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
 def test_supabase_registration_rejects_duplicate_active_branch_identifier():
     from firebase_authz.supabase_provider import register_organization
     from firebase_authz.service import AuthzError
