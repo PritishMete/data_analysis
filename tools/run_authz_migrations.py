@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "member_roles", "invitations", "approved_employees", "delegations",
     "authorization_resources", "audit_events", "resource_grants",
     "dataset_authorization", "working_copy_authorization",
+    "locations", "sections", "organizational_assignments",
 }
 
 
@@ -67,28 +68,81 @@ def ensure_history(engine) -> None:
 
 def apply_pending(engine) -> tuple[list[str], list[str]]:
     ensure_history(engine)
-    _, applied = inspect_database(engine)
     newly_applied: list[str] = []
     already_applied: list[str] = []
-    for path in migration_files():
-        version = path.stem
-        if version in applied:
-            already_applied.append(version)
-            continue
-        sql = path.read_text(encoding="utf-8")
+    with engine.connect() as lock_conn:
+        lock_conn.execute(text(
+            "SELECT pg_advisory_lock(hashtext('insightflow-authz-migrations'))"
+        ))
         try:
-            with engine.begin() as conn:
-                conn.exec_driver_sql(sql)
-                conn.execute(
-                    text(f"INSERT INTO {HISTORY_TABLE}(version) VALUES (:version)"),
-                    {"version": version},
-                )
-        except Exception:
-            # The transaction rolls back and the migration is intentionally not
-            # recorded. Stop immediately so a partial schema is never hidden.
-            raise
-        newly_applied.append(version)
+            _, applied = inspect_database(engine)
+            for path in migration_files():
+                version = path.stem
+                if version in applied:
+                    already_applied.append(version)
+                    continue
+                sql = path.read_text(encoding="utf-8")
+                try:
+                    with engine.begin() as conn:
+                        conn.exec_driver_sql(sql)
+                        conn.execute(
+                            text(f"INSERT INTO {HISTORY_TABLE}(version) VALUES (:version)"),
+                            {"version": version},
+                        )
+                except Exception:
+                    raise
+                newly_applied.append(version)
+        finally:
+            lock_conn.execute(text(
+                "SELECT pg_advisory_unlock(hashtext('insightflow-authz-migrations'))"
+            ))
     return newly_applied, already_applied
+
+
+def verify_organizational_structure(engine) -> None:
+    inspector = inspect(engine)
+    required_columns = {
+        "locations": {"organization_id", "location_id"},
+        "sections": {"organization_id", "location_id"},
+        "organizational_assignments": {
+            "organization_id", "principal_id", "location_id", "section_id",
+            "role_id", "reports_to_assignment_id", "status",
+        },
+    }
+    for table, expected in required_columns.items():
+        if not inspector.has_table(table):
+            raise RuntimeError(f"Required organizational table is missing: {table}")
+        actual = {column["name"] for column in inspector.get_columns(table)}
+        missing = sorted(expected - actual)
+        if missing:
+            raise RuntimeError(
+                f"Required columns missing from {table}: {','.join(missing)}"
+            )
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = 'organizational_assignments'
+              AND indexname IN (
+                'uq_active_manager_per_location',
+                'uq_active_assignment_context'
+              )
+            ORDER BY indexname
+            """
+        )).all()
+    indexes = {row[0]: row[1] for row in rows}
+    if "uq_active_manager_per_location" not in indexes:
+        raise RuntimeError("Missing uq_active_manager_per_location.")
+    manager_index = indexes["uq_active_manager_per_location"].lower()
+    if "role_id = 'manager'" not in manager_index or "status = 'active'" not in manager_index:
+        raise RuntimeError("uq_active_manager_per_location is not the required active-manager constraint.")
+    if "uq_active_assignment_context" not in indexes:
+        raise RuntimeError("Missing uq_active_assignment_context.")
+
+
 
 
 def main() -> int:
@@ -111,7 +165,12 @@ def main() -> int:
     final_tables, _ = inspect_database(engine)
     missing = sorted(EXPECTED_TABLES - final_tables)
     print("IDENTITY_BINDINGS=" + ("EXISTS" if "identity_bindings" in final_tables else "MISSING"))
-    print("REQUIRED_TABLES=" + ("PASS" if not missing else "FAIL"))
+    if missing:
+        print("REQUIRED_TABLES=FAIL")
+    else:
+        verify_organizational_structure(engine)
+        print("ORGANIZATIONAL_STRUCTURE=PASS")
+        print("REQUIRED_TABLES=PASS")
     if missing:
         print("MISSING_TABLE_COUNT=" + str(len(missing)))
         return 1
