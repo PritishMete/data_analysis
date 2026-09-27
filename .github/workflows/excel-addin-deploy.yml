@@ -5,6 +5,11 @@ on:
     branches: [feature/data-workspace]
     paths:
       - 'flutter_detail_source/**'
+      - 'firebase_authz/**'
+      - 'migrations/**'
+      - 'core/db.py'
+      - 'requirements.txt'
+      - 'render.yaml'
       - 'tools/verify_excel_deployment.py'
       - '.github/workflows/excel-addin-deploy.yml'
   workflow_dispatch:
@@ -175,7 +180,6 @@ jobs:
         working-directory: .
         env:
           SOURCE_COMMIT: ${{ github.sha }}
-          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           git fetch origin gh-pages:refs/remotes/origin/gh-pages
