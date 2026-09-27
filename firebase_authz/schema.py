@@ -28,6 +28,7 @@ ROLE_LEVELS = {
     "team_lead": 30,
     "manager": 40,
     "organization_owner": 50,
+    "branch_head": 50,
 }
 
 DEFAULT_ROLES = {
@@ -37,6 +38,7 @@ DEFAULT_ROLES = {
     "analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view"},
     "viewer": {"data.view","history.view"},
     "organization_owner": set(ACTIONS),
+    "branch_head": set(ACTIONS),
     "manager": {
         "data.view","analysis.run","worksheet.create","pivot.create",
         "worksheet.modify","worksheet.delete","operation.undo.own",
