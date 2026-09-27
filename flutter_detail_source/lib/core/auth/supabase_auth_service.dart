@@ -41,6 +41,14 @@ class InsightFlowSupabaseAuthService {
   /// error. If no session exists, emit an initial-session state so AuthGate
   /// can render the signed-out screen instead of remaining in loading forever.
   static Stream<AuthState> get authStateChanges async* {
+    if (!isInitialized) {
+      // The Supabase provider is optional for builds that intentionally do not
+      // ship its public runtime configuration. AuthGate must render the
+      // signed-out state rather than exposing the provider initialization
+      // exception as an authentication error.
+      yield AuthState(AuthChangeEvent.initialSession, null);
+      return;
+    }
     try {
       yield* client.auth.onAuthStateChange;
     } catch (error, stackTrace) {
