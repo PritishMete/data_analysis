@@ -40,7 +40,14 @@ def require_database_url() -> str:
 
 def connect():
     # The URL is passed directly to SQLAlchemy and is never printed.
-    database_url = require_database_url()\n    # SQLAlchemy defaults plain postgresql:// URLs to psycopg2. Production\n    # InsightFlow ships psycopg v3, so normalize the URL without exposing it.\n    if database_url.startswith("postgresql://"):\n        database_url = "postgresql+psycopg://" + database_url[len("postgresql://"):]\n    elif database_url.startswith("postgres://"):\n        database_url = "postgresql+psycopg://" + database_url[len("postgres://"):]\n    return create_engine(database_url, future=True, pool_pre_ping=True)
+    database_url = require_database_url()
+    # SQLAlchemy defaults plain postgresql:// URLs to psycopg2. Production
+    # InsightFlow ships psycopg v3, so normalize the URL without exposing it.
+    if database_url.startswith("postgresql://"):
+        database_url = "postgresql+psycopg://" + database_url[len("postgresql://"):]
+    elif database_url.startswith("postgres://"):
+        database_url = "postgresql+psycopg://" + database_url[len("postgres://"):]
+    return create_engine(database_url, future=True, pool_pre_ping=True)
 
 
 def inspect_database(engine) -> tuple[set[str], set[str]]:
@@ -145,7 +152,24 @@ def verify_organizational_structure(engine) -> None:
 
 
 
-def run_migrations() -> None:\n    """Apply and verify pending production PostgreSQL migrations.\n\n    Safe to call during application startup: migrations are versioned,\n    transactional per file, and serialized with a PostgreSQL advisory lock.\n    """\n    engine = connect()\n    with engine.connect() as conn:\n        conn.execute(text("SELECT 1"))\n    apply_pending(engine)\n    final_tables, _ = inspect_database(engine)\n    missing = sorted(EXPECTED_TABLES - final_tables)\n    if missing:\n        raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))\n    verify_organizational_structure(engine)\n\n\ndef main() -> int:
+def run_migrations() -> None:
+    """Apply and verify pending production PostgreSQL migrations.
+
+    Safe to call during application startup: migrations are versioned,
+    transactional per file, and serialized with a PostgreSQL advisory lock.
+    """
+    engine = connect()
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    apply_pending(engine)
+    final_tables, _ = inspect_database(engine)
+    missing = sorted(EXPECTED_TABLES - final_tables)
+    if missing:
+        raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
+    verify_organizational_structure(engine)
+
+
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inspect", action="store_true", help="read schema only")
     args = parser.parse_args()
