@@ -86,6 +86,35 @@ def test_supabase_registration_allows_special_branch_identifier_characters():
             )
 
 
+def test_supabase_registration_rolls_back_when_final_registration_stage_fails(monkeypatch):
+    from firebase_authz.supabase_provider import register_organization
+    from core.db import SessionLocal
+
+    def fail_final_stage(name):
+        if name == "DB_COMMIT_COMPLETE":
+            raise RuntimeError("simulated final registration failure")
+
+    monkeypatch.setattr("firebase_authz.registration_diagnostics.stage", fail_final_stage)
+
+    with pytest.raises(RuntimeError, match="simulated final registration failure"):
+        register_organization(
+            {"uid": "registration-rollback-test"},
+            "Rollback Test",
+            "Rollback Branch",
+            "ROLLBACK-TEST",
+        )
+
+    with SessionLocal() as session:
+        assert session.execute(
+            text("SELECT 1 FROM locations WHERE branch_identifier=:id"),
+            {"id": "ROLLBACK-TEST"},
+        ).scalar_one_or_none() is None
+        assert session.execute(
+            text("SELECT 1 FROM organizations WHERE name=:name"),
+            {"name": "Rollback Test"},
+        ).scalar_one_or_none() is None
+
+
 def test_supabase_registration_rejects_duplicate_active_branch_identifier():
     from firebase_authz.supabase_provider import register_organization
     from firebase_authz.service import AuthzError
