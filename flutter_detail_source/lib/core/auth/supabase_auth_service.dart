@@ -25,6 +25,14 @@ class InsightFlowSupabaseAuthService {
       await Supabase.initialize(
         url: InsightFlowSupabaseConfig.url,
         publishableKey: InsightFlowSupabaseConfig.publishableKey,
+        authOptions: FlutterAuthClientOptions(
+          // InsightFlow is a client-only Flutter Web app. Use the implicit
+          // callback flow on Web so email confirmation links can restore the
+          // session without requiring the PKCE verifier to survive outside
+          // the original browser/tab. Keep PKCE on native platforms.
+          authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
+          detectSessionInUri: true,
+        ),
         debug: false,
       );
     }
