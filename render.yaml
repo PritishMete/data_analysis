@@ -4,7 +4,7 @@ services:
     runtime: python
     branch: feature/data-workspace
     autoDeployTrigger: commit
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python tools/run_authz_migrations.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
