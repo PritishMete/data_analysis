@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:async';
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
@@ -11,8 +12,6 @@ class InsightFlowSupabaseConfig {
   static bool get isConfigured => url.isNotEmpty && publishableKey.isNotEmpty;
 }
 
-/// Additive Supabase Auth provider. Firebase Auth remains the active UI
-/// provider until the application-wide cutover phase.
 class InsightFlowSupabaseAuthService {
   InsightFlowSupabaseAuthService._();
 
@@ -26,10 +25,6 @@ class InsightFlowSupabaseAuthService {
         url: InsightFlowSupabaseConfig.url,
         publishableKey: InsightFlowSupabaseConfig.publishableKey,
         authOptions: FlutterAuthClientOptions(
-          // InsightFlow is a client-only Flutter Web app. Use the implicit
-          // callback flow on Web so email confirmation links can restore the
-          // session without requiring the PKCE verifier to survive outside
-          // the original browser/tab. Keep PKCE on native platforms.
           authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
           detectSessionInUri: true,
         ),
@@ -41,14 +36,20 @@ class InsightFlowSupabaseAuthService {
 
   static Session? get currentSession =>
       isInitialized ? client.auth.currentSession : null;
-  /// Supabase can report callback/deep-link parsing failures through the
-  /// auth-state stream. Those errors must not tear down the application shell;
-  /// the current persisted session remains the source of truth for AuthGate.
-  static Stream<AuthState> get authStateChanges =>
-      client.auth.onAuthStateChange.handleError((Object error, StackTrace stackTrace) {
-        debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
-        debugPrintStack(stackTrace: stackTrace);
-      });
+
+  /// Keeps AuthGate alive when Supabase reports a callback/deep-link parsing
+  /// error. If no session exists, emit an initial-session state so AuthGate
+  /// can render the signed-out screen instead of remaining in loading forever.
+  static Stream<AuthState> get authStateChanges async* {
+    try {
+      yield* client.auth.onAuthStateChange;
+    } catch (error, stackTrace) {
+      debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
+      debugPrintStack(stackTrace: stackTrace);
+      yield AuthState(AuthChangeEvent.initialSession, currentSession);
+    }
+  }
+
   static String? get accessToken => currentSession?.accessToken;
   static SupabaseAuthUser? get currentUser {
     final user = currentSession?.user;
@@ -88,8 +89,6 @@ class InsightFlowSupabaseAuthService {
 
   static Future<void> signOut() => client.auth.signOut();
 
-  /// Returns a usable session after OAuth callback restoration, refreshing a
-  /// session that is expired or close to expiry.
   static Future<Session?> ensureSession({
     Duration timeout = const Duration(seconds: 3),
   }) async {
