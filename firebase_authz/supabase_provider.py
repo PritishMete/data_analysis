@@ -30,9 +30,13 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
     if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
         raise ValueError("Branch name must be between 1 and 160 characters.")
 
-    branch_id = str(branch_identifier or "").strip()
-    if not 2 <= len(branch_id) <= 64 or not __import__("re").fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,63}", branch_id):
-        raise ValueError("Branch identifier must be 2-64 characters using letters, numbers, dot, underscore, or hyphen.")
+    # Branch identifiers are opaque user-defined identity labels. The only
+    # application-level requirements are that the value is present and that
+    # active branches cannot reuse the same identifier (case-insensitively).
+    # Do not restrict punctuation, symbols, whitespace, or Unicode characters.
+    branch_id = str(branch_identifier or "")
+    if not branch_id:
+        raise ValueError("Branch identifier is required.")
 
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
