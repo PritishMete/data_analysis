@@ -40,6 +40,7 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
     workspace_id = organization_id
     location_id = _id("loc")
     employee_id = _id("emp")
+    assignment_id = _id("asg")
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
@@ -79,6 +80,14 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
                          VALUES (:organization, :principal, 'organization_owner')"""),
                    {"organization": organization_id, "principal": principal_id})
+        db.execute(text("""INSERT INTO organizational_assignments
+                         (assignment_id, organization_id, principal_id, location_id,
+                          role_id, section_id, reports_to_assignment_id, status)
+                         VALUES (:assignment, :organization, :principal, :location,
+                                 'organization_owner', NULL, NULL, 'active')"""),
+                   {"assignment": assignment_id, "organization": organization_id,
+                    "principal": principal_id, "location": location_id})
+        registration_diagnostics.stage("OWNER_ASSIGNMENT_CREATED")
         db.execute(text("""INSERT INTO audit_events
                          (event_id, organization_id, actor_principal_id, action, outcome)
                          VALUES (:event, :organization, :principal, 'organization.register', 'succeeded')"""),
@@ -89,7 +98,8 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
     return {"initialized": True, "organization_id": organization_id,
             "workspace_id": workspace_id, "location_id": location_id,
             "membership_status": "active",
-            "role_ids": ["organization_owner"]}
+            "role_ids": ["organization_owner"],
+            "owner_assignment_id": assignment_id}
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
