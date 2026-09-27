@@ -50,6 +50,21 @@ void main() {
     );
   });
 
+  test('Supabase auth-state callback errors do not tear down the auth stream', () {
+    final source = File(
+      'lib/core/auth/supabase_auth_service.dart',
+    ).readAsStringSync();
+
+    expect(
+      source,
+      contains('client.auth.onAuthStateChange.handleError'),
+    );
+    expect(
+      source,
+      contains("[supabase-auth] auth-state stream error:"),
+    );
+  });
+
   test('company registration reports session restoration failure clearly', () {
     final source = File(
       'lib/features/auth/company_registration_screen.dart',
