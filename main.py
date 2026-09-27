@@ -333,19 +333,11 @@ async def build_info():
 # than pinning `allow_origins` to a fixed list, since the real list of
 # production origins isn't something to guess at here — swap in an
 # explicit origins list when that's known, instead of `["*"]`.
-_CORS_ORIGINS = [
-    "https://pritishmete.github.io",
-    "http://localhost:3000",
-    "http://localhost:5000",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5000",
-]
-_CORS_ORIGIN_REGEX = r"^https://([A-Za-z0-9-]+\.)?pritishmete\.github\.io$"
+_CORS_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
-    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
