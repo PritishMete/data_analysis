@@ -34,7 +34,8 @@ def test_supabase_registration_persists_branch_head_context():
             WHERE o.organization_id = :id"""), {"id": result["organization_id"]}).one()
         assignment = connection.execute(text("""SELECT oa.location_id, oa.role_id, oa.status
             FROM organizational_assignments oa
-            WHERE oa.organization_id = :id AND oa.principal_id = :principal"""),
+            JOIN identity_bindings ib ON ib.principal_id = oa.principal_id
+            WHERE oa.organization_id = :id AND ib.firebase_uid = :principal"""),
                                         {"id": result["organization_id"], "principal": claims["uid"]}).one()
     assert row.name == "ABC"
     assert row.workspace_id == result["workspace_id"]
