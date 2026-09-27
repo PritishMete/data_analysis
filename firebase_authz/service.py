@@ -1441,8 +1441,8 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
                 raise BootstrapDenied("This account is suspended and cannot bootstrap an organization.")
 
             memberships = [
-                workspace_id
-                for workspace_id, workspace in workspaces.items()
+                existing_workspace_id
+                for existing_workspace_id, workspace in workspaces.items()
                 if isinstance(workspace, dict)
                 and isinstance((workspace.get("members") or {}).get(owner_uid), dict)
             ]
@@ -1450,7 +1450,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
                 raise BootstrapDenied("This account already has organization membership.")
 
             existing_employee_matches = []
-            for workspace_id, workspace in workspaces.items():
+            for existing_workspace_id, workspace in workspaces.items():
                 if not isinstance(workspace, dict):
                     continue
                 for member_uid, member in (workspace.get("members") or {}).items():
@@ -1463,7 +1463,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
                         else ""
                     )
                     if old_email and old_email == owner_email:
-                        existing_employee_matches.append((workspace_id, member_uid))
+                        existing_employee_matches.append((existing_workspace_id, member_uid))
             if existing_employee_matches:
                 raise BootstrapDenied(
                     "This verified identity already belongs to an organization member."
