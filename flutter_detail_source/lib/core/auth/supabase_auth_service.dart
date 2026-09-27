@@ -41,8 +41,14 @@ class InsightFlowSupabaseAuthService {
 
   static Session? get currentSession =>
       isInitialized ? client.auth.currentSession : null;
+  /// Supabase can report callback/deep-link parsing failures through the
+  /// auth-state stream. Those errors must not tear down the application shell;
+  /// the current persisted session remains the source of truth for AuthGate.
   static Stream<AuthState> get authStateChanges =>
-      client.auth.onAuthStateChange;
+      client.auth.onAuthStateChange.handleError((Object error, StackTrace stackTrace) {
+        debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
+        debugPrintStack(stackTrace: stackTrace);
+      });
   static String? get accessToken => currentSession?.accessToken;
   static SupabaseAuthUser? get currentUser {
     final user = currentSession?.user;
@@ -94,6 +100,10 @@ class InsightFlowSupabaseAuthService {
             .firstWhere((state) => state.session != null)
             .timeout(timeout);
       } on TimeoutException {
+        return null;
+      } catch (error, stackTrace) {
+        debugPrint('[supabase-auth] session restoration error: ${error.runtimeType}');
+        debugPrintStack(stackTrace: stackTrace);
         return null;
       }
       session = currentSession;
