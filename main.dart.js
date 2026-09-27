@@ -116218,17 +116218,19 @@ case 2:s=3
 return A.i(q.iF(),$async$xN)
 case 3:return A.p(null,r)}})
 return A.q($async$xN,r)},
-asK(){var s,r,q=t.kc.a(this.f.h(0,"members"))
-if(q==null)q=B.u
-q=J.iU(q,t.f)
-q=A.dT(q,new A.aUy(),q.$ti.i("u.E"),t.P)
-s=A.L(q,A.t(q).i("u.E"))
+asK(){var s,r,q,p=t.kc.a(this.f.h(0,"members"))
+if(p==null)p=B.u
+p=J.iU(p,t.f)
+p=A.dT(p,new A.aUy(),p.$ti.i("u.E"),t.P)
+s=A.L(p,A.t(p).i("u.E"))
 if(s.length===0)return A.b([B.awC],t.p)
-q=this.f.h(0,"role_ids")
-if(q==null)q=B.u
-r=A.O(s).i("ez<1,h>")
-q=A.L(new A.ez(s,new A.aUz(this,B.b.n(A.bz(q,!0,t.N),"organization_owner")),r),r.i("u.E"))
-return q},
+p=this.f.h(0,"role_ids")
+if(p==null)p=B.u
+r=A.bz(p,!0,t.N)
+q=B.b.n(r,"organization_owner")||B.b.n(r,"branch_head")
+p=A.O(s).i("ez<1,h>")
+p=A.L(new A.ez(s,new A.aUz(this,q),p),p.i("u.E"))
+return p},
 uF(){var s=0,r=A.r(t.H),q,p=this,o,n,m,l
 var $async$uF=A.n(function(a,b){if(a===1)return A.o(b,r)
 for(;;)switch(s){case 0:o=$.aD()
@@ -116262,7 +116264,7 @@ aku(){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1=this,a2=null,a3=a1.f.h(0,"
 if(a3==null)a3=B.u
 s=t.N
 r=A.bz(a3,!0,s)
-q=B.b.n(r,"team_lead")&&!B.b.n(r,"manager")&&!B.b.n(r,"organization_owner")
+q=B.b.n(r,"team_lead")&&!B.b.n(r,"manager")&&!B.b.n(r,"organization_owner")&&!B.b.n(r,"branch_head")
 a3=a1.f
 p=t.kc
 a3=p.a(a3.h(0,q?"approved_employees":"members"))
@@ -116531,19 +116533,19 @@ if(h==null)h=""
 g=J.D(i)
 f=J.D(h)
 r.push(new A.jD("\u2022",g+(f.length===0?"":" \xb7 "+f),null))}}return r.length===0?A.b([B.Nu],s):r},
-H(a){var s,r,q,p,o,n,m,l,k,j,i,h=this,g=null,f="role_ids"
+H(a){var s,r,q,p,o,n,m,l,k,j,i,h=this,g=null,f="role_ids",e="ORGANIZATION / MANAGEMENT"
 if(h.d)return B.O9
 s=h.e
 if(s!=null)return new A.kP("ACCESS / UNAVAILABLE","AUTHORIZATION MANAGEMENT",A.b([new A.mX(s,!0,g),B.aC,A.ei(B.arA,h.gZY(),g)],t.p),g)
 s=h.f.h(0,f)
 if(s==null)s=B.u
 r=A.bz(s,!0,t.N)
-q=B.b.n(r,"organization_owner")
+q=B.b.n(r,"organization_owner")||B.b.n(r,"branch_head")
 p=B.b.n(r,"manager")
 o=B.b.n(r,"team_lead")
 n=B.b.n(r,"external_viewer")
 s=!q
-if(!s||p)m="ORGANIZATION / MANAGEMENT"
+if(!s||p)m=e
 else if(o)m="TEAM LEAD / ASSIGNED TEAM"
 else m=n?"VIEWER / SHARED WITH ME":"EMPLOYEE / MY DATASETS"
 l=h.f.h(0,"organization_id")
@@ -116572,10 +116574,12 @@ i=k.$ti
 B.b.I(l,new A.cW(new A.ab(k,new A.aUB(),i.i("ab<u.E>")),new A.aUC(h),i.i("cW<u.E,h>")))}j.push(new A.lx("WORKING COPIES",l,g))
 if(!s||p)j.push(new A.lx("INVITATIONS",h.yP(0,h.f.h(0,"invitations")),g))
 if(!s||p)j.push(new A.lx("AUDIT",h.yP(0,h.f.h(0,"audit")),g))
-s=A.L(j,m)
-s.push(B.cH)
-s.push(A.ei(B.ar_,h.gZY(),g))
-return new A.kP("ACCESS / AUTHORIZATION","Capability and resource authorization metadata only",s,g)}}
+s=q?e:"ACCESS / AUTHORIZATION"
+l=q?"Branch Head management portal":"Capability and resource authorization metadata only"
+m=A.L(j,m)
+m.push(B.cH)
+m.push(A.ei(B.ar_,h.gZY(),g))
+return new A.kP(s,l,m,g)}}
 A.aUi.prototype={
 $0(){var s=this.a
 s.d=!0
