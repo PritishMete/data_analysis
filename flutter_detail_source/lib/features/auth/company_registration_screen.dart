@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../dashboard/data_screen.dart';
+import 'authorization_management_screen.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -24,6 +24,8 @@ class CompanyRegistrationScreen extends StatefulWidget {
 
 class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   final _organizationController = TextEditingController();
+  final _branchController = TextEditingController();
+  final _branchIdentifierController = TextEditingController();
   bool _busy = false;
   String? _message;
   bool _error = false;
@@ -32,6 +34,8 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
   @override
   void dispose() {
     _organizationController.dispose();
+    _branchController.dispose();
+    _branchIdentifierController.dispose();
     super.dispose();
   }
 
@@ -57,10 +61,12 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
 
   Future<void> _register() async {
     final name = _organizationController.text.trim();
-    if (name.isEmpty) {
+    final branch = _branchController.text.trim();
+    final branchIdentifier = _branchIdentifierController.text.trim();
+    if (name.isEmpty || branch.isEmpty || branchIdentifier.isEmpty) {
       setState(() {
         _error = true;
-        _message = 'Enter your company or organization name.';
+        _message = 'Enter the company name, branch name, and unique branch identifier.';
       });
       return;
     }
@@ -95,7 +101,11 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             '$insightFlowBackendBaseUrl/v1/authz/organizations/register',
           ),
           headers: headers,
-          body: jsonEncode({'organization_name': name}),
+          body: jsonEncode({
+            'organization_name': name,
+            'branch_name': branch,
+            'branch_identifier': branchIdentifier,
+          }),
         ),
       );
       _organizationDiagnostic = result.diagnostic;
@@ -160,9 +170,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       }
       await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => const DataScreen()));
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen()),
+      );
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
       if (!mounted) return;
@@ -219,6 +229,23 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           GlassTextField(
             controller: _organizationController,
             placeholder: 'Company / Organization Name',
+            enabled: !_busy,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _register(),
+          ),
+          const SizedBox(height: 12),
+          const AuthGlassFieldLabel('Branch Name'),
+          GlassTextField(
+            controller: _branchController,
+            placeholder: 'Branch Name',
+            enabled: !_busy,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 12),
+          const AuthGlassFieldLabel('Unique Branch Identifier'),
+          GlassTextField(
+            controller: _branchIdentifierController,
+            placeholder: 'e.g. TCS-KOL-A',
             enabled: !_busy,
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _register(),
