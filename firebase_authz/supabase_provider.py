@@ -21,10 +21,14 @@ def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def register_organization(claims: dict[str, Any], organization_name: str) -> dict[str, Any]:
+def register_organization(claims: dict[str, Any], organization_name: str, branch_name: str = "Main Branch") -> dict[str, Any]:
     name = str(organization_name or "").strip()
     if not 1 <= len(name) <= 120 or any(ord(c) < 32 or ord(c) == 127 for c in name):
         raise ValueError("Organization name must be between 1 and 120 characters.")
+
+    branch = str(branch_name or "").strip()
+    if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
+        raise ValueError("Branch name must be between 1 and 160 characters.")
 
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
@@ -69,7 +73,7 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
         db.execute(text("""INSERT INTO locations(location_id, organization_id, name)
                          VALUES (:location, :organization, :name)"""),
                    {"location": location_id, "organization": organization_id,
-                    "name": "Main Location"})
+                    "name": branch})
         registration_diagnostics.stage("LOCATION_CREATED")
         db.execute(text("""INSERT INTO organization_members
                          (organization_id, workspace_id, principal_id, employee_id)
@@ -78,13 +82,13 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
                     "principal": principal_id, "employee": employee_id})
         registration_diagnostics.stage("MEMBERSHIP_CREATED")
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
-                         VALUES (:organization, :principal, 'organization_owner')"""),
+                         VALUES (:organization, :principal, 'branch_head')"""),
                    {"organization": organization_id, "principal": principal_id})
         db.execute(text("""INSERT INTO organizational_assignments
                          (assignment_id, organization_id, principal_id, location_id,
                           role_id, section_id, reports_to_assignment_id, status)
                          VALUES (:assignment, :organization, :principal, :location,
-                                 'organization_owner', NULL, NULL, 'active')"""),
+                                 'branch_head', NULL, NULL, 'active')"""),
                    {"assignment": assignment_id, "organization": organization_id,
                     "principal": principal_id, "location": location_id})
         registration_diagnostics.stage("OWNER_ASSIGNMENT_CREATED")
@@ -98,8 +102,8 @@ def register_organization(claims: dict[str, Any], organization_name: str) -> dic
     return {"initialized": True, "organization_id": organization_id,
             "workspace_id": workspace_id, "location_id": location_id,
             "membership_status": "active",
-            "role_ids": ["organization_owner"],
-            "owner_assignment_id": assignment_id}
+            "role_ids": ["branch_head"],
+            "branch_head_assignment_id": assignment_id}
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
