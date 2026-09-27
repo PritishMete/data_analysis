@@ -39,3 +39,12 @@ jobs:
           test "$status" = "200"
           test "$post_status" != "404"
           test "$post_status" = "401" || test "$post_status" = "403"
+
+      - name: Verify organization diagnostic endpoint
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --output "$response_file"             -H 'Authorization: Bearer invalid-diagnostic-token'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/provider-diagnostics)"
+          echo "Diagnostic status: $status"
+          cat "$response_file"
+          test "$status" = "401"
