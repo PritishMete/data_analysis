@@ -74,7 +74,7 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
                          VALUES (:workspace, :organization)"""),
                    {"workspace": workspace_id, "organization": organization_id})
         registration_diagnostics.stage("WORKSPACE_CREATED")
-        db.execute(text("""INSERT INTO locations(location_id, organization_id, name, branch_identifier)
+        duplicate_branch = db.execute(\n            text("SELECT 1 FROM locations WHERE lower(branch_identifier)=lower(:identifier) AND status='active' LIMIT 1"),\n            {"identifier": branch_id},\n        ).scalar_one_or_none()\n        if duplicate_branch:\n            raise ValueError("Branch identifier is already in use by an active branch.")\n\n        db.execute(text("""INSERT INTO locations(location_id, organization_id, name, branch_identifier)
                          VALUES (:location, :organization, :name, :branch_identifier)"""),
                    {"location": location_id, "organization": organization_id,
                     "name": branch, "branch_identifier": branch_id})
