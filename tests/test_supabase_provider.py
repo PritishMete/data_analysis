@@ -18,7 +18,7 @@ def test_supabase_registration_persists_branch_head_context():
         "sub": "integration-test-user",
         "firebase": {"sign_in_provider": "password", "identities": {"password": ["integration-test-user"]}},
     }
-    result = register_organization(claims, "ABC", "Kolkata Branch A")
+    result = register_organization(claims, "ABC", "Kolkata Branch A", "ABC-KOL-A")
     assert result["organization_id"].startswith("org_")
     assert result["workspace_id"] == result["organization_id"]
     assert result["role_ids"] == ["branch_head"]
@@ -54,9 +54,23 @@ def test_supabase_registration_rejects_invalid_organization_or_branch_names():
     from firebase_authz.supabase_provider import register_organization
 
     with pytest.raises(ValueError):
-        register_organization({"uid": "u"}, "bad\nname")
+        register_organization({"uid": "u"}, "bad\nname", "Main Branch", "BAD-01")
     with pytest.raises(ValueError):
-        register_organization({"uid": "u"}, "ABC", "bad\nbranch")
+        register_organization({"uid": "u"}, "ABC", "bad\nbranch", "BAD-01")
+
+
+def test_supabase_registration_rejects_duplicate_active_branch_identifier():
+    from firebase_authz.supabase_provider import register_organization
+    from firebase_authz.service import AuthzError
+    from core.db import SessionLocal
+
+    first = register_organization({"uid": "branch-id-one"}, "Branch ID One", "Kolkata A", "UNIQUE-BRANCH-01")
+    try:
+        with pytest.raises((ValueError, AuthzError)):
+            register_organization({"uid": "branch-id-two"}, "Branch ID Two", "Kolkata B", "UNIQUE-BRANCH-01")
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": first["organization_id"]})
 
 
 def test_dataset_and_working_copy_authorization_is_workspace_scoped():
@@ -72,7 +86,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
 
     claims = {"uid": "dataset-test-user", "sub": "dataset-test-user",
               "firebase": {"sign_in_provider": "password", "identities": {"password": ["dataset-test-user"]}}}
-    result = register_organization(claims, "Dataset Test", "Main Branch")
+    result = register_organization(claims, "Dataset Test", "Main Branch", "DATASET-TEST")
     register_dataset(claims, result["workspace_id"], "ds_test", "dataset-test-user")
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
     create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
@@ -100,7 +114,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
              "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com",
              "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
-    result = register_organization(owner, "Invitation Test", "Main Branch")
+    result = register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, guest["email"], "emp_guest", "employee")
@@ -140,7 +154,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
              "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
     member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com",
               "firebase": {"sign_in_provider": "password", "identities": {"password": [member_uid]}}}
-    result = register_organization(owner, "Scope Test", "Main Branch")
+    result = register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, member["email"], "emp_member", "team_lead")
@@ -164,7 +178,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
 
 def test_supabase_legacy_registration_alias_uses_transactional_provider():
     from firebase_authz.supabase_provider import register_organization
-    result = register_organization({"uid": "legacy-alias-test", "sub": "legacy-alias-test"}, "Legacy Alias", "Main Branch")
+    result = register_organization({"uid": "legacy-alias-test", "sub": "legacy-alias-test"}, "Legacy Alias", "Main Branch", "LEGACY-ALIAS")
     try:
         assert result["membership_status"] == "active"
     finally:
@@ -185,7 +199,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
              "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
     claims = {"uid": uid, "sub": uid, "email": uid + "@example.com",
               "firebase": {"sign_in_provider": "password", "identities": {"password": [uid]}}}
-    result = register_organization(owner, "Cleanup Test", "Main Branch")
+    result = register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
     invitation = create_invitation(owner, result["workspace_id"], claims["email"], "emp_cleanup", "employee")
     accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
     try:
