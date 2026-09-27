@@ -15,6 +15,7 @@ class BootstrapRequest(BaseModel):
 class FounderOrganizationRegistration(BaseModel):
     model_config = ConfigDict(extra="forbid")
     organization_name: str
+    branch_name: str = "Main Branch"
 
 class AuthorizationCheck(BaseModel):
     workspace_id: str
@@ -193,7 +194,7 @@ def founder_organization_register(
             from .supabase_provider import register_organization
             claims = verify_supabase_access_token(_token(authorization), require_email_verified=False)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
-            result = register_organization(claims, req.organization_name)
+            result = register_organization(claims, req.organization_name, req.branch_name)
             registration_diagnostics.stage("REGISTRATION_COMPLETE")
             return result
         claims = _token(authorization)
