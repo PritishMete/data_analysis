@@ -93,6 +93,7 @@ jobs:
           INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
           INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
           INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
         run: |
           set -euo pipefail
           required=(
@@ -140,6 +141,8 @@ jobs:
             "INSIGHTFLOW_SUPABASE_URL=$(clean_env INSIGHTFLOW_SUPABASE_URL)"
             --dart-define
             "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
+            --dart-define
+            "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
           )
           flutter "${build_args[@]}"
 
