@@ -113627,7 +113627,9 @@ if(o!=null)k.m(0,"Authorization","Bearer "+A.k(o))
 o=A.v(l,l)
 n=d.f
 if(n!=null)o.I(0,n)
-m=A.cP(b,0,null)
+n=d.d
+if(n!=null){n.toString
+o.m(0,"redirect_to",n)}m=A.cP(b,0,null)
 l=A.dg(m.giS(),l,t.z)
 l.I(0,o)
 s=3
@@ -113755,18 +113757,18 @@ break
 case 6:case 1:return A.p(q,r)
 case 2:return A.o(o.at(-1),r)}})
 return A.q($async$Bz,r)},
-xn(a,b,c){return this.abV(a,b,c)},
-abV(a,b,c){var s=0,r=A.r(t.W8),q,p=this,o,n,m,l,k,j,i
-var $async$xn=A.n(function(d,e){if(d===1)return A.o(e,r)
+xn(a,b,c,d){return this.abV(a,b,c,d)},
+abV(a,b,c,d){var s=0,r=A.r(t.W8),q,p=this,o,n,m,l,k,j,i
+var $async$xn=A.n(function(e,f){if(e===1)return A.o(f,r)
 for(;;)switch(s){case 0:s=3
 return A.i(p.Y5(),$async$xn)
-case 3:o=e
+case 3:o=f
 n=p.grm()
 m=t.N
 l=A.x(["captcha_token",null],m,t.u)
 s=4
-return A.i(n.np(0,p.f+"/signup",B.hi,A.A_(A.x(["email",b,"password",c,"data",a,"gotrue_meta_security",l,"code_challenge",o,"code_challenge_method",o!=null?"s256":null],m,t.z),p.r,null,null,null,null)),$async$xn)
-case 4:k=e
+return A.i(n.np(0,p.f+"/signup",B.hi,A.A_(A.x(["email",b,"password",d,"data",a,"gotrue_meta_security",l,"code_challenge",o,"code_challenge_method",o!=null?"s256":null],m,t.z),p.r,null,null,null,c)),$async$xn)
+case 4:k=f
 j=A.bbf(k)
 i=j.a
 if(i!=null){p.rw(i)
@@ -117320,7 +117322,7 @@ k===$&&A.a()
 k=k.gfH()
 l=l==null?null:A.x(["display_name",l],t.N,t.z)
 s=7
-return A.i(k.xn(l,h,g),$async$yV)
+return A.i(k.xn(l,h,"https://pritishmete.github.io/data_analysis/",g),$async$yV)
 case 7:p=2
 s=6
 break
