@@ -50,11 +50,13 @@ def test_supabase_registration_persists_branch_head_context():
         session.execute(text("DELETE FROM organizations WHERE organization_id = :id"), {"id": result["organization_id"]})
 
 
-def test_supabase_registration_rejects_control_characters():
+def test_supabase_registration_rejects_invalid_organization_or_branch_names():
     from firebase_authz.supabase_provider import register_organization
 
     with pytest.raises(ValueError):
         register_organization({"uid": "u"}, "bad\nname")
+    with pytest.raises(ValueError):
+        register_organization({"uid": "u"}, "ABC", "bad\nbranch")
 
 
 def test_dataset_and_working_copy_authorization_is_workspace_scoped():
