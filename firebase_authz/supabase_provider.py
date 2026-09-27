@@ -112,8 +112,12 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
                          VALUES (:event, :organization, :principal, 'organization.register', 'succeeded')"""),
                    {"event": _id("evt"), "organization": organization_id, "principal": principal_id})
         registration_diagnostics.stage("AUDIT_EVENT_CREATED")
+        # Keep the final diagnostic stage inside the transaction. If this
+        # stage (or anything else in the transaction) fails, SessionLocal.begin
+        # rolls the entire registration back instead of committing a partial
+        # organization and then returning an error to the caller.
+        registration_diagnostics.stage("DB_COMMIT_COMPLETE")
 
-    registration_diagnostics.stage("DB_COMMIT_COMPLETE")
     return {"initialized": True, "organization_id": organization_id,
             "workspace_id": workspace_id, "location_id": location_id, "branch_identifier": branch_id,
             "membership_status": "active",
