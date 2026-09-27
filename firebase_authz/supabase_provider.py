@@ -21,7 +21,7 @@ def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def register_organization(claims: dict[str, Any], organization_name: str, branch_name: str = "Main Branch") -> dict[str, Any]:
+def register_organization(claims: dict[str, Any], organization_name: str, branch_name: str, branch_identifier: str) -> dict[str, Any]:
     name = str(organization_name or "").strip()
     if not 1 <= len(name) <= 120 or any(ord(c) < 32 or ord(c) == 127 for c in name):
         raise ValueError("Organization name must be between 1 and 120 characters.")
@@ -29,6 +29,10 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
     branch = str(branch_name or "").strip()
     if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
         raise ValueError("Branch name must be between 1 and 160 characters.")
+
+    branch_id = str(branch_identifier or "").strip()
+    if not 2 <= len(branch_id) <= 64 or not __import__("re").fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,63}", branch_id):
+        raise ValueError("Branch identifier must be 2-64 characters using letters, numbers, dot, underscore, or hyphen.")
 
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
@@ -70,10 +74,10 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
                          VALUES (:workspace, :organization)"""),
                    {"workspace": workspace_id, "organization": organization_id})
         registration_diagnostics.stage("WORKSPACE_CREATED")
-        db.execute(text("""INSERT INTO locations(location_id, organization_id, name)
-                         VALUES (:location, :organization, :name)"""),
+        db.execute(text("""INSERT INTO locations(location_id, organization_id, name, branch_identifier)
+                         VALUES (:location, :organization, :name, :branch_identifier)"""),
                    {"location": location_id, "organization": organization_id,
-                    "name": branch})
+                    "name": branch, "branch_identifier": branch_id})
         registration_diagnostics.stage("LOCATION_CREATED")
         db.execute(text("""INSERT INTO organization_members
                          (organization_id, workspace_id, principal_id, employee_id)
@@ -100,7 +104,7 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
 
     registration_diagnostics.stage("DB_COMMIT_COMPLETE")
     return {"initialized": True, "organization_id": organization_id,
-            "workspace_id": workspace_id, "location_id": location_id,
+            "workspace_id": workspace_id, "location_id": location_id, "branch_identifier": branch_id,
             "membership_status": "active",
             "role_ids": ["branch_head"],
             "branch_head_assignment_id": assignment_id}
