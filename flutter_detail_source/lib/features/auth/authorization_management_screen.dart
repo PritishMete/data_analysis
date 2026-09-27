@@ -136,9 +136,8 @@ class _AuthorizationManagementScreenState
     if (members.isEmpty) {
       return [const _MetaRow('Status', 'No members in this scope.')];
     }
-    final owner = List<String>.from(
-      _snapshot['role_ids'] ?? const [],
-    ).contains('organization_owner');
+    final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
+    final owner = roles.contains('organization_owner') || roles.contains('branch_head');
     return members.expand<Widget>((member) {
       final uid = member['uid']?.toString() ?? '';
       final status = member['membership_status']?.toString() ?? 'active';
@@ -255,7 +254,8 @@ class _AuthorizationManagementScreenState
     final lead =
         roles.contains('team_lead') &&
         !roles.contains('manager') &&
-        !roles.contains('organization_owner');
+        !roles.contains('organization_owner') &&
+        !roles.contains('branch_head');
     final allMembers =
         (_snapshot[lead ? 'approved_employees' : 'members'] as List? ??
                 const [])
@@ -732,7 +732,7 @@ class _AuthorizationManagementScreenState
     }
 
     final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
-    final isOwner = roles.contains('organization_owner');
+    final isOwner = roles.contains('organization_owner') || roles.contains('branch_head');
     final isManager = roles.contains('manager');
     final isLead = roles.contains('team_lead');
     final isViewer = roles.contains('external_viewer');
@@ -824,8 +824,10 @@ class _AuthorizationManagementScreenState
     ];
 
     return AuthGlassScaffold(
-      title: 'ACCESS / AUTHORIZATION',
-      subtitle: 'Capability and resource authorization metadata only',
+      title: isOwner ? 'ORGANIZATION / MANAGEMENT' : 'ACCESS / AUTHORIZATION',
+      subtitle: isOwner
+          ? 'Branch Head management portal'
+          : 'Capability and resource authorization metadata only',
       children: [
         ...sections,
         const SizedBox(height: 10),
