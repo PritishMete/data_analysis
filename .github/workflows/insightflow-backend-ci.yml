@@ -32,6 +32,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
 
+      - name: Verify authorization migration runner
+        run: |
+          python -m py_compile tools/run_authz_migrations.py
+          python tools/run_authz_migrations.py --help >/dev/null
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
