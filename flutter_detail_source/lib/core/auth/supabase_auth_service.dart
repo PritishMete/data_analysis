@@ -56,6 +56,7 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signUp(
       email: email,
       password: password,
+      emailRedirectTo: 'https://pritishmete.github.io/data_analysis/',
       data: displayName == null ? null : {'display_name': displayName},
     );
   }
