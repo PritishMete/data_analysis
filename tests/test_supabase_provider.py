@@ -31,10 +31,17 @@ def test_supabase_registration_persists_owner_context():
             JOIN organization_members m ON m.organization_id = o.organization_id
             JOIN member_roles mr ON mr.organization_id = m.organization_id AND mr.principal_id = m.principal_id
             WHERE o.organization_id = :id"""), {"id": result["organization_id"]}).one()
+        assignment = connection.execute(text("""SELECT oa.location_id, oa.role_id, oa.status
+            FROM organizational_assignments oa
+            WHERE oa.organization_id = :id AND oa.principal_id = :principal"""),
+                                        {"id": result["organization_id"], "principal": claims["uid"]}).one()
     assert row.name == "ABC"
     assert row.workspace_id == result["workspace_id"]
     assert row.employee_id.startswith("emp_")
     assert row.role_id == "organization_owner"
+    assert assignment.location_id == result["location_id"]
+    assert assignment.role_id == "organization_owner"
+    assert assignment.status == "active"
 
     with SessionLocal.begin() as session:
         session.execute(text("DELETE FROM organizations WHERE organization_id = :id"), {"id": result["organization_id"]})
