@@ -423,7 +423,7 @@ class _AuthScreenState extends State<AuthScreen> {
 }
 
 /// The Lockr authentication background recipe: black base + slow drifting
-/// green, blue and graphite radial light blobs, sampled by the glass renderer.
+/// dark-blue, blue and graphite radial light blobs, sampled by the glass renderer.
 class _AuthLiquidBackground extends StatefulWidget {
   const _AuthLiquidBackground();
 
@@ -491,7 +491,7 @@ class _AuthBlobPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const blobs = [
-      (Color(0xFF3DDC97), 0.50),
+      (Color(0xFF123A8C), 0.50),
       (Color(0xFF2E6FF2), 0.42),
       (Color(0xFF6E6E76), 0.38),
     ];
