@@ -59,9 +59,31 @@ class InsightFlowSupabaseAuthService {
   }
 
   static String? get accessToken => currentSession?.accessToken;
+  static User? get currentSupabaseUser => currentSession?.user;
+
+  static bool get isCurrentUserEmailVerified =>
+      currentSupabaseUser?.emailConfirmedAt != null;
+
+  static bool isEmailVerificationError(Object error) {
+    if (error is AuthException) {
+      final code = error.code.toLowerCase();
+      final message = error.message.toLowerCase();
+      return code == 'email_not_confirmed' ||
+          code == 'email_not_verified' ||
+          message.contains('email not confirmed') ||
+          message.contains('email not verified') ||
+          message.contains('email confirmation');
+    }
+    return false;
+  }
+
   static SupabaseAuthUser? get currentUser {
-    final user = currentSession?.user;
-    return user == null ? null : SupabaseAuthUser(user.id, user.email);
+    final user = currentSupabaseUser;
+    return user == null ? null : SupabaseAuthUser(
+      user.id,
+      user.email,
+      emailVerified: user.emailConfirmedAt != null,
+    );
   }
 
   static Future<AuthResponse> signInWithPassword({
@@ -148,7 +170,12 @@ class InsightFlowSupabaseAuthService {
 }
 
 class SupabaseAuthUser {
-  const SupabaseAuthUser(this.uid, this.email);
+  const SupabaseAuthUser(
+    this.uid,
+    this.email, {
+    required this.emailVerified,
+  });
   final String uid;
   final String? email;
+  final bool emailVerified;
 }
