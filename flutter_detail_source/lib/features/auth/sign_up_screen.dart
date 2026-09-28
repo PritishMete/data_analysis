@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -6,6 +7,7 @@ import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
+import 'google_web_sign_in_button.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -78,6 +80,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
         _loading = false;
         _error =
             'Account created. Verification email sent. Verify your email before continuing.';
+      });
+    }
+  }
+
+  Future<void> _signUpWithGoogle() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await InsightFlowAuthService.signInWithGoogle();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = InsightFlowAuthService.userFacingAuthError(error);
       });
     }
   }
@@ -157,6 +175,50 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 8),
+        if (kIsWeb)
+          GoogleWebSignInButton(
+            enabled: !_loading,
+            onStarted: () {
+              if (mounted) {
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
+              }
+            },
+            onAuthenticated: (account) async {
+              try {
+                await InsightFlowAuthService.signInWithGoogleAccount(account);
+              } catch (error) {
+                if (!mounted) return;
+                setState(() {
+                  _loading = false;
+                  _error = InsightFlowAuthService.userFacingAuthError(error);
+                });
+              }
+            },
+            onError: (error) {
+              if (!mounted) return;
+              setState(() {
+                _loading = false;
+                _error = InsightFlowAuthService.userFacingAuthError(error);
+              });
+            },
+          )
+        else
+          GlassButton.custom(
+            onTap: _loading ? () {} : _signUpWithGoogle,
+            enabled: !_loading,
+            width: double.infinity,
+            height: 42,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Continue with Google',
+            child: const Text(
+              'Continue with Google',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ),
         const SizedBox(height: 12),
         Wrap(
           alignment: WrapAlignment.center,
