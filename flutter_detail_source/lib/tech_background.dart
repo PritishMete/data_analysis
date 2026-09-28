@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'app_colors.dart';
 
-/// Cyberpunk animated background — slow drifting cyan/blue/green blobs
+/// Liquid-glass animated background — slow drifting dark-blue/blue/graphite blobs
 /// over a deep navy base gradient.
 ///
 /// Wrap with [GlassBackgroundSource] so every [GlassContainer] in the
@@ -110,20 +110,20 @@ class _TechBlobPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Three drifting blobs using the cyberpunk palette
+    // Three drifting blobs using the shared InsightFlow blue/graphite palette
     final blobs = [
       (
-      TechColors.borderActive, // cyan #00E5FF
+      TechColors.brandDarkBlue, // dark blue
       0.50,
       _pos0,
       ),
       (
-      TechColors.statusBlue, // blue #3399FF
+      TechColors.brandBlue, // blue
       0.42,
       _pos1,
       ),
       (
-      TechColors.statusGreen, // green #00FF66
+      TechColors.brandGraphite, // graphite
       0.38,
       _pos2,
       ),
