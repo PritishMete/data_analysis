@@ -58,8 +58,7 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      final unverified =
-          error is AuthException && error.code == 'email_not_confirmed';
+      final unverified = InsightFlowSupabaseAuthService.isEmailVerificationError(error);
       setState(() {
         _loading = false;
         _emailVerificationRequired = unverified;
