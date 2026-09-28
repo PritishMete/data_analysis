@@ -950,19 +950,38 @@ class _PortalGlassAppBar extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onLogout;
 
+  // Match the same physical-liquid-glass character used by the floating
+  // InsightFlow action bubble: deep blur, visible refraction, chromatic edge
+  // separation and a restrained specular highlight.
+  static const _bubbleSettings = LiquidGlassSettings(
+    thickness: 24,
+    blur: 20,
+    chromaticAberration: 0.12,
+    lightIntensity: 0.5,
+    refractiveIndex: 1.25,
+    saturation: 1.2,
+    glassColor: Color(0x1200E5FF),
+  );
+
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.standard,
+      settings: _bubbleSettings,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
       child: Row(
         children: [
+          // Brand mark is deliberately kept inside the same glass surface,
+          // so the background glow/refraction visibly passes through it.
           const Icon(
             Icons.terminal,
             color: TechColors.borderActive,
             size: 18,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 9),
           const Text(
             'InsightFlow',
             style: TextStyle(
@@ -970,22 +989,23 @@ class _PortalGlassAppBar extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.bold,
               fontFamily: 'monospace',
+              letterSpacing: 0.2,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Container(
             width: 1,
             height: 20,
-            color: TechColors.textMuted.withValues(alpha: 0.28),
+            color: Colors.white.withValues(alpha: 0.16),
           ),
-          const SizedBox(width: 14),
-          Flexible(
+          const SizedBox(width: 12),
+          Expanded(
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.admin_panel_settings_outlined,
                   size: 16,
-                  color: TechColors.textMuted,
+                  color: Colors.white.withValues(alpha: 0.58),
                 ),
                 const SizedBox(width: 7),
                 Flexible(
@@ -996,7 +1016,21 @@ class _PortalGlassAppBar extends StatelessWidget {
                     style: const TextStyle(
                       color: TechColors.textPrimary,
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.42),
+                      fontSize: 9,
                       fontFamily: 'monospace',
                     ),
                   ),
@@ -1004,30 +1038,66 @@ class _PortalGlassAppBar extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
+          const SizedBox(width: 6),
+          _PortalGlassIconButton(
             tooltip: 'Account',
+            icon: Icons.account_circle_outlined,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AccountManagementScreen(),
               ),
             ),
-            icon: const Icon(
-              Icons.account_circle_outlined,
-              size: 18,
-              color: TechColors.textPrimary,
-            ),
           ),
-          IconButton(
+          _PortalGlassIconButton(
             tooltip: 'Sign out',
+            icon: Icons.logout,
             onPressed: onLogout,
-            icon: const Icon(
-              Icons.logout,
-              size: 18,
-              color: TechColors.textPrimary,
-            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PortalGlassIconButton extends StatelessWidget {
+  const _PortalGlassIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  static const _buttonSettings = LiquidGlassSettings(
+    thickness: 24,
+    blur: 20,
+    chromaticAberration: 0.12,
+    lightIntensity: 0.5,
+    refractiveIndex: 1.25,
+    saturation: 1.2,
+    glassColor: Color(0x1600E5FF),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassButton.custom(
+      onTap: onPressed ?? () {},
+      enabled: onPressed != null,
+      width: 38,
+      height: 38,
+      shape: const LiquidOval(),
+      useOwnLayer: true,
+      quality: GlassQuality.standard,
+      settings: _buttonSettings,
+      glowColor: Colors.white.withValues(alpha: 0.42),
+      glowRadius: 1.0,
+      interactionScale: 1.06,
+      child: Icon(
+        icon,
+        size: 17,
+        color: TechColors.textPrimary,
       ),
     );
   }
