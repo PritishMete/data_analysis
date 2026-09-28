@@ -123,6 +123,33 @@ BEGIN
         END IF;
     END LOOP;
 
+    -- Handle organizations whose creator is this principal but where
+    -- membership was already absent or inconsistent. Transfer ownership when
+    -- another member exists; otherwise remove the orphaned organization.
+    FOR org IN
+        SELECT o.organization_id
+        FROM public.organizations o
+        WHERE o.created_by_principal_id = principal
+    LOOP
+        SELECT om.principal_id
+          INTO replacement_principal
+          FROM public.organization_members om
+         WHERE om.organization_id = org.organization_id
+           AND om.status <> 'removed'
+           AND om.principal_id <> principal
+         ORDER BY om.created_at
+         LIMIT 1;
+
+        IF replacement_principal IS NOT NULL THEN
+            UPDATE public.organizations
+               SET created_by_principal_id = replacement_principal
+             WHERE organization_id = org.organization_id;
+        ELSE
+            DELETE FROM public.organizations
+             WHERE organization_id = org.organization_id;
+        END IF;
+    END LOOP;
+
     -- Remove any principal-scoped records outside memberships.
     DELETE FROM public.member_roles
      WHERE principal_id = principal;
