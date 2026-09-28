@@ -32,7 +32,7 @@ class InsightFlowFloatingBrand extends StatelessWidget {
       interactionScale: 1.0,
       stretch: 0.0,
       anchorStretch: false,
-      glowColor: TechColors.brandBlue.withValues(alpha: 0.16),
+      glowColor: TechColors.borderActive.withValues(alpha: 0.16),
       label: 'InsightFlow',
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -43,7 +43,7 @@ class InsightFlowFloatingBrand extends StatelessWidget {
             Icon(
               Icons.auto_awesome_rounded,
               size: 16,
-              color: TechColors.brandBlue,
+              color: TechColors.borderActive,
             ),
             SizedBox(width: 9),
             Text(
