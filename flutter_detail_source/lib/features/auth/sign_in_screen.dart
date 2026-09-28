@@ -242,6 +242,10 @@ class _SignInScreenState extends State<SignInScreen> {
                     _error = null;
                   });
                   try {
+                    await InsightFlowSupabaseAuthService.setRememberDevice(
+                      _emailController.text.trim(),
+                      _rememberDevice,
+                    );
                     final result =
                         await InsightFlowAuthService.signInWithMicrosoft();
                     if (result == null && mounted) {
