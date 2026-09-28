@@ -30,6 +30,47 @@ Future<void> loadInsightFlowWorkspaceId(String uid) async {
   }
 }
 
+Future<bool> resolveInsightFlowWorkspaceFromBackend(String uid) async {
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  if (session == null || session.accessToken.isEmpty) return false;
+
+  final response = await http
+      .get(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+        headers: await supabaseAuthHeaders(),
+      )
+      .timeout(const Duration(seconds: 45));
+
+  if (response.statusCode != 200) return false;
+  final decoded = jsonDecode(response.body);
+  if (decoded is! Map) return false;
+
+  final workspaces = decoded['workspaces'];
+  if (workspaces is! List) return false;
+
+  final active = workspaces
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .where(
+        (item) =>
+            item['membership_status']?.toString().toLowerCase() == 'active',
+      )
+      .toList();
+
+  if (active.isEmpty) {
+    insightFlowWorkspaceId = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('insightflow.workspace.$uid');
+    return false;
+  }
+
+  final workspaceId = active.first['workspace_id']?.toString().trim() ?? '';
+  if (workspaceId.isEmpty) return false;
+
+  await setInsightFlowWorkspaceId(uid, workspaceId);
+  return true;
+}
+
 Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
   final normalized = workspaceId.trim();
   if (normalized.isEmpty) return;
