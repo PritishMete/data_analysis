@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
@@ -21,6 +22,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
   bool _loading = false;
   bool _emailVerificationRequired = false;
+  bool _messageIsError = true;
   String? _error;
 
   @override
@@ -35,13 +37,17 @@ class _SignInScreenState extends State<SignInScreen> {
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _error = 'Enter your email and password.');
+      setState(() {
+        _error = 'Enter your email and password.';
+        _messageIsError = true;
+      });
       return;
     }
 
     setState(() {
       _loading = true;
       _emailVerificationRequired = false;
+      _messageIsError = true;
       _error = null;
     });
 
@@ -57,6 +63,7 @@ class _SignInScreenState extends State<SignInScreen> {
       setState(() {
         _loading = false;
         _emailVerificationRequired = unverified;
+        _messageIsError = !unverified;
         _error = unverified
             ? 'Your account is not verified yet. Verify your email before signing in.'
             : InsightFlowAuthService.userFacingAuthError(error);
@@ -100,6 +107,7 @@ class _SignInScreenState extends State<SignInScreen> {
       setState(() {
         _loading = false;
         _emailVerificationRequired = true;
+        _messageIsError = false;
         _error = 'Verification email sent again. Check your inbox.';
       });
     } catch (error) {
@@ -164,7 +172,7 @@ class _SignInScreenState extends State<SignInScreen> {
           const SizedBox(height: 8),
           AuthGlassMessage(
             text: _error!,
-            error: !_error!.startsWith('Password reset email sent'),
+            error: _messageIsError,
           ),
         ],
         if (_emailVerificationRequired) ...[
