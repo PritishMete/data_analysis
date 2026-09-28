@@ -9,6 +9,7 @@ import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'sign_in_screen.dart';
+import '../../widgets/insightflow_floating_brand.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -220,10 +221,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     }
 
     final user = InsightFlowSupabaseAuthService.currentUser ?? widget.user;
-    if (insightFlowWorkspaceId.isNotEmpty) {
-      return DataScreen(key: ValueKey('${user.uid}:$insightFlowWorkspaceId'));
-    }
-    return const CompanyRegistrationScreen();
+    final authenticatedChild = insightFlowWorkspaceId.isNotEmpty
+        ? DataScreen(key: ValueKey('${user.uid}:$insightFlowWorkspaceId'))
+        : const CompanyRegistrationScreen();
+    return AuthenticatedBrandShell(child: authenticatedChild);
   }
 }
 
