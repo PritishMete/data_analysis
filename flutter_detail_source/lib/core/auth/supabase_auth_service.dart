@@ -14,6 +14,7 @@ class InsightFlowSupabaseConfig {
 }
 
 class InsightFlowSupabaseAuthService {
+  static String? _sessionOnlyEmail;
   InsightFlowSupabaseAuthService._();
 
   static SupabaseClient get client => Supabase.instance.client;
@@ -112,14 +113,29 @@ class InsightFlowSupabaseAuthService {
   }
 
   static Future<void> setRememberDevice(String identity, bool remember) async {
+    final normalized = identity.trim().toLowerCase();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('insightflow.remember.$identity', remember);
+    await prefs.setBool('insightflow.remember.$normalized', remember);
+    if (remember) {
+      if (_sessionOnlyEmail == normalized) _sessionOnlyEmail = null;
+    } else {
+      _sessionOnlyEmail = normalized.isEmpty ? null : normalized;
+    }
   }
 
   static Future<bool> rememberDevice(String identity) async {
+    final normalized = identity.trim().toLowerCase();
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('insightflow.remember.$identity') ?? true;
+    return prefs.getBool('insightflow.remember.$normalized') ?? true;
   }
+
+  static void markSessionOnlyLogin(String identity) {
+    final normalized = identity.trim().toLowerCase();
+    _sessionOnlyEmail = normalized.isEmpty ? null : normalized;
+  }
+
+  static bool allowsCurrentSession(String identity) =>
+      _sessionOnlyEmail == identity.trim().toLowerCase();
 
   static Future<AuthResponse> signInWithPassword({
     required String email,

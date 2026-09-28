@@ -192,7 +192,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       final email = authoritativeUser.email;
       if (email != null &&
           email.isNotEmpty &&
-          !await InsightFlowSupabaseAuthService.rememberDevice(email)) {
+          !await InsightFlowSupabaseAuthService.rememberDevice(email) &&
+          !InsightFlowSupabaseAuthService.allowsCurrentSession(email)) {
         await InsightFlowSupabaseAuthService.signOut();
         if (mounted) setState(() => _loading = false);
         return;

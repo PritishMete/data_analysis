@@ -480,7 +480,7 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                 JOIN organizations o ON o.organization_id = m.organization_id
                 JOIN workspaces w ON w.workspace_id = m.workspace_id
                 WHERE b.provider=:provider AND b.provider_subject=:subject
-                  AND (CAST(:workspace AS TEXT) IS NULL OR w.workspace_id=:workspace)
+                  AND (CAST(:workspace AS TEXT) IS NULL OR w.workspace_id=CAST(:workspace AS TEXT))
                   AND b.status='active' AND m.status='active'"""),
                          {"provider": provider, "subject": subject, "workspace": workspace_id}).mappings().first()
         if not row:

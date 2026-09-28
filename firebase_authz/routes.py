@@ -195,7 +195,7 @@ def founder_organization_register(
         if provider == "supabase":
             from .supabase_auth import verify_supabase_access_token
             from .supabase_provider import register_organization
-            claims = verify_supabase_access_token(_token(authorization), require_email_verified=False)
+            claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
             if not req.organization_name or not req.branch_name or not req.branch_identifier:
                 raise ValueError(
@@ -214,7 +214,7 @@ def founder_organization_register(
             raise ValueError(
                 "Organization name, branch name, and branch identifier are required."
             )
-        result = bootstrap_owner(claims, req.organization_name, allow_any_authenticated=True)
+        result = bootstrap_owner(claims, req.organization_name, allow_any_authenticated=False)
         registration_diagnostics.stage("REGISTRATION_COMPLETE")
         return result
     except AuthenticationRequired as exc:

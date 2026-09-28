@@ -51,7 +51,7 @@ class AuthGlassScaffold extends StatelessWidget {
                         settings: kAuthPanelGlass,
                         quality: GlassQuality.standard,
                         shape: kAuthPanelShape,
-                        padding: const EdgeInsets.all(28),
+                        padding: EdgeInsets.all(narrow ? 20 : 28),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [

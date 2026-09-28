@@ -2563,6 +2563,7 @@ if ai_router is not None:
 # (datasets, dataset_columns, dataset_relationships, query_history) if they
 # don't already exist; safe to call on every process start.
 # ---------------------------------------------------------
+_run_production_authz_migrations()
 init_db()
 app.include_router(dataset_registry_router)
 app.include_router(schema_intelligence_router)

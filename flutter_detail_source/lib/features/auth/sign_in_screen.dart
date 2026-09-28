@@ -57,6 +57,9 @@ class _SignInScreenState extends State<SignInScreen> {
         email: email,
         password: password,
       );
+      if (!_rememberDevice) {
+        InsightFlowSupabaseAuthService.markSessionOnlyLogin(email);
+      }
     } catch (error) {
       if (!mounted) return;
       final unverified = InsightFlowSupabaseAuthService.isEmailVerificationError(error);
