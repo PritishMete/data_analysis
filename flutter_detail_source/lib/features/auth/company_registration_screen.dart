@@ -109,8 +109,12 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         ),
       );
       _organizationDiagnostic = result.diagnostic;
-      if (mounted) setState(() {});
       final response = result.response;
+      final businessError = organizationServiceBusinessErrorMessage(response);
+      if (businessError != null) {
+        _organizationDiagnostic = null;
+      }
+      if (mounted) setState(() {});
       dynamic decoded;
       try {
         decoded = response.body.trim().isEmpty
@@ -122,6 +126,9 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       final detail = decoded is Map
           ? decoded['detail']?.toString().trim()
           : null;
+      if (businessError != null) {
+        throw StateError(businessError);
+      }
       if (response.statusCode == 401) {
         throw StateError('InsightFlow authentication could not be verified.');
       }
