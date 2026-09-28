@@ -296,10 +296,13 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
         GlassButton.custom(
           onTap: _busy
               ? () {}
-              : () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const SignInScreen()),
-                  (route) => false,
-                ),
+              : () async {
+                  // Keep AuthGate as the single source of truth for routing.
+                  // Replacing it with a standalone SignInScreen leaves that
+                  // screen unable to react to the next successful sign-in,
+                  // which previously made a browser refresh appear necessary.
+                  await InsightFlowSupabaseAuthService.signOut();
+                },
           enabled: !_busy,
           width: double.infinity,
           height: 42,
