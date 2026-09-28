@@ -84,6 +84,14 @@ class InsightFlowSupabaseAuthService {
     );
   }
 
+  static Future<void> resendSignupVerification(String email) {
+    return client.auth.resend(
+      type: OtpType.signup,
+      email: email.trim(),
+      emailRedirectTo: 'https://pritishmete.github.io/data_analysis/',
+    );
+  }
+
   static Future<void> resetPassword(String email, {String? redirectTo}) {
     return client.auth.resetPasswordForEmail(email, redirectTo: redirectTo);
   }
