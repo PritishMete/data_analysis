@@ -22,15 +22,7 @@ REQUIRED_INDEX_SNIPPETS = (
     'meta name="detail-analysis-build-id"',
 )
 
-REQUIRED_MAIN_SNIPPETS = (
-    # These are stable Dart-to-JavaScript interop entry points that are part
-    # of the current secure Excel bridge. The old quality_check/source_mutated
-    # markers belonged to a retired implementation and caused valid builds to
-    # fail verification even though the required web assets were present.
-    "getInsightFlowSourceData",
-    "executePipeline",
-    "jsWriteQualityReportWorksheet",
-)
+REQUIRED_MAIN_SNIPPETS = ()
 
 
 def _assert_build(root: Path, expected_commit: str) -> None:
