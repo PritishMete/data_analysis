@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -9,7 +8,6 @@ import '../../core/auth/supabase_auth_service.dart';
 import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
-import 'organization_onboarding_screen.dart';
 import 'sign_in_screen.dart';
 
 class AuthGate extends StatelessWidget {
@@ -229,11 +227,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   }
 }
 
-class _AuthorizationGateException implements Exception {
-  const _AuthorizationGateException(this.message);
-  final String message;
-}
-
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key, required this.user});
 
@@ -347,87 +340,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         const SizedBox(height: 8),
         TextButton(
           onPressed: _busy ? null : InsightFlowAuthService.signOut,
-          child: const Text('Sign out'),
-        ),
-      ],
-    );
-  }
-}
-
-class _NoOrganizationAccessScreen extends StatelessWidget {
-  const _NoOrganizationAccessScreen({required this.onRegisterCompany});
-
-  final Future<void> Function() onRegisterCompany;
-
-  @override
-  Widget build(BuildContext context) {
-    return AuthGlassScaffold(
-      title: 'ORGANIZATION / ACCESS',
-      subtitle: 'Authentication succeeded, but no company access is assigned.',
-      children: [
-        const AuthGlassMessage(
-          text:
-              'No InsightFlow organization access is assigned to this account. Employees must be approved by an organization administrator.',
-        ),
-        const SizedBox(height: 14),
-        GlassButton.custom(
-          onTap: onRegisterCompany,
-          enabled: true,
-          width: double.infinity,
-          height: 44,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: 'Register Company',
-          child: const Text(
-            'Register Company',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed: InsightFlowAuthService.signOut,
-          child: const Text('Sign out'),
-        ),
-      ],
-    );
-  }
-}
-
-class _AccessStateScreen extends StatelessWidget {
-  const _AccessStateScreen({
-    required this.title,
-    required this.message,
-    required this.action,
-    this.actionLabel = 'Retry',
-  });
-
-  final String title;
-  final String message;
-  final Future<void> Function() action;
-  final String actionLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return AuthGlassScaffold(
-      title: title,
-      subtitle: 'Authentication is separate from organization authorization.',
-      children: [
-        AuthGlassMessage(text: message),
-        const SizedBox(height: 14),
-        GlassButton.custom(
-          onTap: action,
-          enabled: true,
-          width: double.infinity,
-          height: 44,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: actionLabel,
-          child: Text(
-            actionLabel,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed: InsightFlowAuthService.signOut,
           child: const Text('Sign out'),
         ),
       ],
