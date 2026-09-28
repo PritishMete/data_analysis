@@ -41,7 +41,7 @@ def _jwks_client(url: str) -> PyJWKClient:
     return PyJWKClient(url, cache_jwk_set=True, lifespan=300)
 
 
-def _fetch_supabase_user(token: str, subject: str) -> dict[str, Any]:
+def _fetch_supabase_user(token: str, subject: str | None = None) -> dict[str, Any]:
     """Validate the access token against Supabase Auth and return its user.
 
     This is the authoritative verification path for legacy HS256 projects.
@@ -65,7 +65,8 @@ def _fetch_supabase_user(token: str, subject: str) -> dict[str, Any]:
             user = json.loads(response.read())
     except Exception as exc:
         raise AuthenticationRequired("Supabase user state could not be verified.") from exc
-    if not isinstance(user, dict) or str(user.get("id") or "").strip() != subject:
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    if not user_id or (subject is not None and user_id != subject):
         raise AuthenticationRequired("Supabase user identity does not match the token.")
     registration_diagnostics.stage("SUPABASE_USER_LOOKUP_COMPLETE")
     return user
@@ -84,52 +85,26 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
     if not issuer or not _project_url():
         raise AuthenticationRequired("Supabase authentication is not configured.")
     try:
-        header = jwt.get_unverified_header(token)
-        algorithm = str(header.get("alg") or "").upper()
+        signing_key = _jwks_client(
+            f"{_project_url()}/auth/v1/.well-known/jwks.json"
+        ).get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256", "RS256"],
+            audience=_setting("SUPABASE_AUTH_AUDIENCE", "authenticated"),
+            issuer=issuer,
+            leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
+            options={"require": ["sub", "exp", "iat"]},
+        )
+        registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
     except Exception as exc:
-        raise AuthenticationRequired("Supabase authentication failed.") from exc
-
-    try:
-        if algorithm == "HS256":
-            # Supabase's legacy JWT-secret projects do not expose an asymmetric
-            # public key in JWKS. Per Supabase guidance, validate these tokens
-            # through the Auth /user endpoint instead of requiring the JWT
-            # secret in this backend.
-            user = _fetch_supabase_user(token, subject="")
-            subject = str(user.get("id") or "").strip()
-            if not subject:
-                raise AuthenticationRequired("Supabase authentication failed.")
-            claims = {
-                "sub": subject,
-                "email": user.get("email"),
-                "email_confirmed_at": user.get("email_confirmed_at"),
-                "aud": "authenticated",
-            }
-            registration_diagnostics.stage("SUPABASE_AUTH_SERVER_VERIFICATION_COMPLETE")
-        elif algorithm in {"ES256", "RS256"}:
-            signing_key = _jwks_client(
-                f"{_project_url()}/auth/v1/.well-known/jwks.json"
-            ).get_signing_key_from_jwt(token)
-            claims = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["ES256", "RS256"],
-                audience=_setting("SUPABASE_AUTH_AUDIENCE", "authenticated"),
-                issuer=issuer,
-                leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
-                options={"require": ["sub", "exp", "iat"]},
-            )
-            registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
-        else:
-            raise AuthenticationRequired("Unsupported Supabase token signing algorithm.")
-    except AuthenticationRequired:
-        raise
-    except Exception as exc:
-        # If JWKS validation is temporarily unavailable, let Supabase Auth
-        # perform the authoritative token check. This also supports key
-        # rotations without making the organization service unavailable.
+        # Supabase's legacy HS256 projects intentionally expose no asymmetric
+        # key in JWKS. Per Supabase guidance, validate those tokens through the
+        # Auth /user endpoint instead of storing the JWT secret in this backend.
+        # The same authoritative fallback also makes key rotation resilient.
         try:
-            user = _fetch_supabase_user(token, str(claims.get("sub") if "claims" in locals() else ""))
+            user = _fetch_supabase_user(token)
             subject = str(user.get("id") or "").strip()
             if not subject:
                 raise AuthenticationRequired("Supabase authentication failed.")
