@@ -28,8 +28,126 @@ class AuthGate extends StatelessWidget {
         }
         final user = InsightFlowSupabaseAuthService.currentUser;
         if (user == null) return const SignInScreen();
+        if (!user.emailVerified) {
+          return const _SupabaseEmailVerificationScreen();
+        }
         return _AuthenticatedGate(user: user);
       },
+    );
+  }
+}
+
+
+class _SupabaseEmailVerificationScreen extends StatefulWidget {
+  const _SupabaseEmailVerificationScreen();
+
+  @override
+  State<_SupabaseEmailVerificationScreen> createState() =>
+      _SupabaseEmailVerificationScreenState();
+}
+
+class _SupabaseEmailVerificationScreenState
+    extends State<_SupabaseEmailVerificationScreen> {
+  bool _busy = false;
+  String? _message;
+  bool _error = false;
+
+  Future<void> _resend() async {
+    final email = InsightFlowSupabaseAuthService.currentUser?.email;
+    if (email == null || email.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await InsightFlowSupabaseAuthService.resendSignupVerification(email);
+      if (!mounted) return;
+      setState(() {
+        _message = 'Verification email sent. Check your inbox and spam folder.';
+        _error = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = 'Could not send the verification email. Please try again.';
+        _error = true;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _checkVerification() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await InsightFlowSupabaseAuthService.client.auth.refreshSession();
+      final verified =
+          InsightFlowSupabaseAuthService.isCurrentUserEmailVerified;
+      if (!mounted) return;
+      setState(() {
+        _message = verified
+            ? 'Email verified. Continuing…'
+            : 'Your email is still unverified. Open the latest verification email and try again.';
+        _error = !verified;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _message = 'Your email is still unverified. Please verify it first.';
+        _error = true;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    await InsightFlowSupabaseAuthService.signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final email = InsightFlowSupabaseAuthService.currentUser?.email ?? '';
+    return AuthGlassScaffold(
+      title: 'EMAIL / VERIFICATION REQUIRED',
+      subtitle: email,
+      children: [
+        AuthGlassMessage(
+          text: _message ??
+              'Your account is created, but your email address is not verified yet. Verify your email before continuing.',
+          error: _error,
+        ),
+        const SizedBox(height: 14),
+        GlassButton.custom(
+          onTap: _busy ? () {} : _checkVerification,
+          enabled: !_busy,
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'Check verification',
+          child: const Text('Check verification',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 8),
+        GlassButton.custom(
+          onTap: _busy ? () {} : _resend,
+          enabled: !_busy,
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'Resend verification email',
+          child: const Text('Resend verification email',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: _busy ? null : _signOut,
+          child: const Text('Sign out'),
+        ),
+      ],
     );
   }
 }
