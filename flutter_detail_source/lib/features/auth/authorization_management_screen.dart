@@ -842,6 +842,7 @@ class _AuthorizationManagementScreenState
 
     return _PortalGlassScaffold(
       wideContent: true,
+      onLogout: _logout,
       title: isOwner ? 'ORGANIZATION / MANAGEMENT' : 'ACCESS / AUTHORIZATION',
       subtitle: isOwner
           ? 'Branch Head management portal'
@@ -874,6 +875,7 @@ class _PortalGlassScaffold extends StatelessWidget {
     required this.subtitle,
     required this.children,
     this.wideContent = true,
+    this.onLogout,
   });
 
   final String title;
