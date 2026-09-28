@@ -181,7 +181,11 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
     }
     final headers = await supabaseAuthHeaders();
     if (contentType != null) headers['Content-Type'] = contentType;
-    final response = await send(headers).timeout(const Duration(seconds: 15));
+    // Render may cold-start the free web service before accepting the
+    // request. The verified production startup is ~22s, so 15s incorrectly
+    // classifies a healthy cold start as NETWORK_OR_CORS. Keep the request
+    // bounded, but allow the service enough time to become ready.
+    final response = await send(headers).timeout(const Duration(seconds: 45));
     diagnostic.httpStatus = response.statusCode;
     diagnostic.safeBodySummary = _safeOrganizationResponseSummary(
       response.body,
