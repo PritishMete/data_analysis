@@ -14,9 +14,11 @@ class BootstrapRequest(BaseModel):
 
 class FounderOrganizationRegistration(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    organization_name: str
-    branch_name: str
-    branch_identifier: str
+    # Authentication is checked before request-field validation so an
+    # unauthenticated caller cannot learn registration schema details.
+    organization_name: str | None = None
+    branch_name: str | None = None
+    branch_identifier: str | None = None
 
 class AuthorizationCheck(BaseModel):
     workspace_id: str
@@ -195,10 +197,23 @@ def founder_organization_register(
             from .supabase_provider import register_organization
             claims = verify_supabase_access_token(_token(authorization), require_email_verified=False)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
-            result = register_organization(claims, req.organization_name, req.branch_name, req.branch_identifier)
+            if not req.organization_name or not req.branch_name or not req.branch_identifier:
+                raise ValueError(
+                    "Organization name, branch name, and branch identifier are required."
+                )
+            result = register_organization(
+                claims,
+                req.organization_name,
+                req.branch_name,
+                req.branch_identifier,
+            )
             registration_diagnostics.stage("REGISTRATION_COMPLETE")
             return result
         claims = _token(authorization)
+        if not req.organization_name or not req.branch_name or not req.branch_identifier:
+            raise ValueError(
+                "Organization name, branch name, and branch identifier are required."
+            )
         result = bootstrap_owner(claims, req.organization_name, allow_any_authenticated=True)
         registration_diagnostics.stage("REGISTRATION_COMPLETE")
         return result
