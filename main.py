@@ -323,16 +323,9 @@ async def build_info():
     }
 
 # Allow Flutter/Web requests.
-# NOTE (security fix): `allow_origins=["*"]` combined with
-# `allow_credentials=True` is a known-bad CORS combination — browsers
-# reject credentialed wildcard requests outright, and where a proxy doesn't
-# enforce that, it needlessly widens the attack surface for no benefit here:
-# nothing in this API uses cookies (session_id is passed as an explicit
-# multipart Form field, never a cookie — verified: no Set-Cookie/cookie
-# usage anywhere in this file). `allow_credentials` is set to False rather
-# than pinning `allow_origins` to a fixed list, since the real list of
-# production origins isn't something to guess at here — swap in an
-# explicit origins list when that's known, instead of `["*"]`.
+# CORS is restricted to the known production web origin, with localhost
+# development origins allowed through the regex below. The API authenticates
+# with an explicit Authorization header rather than browser cookies.
 _CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
