@@ -78,7 +78,7 @@ class InsightFlowSupabaseAuthService {
     // sign-in. Keep the code check authoritative, while also handling older
     // client/server combinations that expose only a human-readable message.
     if (error is AuthException) {
-      final code = error.code.toLowerCase().trim();
+      final code = error.code?.toLowerCase().trim() ?? '';
       final message = error.message.toLowerCase().trim();
       return code == 'email_not_confirmed' ||
           code == 'email_not_verified' ||
