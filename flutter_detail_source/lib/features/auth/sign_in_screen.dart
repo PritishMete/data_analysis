@@ -63,7 +63,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _emailVerificationRequired = unverified;
         _messageIsError = !unverified;
         _error = unverified
-            ? 'Email not verified. Please verify your email address before signing in. Check your inbox and spam/junk folder for the verification email.'
+            ? 'Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.'
             : InsightFlowAuthService.userFacingAuthError(error);
       });
       return;
@@ -106,7 +106,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _loading = false;
         _emailVerificationRequired = true;
         _messageIsError = false;
-        _error = 'Verification email sent again. Check your inbox.';
+        _error = 'Verification email sent again. Check your inbox and spam/junk folder.';
       });
     } catch (error) {
       if (!mounted) return;
