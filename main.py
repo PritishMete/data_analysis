@@ -293,7 +293,10 @@ def _run_production_authz_migrations() -> None:
         raise
 
 
-_run_production_authz_migrations()
+# Production authz migrations are applied by the deployment build step, not during
+# module import. Keeping database work out of the Uvicorn import path ensures the
+# web process can bind to $PORT promptly; the migration runner itself remains
+# unchanged and is still available to the deployment workflow/build command.
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
