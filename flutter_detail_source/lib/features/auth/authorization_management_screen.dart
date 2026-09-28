@@ -9,6 +9,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../tech_background.dart';
 import 'auth_glass_widgets.dart';
 
 class AuthorizationManagementScreen extends StatefulWidget {
@@ -736,7 +737,7 @@ class _AuthorizationManagementScreenState
       );
     }
     if (_error != null) {
-      return AuthGlassScaffold(
+      return _PortalGlassScaffold(
         title: 'ACCESS / UNAVAILABLE',
         subtitle: 'AUTHORIZATION MANAGEMENT',
         children: [
@@ -839,7 +840,7 @@ class _AuthorizationManagementScreenState
         _MetadataSection(title: 'AUDIT', children: _rows(_snapshot['audit'])),
     ];
 
-    return AuthGlassScaffold(
+    return _PortalGlassScaffold(
       wideContent: true,
       title: isOwner ? 'ORGANIZATION / MANAGEMENT' : 'ACCESS / AUTHORIZATION',
       subtitle: isOwner
@@ -863,6 +864,112 @@ class _AuthorizationManagementScreenState
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PortalGlassScaffold extends StatelessWidget {
+  const _PortalGlassScaffold({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+    this.wideContent = true,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+  final bool wideContent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      body: LiquidGlassScope(
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: GlassBackgroundSource(
+                child: TechAnimatedBackground(),
+              ),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final horizontal = constraints.maxWidth < 560 ? 14.0 : 24.0;
+                    final maxWidth = wideContent ? 1400.0 : 900.0;
+                    final contentWidth = (constraints.maxWidth - horizontal * 2)
+                        .clamp(0.0, maxWidth)
+                        .toDouble();
+
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(horizontal, 10, horizontal, 28),
+                      child: Center(
+                        child: SizedBox(
+                          width: contentWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              GlassCard(
+                                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                                shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.terminal,
+                                      color: TechColors.borderActive,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: TechColors.textPrimary,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            subtitle,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: TechColors.textMuted,
+                                              fontSize: 10,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              ...children,
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -948,6 +1055,8 @@ class _MetadataSection extends StatelessWidget {
     return GlassCard(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
+      settings: TechColors.sectionGlass,
+      quality: GlassQuality.standard,
       shape: const LiquidRoundedSuperellipse(borderRadius: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
