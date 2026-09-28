@@ -163,6 +163,7 @@ class _AuthenticatedGate extends StatefulWidget {
 class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
   bool _verificationRequired = false;
+  bool _workspaceLookupFailed = false;
 
   @override
   void initState() {
@@ -175,6 +176,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     setState(() {
       _loading = true;
       _verificationRequired = false;
+      _workspaceLookupFailed = false;
     });
     try {
       // Never trust only the locally restored session for the security
@@ -183,6 +185,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       final authoritativeUser =
           await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
       if (authoritativeUser == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+
+      final email = authoritativeUser.email;
+      if (email != null &&
+          email.isNotEmpty &&
+          !await InsightFlowSupabaseAuthService.rememberDevice(email)) {
+        await InsightFlowSupabaseAuthService.signOut();
         if (mounted) setState(() => _loading = false);
         return;
       }
@@ -207,6 +218,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         setState(() {
           _loading = false;
           _verificationRequired = false;
+          _workspaceLookupFailed = resolved == null;
         });
       }
       if (!mounted) return;
@@ -234,6 +246,26 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     if (_loading) return const _AuthLoading();
     if (_verificationRequired) {
       return const _SupabaseEmailVerificationScreen();
+    }
+    if (_workspaceLookupFailed) {
+      return AuthGlassScaffold(
+        title: 'AUTH / WORKSPACE LOOKUP',
+        subtitle: 'AUTHENTICATED IDENTITY VERIFIED',
+        children: [
+          const AuthGlassMessage(
+            text: 'InsightFlow could not confirm your organization membership. Your account was not sent to the data workspace. Retry when the organization service is available.',
+          ),
+          const SizedBox(height: 12),
+          GlassButton.custom(
+            onTap: _refresh,
+            width: double.infinity,
+            height: 44,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Retry',
+            child: const Text('Retry'),
+          ),
+        ],
+      );
     }
 
     final authenticatedChild = insightFlowWorkspaceId.isNotEmpty
