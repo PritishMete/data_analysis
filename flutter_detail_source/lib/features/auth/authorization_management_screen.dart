@@ -11,6 +11,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../../tech_background.dart';
 import 'auth_glass_widgets.dart';
+import '../../widgets/shared/dock_glass_material.dart';
 
 class AuthorizationManagementScreen extends StatefulWidget {
   const AuthorizationManagementScreen({super.key, this.onStartWorking});
@@ -950,29 +951,33 @@ class _PortalGlassAppBar extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onLogout;
 
-  // Match the same physical-liquid-glass character used by the floating
-  // InsightFlow action bubble: deep blur, visible refraction, chromatic edge
-  // separation and a restrained specular highlight.
-  static const _bubbleSettings = LiquidGlassSettings(
-    thickness: 24,
-    blur: 20,
-    chromaticAberration: 0.12,
-    lightIntensity: 0.5,
-    refractiveIndex: 1.25,
-    saturation: 1.2,
-    glassColor: Color(0x1200E5FF),
-  );
-
   @override
   Widget build(BuildContext context) {
-    return GlassContainer(
-      useOwnLayer: true,
-      quality: GlassQuality.standard,
-      settings: _bubbleSettings,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
-      child: Row(
+    // This is the ScanButton material adapted to a horizontal floating
+    // surface: identical physical settings, but a rounded-rectangle geometry
+    // so the navbar remains a navbar rather than becoming one giant button.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: TechColors.borderActive.withValues(alpha: 0.24),
+            blurRadius: 18,
+            spreadRadius: 1,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: dockGlassSettings(
+          glassColor: TechColors.borderActive.withValues(alpha: 0.14),
+        ),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+        child: Row(
         children: [
           // Brand mark is deliberately kept inside the same glass surface,
           // so the background glow/refraction visibly passes through it.
@@ -1070,16 +1075,6 @@ class _PortalGlassIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
 
-  static const _buttonSettings = LiquidGlassSettings(
-    thickness: 24,
-    blur: 20,
-    chromaticAberration: 0.12,
-    lightIntensity: 0.5,
-    refractiveIndex: 1.25,
-    saturation: 1.2,
-    glassColor: Color(0x1600E5FF),
-  );
-
   @override
   Widget build(BuildContext context) {
     return GlassButton.custom(
@@ -1090,10 +1085,12 @@ class _PortalGlassIconButton extends StatelessWidget {
       shape: const LiquidOval(),
       useOwnLayer: true,
       quality: GlassQuality.standard,
-      settings: _buttonSettings,
-      glowColor: Colors.white.withValues(alpha: 0.42),
-      glowRadius: 1.0,
-      interactionScale: 1.06,
+      settings: dockGlassSettings(
+        glassColor: TechColors.borderActive.withValues(alpha: 0.16),
+      ),
+      glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
+      glowRadius: kDockGlowRadius,
+      interactionScale: kDockInteractionScale,
       child: Icon(
         icon,
         size: 17,
