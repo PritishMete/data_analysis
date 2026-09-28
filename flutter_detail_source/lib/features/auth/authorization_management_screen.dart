@@ -730,7 +730,7 @@ class _AuthorizationManagementScreenState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AuthGlassScaffold(
+      return const _PortalGlassScaffold(
         title: 'ACCESS / LOADING',
         subtitle: 'READING ORGANIZATION AUTHORIZATION METADATA',
         children: [Center(child: CircularProgressIndicator(strokeWidth: 1.8))],
