@@ -229,6 +229,24 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         // data workspace without a resolved authorization context.
         return;
       }
+    } on AuthException catch (error) {
+      // A locally-restored JWT can outlive the Auth user record. Supabase
+      // explicitly notes that deleting an Auth user does not retroactively
+      // invalidate an already-issued access token, so a refresh can enter
+      // this branch with a stale local session. Never interpret that state
+      // as a new user who should be sent to Company Registration.
+      final message = error.message.toLowerCase();
+      final invalidSession = message.contains('user not found') ||
+          message.contains('user does not exist') ||
+          message.contains('does not exist') ||
+          message.contains('invalid jwt') ||
+          message.contains('session not found') ||
+          message.contains('session does not exist');
+      if (invalidSession) {
+        await InsightFlowSupabaseAuthService.signOut();
+        return;
+      }
+      if (mounted) setState(() => _loading = false);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
