@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/insightflow_auth_service.dart';
