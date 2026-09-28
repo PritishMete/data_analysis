@@ -877,21 +877,59 @@ class _ResponsivePortalSections extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final columns = width >= 1050 ? 3 : width >= 680 ? 2 : 1;
-        final gap = width >= 680 ? 12.0 : 10.0;
-        final itemWidth = columns == 1
+
+        // Use the actual space available to the portal, not the device type.
+        // Keep cards readable instead of stretching them across very wide
+        // monitors, while progressively adding columns as room becomes
+        // available.
+        final columns = width >= 1120 ? 3 : width >= 720 ? 2 : 1;
+        final gap = width >= 720 ? 14.0 : 10.0;
+        final columnWidth = columns == 1
             ? width
             : (width - gap * (columns - 1)) / columns;
 
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
+        if (columns == 1) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < sections.length; index++) ...[
+                sections[index],
+                if (index != sections.length - 1) SizedBox(height: gap),
+              ],
+            ],
+          );
+        }
+
+        // A column layout avoids the large empty row heights produced by a
+        // regular GridView when portal cards contain different amounts of
+        // authorization metadata. Sections remain in source order while the
+        // same reusable cards are simply positioned into responsive columns.
+        final columnSections = List.generate(columns, (_) => <Widget>[]);
+        for (var index = 0; index < sections.length; index++) {
+          columnSections[index % columns].add(sections[index]);
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final section in sections)
+            for (var column = 0; column < columns; column++) ...[
               SizedBox(
-                width: itemWidth,
-                child: section,
+                width: columnWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var index = 0;
+                        index < columnSections[column].length;
+                        index++) ...[
+                      columnSections[column][index],
+                      if (index != columnSections[column].length - 1)
+                        SizedBox(height: gap),
+                    ],
+                  ],
+                ),
               ),
+              if (column != columns - 1) SizedBox(width: gap),
+            ],
           ],
         );
       },
