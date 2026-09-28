@@ -64,6 +64,14 @@ class InsightFlowSupabaseAuthService {
   static bool get isCurrentUserEmailVerified =>
       currentSupabaseUser?.emailConfirmedAt != null;
 
+  /// Fetch the user from Supabase Auth instead of trusting a possibly stale
+  /// locally-restored session object. This is used at the authorization
+  /// boundary before organization/workspace access is allowed.
+  static Future<User?> fetchAuthoritativeUser() async {
+    final response = await client.auth.getUser();
+    return response.user;
+  }
+
   static bool isEmailVerificationError(Object error) {
     if (error is AuthException) {
       final code = error.code.toLowerCase();
