@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
@@ -108,6 +109,16 @@ class InsightFlowSupabaseAuthService {
       user.email,
       emailVerified: user.emailConfirmedAt != null,
     );
+  }
+
+  static Future<void> setRememberDevice(String uid, bool remember) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('insightflow.remember.$uid', remember);
+  }
+
+  static Future<bool> rememberDevice(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('insightflow.remember.$uid') ?? true;
   }
 
   static Future<AuthResponse> signInWithPassword({
