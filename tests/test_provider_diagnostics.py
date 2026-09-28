@@ -54,6 +54,10 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     calls = []
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "new-user"})
     monkeypatch.setattr(
+        "firebase_authz.supabase_auth.verify_supabase_access_token",
+        lambda token, require_email_verified=False: {"uid": "new-user", "email": "new@example.com"},
+    )
+    monkeypatch.setattr(
         "firebase_authz.supabase_provider.register_organization",
         lambda claims, name, branch_name, branch_identifier: calls.append(("supabase", name, branch_name, branch_identifier)) or {"provider": "supabase"},
     )
