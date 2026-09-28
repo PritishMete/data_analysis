@@ -218,8 +218,9 @@ Future<Map<String, String>> firebaseAuthHeaders({
 
 Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
   final token = InsightFlowSupabaseAuthService.accessToken;
-  if (token == null || token.isEmpty)
+  if (token == null || token.isEmpty) {
     throw StateError('Supabase authentication required.');
+  }
   final headers = <String, String>{'Authorization': 'Bearer $token'};
   if (insightFlowWorkspaceId.isNotEmpty) {
     headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
