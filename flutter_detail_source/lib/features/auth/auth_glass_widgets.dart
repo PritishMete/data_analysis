@@ -1,16 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../tech_background.dart';
 
-/// Authentication composition built from the same glass surfaces used by the
-/// Native Excel PivotTable / Pipeline UI.
+/// Authentication shell adapted directly from the LiquidGlassUi auth pattern.
 ///
-/// This widget intentionally does not define a second glass renderer or a
-/// second palette. The card, list row, fields, buttons and background all come
-/// from the shared InsightFlow liquid-glass library and its app-wide theme.
+/// The renderer/theme/utility stack is the existing InsightFlow Liquid Glass
+/// implementation. This file only composes those shared primitives into the
+/// authentication surface; it does not introduce a second renderer or theme.
 class AuthGlassScaffold extends StatelessWidget {
   const AuthGlassScaffold({
     super.key,
@@ -25,114 +25,106 @@ class AuthGlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassScaffold(
-      background: const TechAnimatedBackground(),
-      edgeFade: false,
-      body: SafeArea(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: LiquidGlassScope(
         child: Stack(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-              child: GlassCard(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.terminal,
-                      color: TechColors.borderActive,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'InsightFlow',
-                      style: TextStyle(
-                        color: TechColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ),
+            const Positioned.fill(
+              child: GlassBackgroundSource(
+                child: AnimatedLiquidAuthBackground(),
               ),
             ),
             Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 61),
+              child: SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final horizontalPadding =
-                        constraints.hasBoundedWidth &&
-                            constraints.maxWidth < 420
-                        ? 8.0
-                        : 16.0;
-                    final verticalPadding =
-                        constraints.hasBoundedHeight &&
-                            constraints.maxHeight < 620
-                        ? 12.0
-                        : 20.0;
-                    final minViewportHeight = constraints.hasBoundedHeight
-                        ? (constraints.maxHeight - verticalPadding * 2).clamp(
-                            0.0,
-                            double.infinity,
-                          )
-                        : 0.0;
+                    final narrow = constraints.maxWidth < 420;
+                    final short = constraints.maxHeight < 620;
+                    final horizontal = narrow ? 16.0 : 24.0;
+                    final vertical = short ? 16.0 : 32.0;
 
                     final card = ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: GlassCard(
-                          padding: EdgeInsets.zero,
-                          shape: const LiquidRoundedSuperellipse(
-                            borderRadius: 18,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              GlassListTile(
-                                leading: const Icon(
-                                  CupertinoIcons.lock_shield_fill,
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: GlassCard(
+                        useOwnLayer: true,
+                        settings: kAuthPanelGlass,
+                        quality: GlassQuality.standard,
+                        shape: kAuthPanelShape,
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: kAuthAccent.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: kAuthAccent.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    CupertinoIcons.lock_shield_fill,
+                                    color: kAuthAccent,
+                                    size: 19,
+                                  ),
                                 ),
-                                title: Text(title),
-                                subtitle: Text(subtitle),
-                                isLast: false,
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  12,
-                                  14,
-                                  16,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.1,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        subtitle,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.58,
+                                          ),
+                                          fontSize: 11,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: children,
-                                ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            ...children,
+                          ],
                         ),
                       ),
                     );
 
-                    // Fill the available viewport first so the auth card is
-                    // genuinely centered on short, tall, narrow and wide
-                    // screens. When the card is taller than the viewport
-                    // (notably Signup in a narrow task pane), the same scroll
-                    // view naturally becomes vertically scrollable instead of
-                    // overflowing.
                     return SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
                       padding: EdgeInsets.symmetric(
-                        horizontal: horizontalPadding,
-                        vertical: verticalPadding,
+                        horizontal: horizontal,
+                        vertical: vertical,
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: minViewportHeight,
+                          minHeight: math.max(
+                            0,
+                            constraints.maxHeight - vertical * 2,
+                          ),
                         ),
                         child: Center(child: card),
                       ),
@@ -148,11 +140,33 @@ class AuthGlassScaffold extends StatelessWidget {
   }
 }
 
-/// Small composition-only label used above authentication inputs.
-///
-/// The input itself remains the shared [GlassTextField] /
-/// [GlassPasswordField]; this only supplies the compact uppercase hierarchy
-/// already used by the Pipeline UI.
+/// LiquidGlassUi auth preset values.
+const kAuthPanelGlass = LiquidGlassSettings(
+  thickness: 28,
+  blur: 16,
+  chromaticAberration: 0.15,
+  lightIntensity: 0.55,
+  refractiveIndex: 1.35,
+  saturation: 1.15,
+  glassColor: Color(0x1FFFFFFF),
+);
+
+const kAuthFieldGlass = LiquidGlassSettings(
+  thickness: 10,
+  blur: 4,
+  glassColor: Color(0x14FFFFFF),
+  refractiveIndex: 1.05,
+);
+
+const kAuthPanelShape =
+    LiquidRoundedSuperellipse(borderRadius: 28);
+
+const kAuthFieldShape =
+    LiquidRoundedSuperellipse(borderRadius: 10);
+
+const kAuthAccent = Color(0xFF3DDC97);
+
+/// Compact input hierarchy matching the LiquidGlassUi auth composition.
 class AuthGlassFieldLabel extends StatelessWidget {
   const AuthGlassFieldLabel(this.text, {super.key});
 
@@ -168,17 +182,20 @@ class AuthGlassFieldLabel extends StatelessWidget {
           color: CupertinoColors.secondaryLabel.resolveFrom(context),
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
+          letterSpacing: 0.5,
         ),
       ),
     );
   }
 }
 
-/// Status feedback kept as composition only; the visual surface is the shared
-/// [GlassContainer] component.
+/// Status feedback uses the same glass container system as the rest of the app.
 class AuthGlassMessage extends StatelessWidget {
-  const AuthGlassMessage({super.key, required this.text, this.error = true});
+  const AuthGlassMessage({
+    super.key,
+    required this.text,
+    this.error = true,
+  });
 
   final String text;
   final bool error;
@@ -188,8 +205,18 @@ class AuthGlassMessage extends StatelessWidget {
     final color = error ? TechColors.statusRed : TechColors.statusGreen;
 
     return GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      useOwnLayer: true,
+      quality: GlassQuality.standard,
+      settings: LiquidGlassSettings(
+        thickness: 12,
+        blur: 6,
+        glassColor: error
+            ? const Color(0x59B71C1C)
+            : const Color(0x591FA971),
+        refractiveIndex: 1.1,
+      ),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           Icon(
@@ -203,11 +230,133 @@ class AuthGlassMessage extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: color, fontSize: 11, height: 1.35),
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                height: 1.35,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Animated dark liquid background from the LiquidGlassUi auth experience.
+class AnimatedLiquidAuthBackground extends StatefulWidget {
+  const AnimatedLiquidAuthBackground({super.key});
+
+  @override
+  State<AnimatedLiquidAuthBackground> createState() =>
+      _AnimatedLiquidAuthBackgroundState();
+}
+
+class _AnimatedLiquidAuthBackgroundState
+    extends State<AnimatedLiquidAuthBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 18),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        GlassAccessibilityData.of(context).reduceMotion;
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF060607),
+            Color(0xFF0B0B0E),
+            Color(0xFF000000),
+          ],
+        ),
+      ),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = reduceMotion
+              ? 0.0
+              : _controller.value * 2 * math.pi;
+          return CustomPaint(
+            painter: _AuthLiquidBlobPainter(t: t),
+            size: Size.infinite,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AuthLiquidBlobPainter extends CustomPainter {
+  const _AuthLiquidBlobPainter({required this.t});
+
+  final double t;
+
+  static Offset _blob0(Size s, double t) => Offset(
+        s.width * (0.25 + 0.08 * math.sin(t)),
+        s.height * (0.25 + 0.06 * math.cos(t)),
+      );
+
+  static Offset _blob1(Size s, double t) => Offset(
+        s.width * (0.80 + 0.06 * math.cos(t * 1.3)),
+        s.height * (0.70 + 0.08 * math.sin(t * 1.1)),
+      );
+
+  static Offset _blob2(Size s, double t) => Offset(
+        s.width * (0.50 + 0.10 * math.sin(t * 0.7 + 2.0)),
+        s.height * (0.85 + 0.05 * math.cos(t * 0.9)),
+      );
+
+  static const _blobs = <(
+    Color,
+    double,
+    Offset Function(Size, double)
+  )>[
+    (Color(0xFF3DDC97), 0.50, _blob0),
+    (Color(0xFF2E6FF2), 0.42, _blob1),
+    (Color(0xFF6E6E76), 0.38, _blob2),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final (color, radiusFactor, positionFn) in _blobs) {
+      final center = positionFn(size, t);
+      final radius = size.shortestSide * radiusFactor;
+
+      final paint = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            color.withValues(alpha: 0.20),
+            color.withValues(alpha: 0.00),
+          ],
+        ).createShader(
+          Rect.fromCircle(center: center, radius: radius),
+        )
+        ..blendMode = BlendMode.plus;
+
+      canvas.drawCircle(center, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AuthLiquidBlobPainter oldDelegate) =>
+      oldDelegate.t != t;
 }
