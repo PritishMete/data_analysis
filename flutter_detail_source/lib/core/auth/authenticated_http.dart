@@ -120,8 +120,9 @@ String _safeOrganizationResponseSummary(String body) {
         if (value != null) safe[key] = value.toString();
       }
       final summary = safe.entries.map((e) => '${e.key}=${e.value}').join('; ');
-      if (summary.isNotEmpty)
+      if (summary.isNotEmpty) {
         return summary.length > 240 ? summary.substring(0, 240) : summary;
+      }
       return 'JSON object response (sensitive fields omitted)';
     }
     return 'JSON response';
@@ -196,8 +197,9 @@ Future<void> attachFirebaseAuth(
   bool forceRefresh = false,
 }) async {
   final token = InsightFlowSupabaseAuthService.accessToken;
-  if (token == null || token.isEmpty)
+  if (token == null || token.isEmpty) {
     throw StateError('Supabase authentication required.');
+  }
   request.headers['Authorization'] = 'Bearer $token';
   if (insightFlowWorkspaceId.isNotEmpty) {
     request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
