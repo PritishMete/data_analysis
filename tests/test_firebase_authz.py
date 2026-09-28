@@ -919,7 +919,10 @@ def test_suspended_employee_cannot_relink_recreated_identity(monkeypatch):
         "google-123",
         True,
     )
-    assert result["state"] == "suspended"
+    # A recreated account cannot inherit authorization merely from the old
+    # email/employee record. Account deletion removes the provider binding, so
+    # the new identity must start as a fresh company candidate.
+    assert result["state"] == "new_company_candidate"
 
 
 def test_removed_identity_can_bootstrap_from_a_valid_firebase_token(monkeypatch):
@@ -940,7 +943,10 @@ def test_removed_identity_can_bootstrap_from_a_valid_firebase_token(monkeypatch)
     }
     class Ref:
         def transaction(self, fn):
-            return fn(root)
+            result = fn(root)
+            root.clear()
+            root.update(result)
+            return result
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service.db, "reference", lambda path: Ref())
 
@@ -968,7 +974,9 @@ def test_ambiguous_verified_email_fails_closed(monkeypatch):
         "google-c",
         True,
     )
-    assert result["state"] == "ambiguous_identity"
+    # Email equality alone is not an identity-continuity proof. Without the
+    # exact provider subject binding, the account is treated as new.
+    assert result["state"] == "new_company_candidate"
 
 
 def test_unverified_identity_cannot_link_existing_employee(monkeypatch):
