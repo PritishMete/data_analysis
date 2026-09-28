@@ -1423,7 +1423,7 @@ async def agentic_sheet_name(payload: dict):
                 "{\"sheet_name\":\"...\"}. The worksheet name must be understandable to a human and directly reflect the user query. "
                 "Do not use generic names such as Pipeline_Result, Query_Result, Filter_Result, or Sheet1 when the query provides a meaningful subject or condition. "
                 "Use concise words, underscores, and mathematical comparison symbols when useful. Maximum 31 characters. "
-                "Do not use \/ ? * [ ] : or quotes. Never include timestamps. "
+                "Do not use / ? * [ ] : or quotes. Never include timestamps. "
                 "For filters/show requests, name the sheet after exactly what is being shown or the filter condition. "
                 "Examples: 'show me [restaurant] restaurant data' -> [Restaurant]; "
                 "'show restaurants having rating less than 3.9' -> Rating_<3.9; "
