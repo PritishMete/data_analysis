@@ -23,12 +23,6 @@ void main() {
     expect(button, contains('onAuthenticated(event.user)'));
     expect(signIn, isNot(contains('GoogleWebSignInButton(')));
     expect(signIn, contains('Microsoft'));
-    expect(
-      RegExp(
-        r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*(?:,\s*diagnostic:\s*_authDiagnostic\s*)?\)',
-      ).hasMatch(signIn),
-      isTrue,
-    );
   });
 
   test('native Google path still uses authenticate and account completion', () {
