@@ -172,6 +172,13 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
     backendOrigin: insightFlowBackendBaseUrl,
   );
   try {
+    // Organization registration is a protected boundary. Refresh the
+    // Supabase session before constructing the bearer header so a restored
+    // browser session cannot send an expired access token to Render.
+    final session = await InsightFlowSupabaseAuthService.ensureSession();
+    if (session == null || session.accessToken.isEmpty) {
+      throw StateError('Supabase authentication required.');
+    }
     final headers = await supabaseAuthHeaders();
     if (contentType != null) headers['Content-Type'] = contentType;
     final response = await send(headers).timeout(const Duration(seconds: 15));
