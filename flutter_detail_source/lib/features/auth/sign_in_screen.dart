@@ -20,6 +20,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final _passwordController = TextEditingController();
 
   bool _loading = false;
+  bool _rememberDevice = true;
   bool _emailVerificationRequired = false;
   bool _messageIsError = true;
   String? _error;
@@ -51,6 +52,7 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
+      await InsightFlowSupabaseAuthService.setRememberDevice(email, _rememberDevice);
       await InsightFlowSupabaseAuthService.signInWithPassword(
         email: email,
         password: password,
@@ -150,6 +152,23 @@ class _SignInScreenState extends State<SignInScreen> {
           useOwnLayer: true,
           shape: kAuthFieldShape,
           onSubmitted: (_) => _signIn(),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            CupertinoCheckbox(
+              value: _rememberDevice,
+              onChanged: _loading
+                  ? null
+                  : (value) => setState(() => _rememberDevice = value ?? true),
+              activeColor: TechColors.borderActive,
+              checkColor: CupertinoColors.black,
+            ),
+            const Text(
+              'Remember this device',
+              style: TextStyle(color: TechColors.textMuted, fontSize: 10),
+            ),
+          ],
         ),
         const SizedBox(height: 4),
         Align(
