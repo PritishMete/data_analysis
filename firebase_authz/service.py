@@ -1543,6 +1543,9 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
             "linked_member_uid": owner_uid,
             "identity_provider": provider,
             "identity_provider_subject": provider_subject,
+            # Keep the original bootstrap field as an explicit compatibility marker;
+            # authorization resolution already accepts this stable organization link.
+            "bootstrap_organization_id": workspace_id,
         })
         updated_user.setdefault("created_at", now)
         users[owner_uid] = updated_user
