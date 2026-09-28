@@ -333,12 +333,23 @@ async def build_info():
 # than pinning `allow_origins` to a fixed list, since the real list of
 # production origins isn't something to guess at here — swap in an
 # explicit origins list when that's known, instead of `["*"]`.
-_CORS_ORIGINS = ["*"]
+_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "INSIGHTFLOW_CORS_ORIGINS",
+        "https://pritishmete.github.io",
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
-    allow_credentials=False,
+    # Flutter Web sends the Supabase access token in the Authorization header,
+    # not as a cookie. Explicit production origins are used instead of a
+    # wildcard so browser responses remain readable on error responses too.
+    allow_credentials=True,
+    allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Authorization",
