@@ -17,11 +17,13 @@ class AuthGlassScaffold extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.children,
+    this.wideContent = false,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
+  final bool wideContent;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +47,9 @@ class AuthGlassScaffold extends StatelessWidget {
                     final vertical = short ? 16.0 : 32.0;
 
                     final card = ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 420),
+                      constraints: BoxConstraints(
+                        maxWidth: wideContent ? 1280 : 420,
+                      ),
                       child: GlassCard(
                         useOwnLayer: true,
                         settings: kAuthPanelGlass,
