@@ -79,7 +79,7 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase")
     firebase_response = TestClient(app).post(
         "/v1/authz/organizations/register",
-        json={"organization_name": "Diagnostic Org"},
+        json={"organization_name": "Diagnostic Org", "branch_name": "Main", "branch_identifier": "main"},
         headers={"Authorization": "Bearer diagnostic-token"},
     )
     assert firebase_response.status_code == 200
