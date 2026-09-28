@@ -111,14 +111,14 @@ class InsightFlowSupabaseAuthService {
     );
   }
 
-  static Future<void> setRememberDevice(String uid, bool remember) async {
+  static Future<void> setRememberDevice(String identity, bool remember) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('insightflow.remember.$uid', remember);
+    await prefs.setBool('insightflow.remember.$identity', remember);
   }
 
-  static Future<bool> rememberDevice(String uid) async {
+  static Future<bool> rememberDevice(String identity) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('insightflow.remember.$uid') ?? true;
+    return prefs.getBool('insightflow.remember.$identity') ?? true;
   }
 
   static Future<AuthResponse> signInWithPassword({
