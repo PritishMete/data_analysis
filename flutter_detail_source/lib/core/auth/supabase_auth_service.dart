@@ -80,7 +80,9 @@ class InsightFlowSupabaseAuthService {
           code == 'email_not_verified' ||
           message.contains('email not confirmed') ||
           message.contains('email not verified') ||
-          message.contains('email confirmation');
+          message.contains('email confirmation') ||
+          (message.contains('confirm') && message.contains('email')) ||
+          (message.contains('verif') && message.contains('email'));
     }
     return false;
   }
