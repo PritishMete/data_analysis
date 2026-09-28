@@ -11,6 +11,12 @@ on:
 permissions:
   contents: write
 
+# Only one gh-pages publisher may run at a time. Rapid UI commits otherwise race
+# on the gh-pages branch and cause non-fast-forward publish failures.
+concurrency:
+  group: insightflow-flutter-pages
+  cancel-in-progress: true
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
