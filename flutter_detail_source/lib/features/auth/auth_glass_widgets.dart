@@ -122,9 +122,9 @@ class AuthGlassScaffold extends StatelessWidget {
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
                           minHeight: math.max(
-                            0,
+                            0.0,
                             constraints.maxHeight - vertical * 2,
-                          ),
+                          ).toDouble(),
                         ),
                         child: Center(child: card),
                       ),
