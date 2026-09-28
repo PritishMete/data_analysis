@@ -33,6 +33,22 @@ class _AuthorizationManagementScreenState
     _load();
   }
 
+  Future<void> _logout() async {
+    try {
+      await InsightFlowAuthService.signOut();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error.toString().replaceFirst('Bad state: ', ''),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -831,7 +847,17 @@ class _AuthorizationManagementScreenState
       children: [
         ...sections,
         const SizedBox(height: 10),
-        TextButton(onPressed: _load, child: const Text('Refresh')),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            TextButton(onPressed: _load, child: const Text('Refresh')),
+            TextButton(
+              onPressed: _logout,
+              child: const Text('Log out'),
+            ),
+          ],
+        ),
       ],
     );
   }
