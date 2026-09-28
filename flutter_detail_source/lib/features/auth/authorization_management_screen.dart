@@ -880,6 +880,7 @@ class _PortalGlassScaffold extends StatelessWidget {
   final String subtitle;
   final List<Widget> children;
   final bool wideContent;
+  final VoidCallback? onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -916,6 +917,7 @@ class _PortalGlassScaffold extends StatelessWidget {
                               _PortalGlassAppBar(
                                 title: title,
                                 subtitle: subtitle,
+                                onLogout: onLogout,
                               ),
                               const SizedBox(height: 10),
                               ...children,
@@ -939,10 +941,12 @@ class _PortalGlassAppBar extends StatelessWidget {
   const _PortalGlassAppBar({
     required this.title,
     required this.subtitle,
+    this.onLogout,
   });
 
   final String title;
   final String subtitle;
+  final VoidCallback? onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -998,14 +1002,27 @@ class _PortalGlassAppBar extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           IconButton(
-            tooltip: subtitle,
-            onPressed: null,
+            tooltip: 'Account',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AccountManagementScreen(),
+              ),
+            ),
             icon: const Icon(
-              Icons.circle_outlined,
-              size: 8,
-              color: TechColors.borderActive,
+              Icons.account_circle_outlined,
+              size: 18,
+              color: TechColors.textPrimary,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: onLogout,
+            icon: const Icon(
+              Icons.logout,
+              size: 18,
+              color: TechColors.textPrimary,
             ),
           ),
         ],
