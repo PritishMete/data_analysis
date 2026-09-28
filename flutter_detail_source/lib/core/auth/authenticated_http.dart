@@ -131,6 +131,22 @@ String _safeOrganizationResponseSummary(String body) {
   }
 }
 
+String? organizationServiceBusinessErrorMessage(http.Response response) {
+  if (response.statusCode != 400) return null;
+  try {
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map) {
+      final detail = decoded['detail']?.toString().trim();
+      if (detail == 'Branch identifier is already in use by an active branch.') {
+        return detail;
+      }
+    }
+  } catch (_) {
+    // Non-JSON 400 responses remain diagnostic-worthy.
+  }
+  return null;
+}
+
 String _classifyOrganizationHttp(int status) {
   if (status >= 200 && status < 300) return 'HTTP_SUCCESS';
   if (status == 401) return 'HTTP_401';
