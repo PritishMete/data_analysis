@@ -47,7 +47,7 @@ void main() {
   ) async {
     await pumpAuthApp(tester, const SignInScreen());
 
-    expect(find.text('InsightFlow'), findsOneWidget);
+    expect(find.text('InsightFlow'), findsNothing);
     expect(find.text('Sign in'), findsOneWidget);
     expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
     expect(find.byType(GlassPasswordField), findsOneWidget);
