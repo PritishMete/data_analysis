@@ -840,25 +840,61 @@ class _AuthorizationManagementScreenState
     ];
 
     return AuthGlassScaffold(
+      wideContent: true,
       title: isOwner ? 'ORGANIZATION / MANAGEMENT' : 'ACCESS / AUTHORIZATION',
       subtitle: isOwner
           ? 'Branch Head management portal'
           : 'Capability and resource authorization metadata only',
       children: [
-        ...sections,
+        _ResponsivePortalSections(sections: sections),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            TextButton(onPressed: _load, child: const Text('Refresh')),
-            TextButton(
-              onPressed: _logout,
-              child: const Text('Log out'),
-            ),
-          ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(onPressed: _load, child: const Text('Refresh')),
+              TextButton(
+                onPressed: _logout,
+                child: const Text('Log out'),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _ResponsivePortalSections extends StatelessWidget {
+  const _ResponsivePortalSections({required this.sections});
+
+  final List<Widget> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= 1050 ? 3 : width >= 680 ? 2 : 1;
+        final gap = width >= 680 ? 12.0 : 10.0;
+        final itemWidth = columns == 1
+            ? width
+            : (width - gap * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final section in sections)
+              SizedBox(
+                width: itemWidth,
+                child: section,
+              ),
+          ],
+        );
+      },
     );
   }
 }
