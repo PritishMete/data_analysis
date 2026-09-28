@@ -30,6 +30,7 @@ import 'analyze_fab.dart';
 import 'execute_pipeline_fab.dart';
 import 'navigation_tabs.dart';
 import 'ai_report_model.dart';
+import '../../widgets/insightflow_floating_brand.dart';
 
 enum DataSourceMode { excel, uploadedFile, excelLive }
 
@@ -5265,13 +5266,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               ),
             ),
 
-            // ── Full-screen content column
+            // ── Full-screen authenticated app content
             Positioned.fill(
               child: SafeArea(
                 child: Column(
                   children: [
-                    // ── Glass app bar ──────────────────────────────────────
-                    _buildGlassAppBar(),
+                    // Leave room for the floating InsightFlow brand control.
+                    const SizedBox(height: 56),
 
                     // ── Navigation tabs (only when data is loaded) ─────────
                     if (analysisData != null) NavigationTabs(state: this),
@@ -5280,6 +5281,16 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                     Expanded(child: _buildBody()),
                   ],
                 ),
+              ),
+            ),
+
+            // Persistent authenticated-app brand. Login/signup never build
+            // DataScreen, so the auth surface remains unchanged.
+            const Positioned(
+              top: 12,
+              right: 18,
+              child: SafeArea(
+                child: InsightFlowFloatingBrand(),
               ),
             ),
 
@@ -5310,37 +5321,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  // ── Glass app bar — replaces AppBar, sits inside the LiquidGlassScope ────
-  //
-  // The EXCEL / UPLOAD FILE toggle (previously `DataSourceToggle`) has been
-  // removed entirely — [SourceRouter] inside the Pipelines tab is now the
-  // one place source selection happens, and `_buildEmptyState()` below
-  // already shows an uploaded-file badge, so this panel is just the title.
-  Widget _buildGlassAppBar() {
-    return GlassContainer(
-      useOwnLayer: true,
-      quality: GlassQuality.standard,
-      settings: TechColors.panelGlass,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 0),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-      child: const Row(
-        children: [
-          Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
-          SizedBox(width: 10),
-          Text(
-            'InsightFlow',
-            style: TextStyle(
-              color: TechColors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ],
       ),
     );
   }
