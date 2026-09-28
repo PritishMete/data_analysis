@@ -913,48 +913,9 @@ class _PortalGlassScaffold extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              GlassCard(
-                                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                                shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.terminal,
-                                      color: TechColors.borderActive,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: TechColors.textPrimary,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              fontFamily: 'monospace',
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            subtitle,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: TechColors.textMuted,
-                                              fontSize: 10,
-                                              fontFamily: 'monospace',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              _PortalGlassAppBar(
+                                title: title,
+                                subtitle: subtitle,
                               ),
                               const SizedBox(height: 10),
                               ...children,
@@ -974,6 +935,85 @@ class _PortalGlassScaffold extends StatelessWidget {
   }
 }
 
+class _PortalGlassAppBar extends StatelessWidget {
+  const _PortalGlassAppBar({
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.terminal,
+            color: TechColors.borderActive,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'InsightFlow',
+            style: TextStyle(
+              color: TechColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(width: 14),
+          Container(
+            width: 1,
+            height: 20,
+            color: TechColors.textMuted.withValues(alpha: 0.28),
+          ),
+          const SizedBox(width: 14),
+          Flexible(
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.admin_panel_settings_outlined,
+                  size: 16,
+                  color: TechColors.textMuted,
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: TechColors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          IconButton(
+            tooltip: subtitle,
+            onPressed: null,
+            icon: const Icon(
+              Icons.circle_outlined,
+              size: 8,
+              color: TechColors.borderActive,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ResponsivePortalSections extends StatelessWidget {
   const _ResponsivePortalSections({required this.sections});
 
@@ -984,16 +1024,8 @@ class _ResponsivePortalSections extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-
-        // Use the actual space available to the portal, not the device type.
-        // Keep cards readable instead of stretching them across very wide
-        // monitors, while progressively adding columns as room becomes
-        // available.
         final columns = width >= 1120 ? 3 : width >= 720 ? 2 : 1;
         final gap = width >= 720 ? 14.0 : 10.0;
-        final columnWidth = columns == 1
-            ? width
-            : (width - gap * (columns - 1)) / columns;
 
         if (columns == 1) {
           return Column(
@@ -1007,37 +1039,37 @@ class _ResponsivePortalSections extends StatelessWidget {
           );
         }
 
-        // A column layout avoids the large empty row heights produced by a
-        // regular GridView when portal cards contain different amounts of
-        // authorization metadata. Sections remain in source order while the
-        // same reusable cards are simply positioned into responsive columns.
-        final columnSections = List.generate(columns, (_) => <Widget>[]);
-        for (var index = 0; index < sections.length; index++) {
-          columnSections[index % columns].add(sections[index]);
+        // True row/column grid: cards occupy the same column tracks and each
+        // row aligns to the tallest card in that row. This keeps the portal
+        // visually organised on desktop instead of producing independent
+        // vertical masonry columns.
+        final rows = <TableRow>[];
+        for (var start = 0; start < sections.length; start += columns) {
+          final cells = <Widget>[];
+          for (var offset = 0; offset < columns; offset++) {
+            final index = start + offset;
+            cells.add(
+              Padding(
+                padding: EdgeInsets.only(
+                  right: offset == columns - 1 ? 0 : gap,
+                  bottom: gap,
+                ),
+                child: index < sections.length
+                    ? sections[index]
+                    : const SizedBox.shrink(),
+              ),
+            );
+          }
+          rows.add(TableRow(children: cells));
         }
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var column = 0; column < columns; column++) ...[
-              SizedBox(
-                width: columnWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var index = 0;
-                        index < columnSections[column].length;
-                        index++) ...[
-                      columnSections[column][index],
-                      if (index != columnSections[column].length - 1)
-                        SizedBox(height: gap),
-                    ],
-                  ],
-                ),
-              ),
-              if (column != columns - 1) SizedBox(width: gap),
-            ],
-          ],
+        return Table(
+          columnWidths: {
+            for (var index = 0; index < columns; index++)
+              index: const FlexColumnWidth(),
+          },
+          defaultVerticalAlignment: TableCellVerticalAlignment.top,
+          children: rows,
         );
       },
     );
