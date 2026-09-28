@@ -23,9 +23,13 @@ REQUIRED_INDEX_SNIPPETS = (
 )
 
 REQUIRED_MAIN_SNIPPETS = (
-    "quality_check",
-    "source_mutated",
-    "executeSecureExcelQuery",
+    # These are stable Dart-to-JavaScript interop entry points that are part
+    # of the current secure Excel bridge. The old quality_check/source_mutated
+    # markers belonged to a retired implementation and caused valid builds to
+    # fail verification even though the required web assets were present.
+    "getInsightFlowSourceData",
+    "executePipeline",
+    "jsWriteQualityReportWorksheet",
 )
 
 
