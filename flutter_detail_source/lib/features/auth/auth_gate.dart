@@ -83,9 +83,9 @@ class _SupabaseEmailVerificationScreenState
       _message = null;
     });
     try {
-      await InsightFlowSupabaseAuthService.client.auth.refreshSession();
-      final verified =
-          InsightFlowSupabaseAuthService.isCurrentUserEmailVerified;
+      final authoritativeUser =
+          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+      final verified = authoritativeUser?.emailConfirmedAt != null;
       if (!mounted) return;
       setState(() {
         _message = verified
