@@ -5,7 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
-import '../dashboard/data_screen.dart';
+import 'authorization_management_screen.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'sign_in_screen.dart';
@@ -196,10 +196,26 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         return;
       }
 
-      // Company registration is the organization-creation entry point. Do not
-      // probe /v1/authz/me before the user has submitted an organization name.
+      // The local workspace ID is only a cache. Always reconcile it with the
+      // authenticated backend so a user signing in from another device gets
+      // the same organization context.
       await loadInsightFlowWorkspaceId(widget.user.uid);
-      if (mounted) setState(() => _loading = false);
+      final resolved = await resolveInsightFlowWorkspaceFromBackend(
+        widget.user.uid,
+      );
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _verificationRequired = false;
+        });
+      }
+      if (!mounted) return;
+      if (resolved == null) {
+        // Do not guess and do not fall through to DataScreen. The portal is
+        // the only post-login destination; retrying is safer than opening the
+        // data workspace without a resolved authorization context.
+        return;
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -220,9 +236,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       return const _SupabaseEmailVerificationScreen();
     }
 
-    final user = InsightFlowSupabaseAuthService.currentUser ?? widget.user;
     final authenticatedChild = insightFlowWorkspaceId.isNotEmpty
-        ? DataScreen(key: ValueKey('${user.uid}:$insightFlowWorkspaceId'))
+        ? const AuthorizationManagementScreen()
         : const CompanyRegistrationScreen();
     return AuthenticatedBrandShell(child: authenticatedChild);
   }
