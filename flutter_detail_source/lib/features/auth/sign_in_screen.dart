@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -8,7 +7,6 @@ import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_up_screen.dart';
-import 'google_web_sign_in_button.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -22,6 +20,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final _passwordController = TextEditingController();
 
   bool _loading = false;
+  bool _emailVerificationRequired = false;
   String? _error;
 
   @override
@@ -42,6 +41,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
     setState(() {
       _loading = true;
+      _emailVerificationRequired = false;
       _error = null;
     });
 
@@ -52,30 +52,19 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      final unverified =
+          error is AuthException && error.code == 'email_not_confirmed';
       setState(() {
         _loading = false;
-        _error = InsightFlowAuthService.userFacingAuthError(error);
+        _emailVerificationRequired = unverified;
+        _error = unverified
+            ? 'Your account is not verified yet. Verify your email before signing in.'
+            : InsightFlowAuthService.userFacingAuthError(error);
       });
       return;
     }
 
     if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _signInWithGoogle() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      await InsightFlowAuthService.signInWithGoogle();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = InsightFlowAuthService.userFacingAuthError(error);
-      });
-    }
   }
 
   Future<void> _resetPassword() async {
@@ -97,6 +86,28 @@ class _SignInScreenState extends State<SignInScreen> {
       setState(
         () => _error = InsightFlowAuthService.userFacingAuthError(error),
       );
+    }
+  }
+
+  Future<void> _resendVerificationEmail() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) return;
+
+    setState(() => _loading = true);
+    try {
+      await InsightFlowSupabaseAuthService.resendSignupVerification(email);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _emailVerificationRequired = true;
+        _error = 'Verification email sent again. Check your inbox.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = InsightFlowAuthService.userFacingAuthError(error);
+      });
     }
   }
 
@@ -154,6 +165,13 @@ class _SignInScreenState extends State<SignInScreen> {
           AuthGlassMessage(
             text: _error!,
             error: !_error!.startsWith('Password reset email sent'),
+          ),
+        ],
+        if (_emailVerificationRequired) ...[
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _loading ? null : _resendVerificationEmail,
+            child: const Text('Send verification email again'),
           ),
         ],
         const SizedBox(height: 14),
@@ -218,49 +236,6 @@ class _SignInScreenState extends State<SignInScreen> {
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ),
-        const SizedBox(height: 8),
-        if (kIsWeb)
-          GoogleWebSignInButton(
-            enabled: !_loading,
-            onStarted: () {
-              if (mounted)
-                setState(() {
-                  _loading = true;
-                  _error = null;
-                });
-            },
-            onAuthenticated: (account) async {
-              try {
-                await InsightFlowAuthService.signInWithGoogleAccount(account);
-              } catch (error) {
-                if (!mounted) return;
-                setState(() {
-                  _loading = false;
-                  _error = InsightFlowAuthService.userFacingAuthError(error);
-                });
-              }
-            },
-            onError: (error) {
-              if (!mounted) return;
-              setState(() {
-                _loading = false;
-                _error = InsightFlowAuthService.userFacingAuthError(error);
-              });
-            },
-          )
-        else
-          GlassButton.custom(
-            onTap: _loading ? () {} : _signInWithGoogle,
-            enabled: !_loading,
-            width: double.infinity,
-            height: 42,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Continue with Google',
-            child: const Text(
-              'Continue with Google',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ),
         const SizedBox(height: 14),
         const Divider(height: 1),
         const SizedBox(height: 10),
