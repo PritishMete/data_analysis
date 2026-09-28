@@ -64,7 +64,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _emailVerificationRequired = unverified;
         _messageIsError = !unverified;
         _error = unverified
-            ? 'Your account is not verified yet. Verify your email before signing in.'
+            ? 'Email not verified. Please verify your email address before signing in. Check your inbox and spam/junk folder for the verification email.'
             : InsightFlowAuthService.userFacingAuthError(error);
       });
       return;
