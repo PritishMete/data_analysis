@@ -21,7 +21,8 @@ void main() {
     final signIn = File('lib/features/auth/sign_in_screen.dart').readAsStringSync();
     expect(button, contains('authenticationEvents'));
     expect(button, contains('onAuthenticated(event.user)'));
-    expect(signIn, contains('GoogleWebSignInButton('));
+    expect(signIn, isNot(contains('GoogleWebSignInButton(')));
+    expect(signIn, contains('Microsoft'));
     expect(
       RegExp(
         r'InsightFlowAuthService\.signInWithGoogleAccount\(\s*account\s*(?:,\s*diagnostic:\s*_authDiagnostic\s*)?\)',
