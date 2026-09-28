@@ -54,8 +54,8 @@ class _AuthScreenState extends State<AuthScreen> {
   static const _pillShape =
       LiquidRoundedSuperellipse(borderRadius: 28);
 
-  static const _accent = Color(0xFF3DDC97);
-  static const _accentDim = Color(0xFF1FA971);
+  static const _accent = TechColors.brandBlue;
+  static const _accentDim = TechColors.brandDarkBlue;
   static const _textSecondary = Color(0x99FFFFFF);
   static const _textTertiary = Color(0x66FFFFFF);
 
@@ -491,9 +491,9 @@ class _AuthBlobPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const blobs = [
-      (Color(0xFF123A8C), 0.50),
-      (Color(0xFF2E6FF2), 0.42),
-      (Color(0xFF6E6E76), 0.38),
+      (TechColors.brandDarkBlue, 0.50),
+      (TechColors.brandBlue, 0.42),
+      (TechColors.brandGraphite, 0.38),
     ];
 
     final positions = [
