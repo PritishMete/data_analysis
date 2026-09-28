@@ -30,19 +30,20 @@ Future<void> loadInsightFlowWorkspaceId(String uid) async {
   }
 }
 
-Future<bool> resolveInsightFlowWorkspaceFromBackend(String uid) async {
+Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
   if (session == null || session.accessToken.isEmpty) return false;
 
-  final response = await http
-      .get(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
-        headers: await supabaseAuthHeaders(),
-      )
-      .timeout(const Duration(seconds: 45));
+  try {
+    final response = await http
+        .get(
+          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+          headers: await supabaseAuthHeaders(),
+        )
+        .timeout(const Duration(seconds: 45));
 
-  if (response.statusCode != 200) return false;
-  final decoded = jsonDecode(response.body);
+    if (response.statusCode != 200) return null;
+    final decoded = jsonDecode(response.body);
   if (decoded is! Map) return false;
 
   final workspaces = decoded['workspaces'];
@@ -67,8 +68,14 @@ Future<bool> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   final workspaceId = active.first['workspace_id']?.toString().trim() ?? '';
   if (workspaceId.isEmpty) return false;
 
-  await setInsightFlowWorkspaceId(uid, workspaceId);
-  return true;
+    await setInsightFlowWorkspaceId(uid, workspaceId);
+    return true;
+  } catch (_) {
+    // A failed organization lookup must never be interpreted as "new user".
+    // The caller can keep the authenticated user out of the data workspace
+    // until the authoritative authorization context is available.
+    return null;
+  }
 }
 
 Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
