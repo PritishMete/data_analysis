@@ -73,18 +73,32 @@ class InsightFlowSupabaseAuthService {
   }
 
   static bool isEmailVerificationError(Object error) {
+    // Supabase documents email_not_confirmed as the server error returned
+    // when Confirm Email is enabled and an unverified user attempts password
+    // sign-in. Keep the code check authoritative, while also handling older
+    // client/server combinations that expose only a human-readable message.
     if (error is AuthException) {
-      final code = error.code.toLowerCase();
-      final message = error.message.toLowerCase();
+      final code = error.code.toLowerCase().trim();
+      final message = error.message.toLowerCase().trim();
       return code == 'email_not_confirmed' ||
           code == 'email_not_verified' ||
+          message.contains('email_not_confirmed') ||
+          message.contains('email_not_verified') ||
           message.contains('email not confirmed') ||
           message.contains('email not verified') ||
           message.contains('email confirmation') ||
           (message.contains('confirm') && message.contains('email')) ||
           (message.contains('verif') && message.contains('email'));
     }
-    return false;
+
+    // Do not let an SDK wrapper turn a known verification failure into the
+    // generic "Authentication could not be completed" message.
+    final text = error.toString().toLowerCase();
+    return text.contains('email_not_confirmed') ||
+        text.contains('email_not_verified') ||
+        text.contains('email not confirmed') ||
+        text.contains('email not verified') ||
+        text.contains('email confirmation');
   }
 
   static SupabaseAuthUser? get currentUser {
