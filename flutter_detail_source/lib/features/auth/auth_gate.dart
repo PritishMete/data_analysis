@@ -163,6 +163,7 @@ class _AuthenticatedGate extends StatefulWidget {
 
 class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
+  bool _verificationRequired = false;
 
   @override
   void initState() {
@@ -172,8 +173,30 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
 
   Future<void> _refresh() async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _verificationRequired = false;
+    });
     try {
+      // Never trust only the locally restored session for the security
+      // boundary. Ask Supabase Auth for the current server-side user so an
+      // unverified account cannot reach Company Registration after refresh.
+      final authoritativeUser =
+          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+      if (authoritativeUser == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      if (authoritativeUser.emailConfirmedAt == null) {
+        if (mounted) {
+          setState(() {
+            _verificationRequired = true;
+            _loading = false;
+          });
+        }
+        return;
+      }
+
       // Company registration is the organization-creation entry point. Do not
       // probe /v1/authz/me before the user has submitted an organization name.
       await loadInsightFlowWorkspaceId(widget.user.uid);
@@ -194,6 +217,9 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const _AuthLoading();
+    if (_verificationRequired) {
+      return const _SupabaseEmailVerificationScreen();
+    }
 
     final user = InsightFlowSupabaseAuthService.currentUser ?? widget.user;
     if (insightFlowWorkspaceId.isNotEmpty) {
