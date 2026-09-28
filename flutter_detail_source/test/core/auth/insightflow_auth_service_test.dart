@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:liquid_glass_widgets/core/auth/insightflow_auth_service.dart';
+import 'package:liquid_glass_widgets/core/auth/supabase_auth_service.dart';
 
 void main() {
   group('InsightFlowAuthService startup boundaries', () {
@@ -29,6 +30,34 @@ void main() {
       expect(
         InsightFlowAuthService.userFacingAuthError(googleError),
         isNot('Firebase authentication is not configured for this build.'),
+      );
+    });
+  });
+
+  group('Supabase email verification error mapping', () {
+    test('email_not_confirmed is detected as an unverified email', () {
+      final error = AuthException(
+        'Email not confirmed',
+        code: 'email_not_confirmed',
+        statusCode: '400',
+      );
+
+      expect(
+        InsightFlowSupabaseAuthService.isEmailVerificationError(error),
+        isTrue,
+      );
+    });
+
+    test('invalid credentials are not mislabeled as email verification', () {
+      final error = AuthException(
+        'Invalid login credentials',
+        code: 'invalid_credentials',
+        statusCode: '400',
+      );
+
+      expect(
+        InsightFlowSupabaseAuthService.isEmailVerificationError(error),
+        isFalse,
       );
     });
   });
