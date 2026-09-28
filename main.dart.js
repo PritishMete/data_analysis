@@ -116303,7 +116303,7 @@ $0(){var s,r=this.a
 r.f=!1
 s=r.r=this.b
 r.w=!s
-r.x=s?"Email not verified. Please verify your email address before signing in. Check your inbox and spam/junk folder for the verification email.":A.r_(this.c)},
+r.x=s?"Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.":A.r_(this.c)},
 $S:0}
 A.b3m.prototype={
 $0(){return this.a.f=!1},
@@ -116325,7 +116325,7 @@ $0(){var s=this.a
 s.f=!1
 s.r=!0
 s.w=!1
-s.x="Verification email sent again. Check your inbox."},
+s.x="Verification email sent again. Check your inbox and spam/junk folder."},
 $S:0}
 A.b3f.prototype={
 $0(){var s=this.a
