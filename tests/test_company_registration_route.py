@@ -10,12 +10,12 @@ def test_company_registration_uses_authoritative_bootstrap_route():
     assert ("/v1/authz/organizations/register", "POST") in routes
 
 
-def test_founder_registration_requires_only_bearer_and_organization_name(monkeypatch):
+def test_founder_registration_requires_bearer_and_registration_fields(monkeypatch):
     from firebase_authz import routes
     monkeypatch.setattr(
         routes,
         "bootstrap_owner",
-        lambda token, organization_name: {
+        lambda token, organization_name, allow_any_authenticated=False: {
             "organization_id": "org_opaque",
             "workspace_id": "org_opaque",
             "owner_uid": "verified-user",
@@ -27,7 +27,7 @@ def test_founder_registration_requires_only_bearer_and_organization_name(monkeyp
     client = TestClient(app)
     response = client.post(
         "/v1/authz/organizations/register",
-        json={"organization_name": "ABC"},
+        json={"organization_name": "ABC", "branch_name": "Main", "branch_identifier": "main"},
         headers={"Authorization": "Bearer verified-firebase-token"},
     )
     assert response.status_code == 200
