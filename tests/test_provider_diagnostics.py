@@ -86,5 +86,5 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     assert firebase_response.json() == {"provider": "firebase"}
     assert calls == [
         ("supabase", "Diagnostic Org", "Main", "main"),
-        ("firebase", "Diagnostic Org", True),
+        ("firebase", "Diagnostic Org", False),
     ]
