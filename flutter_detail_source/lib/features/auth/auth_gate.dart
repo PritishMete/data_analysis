@@ -8,6 +8,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'authorization_management_screen.dart';
+import 'management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'sign_in_screen.dart';
@@ -357,7 +358,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     }
 
     final authenticatedChild = insightFlowWorkspaceId.isNotEmpty
-        ? const AuthorizationManagementScreen()
+        ? const ManagementShell()
         : const CompanyRegistrationScreen();
     return AuthenticatedBrandShell(child: authenticatedChild);
   }
