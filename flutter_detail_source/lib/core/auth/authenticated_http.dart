@@ -48,18 +48,65 @@ Future<bool?> reconcileCachedWorkspaceWithRetry({
   return null;
 }
 
-Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
+enum InsightFlowOnboardingState {
+  activeMember,
+  pendingInvitation,
+  noMembership,
+  transientFailure,
+  authoritativeDenial,
+}
+
+class InsightFlowOnboardingResolution {
+  const InsightFlowOnboardingResolution(
+    this.state, {
+    this.pendingInvitations = const <Map<String, dynamic>>[],
+  });
+
+  final InsightFlowOnboardingState state;
+  final List<Map<String, dynamic>> pendingInvitations;
+}
+
+Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
-  // Session restoration can briefly lag behind AuthGate on browser startup.
-  // Treat that as transient so a cached portal can reconcile in the background
-  // instead of misclassifying it as an authorization result.
-  if (session == null || session.accessToken.isEmpty) return null;
+  if (session == null || session.accessToken.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  final response = await http
+      .get(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/pending'),
+        headers: await supabaseAuthHeaders(),
+      )
+      .timeout(const Duration(seconds: 8));
+  if (response.statusCode == 401 || response.statusCode == 403) {
+    throw _AuthoritativeAuthorizationFailure();
+  }
+  if (response.statusCode != 200) {
+    throw _TransientAuthorizationFailure();
+  }
+  final decoded = jsonDecode(response.body);
+  if (decoded is! Map || decoded['invitations'] is! List) {
+    throw _TransientAuthorizationFailure();
+  }
+  return (decoded['invitations'] as List)
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+}
+
+class _AuthoritativeAuthorizationFailure implements Exception {}
+
+class _TransientAuthorizationFailure implements Exception {}
+
+Future<InsightFlowOnboardingResolution>
+    resolveInsightFlowOnboardingStateFromBackend(String uid) async {
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  if (session == null || session.accessToken.isEmpty) {
+    return const InsightFlowOnboardingResolution(
+      InsightFlowOnboardingState.transientFailure,
+    );
+  }
 
   try {
-    // Workspace resolution is deliberately independent of the locally cached
-    // workspace. A device can retain yesterday's workspace after the account
-    // was removed, recreated, or assigned to a different organization on
-    // another device. The backend must return the current memberships first.
     final response = await http
         .get(
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
@@ -72,15 +119,29 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
       insightFlowWorkspaceId = '';
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('insightflow.workspace.$uid');
-      return false;
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
     }
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
 
     final decoded = jsonDecode(response.body);
-    if (decoded is! Map) return false;
+    if (decoded is! Map) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
 
     final workspaces = decoded['workspaces'];
-    if (workspaces is! List) return false;
+    if (workspaces is! List) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
 
     final active = workspaces
         .whereType<Map>()
@@ -91,33 +152,75 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
         )
         .toList();
 
-    if (active.isEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      final hadCachedWorkspace =
-          (prefs.getString('insightflow.workspace.$uid')?.trim().isNotEmpty ??
-              false) ||
-          insightFlowWorkspaceId.trim().isNotEmpty;
-      insightFlowWorkspaceId = '';
-      await prefs.remove('insightflow.workspace.$uid');
-
-      // If this device previously had an organization but the authoritative
-      // backend now has no membership, do not silently turn the stale session
-      // into Company Registration. Require a fresh authentication boundary.
-      if (hadCachedWorkspace) {
-        await InsightFlowSupabaseAuthService.signOut();
+    if (active.isNotEmpty) {
+      final workspaceId =
+          active.first['workspace_id']?.toString().trim() ?? '';
+      if (workspaceId.isEmpty) {
+        return const InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.transientFailure,
+        );
       }
-      return false;
+      await setInsightFlowWorkspaceId(uid, workspaceId);
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.activeMember,
+      );
     }
 
-    final workspaceId = active.first['workspace_id']?.toString().trim() ?? '';
-    if (workspaceId.isEmpty) return false;
-
-    await setInsightFlowWorkspaceId(uid, workspaceId);
-    return true;
+    try {
+      final invitations = await fetchInsightFlowPendingInvitations();
+      if (invitations.isNotEmpty) {
+        return InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.pendingInvitation,
+          pendingInvitations: invitations,
+        );
+      }
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.noMembership,
+      );
+    } on _AuthoritativeAuthorizationFailure {
+      await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    } on _TransientAuthorizationFailure {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
   } catch (_) {
-    // A failed organization lookup must never be interpreted as "new user".
-    return null;
+    return const InsightFlowOnboardingResolution(
+      InsightFlowOnboardingState.transientFailure,
+    );
   }
+}
+
+Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
+  final resolution = await resolveInsightFlowOnboardingStateFromBackend(uid);
+  if (resolution.state == InsightFlowOnboardingState.activeMember) {
+    return true;
+  }
+  if (resolution.state == InsightFlowOnboardingState.authoritativeDenial) {
+    return false;
+  }
+  if (resolution.state == InsightFlowOnboardingState.noMembership ||
+      resolution.state == InsightFlowOnboardingState.pendingInvitation) {
+    final prefs = await SharedPreferences.getInstance();
+    final hadCachedWorkspace =
+        (prefs.getString('insightflow.workspace.$uid')?.trim().isNotEmpty ??
+            false) ||
+        insightFlowWorkspaceId.trim().isNotEmpty;
+    insightFlowWorkspaceId = '';
+    await prefs.remove('insightflow.workspace.$uid');
+    if (hadCachedWorkspace) {
+      await InsightFlowSupabaseAuthService.signOut();
+      return false;
+    }
+    return false;
+  }
+  return null;
 }
 
 Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
