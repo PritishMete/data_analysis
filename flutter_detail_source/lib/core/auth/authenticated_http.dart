@@ -462,7 +462,12 @@ Future<Map<String, String>> firebaseAuthHeaders({
 }
 
 Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
-  final token = InsightFlowSupabaseAuthService.accessToken;
+  // Protected requests must use the restored/refreshed Supabase session rather
+  // than a possibly expired in-memory access token. This keeps session
+  // restoration consistent for ManagementShell and all legacy Firebase-header
+  // callers without changing the authorization boundary on the backend.
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  final token = session?.accessToken;
   if (token == null || token.isEmpty) {
     throw StateError('Supabase authentication required.');
   }
