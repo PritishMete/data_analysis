@@ -115,6 +115,37 @@ def test_supabase_registration_rolls_back_when_final_registration_stage_fails(mo
         ).scalar_one_or_none() is None
 
 
+def test_supabase_registration_rejects_existing_active_membership():
+    from firebase_authz.supabase_provider import OrganizationRegistrationConflict, register_organization
+    from core.db import SessionLocal
+
+    result = register_organization(
+        {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
+        "Existing Membership",
+        "Main Branch",
+        "EXISTING-MEMBERSHIP",
+    )
+    try:
+        with pytest.raises(OrganizationRegistrationConflict):
+            register_organization(
+                {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
+                "Second Organization",
+                "Second Branch",
+                "SECOND-ORG",
+            )
+        with SessionLocal() as session:
+            assert session.execute(
+                text("SELECT count(*) FROM organizations WHERE name=:name"),
+                {"name": "Second Organization"},
+            ).scalar_one() == 0
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
 def test_supabase_registration_rejects_duplicate_active_branch_identifier():
     from firebase_authz.supabase_provider import register_organization
     from firebase_authz.service import AuthzError
@@ -193,6 +224,47 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_supabase_invitation_rejects_cross_company_active_member():
+    import uuid
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_a = {"uid": f"cross-owner-a-{suffix}", "sub": f"cross-owner-a-{suffix}",
+               "email": f"cross-owner-a-{suffix}@example.com",
+               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-a-{suffix}"]}}}
+    owner_b = {"uid": f"cross-owner-b-{suffix}", "sub": f"cross-owner-b-{suffix}",
+               "email": f"cross-owner-b-{suffix}@example.com",
+               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-b-{suffix}"]}}}
+    guest_uid = f"cross-guest-{suffix}"
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    org_a = register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
+    org_b = register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
+    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "emp_a", "employee")
+    accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
+    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "emp_b", "employee")
+    try:
+        with pytest.raises(AuthzError):
+            accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"])
+        with SessionLocal() as session:
+            rows = session.execute(
+                text("""SELECT organization_id, status FROM organization_members
+                        WHERE employee_id=:employee ORDER BY organization_id"""),
+                {"employee": "emp_a"},
+            ).all()
+        assert rows == [(org_a["organization_id"], "active")]
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": org_a["organization_id"]})
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": org_b["organization_id"]})
 
 
 def test_supabase_management_approved_employee_and_delegation_are_scoped():
