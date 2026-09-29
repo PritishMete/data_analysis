@@ -598,9 +598,9 @@ class _ManagementShellState extends State<ManagementShell> {
     final selected = target == section;
     return GlassButton.custom(
       onTap: () => setState(() => section = target),
-      height: 34,
+      height: 36,
       width: 116,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 11),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
       useOwnLayer: true,
       quality: GlassQuality.minimal,
       settings: selected
@@ -609,33 +609,31 @@ class _ManagementShellState extends State<ManagementShell> {
             )
           : TechColors.sectionGlass,
       glowColor: selected
-          ? TechColors.borderActive.withValues(alpha: 0.22)
+          ? TechColors.borderActive.withValues(alpha: 0.24)
           : Colors.transparent,
       glowRadius: selected ? 8 : 0,
-      interactionScale: 1.02,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(
-            icon,
-            size: 14,
-            color: selected ? TechColors.borderActive : TechColors.textMuted,
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? TechColors.borderActive : TechColors.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
               label,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: selected ? TechColors.textPrimary : TechColors.textMuted,
-                fontSize: 9.5,
+                fontSize: 10,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                letterSpacing: 0.35,
                 fontFamily: 'monospace',
               ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
