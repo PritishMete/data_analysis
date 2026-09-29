@@ -226,6 +226,54 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
 
 
+def test_supabase_invitation_rejects_expired_and_revoked():
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"expiry-owner-{suffix}"
+    guest_uid = f"expiry-guest-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    result = register_organization(owner, f"Expiry Test {suffix}", "Main", f"EXPIRY-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        expired = create_invitation(
+            owner, workspace, guest["email"], "emp_expired", "employee",
+            int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp() * 1000),
+        )
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("UPDATE invitations SET expires_at=now() WHERE invitation_id=:id"),
+                {"id": expired["invitation_id"]},
+            )
+        with pytest.raises(AuthzError, match="expired"):
+            accept_invitation(guest, workspace, expired["invitation_id"])
+
+        revoked = create_invitation(
+            owner, workspace, guest["email"], "emp_revoked", "employee",
+        )
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("UPDATE invitations SET status='revoked' WHERE invitation_id=:id"),
+                {"id": revoked["invitation_id"]},
+            )
+        with pytest.raises(AuthzError, match="no longer active"):
+            accept_invitation(guest, workspace, revoked["invitation_id"])
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
 def test_supabase_invitation_rejects_cross_company_active_member():
     import uuid
     from firebase_authz.service import AuthzError
