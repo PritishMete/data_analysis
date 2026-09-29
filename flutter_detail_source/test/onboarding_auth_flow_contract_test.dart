@@ -48,6 +48,7 @@ void main() {
     expect(http, contains('supabaseAuthHeaders()'));
     expect(onboarding, contains('InsightFlowSupabaseAuthService.ensureSession()'));
     expect(onboarding, contains('final headers = await supabaseAuthHeaders();'));
+    expect(onboarding, contains("invitation['organization_id']?.toString()"));
     expect(onboarding, isNot(contains('firebaseAuthHeaders(')));
     expect(onboarding, isNot(contains('InsightFlowAuthService.currentUser')));
   });
