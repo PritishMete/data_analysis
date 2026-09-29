@@ -30,6 +30,24 @@ Future<void> loadInsightFlowWorkspaceId(String uid) async {
   }
 }
 
+Future<bool?> reconcileCachedWorkspaceWithRetry({
+  required Future<bool?> Function() resolve,
+  int maxAttempts = 4,
+  Duration initialDelay = const Duration(seconds: 1),
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    final result = await resolve();
+    if (result != null) return result;
+    if (attempt + 1 < maxAttempts) {
+      final seconds = 1 << attempt;
+      await Future<void>.delayed(
+        Duration(milliseconds: initialDelay.inMilliseconds * seconds),
+      );
+    }
+  }
+  return null;
+}
+
 Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
   // Session restoration can briefly lag behind AuthGate on browser startup.
