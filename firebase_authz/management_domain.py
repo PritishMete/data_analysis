@@ -578,6 +578,8 @@ def set_reporting_relationship(claims: dict[str, Any], workspace_id: str,
             _require_location_manage(db, actor, target["location_id"])
         elif "organization.manage" not in _permissions(db, org, actor["principal_id"]):
             raise AuthzError("You don't have permission to manage this assignment.")
+        if target["status"] != "active":
+            raise AuthzError("Only an active assignment can change reporting.")
         parent = None
         if reports_to_assignment_id:
             if reports_to_assignment_id == assignment_id:
@@ -585,8 +587,6 @@ def set_reporting_relationship(claims: dict[str, Any], workspace_id: str,
             parent = _assignment(db, org, reports_to_assignment_id)
             if parent["status"] != "active":
                 raise AuthzError("Reporting target must be active.")
-            if target["status"] != "active":
-                raise AuthzError("Only an active assignment can change reporting.")
             if target["location_id"] != parent["location_id"]:
                 raise AuthzError("Reporting relationships must stay within the same location.")
             child_level = ROLE_LEVELS.get(target["role_id"], 0)
