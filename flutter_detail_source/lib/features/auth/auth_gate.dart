@@ -10,6 +10,7 @@ import '../../core/auth/supabase_auth_service.dart';
 import 'management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
+import 'organization_onboarding_screen.dart';
 import 'sign_in_screen.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
