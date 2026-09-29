@@ -174,9 +174,15 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   Widget surface(Widget child) => GlassCard(
-    margin: EdgeInsets.zero, padding: const EdgeInsets.all(16),
-    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
+    margin: EdgeInsets.zero,
+    padding: const EdgeInsets.all(16),
+    settings: dockGlassSettings(
+      glassColor: TechColors.panelBg.withValues(alpha: 0.30),
+    ),
+    quality: GlassQuality.minimal,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: child,
+  );
 
   void feedback(Object e) {
     if (mounted) {
@@ -213,7 +219,7 @@ class _ManagementShellState extends State<ManagementShell> {
     if (locations.isEmpty) { feedback(StateError('Create a location first.')); return; }
     final name = TextEditingController();
     var location = selectedLocation ?? locations.first['location_id'].toString();
-    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
+    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => _ManagementGlassDialog(
       title: const Text('Create section'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         DropdownButtonFormField<String>(
@@ -244,7 +250,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final active = people.where((p) => p['status'] == 'active').toList();
     if (active.isEmpty) { feedback(StateError('No active people are available.')); return; }
     principal = active.first['principal_id'].toString();
-    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
+    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => _ManagementGlassDialog(
       title: Text(replace ? 'Replace Manager' : 'Assign Manager'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         DropdownButtonFormField<String>(initialValue: location, decoration: const InputDecoration(labelText: 'Location'),
@@ -278,7 +284,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) {
       final matching = sections.where((x) => x['location_id'].toString() == location).toList();
       if (matching.isNotEmpty && !matching.any((x) => x['section_id'].toString() == sectionId)) sectionId = matching.first['section_id'].toString();
-      return AlertDialog(
+      return _ManagementGlassDialog(
         title: const Text('Assign Team Lead'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           DropdownButtonFormField<String>(initialValue: location, decoration: const InputDecoration(labelText: 'Location'),
@@ -315,7 +321,7 @@ class _ManagementShellState extends State<ManagementShell> {
       x['status'] == 'active' && x['location_id'] == a['location_id'] &&
       x['assignment_id'] != a['assignment_id'] && level(x['role_id']) > level(a['role_id'])).toList();
     String? parent = a['reports_to_assignment_id']?.toString();
-    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
+    final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => _ManagementGlassDialog(
       title: const Text('Reporting relationship'),
       content: DropdownButtonFormField<String?>(
         initialValue: candidates.any((x) => x['assignment_id'].toString() == parent) ? parent : null,
