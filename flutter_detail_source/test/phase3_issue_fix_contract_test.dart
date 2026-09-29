@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/core/auth/authenticated_http.dart';
+
 void main() {
   test('company registrant routes to ManagementShell, not legacy management', () {
     final source = File(
