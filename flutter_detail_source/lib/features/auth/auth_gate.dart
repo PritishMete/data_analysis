@@ -7,7 +7,6 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
-import 'authorization_management_screen.dart';
 import 'management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
