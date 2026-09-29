@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -181,10 +183,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
       return;
     }
-    await _refresh(showLoading: false);
+    await _refresh(showLoading: false, allowBackgroundRetry: false);
   }
 
-  Future<void> _refresh({bool showLoading = true}) async {
+  Future<void> _refresh({bool showLoading = true, bool allowBackgroundRetry = true}) async {
     if (!mounted) return;
 
     // Restore the cached workspace before doing network work. Returning
@@ -300,7 +302,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
           _loading = false;
           _workspaceLookupFailed = !_hasCachedWorkspace;
         });
-        if (_hasCachedWorkspace) {
+        if (_hasCachedWorkspace && allowBackgroundRetry) {
           await _scheduleBackgroundRetry();
         }
       }
