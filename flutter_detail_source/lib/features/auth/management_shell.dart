@@ -337,41 +337,6 @@ class _ManagementShellState extends State<ManagementShell> {
     } catch (e) { feedback(e); }
   }
 
-  Widget _dialogAction(
-    String label,
-    VoidCallback onPressed, {
-    bool accent = false,
-  }) =>
-      GlassButton.custom(
-        onTap: onPressed,
-        height: 34,
-        width: 108,
-        shape: const LiquidRoundedSuperellipse(borderRadius: 11),
-        useOwnLayer: true,
-        quality: GlassQuality.minimal,
-        settings: dockGlassSettings(
-          glassColor: accent
-              ? TechColors.borderActive.withValues(alpha: 0.22)
-              : TechColors.panelBg.withValues(alpha: 0.24),
-        ),
-        glowColor: accent
-            ? TechColors.borderActive.withValues(alpha: 0.24)
-            : Colors.transparent,
-        glowRadius: accent ? 7 : 0,
-        interactionScale: 1.03,
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: accent ? TechColors.textPrimary : TechColors.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ),
-      );
-
   Widget _eyebrow(String text) => Text(
     text.toUpperCase(),
     style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, fontFamily: 'monospace'),
