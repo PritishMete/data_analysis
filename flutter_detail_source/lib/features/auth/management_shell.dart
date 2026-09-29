@@ -257,103 +257,295 @@ class _ManagementShellState extends State<ManagementShell> {
     } catch (e) { feedback(e); }
   }
 
-  Widget metric(String label, dynamic value) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-    const SizedBox(height: 5), Text((value ?? 0).toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-  ]));
+  Widget _eyebrow(String text) => Text(
+    text.toUpperCase(),
+    style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, fontFamily: 'monospace'),
+  );
+
+  Widget _title(String text, {String? detail, IconData? icon}) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (icon != null) ...[
+        Icon(icon, size: 18, color: TechColors.borderActive),
+        const SizedBox(width: 10),
+      ],
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(text, style: const TextStyle(color: TechColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+        if (detail != null) ...[
+          const SizedBox(height: 4),
+          Text(detail, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
+        ],
+      ])),
+    ],
+  );
+
+  Widget _statusDot(String status) {
+    final s = status.toLowerCase();
+    final color = s == 'active' || s == 'accepted' || s == 'success'
+        ? TechColors.statusGreen
+        : s == 'pending' || s == 'invited'
+            ? TechColors.statusAmber
+            : s == 'suspended' || s == 'revoked' || s == 'error'
+                ? TechColors.statusRed
+                : TechColors.statusBlue;
+    return Container(width: 7, height: 7, decoration: BoxDecoration(
+      shape: BoxShape.circle, color: color,
+      boxShadow: [BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 8)],
+    ));
+  }
+
+  Widget _glassRow({required Widget child, EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 11)}) =>
+      Container(
+        decoration: BoxDecoration(
+          color: TechColors.panelBg.withValues(alpha: 0.30),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: TechColors.borderMuted.withValues(alpha: 0.85)),
+        ),
+        child: Padding(padding: padding, child: child),
+      );
+
+  Widget _actionChip(String label, IconData icon, VoidCallback? onPressed, {bool accent = false}) => GlassButton.custom(
+    onTap: onPressed ?? () {},
+    enabled: onPressed != null,
+    height: 38,
+    width: 150,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+    useOwnLayer: true,
+    quality: GlassQuality.minimal,
+    settings: TechColors.sectionGlass,
+    glowColor: accent ? TechColors.borderActive.withValues(alpha: 0.28) : Colors.transparent,
+    glowRadius: accent ? 10 : 0,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: accent ? TechColors.borderActive : TechColors.textMuted),
+        const SizedBox(width: 7),
+        Text(label, style: TextStyle(color: accent ? TechColors.textPrimary : TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      ]),
+    ),
+  );
+
+  Widget metric(String label, dynamic value, {IconData? icon}) => GlassCard(
+    margin: EdgeInsets.zero, padding: const EdgeInsets.all(15),
+    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: Row(children: [
+      if (icon != null) ...[
+        Container(width: 34, height: 34, decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: TechColors.borderMuted),
+          color: TechColors.bgBlack.withValues(alpha: 0.22),
+        ), child: Icon(icon, size: 16, color: TechColors.borderActive)),
+        const SizedBox(width: 11),
+      ],
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow(label),
+        const SizedBox(height: 6),
+        Text((value ?? 0).toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      ])),
+    ]),
+  );
 
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      surface(ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.business_outlined, color: TechColors.borderActive),
-        title: Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-        subtitle: Text('Workspace ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId} · ${org['status'] ?? '—'}'))),
+      GlassCard(
+        margin: EdgeInsets.zero, padding: const EdgeInsets.all(18),
+        settings: TechColors.panelGlass, quality: GlassQuality.standard,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+        child: Row(children: [
+          Container(width: 42, height: 42, decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: TechColors.borderActive.withValues(alpha: 0.10),
+            border: Border.all(color: TechColors.borderActive.withValues(alpha: 0.45)),
+          ), child: const Icon(Icons.business_outlined, color: TechColors.borderActive, size: 20)),
+          const SizedBox(width: 13),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _eyebrow('Organization control'),
+            const SizedBox(height: 4),
+            Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 3),
+            Text('${org['status'] ?? '—'}  ·  workspace ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId}', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+          ])),
+          _statusDot(org['status']?.toString() ?? ''),
+        ]),
+      ),
       const SizedBox(height: 12),
-      Wrap(spacing: 10, runSpacing: 10, children: [
-        SizedBox(width: 150, child: metric('Locations', sum['location_count'])),
-        SizedBox(width: 150, child: metric('Managers', sum['manager_count'])),
-        SizedBox(width: 150, child: metric('Team Leads', sum['team_lead_count'])),
-        SizedBox(width: 150, child: metric('Employees', sum['employee_count'])),
-        SizedBox(width: 150, child: metric('Pending invites', pendingInvitations)),
-      ]),
+      LayoutBuilder(builder: (context, c) {
+        final width = c.maxWidth < 680 ? (c.maxWidth - 10) / 2 : (c.maxWidth - 30) / 4;
+        return Wrap(spacing: 10, runSpacing: 10, children: [
+          SizedBox(width: width, child: metric('Locations', sum['location_count'], icon: Icons.location_on_outlined)),
+          SizedBox(width: width, child: metric('Managers', sum['manager_count'], icon: Icons.manage_accounts_outlined)),
+          SizedBox(width: width, child: metric('Team leads', sum['team_lead_count'], icon: Icons.supervisor_account_outlined)),
+          SizedBox(width: width, child: metric('Employees', sum['employee_count'], icon: Icons.people_outline)),
+          SizedBox(width: width, child: metric('Pending invites', pendingInvitations, icon: Icons.mail_outline)),
+        ]);
+      }),
     ]);
   }
 
   Widget organizationView() {
-    if (locations.isEmpty) return surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No organizational structure is configured yet.', style: TextStyle(color: TechColors.textMuted)))));
+    if (locations.isEmpty) return surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _eyebrow('Organization topology'), const SizedBox(height: 8),
+      const Text('No organizational structure is configured yet.', style: TextStyle(color: TechColors.textMuted)),
+    ]));
     return Column(children: locations.map((l) {
       final id = l['location_id'].toString();
       final secs = sections.where((s) => s['location_id'].toString() == id).toList();
       final asg = assignments.where((a) => a['location_id'].toString() == id && a['status'] == 'active').toList();
       final managers = asg.where((a) => a['role_id'] == 'manager').toList();
-      return Padding(padding: const EdgeInsets.only(bottom: 10), child: surface(ExpansionTile(
-        title: Text(l['name'].toString()), subtitle: Text(l['branch_identifier'].toString()),
-        children: [
-          ListTile(dense: true, leading: const Icon(Icons.manage_accounts_outlined), title: const Text('Manager'),
-            subtitle: Text(managers.isEmpty ? 'Unassigned' : managers.first['employee_id'].toString())),
-          for (final s in secs) ...[
-            ListTile(dense: true, leading: const Icon(Icons.account_tree_outlined), title: Text(s['name'].toString()),
-              subtitle: Text('${s['employee_count'] ?? 0} employees')),
-            ...asg.where((a) => a['section_id']?.toString() == s['section_id']?.toString() && (a['role_id'] == 'team_lead' || a['role_id'] == 'employee')).map((a) =>
-              Padding(padding: const EdgeInsets.only(left: 26), child: ListTile(dense: true, title: Text(a['employee_id'].toString()), subtitle: Text(a['role_id'].toString())))),
+      return Padding(padding: const EdgeInsets.only(bottom: 10), child: GlassCard(
+        margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
+        settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const Icon(Icons.location_on_outlined, size: 17, color: TechColors.borderActive),
+            const SizedBox(width: 9),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(l['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(l['branch_identifier'].toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+            ])),
+            _statusDot(l['status']?.toString() ?? 'active'),
+          ]),
+          const SizedBox(height: 10),
+          _glassRow(child: Row(children: [
+            const Icon(Icons.manage_accounts_outlined, size: 15, color: TechColors.textMuted),
+            const SizedBox(width: 8),
+            const Text('MANAGER', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+            const Spacer(),
+            Text(managers.isEmpty ? 'UNASSIGNED' : managers.first['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+          ])),
+          if (secs.isNotEmpty) ...[
+            const SizedBox(height: 10), _eyebrow('Sections'), const SizedBox(height: 7),
+            ...secs.map((s) {
+              final members = asg.where((a) => a['section_id']?.toString() == s['section_id']?.toString() && (a['role_id'] == 'team_lead' || a['role_id'] == 'employee')).toList();
+              return Padding(padding: const EdgeInsets.only(bottom: 6), child: _glassRow(child: Row(children: [
+                const Icon(Icons.account_tree_outlined, size: 14, color: TechColors.statusBlue),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(s['name'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                  Text('${s['employee_count'] ?? 0} members', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+                ])),
+                if (members.isNotEmpty) Text('${members.length}', style: const TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 10)),
+              ])));
+            }),
           ],
-        ],
-      )));
+        ]),
+      ));
     }).toList());
   }
 
   Widget peopleView() {
     final q = search.trim().toLowerCase();
-    final list = people.where((p) => q.isEmpty || [p['employee_id'], p['role_id'], p['location_name'], p['section_name'], p['status']]
-      .any((v) => v?.toString().toLowerCase().contains(q) ?? false)).toList();
+    final list = people.where((p) => q.isEmpty || [p['employee_id'], p['role_id'], p['location_name'], p['section_name'], p['status']].any((v) => v?.toString().toLowerCase().contains(q) ?? false)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      TextField(onChanged: (v) => setState(() => search = v), decoration: input('Search people')),
-      const SizedBox(height: 12),
-      if (list.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No people match this search.', style: TextStyle(color: TechColors.textMuted)))))
-      else surface(Column(children: list.map((p) => ListTile(dense: true, leading: const Icon(Icons.person_outline),
-        title: Text(p['employee_id']?.toString() ?? 'Person'),
-        subtitle: Text('${p['role_id'] ?? '—'} · ${p['location_name'] ?? 'Unassigned location'} · ${p['section_name'] ?? 'Unassigned section'} · ${p['status'] ?? '—'}'))).toList())),
+      GlassCard(
+        margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
+        settings: TechColors.sectionGlass, quality: GlassQuality.minimal,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        child: Row(children: [
+          const Icon(Icons.search, size: 16, color: TechColors.textMuted), const SizedBox(width: 8),
+          Expanded(child: TextField(
+            onChanged: (v) => setState(() => search = v),
+            style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: 'SEARCH PEOPLE / ROLE / LOCATION / SECTION',
+              hintStyle: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
+              border: InputBorder.none, isDense: true,
+            ),
+          )),
+        ]),
+      ),
+      const SizedBox(height: 10),
+      if (list.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO PEOPLE MATCH THIS QUERY', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
+      else Column(children: list.map((p) => Padding(padding: const EdgeInsets.only(bottom: 7), child: _glassRow(child: Row(children: [
+        const Icon(Icons.person_outline, size: 17, color: TechColors.borderActive), const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(p['employee_id']?.toString() ?? 'Person', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+          const SizedBox(height: 3),
+          Text('${p['role_id'] ?? '—'}  ·  ${p['location_name'] ?? 'Unassigned'}  ·  ${p['section_name'] ?? 'Unassigned'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+        ])),
+        _statusDot(p['status']?.toString() ?? ''), const SizedBox(width: 7),
+        Text(p['status']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+      ])))).toList()),
     ]);
   }
 
   Widget locationsView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    Row(children: [const Expanded(child: Text('Locations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
-      IconButton(onPressed: createLocation, tooltip: 'Create location', icon: const Icon(Icons.add))]),
-    const SizedBox(height: 10),
-    if (locations.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No locations yet.', style: TextStyle(color: TechColors.textMuted)))))
-    else ...locations.map((l) => Padding(padding: const EdgeInsets.only(bottom: 8), child: surface(ListTile(
-      contentPadding: EdgeInsets.zero, title: Text(l['name'].toString()),
-      subtitle: Text('Branch: ${l['branch_identifier']} · ${l['section_count'] ?? 0} sections · ${l['employee_count'] ?? 0} employees'),
-      trailing: Text(l['manager']?['employee_id']?.toString() ?? 'No manager'),
+    Row(children: [
+      Expanded(child: _title('Locations', detail: 'BRANCH REGISTRY', icon: Icons.location_on_outlined)),
+      _actionChip('CREATE', Icons.add, createLocation, accent: true),
+    ]),
+    const SizedBox(height: 12),
+    if (locations.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO LOCATIONS YET', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
+    else ...locations.map((l) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _glassRow(child: InkWell(
       onTap: () => setState(() => selectedLocation = l['location_id'].toString()),
+      borderRadius: BorderRadius.circular(12),
+      child: Row(children: [
+        const Icon(Icons.location_on_outlined, size: 17, color: TechColors.borderActive), const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(l['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+          const SizedBox(height: 3),
+          Text('${l['branch_identifier']}  ·  ${l['section_count'] ?? 0} sections  ·  ${l['employee_count'] ?? 0} employees', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+        ])),
+        Text(l['manager']?['employee_id']?.toString() ?? 'NO MANAGER', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+      ]),
     )))),
   ]);
 
   Widget sectionsView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    Row(children: [const Expanded(child: Text('Sections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
-      IconButton(onPressed: createSection, tooltip: 'Create section', icon: const Icon(Icons.add))]),
-    const SizedBox(height: 10),
-    if (sections.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No sections yet.', style: TextStyle(color: TechColors.textMuted)))))
+    Row(children: [
+      Expanded(child: _title('Sections', detail: 'LOCATION → SECTION HIERARCHY', icon: Icons.account_tree_outlined)),
+      _actionChip('CREATE', Icons.add, createSection, accent: true),
+    ]),
+    const SizedBox(height: 12),
+    if (sections.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO SECTIONS YET', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
     else ...sections.map((s) {
       final loc = locations.firstWhere((l) => l['location_id']?.toString() == s['location_id']?.toString(), orElse: () => const {'name': 'Unknown location'});
       final leads = maps(s['team_leads']);
-      return Padding(padding: const EdgeInsets.only(bottom: 8), child: surface(ListTile(contentPadding: EdgeInsets.zero,
-        title: Text(s['name'].toString()), subtitle: Text('${loc['name']} · ${s['employee_count'] ?? 0} employees'),
-        trailing: Text(leads.isEmpty ? 'No Team Lead' : leads.map((x) => x['employee_id'].toString()).join(', ')))));
+      return Padding(padding: const EdgeInsets.only(bottom: 8), child: _glassRow(child: Row(children: [
+        const Icon(Icons.subdirectory_arrow_right, size: 16, color: TechColors.statusBlue), const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+          const SizedBox(height: 3),
+          Text('${loc['name']}  ·  ${s['employee_count'] ?? 0} employees', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+        ])),
+        Text(leads.isEmpty ? 'NO TEAM LEAD' : leads.map((x) => x['employee_id'].toString()).join(', '), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+      ])));
     }),
   ]);
 
-  Widget auditView() => audit.isEmpty ? surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No audit events are available.', style: TextStyle(color: TechColors.textMuted))))) :
-    surface(Column(children: audit.map((e) => ListTile(dense: true, leading: const Icon(Icons.history),
-      title: Text(e['action']?.toString() ?? 'Event'),
-      subtitle: Text('${e['outcome'] ?? '—'} · ${e['created_at'] ?? ''}'))).toList()));
+  Widget auditView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    _title('Audit Log', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
+    const SizedBox(height: 12),
+    if (audit.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Text('NO AUDIT EVENTS ARE AVAILABLE.', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11))))
+    else GlassCard(
+      margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
+      settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: Column(children: audit.map((e) => _glassRow(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(width: 120, child: Text(e['created_at']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace'))),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(e['action']?.toString() ?? 'EVENT', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+            const SizedBox(height: 3),
+            Text(e['outcome']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+          ])),
+          _statusDot(e['outcome']?.toString() ?? ''),
+        ]),
+      )).toList()),
+    ),
+  ]);
 
   Widget legacyView(String title, String text) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)), const SizedBox(height: 6),
-    Text(text, style: const TextStyle(color: TechColors.textMuted)), const SizedBox(height: 14),
-    FilledButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())),
-      icon: const Icon(Icons.open_in_new), label: const Text('Open existing authorization tools')),
+    _eyebrow(title), const SizedBox(height: 7),
+    Text(text, style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
+    const SizedBox(height: 14),
+    _actionChip('OPEN LEGACY TOOLS', Icons.open_in_new, () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())), accent: true),
   ]));
 
   Widget body() {
@@ -369,31 +561,54 @@ class _ManagementShellState extends State<ManagementShell> {
     }
   }
 
-  Widget actions() => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const Text('Management actions', style: TextStyle(fontWeight: FontWeight.w700)), const SizedBox(height: 8),
-    Wrap(spacing: 8, runSpacing: 8, children: [
-      FilledButton.icon(onPressed: () => assignManager(), icon: const Icon(Icons.manage_accounts), label: const Text('Assign Manager')),
-      FilledButton.icon(onPressed: () => assignManager(replace: true), icon: const Icon(Icons.swap_horiz), label: const Text('Replace Manager')),
-      FilledButton.icon(onPressed: assignTeamLead, icon: const Icon(Icons.supervisor_account), label: const Text('Assign Team Lead')),
+  Widget actions() => GlassCard(
+    margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
+    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _eyebrow('Contextual controls'), const SizedBox(height: 9),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        _actionChip('ASSIGN MANAGER', Icons.manage_accounts, () => assignManager(), accent: true),
+        _actionChip('REPLACE MANAGER', Icons.swap_horiz, () => assignManager(replace: true)),
+        _actionChip('ASSIGN TEAM LEAD', Icons.supervisor_account, assignTeamLead),
+      ]),
     ]),
-  ]));
+  );
 
-  Widget assignmentList() => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const Text('Organizational assignments', style: TextStyle(fontWeight: FontWeight.w700)), const SizedBox(height: 8),
-    if (assignments.isEmpty) const Text('No assignments.', style: TextStyle(color: TechColors.textMuted)),
-    ...assignments.map((a) => ListTile(dense: true, title: Text(a['employee_id'].toString()),
-      subtitle: Text('${a['role_id'] ?? '—'} · ${a['location_name'] ?? '—'} · ${a['section_name'] ?? '—'}'),
-      trailing: TextButton(onPressed: a['status'] == 'active' ? () => reporting(a) : null, child: const Text('Reporting')))),
-  ]));
+  Widget assignmentList() => GlassCard(
+    margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
+    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _eyebrow('Assignment registry'), const SizedBox(height: 9),
+      if (assignments.isEmpty) const Text('NO ASSIGNMENTS', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)),
+      ...assignments.map((a) => Padding(padding: const EdgeInsets.only(bottom: 6), child: _glassRow(child: Row(children: [
+        const Icon(Icons.link, size: 15, color: TechColors.statusBlue), const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(a['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+          Text('${a['role_id'] ?? '—'}  ·  ${a['location_name'] ?? '—'}  ·  ${a['section_name'] ?? '—'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')),
+        ])),
+        if (a['status'] == 'active') _actionChip('REPORTING', Icons.account_tree_outlined, () => reporting(a)),
+      ]))),
+    ]),
+  );
 
   Widget navButton(ManagementSection target, String label, IconData icon) {
     final selected = target == section;
-    return TextButton.icon(
-      onPressed: () => setState(() => section = target), icon: Icon(icon, size: 16),
-      label: Text(label), style: TextButton.styleFrom(
-        foregroundColor: selected ? TechColors.textPrimary : TechColors.textMuted,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      ));
+    return GlassButton.custom(
+      onTap: () => setState(() => section = target),
+      height: 38, width: 128,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+      useOwnLayer: true, quality: GlassQuality.minimal,
+      settings: selected ? TechColors.panelGlass : TechColors.sectionGlass,
+      glowColor: selected ? TechColors.borderActive.withValues(alpha: 0.24) : Colors.transparent,
+      glowRadius: selected ? 9 : 0,
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 11), child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: selected ? TechColors.borderActive : TechColors.textMuted),
+        const SizedBox(width: 7),
+        Text(label, style: TextStyle(color: selected ? TechColors.textPrimary : TechColors.textMuted, fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontFamily: 'monospace')),
+      ])),
+    );
   }
 
   Widget nav(bool narrow) {
@@ -406,20 +621,33 @@ class _ManagementShellState extends State<ManagementShell> {
       navButton(ManagementSection.invitations, 'Invitations', Icons.mail_outline),
       navButton(ManagementSection.dataAccess, 'Data Access', Icons.lock_outline),
       navButton(ManagementSection.audit, 'Audit Log', Icons.receipt_long_outlined),
-      TextButton.icon(
-        onPressed: () => openInsightFlowAnalysis(context),
-        icon: const Icon(Icons.analytics_outlined, size: 16, color: TechColors.borderActive),
-        label: const Text('Analysis'),
-        style: TextButton.styleFrom(foregroundColor: TechColors.textPrimary),
-      ),
-      IconButton(onPressed: loadAll, tooltip: 'Refresh', icon: const Icon(Icons.refresh)),
-      IconButton(onPressed: () => InsightFlowSupabaseAuthService.signOut(), tooltip: 'Log out', icon: const Icon(Icons.logout)),
+    ];
+    final trailing = <Widget>[
+      _actionChip('ANALYSIS', Icons.analytics_outlined, () => openInsightFlowAnalysis(context), accent: true),
+      IconButton(onPressed: loadAll, tooltip: 'Refresh', icon: const Icon(Icons.refresh, size: 18, color: TechColors.textMuted)),
+      IconButton(onPressed: () => InsightFlowSupabaseAuthService.signOut(), tooltip: 'Log out', icon: const Icon(Icons.logout, size: 18, color: TechColors.textMuted)),
     ];
     return GlassCard(
-      margin: EdgeInsets.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      settings: TechColors.sectionGlass, quality: GlassQuality.minimal,
+      margin: EdgeInsets.zero, padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      settings: TechColors.panelGlass, quality: GlassQuality.standard,
       shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      child: narrow ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: buttons)) : Wrap(spacing: 2, runSpacing: 2, children: buttons),
+      child: narrow
+          ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+              ...buttons.map((b) => Padding(padding: const EdgeInsets.only(right: 4), child: b)),
+              const SizedBox(width: 5), ...trailing,
+            ]))
+          : Row(children: [
+              const Icon(Icons.terminal, size: 18, color: TechColors.borderActive),
+              const SizedBox(width: 9),
+              const Text('InsightFlow', style: TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+              const SizedBox(width: 16),
+              _eyebrow('ORGANIZATION / MANAGEMENT'),
+              const SizedBox(width: 18),
+              Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+                ...buttons.map((b) => Padding(padding: const EdgeInsets.only(right: 4), child: b)),
+              ]))),
+              const SizedBox(width: 6), ...trailing,
+            ]),
     );
   }
 
@@ -429,19 +657,29 @@ class _ManagementShellState extends State<ManagementShell> {
     body: LiquidGlassScope(child: Stack(children: [
       const Positioned.fill(child: GlassBackgroundSource(child: TechAnimatedBackground())),
       Positioned.fill(child: SafeArea(child: LayoutBuilder(builder: (context, c) {
-        final narrow = c.maxWidth < 760;
+        final narrow = c.maxWidth < 820;
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(narrow ? 12 : 22, 12, narrow ? 12 : 22, 28),
+          padding: EdgeInsets.fromLTRB(narrow ? 10 : 20, 10, narrow ? 10 : 20, 28),
           child: Center(child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1400),
+            constraints: const BoxConstraints(maxWidth: 1500),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               nav(narrow), const SizedBox(height: 12),
-              if (loading) surface(const Padding(padding: EdgeInsets.all(36), child: Center(child: CircularProgressIndicator(strokeWidth: 1.8))))
-              else if (error != null) surface(Column(children: [
-                const Icon(Icons.error_outline, color: Colors.redAccent), const SizedBox(height: 8),
-                Text(error!, textAlign: TextAlign.center), const SizedBox(height: 12),
-                FilledButton(onPressed: loadAll, child: const Text('Retry')),
-              ]))
+              if (loading)
+                GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(40), settings: TechColors.sectionGlass, quality: GlassQuality.standard, shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                  child: const Column(children: [
+                    SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)),
+                    SizedBox(height: 12),
+                    Text('INITIALIZING MANAGEMENT CONTROL PLANE', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
+                  ]))
+              else if (error != null)
+                GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(24), settings: TechColors.sectionGlass, quality: GlassQuality.standard, shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                  child: Column(children: [
+                    const Icon(Icons.error_outline, color: TechColors.statusRed, size: 22),
+                    const SizedBox(height: 8), _eyebrow('Management service error'),
+                    const SizedBox(height: 5),
+                    Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textPrimary)),
+                    const SizedBox(height: 13), _actionChip('RETRY', Icons.refresh, loadAll, accent: true),
+                  ]))
               else ...[
                 if (section == ManagementSection.overview || section == ManagementSection.organization) ...[actions(), const SizedBox(height: 12)],
                 body(),
