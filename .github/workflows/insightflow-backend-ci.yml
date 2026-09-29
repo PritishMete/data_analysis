@@ -103,6 +103,7 @@ jobs:
           lib/features/auth/account_management_screen.dart
           lib/features/auth/authorization_management_screen.dart
           lib/features/auth/management_shell.dart
+          lib/features/auth/management_navigation.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
