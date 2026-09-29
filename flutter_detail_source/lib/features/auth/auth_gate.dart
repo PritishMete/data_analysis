@@ -223,6 +223,12 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         });
       }
       if (!mounted) return;
+      if (InsightFlowSupabaseAuthService.currentUser == null) {
+        // Workspace reconciliation may have invalidated a stale session.
+        // Never render Company Registration from that intermediate state;
+        // let the auth-state stream take the user back to Sign In.
+        return;
+      }
       if (resolved == null) {
         // Do not guess and do not fall through to DataScreen. The portal is
         // the only post-login destination; retrying is safer than opening the
