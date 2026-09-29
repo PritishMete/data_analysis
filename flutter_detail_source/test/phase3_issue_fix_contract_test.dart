@@ -39,7 +39,7 @@ void main() {
     );
     expect(
       authGate,
-      contains('resolveInsightFlowWorkspaceFromBackend(widget.user.uid)'),
+      contains('resolveInsightFlowOnboardingStateFromBackend(widget.user.uid)'),
     );
   });
 
