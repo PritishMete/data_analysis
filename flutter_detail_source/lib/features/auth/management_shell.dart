@@ -6,7 +6,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
-import '../dashboard/data_screen.dart';
+import 'management_navigation.dart';
 import 'authorization_management_screen.dart';
 
 enum ManagementSection { overview, organization, people, locations, sections, invitations, dataAccess, audit }
@@ -401,7 +401,7 @@ class _ManagementShellState extends State<ManagementShell> {
       navButton(ManagementSection.dataAccess, 'Data Access', Icons.lock_outline),
       navButton(ManagementSection.audit, 'Audit Log', Icons.receipt_long_outlined),
       TextButton.icon(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DataScreen())),
+        onPressed: () => openInsightFlowAnalysis(context),
         icon: const Icon(Icons.analytics_outlined, size: 16, color: TechColors.borderActive),
         label: const Text('Analysis'),
         style: TextButton.styleFrom(foregroundColor: TechColors.textPrimary),
