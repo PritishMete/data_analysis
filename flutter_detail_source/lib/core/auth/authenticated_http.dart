@@ -66,6 +66,27 @@ class InsightFlowOnboardingResolution {
   final List<Map<String, dynamic>> pendingInvitations;
 }
 
+Future<InsightFlowOnboardingResolution?>
+    reconcileInsightFlowOnboardingWithRetry({
+  required Future<InsightFlowOnboardingResolution> Function() resolve,
+  int maxAttempts = 4,
+  Duration initialDelay = const Duration(seconds: 1),
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    final result = await resolve();
+    if (result.state != InsightFlowOnboardingState.transientFailure) {
+      return result;
+    }
+    if (attempt + 1 < maxAttempts) {
+      final seconds = 1 << attempt;
+      await Future<void>.delayed(
+        Duration(milliseconds: initialDelay.inMilliseconds * seconds),
+      );
+    }
+  }
+  return null;
+}
+
 Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
   if (session == null || session.accessToken.isEmpty) {
@@ -165,6 +186,10 @@ Future<InsightFlowOnboardingResolution>
         InsightFlowOnboardingState.activeMember,
       );
     }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('insightflow.workspace.$uid');
+    insightFlowWorkspaceId = '';
 
     try {
       final invitations = await fetchInsightFlowPendingInvitations();
