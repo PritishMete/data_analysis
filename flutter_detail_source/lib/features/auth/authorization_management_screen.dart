@@ -1061,7 +1061,6 @@ class _PortalGlassAppBar extends StatelessWidget {
         ],
       ),
     );
-    );
   }
 }
 
