@@ -223,14 +223,29 @@ def test_manager_scope_and_team_lead_reporting_relationships():
                 manager_assignment["assignment_id"],
             )
 
-        employee_assignment = assign_team_lead(
+        with SessionLocal.begin() as session:
+            employee_assignment_id = f"asg_test_{uuid.uuid4().hex}"
+            session.execute(
+                text("""INSERT INTO organizational_assignments
+                        (assignment_id, organization_id, principal_id, location_id, role_id, section_id, status)
+                        VALUES (:assignment, :org, :principal, :location, 'employee', :section, 'active')"""),
+                {
+                    "assignment": employee_assignment_id,
+                    "org": org["organization_id"],
+                    "principal": employee,
+                    "location": org["location_id"],
+                    "section": main_section["section_id"],
+                },
+            )
+
+        employee_assignment = set_reporting_relationship(
             owner,
             org["workspace_id"],
-            org["location_id"],
-            main_section["section_id"],
-            employee,
-            None,
+            employee_assignment_id,
+            lead_assignment["assignment_id"],
         )
+        assert employee_assignment["reports_to_assignment_id"] == lead_assignment["assignment_id"]
+
         with pytest.raises(AuthzError, match="higher organizational role"):
             set_reporting_relationship(
                 owner,
