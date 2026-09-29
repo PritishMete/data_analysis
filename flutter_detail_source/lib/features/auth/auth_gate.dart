@@ -164,6 +164,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
   bool _verificationRequired = false;
   bool _workspaceLookupFailed = false;
+  bool _hasCachedWorkspace = false;
+  bool _backgroundRetryScheduled = false;
 
   @override
   void initState() {
@@ -171,76 +173,117 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     _refresh();
   }
 
-  Future<void> _refresh() async {
+  Future<void> _scheduleBackgroundRetry() async {
+    if (_backgroundRetryScheduled) return;
+    _backgroundRetryScheduled = true;
+    await Future<void>.delayed(const Duration(seconds: 2));
+    _backgroundRetryScheduled = false;
+    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
+      return;
+    }
+    await _refresh(showLoading: false);
+  }
+
+  Future<void> _refresh({bool showLoading = true}) async {
     if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _verificationRequired = false;
-      _workspaceLookupFailed = false;
-    });
+
+    // Restore the cached workspace before doing network work. Returning
+    // devices should not be held on the Auth / Initializing screen while the
+    // backend is waking up or the browser is restoring a session.
+    await loadInsightFlowWorkspaceId(widget.user.uid);
+    _hasCachedWorkspace = insightFlowWorkspaceId.trim().isNotEmpty;
+
+    if (mounted) {
+      setState(() {
+        _loading = showLoading && !_hasCachedWorkspace;
+        _verificationRequired = false;
+        _workspaceLookupFailed = false;
+      });
+    }
+
     try {
-      // Never trust only the locally restored session for the security
-      // boundary. Ask Supabase Auth for the current server-side user so an
-      // unverified account cannot reach Company Registration after refresh.
-      final authoritativeUser =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (authoritativeUser == null) {
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-
-      final email = authoritativeUser.email;
-      if (email != null &&
-          email.isNotEmpty &&
-          !await InsightFlowSupabaseAuthService.rememberDevice(email) &&
-          !InsightFlowSupabaseAuthService.allowsCurrentSession(email)) {
-        await InsightFlowSupabaseAuthService.signOut();
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-      if (authoritativeUser.emailConfirmedAt == null) {
-        if (mounted) {
-          setState(() {
-            _verificationRequired = true;
-            _loading = false;
-          });
+      // This is authoritative when it responds, but it is deliberately
+      // bounded. A restored session is allowed to use the cached workspace
+      // while this check is being performed.
+      SupabaseAuthUser? currentUser = InsightFlowSupabaseAuthService.currentUser;
+      try {
+        final authoritativeUser =
+            await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+        if (authoritativeUser == null) {
+          if (!_hasCachedWorkspace && mounted) {
+            setState(() => _loading = false);
+          }
+          return;
         }
+        currentUser = InsightFlowSupabaseAuthService.currentUser;
+        final email = authoritativeUser.email;
+        if (email != null &&
+            email.isNotEmpty &&
+            !await InsightFlowSupabaseAuthService.rememberDevice(email) &&
+            !InsightFlowSupabaseAuthService.allowsCurrentSession(email)) {
+          await InsightFlowSupabaseAuthService.signOut();
+          return;
+        }
+        if (authoritativeUser.emailConfirmedAt == null) {
+          if (mounted) {
+            setState(() {
+              _verificationRequired = true;
+              _loading = false;
+            });
+          }
+          return;
+        }
+      } on TimeoutException {
+        // Do not turn a slow Supabase Auth response into a blocking screen.
+        // The cached workspace remains usable while the backend reconciliation
+        // below establishes the authoritative organization state.
+      }
+
+      if (currentUser == null ||
+          InsightFlowSupabaseAuthService.currentUser == null) {
         return;
       }
 
-      // The local workspace ID is only a cache. Always reconcile it with the
-      // authenticated backend so a user signing in from another device gets
-      // the same organization context.
-      await loadInsightFlowWorkspaceId(widget.user.uid);
+      // The backend is the final source of truth for organization membership.
+      // This no longer blocks a returning device's already-renderable portal.
       final resolved = await resolveInsightFlowWorkspaceFromBackend(
         widget.user.uid,
       );
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _verificationRequired = false;
-          _workspaceLookupFailed = resolved == null;
-        });
-      }
+
       if (!mounted) return;
+
       if (InsightFlowSupabaseAuthService.currentUser == null) {
         // Workspace reconciliation may have invalidated a stale session.
         // Never render Company Registration from that intermediate state;
         // let the auth-state stream take the user back to Sign In.
         return;
       }
+
       if (resolved == null) {
-        // Do not guess and do not fall through to DataScreen. The portal is
-        // the only post-login destination; retrying is safer than opening the
-        // data workspace without a resolved authorization context.
+        if (_hasCachedWorkspace) {
+          // A temporary backend/cold-start failure must not replace a working
+          // portal with an error screen. Retry in the background instead.
+          setState(() {
+            _loading = false;
+            _workspaceLookupFailed = false;
+          });
+          await _scheduleBackgroundRetry();
+          return;
+        }
+
+        setState(() {
+          _loading = false;
+          _workspaceLookupFailed = true;
+        });
         return;
       }
+
+      setState(() {
+        _loading = false;
+        _verificationRequired = false;
+        _workspaceLookupFailed = false;
+      });
     } on AuthException catch (error) {
-      // A locally-restored JWT can outlive the Auth user record. Supabase
-      // explicitly notes that deleting an Auth user does not retroactively
-      // invalidate an already-issued access token, so a refresh can enter
-      // this branch with a stale local session. Never interpret that state
-      // as a new user who should be sent to Company Registration.
       final message = error.message.toLowerCase();
       final invalidSession = message.contains('user not found') ||
           message.contains('user does not exist') ||
@@ -252,9 +295,27 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         await InsightFlowSupabaseAuthService.signOut();
         return;
       }
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _workspaceLookupFailed = !_hasCachedWorkspace;
+        });
+        if (_hasCachedWorkspace) {
+          await _scheduleBackgroundRetry();
+        }
+      }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      // A returning device keeps its cached portal during transient network
+      // failures. New users still receive the explicit retry state.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _workspaceLookupFailed = !_hasCachedWorkspace;
+        });
+        if (_hasCachedWorkspace) {
+          await _scheduleBackgroundRetry();
+        }
+      }
     }
   }
 
@@ -299,7 +360,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     return AuthenticatedBrandShell(child: authenticatedChild);
   }
 }
-
 
 class _AuthLoading extends StatelessWidget {
   const _AuthLoading();
