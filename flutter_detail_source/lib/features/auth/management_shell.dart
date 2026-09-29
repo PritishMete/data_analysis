@@ -12,6 +12,85 @@ import 'authorization_management_screen.dart';
 
 enum ManagementSection { overview, organization, people, locations, sections, invitations, dataAccess, audit }
 
+class _ManagementGlassDialog extends StatelessWidget {
+  const _ManagementGlassDialog({
+    required this.title,
+    required this.content,
+    required this.actions,
+  });
+
+  final Widget title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: GlassContainer(
+          useOwnLayer: true,
+          quality: GlassQuality.standard,
+          settings: TechColors.panelGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+          child: DefaultTextStyle(
+            style: const TextStyle(color: TechColors.textPrimary),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.tune,
+                      size: 16,
+                      color: TechColors.borderActive,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: DefaultTextStyle.merge(
+                        style: const TextStyle(
+                          color: TechColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        child: title,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: content,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: actions
+                      .map(
+                        (action) => Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: action,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 class ManagementShell extends StatefulWidget {
   const ManagementShell({super.key});
   @override
@@ -106,7 +185,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> createLocation() async {
     final name = TextEditingController(), id = TextEditingController();
-    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+    final ok = await showDialog<bool>(context: context, builder: (c) => _ManagementGlassDialog(
       title: const Text('Create location'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: name, decoration: input('Location name')),
@@ -257,6 +336,41 @@ class _ManagementShellState extends State<ManagementShell> {
       await loadAll();
     } catch (e) { feedback(e); }
   }
+
+  Widget _dialogAction(
+    String label,
+    VoidCallback onPressed, {
+    bool accent = false,
+  }) =>
+      GlassButton.custom(
+        onTap: onPressed,
+        height: 34,
+        width: 108,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 11),
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: dockGlassSettings(
+          glassColor: accent
+              ? TechColors.borderActive.withValues(alpha: 0.22)
+              : TechColors.panelBg.withValues(alpha: 0.24),
+        ),
+        glowColor: accent
+            ? TechColors.borderActive.withValues(alpha: 0.24)
+            : Colors.transparent,
+        glowRadius: accent ? 7 : 0,
+        interactionScale: 1.03,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: accent ? TechColors.textPrimary : TechColors.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+      );
 
   Widget _eyebrow(String text) => Text(
     text.toUpperCase(),
