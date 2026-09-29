@@ -159,7 +159,7 @@ def _role_counts(db, organization_id: str, location_id: str | None = None) -> di
     params = {"org": organization_id, "location": location_id}
     location_clause = "AND oa.location_id=:location" if location_id else ""
     rows = db.execute(text(f"""
-        SELECT oa.role_id, count(*) AS count
+        SELECT oa.role_id, count(DISTINCT oa.principal_id) AS count
         FROM organizational_assignments oa
         WHERE oa.organization_id=:org AND oa.status='active' {location_clause}
         GROUP BY oa.role_id
@@ -303,7 +303,7 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
             """), {"org": org, "section": row["section_id"]}).mappings().all()
             item["team_leads"] = [dict(value) for value in team_leads]
             item["employee_count"] = int(db.execute(text("""
-                SELECT count(*) FROM organizational_assignments
+                SELECT count(DISTINCT principal_id) FROM organizational_assignments
                 WHERE organization_id=:org AND section_id=:section
                   AND role_id='employee' AND status='active'
             """), {"org": org, "section": row["section_id"]}).scalar_one())
