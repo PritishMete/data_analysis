@@ -1,0 +1,217 @@
+"""Domain-specific management API.
+
+These endpoints coexist with /v1/authz/management so the legacy management
+snapshot remains backward compatible while new Flutter management features can
+consume normalized business-domain resources.
+"""
+from __future__ import annotations
+
+import os
+
+from fastapi import APIRouter, Header, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
+
+from .service import AuthzError, AuthenticationRequired
+from .supabase_auth import verify_supabase_access_token
+from .management_domain import (
+    ManagementConflict,
+    assign_manager,
+    assign_team_lead,
+    create_location,
+    create_section,
+    list_assignments,
+    list_audit_events,
+    list_locations,
+    list_people,
+    list_sections,
+    management_overview,
+    replace_manager,
+    set_reporting_relationship,
+)
+
+router = APIRouter(prefix="/v1/authz/management", tags=["management"])
+
+
+def _token(value: str | None) -> str:
+    if not value or not value.startswith("Bearer "):
+        raise AuthenticationRequired("Authentication required.")
+    return value[7:].strip()
+
+
+def _claims(authorization: str | None) -> dict:
+    token = _token(authorization)
+    provider = os.environ.get("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
+    if provider == "supabase":
+        return verify_supabase_access_token(token, require_email_verified=True)
+    from .service import verify_id_token, require_email_verified
+    return require_email_verified(verify_id_token(token))
+
+
+def _workspace(value: str | None) -> str:
+    workspace_id = str(value or "").strip()
+    if not workspace_id:
+        raise HTTPException(400, "Workspace authorization context required.")
+    return workspace_id
+
+
+class LocationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    branch_identifier: str
+
+
+class SectionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    location_id: str
+    name: str
+
+
+class ManagerAssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    location_id: str
+    principal_id: str
+
+
+class TeamLeadAssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    location_id: str
+    section_id: str
+    principal_id: str
+    reports_to_assignment_id: str | None = None
+
+
+class ReportingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignment_id: str
+    reports_to_assignment_id: str | None = None
+
+
+def _dispatch(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc)) from exc
+    except ManagementConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/overview")
+def overview(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(management_overview, _claims(authorization), _workspace(workspace_id))
+
+
+@router.get("/locations")
+def locations(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"locations": _dispatch(list_locations, _claims(authorization), _workspace(workspace_id))}
+
+
+@router.post("/locations")
+def location_create(
+    req: LocationCreateRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(create_location, _claims(authorization), _workspace(workspace_id), req.name, req.branch_identifier)
+
+
+@router.get("/sections")
+def sections(
+    location_id: str | None = Query(default=None),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"sections": _dispatch(list_sections, _claims(authorization), _workspace(workspace_id), location_id)}
+
+
+@router.post("/sections")
+def section_create(
+    req: SectionCreateRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(create_section, _claims(authorization), _workspace(workspace_id), req.location_id, req.name)
+
+
+@router.get("/people")
+def people(
+    search: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+    location_id: str | None = Query(default=None),
+    section_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"people": _dispatch(
+        list_people, _claims(authorization), _workspace(workspace_id),
+        search, role, location_id, section_id, status,
+    )}
+
+
+@router.get("/assignments")
+def assignments(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"assignments": _dispatch(list_assignments, _claims(authorization), _workspace(workspace_id))}
+
+
+@router.post("/assignments/manager")
+def manager_assign(
+    req: ManagerAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(assign_manager, _claims(authorization), _workspace(workspace_id), req.location_id, req.principal_id)
+
+
+@router.post("/assignments/manager/change")
+def manager_change(
+    req: ManagerAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(replace_manager, _claims(authorization), _workspace(workspace_id), req.location_id, req.principal_id)
+
+
+@router.post("/assignments/team-lead")
+def team_lead_assign(
+    req: TeamLeadAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        assign_team_lead, _claims(authorization), _workspace(workspace_id),
+        req.location_id, req.section_id, req.principal_id, req.reports_to_assignment_id,
+    )
+
+
+@router.post("/assignments/reporting")
+def reporting_change(
+    req: ReportingRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        set_reporting_relationship, _claims(authorization), _workspace(workspace_id),
+        req.assignment_id, req.reports_to_assignment_id,
+    )
+
+
+@router.get("/audit")
+def audit(
+    limit: int = Query(default=100, ge=1, le=200),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"audit": _dispatch(list_audit_events, _claims(authorization), _workspace(workspace_id), limit)}
