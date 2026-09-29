@@ -7,7 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
-import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class OrganizationOnboardingScreen extends StatefulWidget {
@@ -40,7 +40,11 @@ class _OrganizationOnboardingScreenState
       _message = null;
     });
     try {
-      final headers = await firebaseAuthHeaders(forceRefresh: true);
+      final session = await InsightFlowSupabaseAuthService.ensureSession();
+      if (session == null || session.accessToken.isEmpty) {
+        throw StateError('Your authentication session could not be restored.');
+      }
+      final headers = await supabaseAuthHeaders();
       final response = await http.post(
         Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
         headers: {...headers, 'Content-Type': 'application/json'},
@@ -59,7 +63,7 @@ class _OrganizationOnboardingScreenState
               : 'Invitation could not be accepted.',
         );
       }
-      final uid = InsightFlowAuthService.currentUser?.uid;
+      final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
       if (uid != null) {
         await setInsightFlowWorkspaceId(uid, workspaceId);
       }
@@ -134,7 +138,7 @@ class _OrganizationOnboardingScreenState
         ],
         const SizedBox(height: 10),
         TextButton(
-          onPressed: _busy ? null : InsightFlowAuthService.signOut,
+          onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
           child: const Text('Sign out'),
         ),
       ],
