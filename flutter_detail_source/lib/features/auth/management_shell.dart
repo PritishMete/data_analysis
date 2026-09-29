@@ -334,7 +334,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final leads = maps(s['team_leads']);
       return Padding(padding: const EdgeInsets.only(bottom: 8), child: surface(ListTile(contentPadding: EdgeInsets.zero,
         title: Text(s['name'].toString()), subtitle: Text(loc['name'].toString() + ' · ' + (s['employee_count'] ?? 0).toString() + ' employees'),
-        trailing: Text(leads.isEmpty ? 'No Team Lead' : leads.map((x) => x['employee_id'].toString()).join(', '))));
+        trailing: Text(leads.isEmpty ? 'No Team Lead' : leads.map((x) => x['employee_id'].toString()).join(', ')))));
     }),
   ]);
 
