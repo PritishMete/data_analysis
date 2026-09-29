@@ -295,14 +295,20 @@ class _ManagementShellState extends State<ManagementShell> {
     ));
   }
 
-  Widget _glassRow({required Widget child, EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 11)}) =>
-      Container(
-        decoration: BoxDecoration(
-          color: TechColors.panelBg.withValues(alpha: 0.30),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: TechColors.borderMuted.withValues(alpha: 0.85)),
-        ),
-        child: Padding(padding: padding, child: child),
+  Widget _glassRow({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
+      horizontal: 14,
+      vertical: 11,
+    ),
+  }) =>
+      GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: TechColors.sectionGlass,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+        padding: padding,
+        child: child,
       );
 
   Widget _actionChip(String label, IconData icon, VoidCallback? onPressed, {bool accent = false}) => GlassButton.custom(
@@ -326,27 +332,40 @@ class _ManagementShellState extends State<ManagementShell> {
     ),
   );
 
-  Widget metric(String label, dynamic value, {IconData? icon}) => GlassCard(
-    margin: EdgeInsets.zero, padding: const EdgeInsets.all(15),
-    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-    child: Row(children: [
-      if (icon != null) ...[
-        Container(width: 34, height: 34, decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: TechColors.borderMuted),
-          color: TechColors.bgBlack.withValues(alpha: 0.22),
-        ), child: Icon(icon, size: 16, color: TechColors.borderActive)),
-        const SizedBox(width: 11),
-      ],
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow(label),
-        const SizedBox(height: 6),
-        Text((value ?? 0).toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-      ])),
-    ]),
-  );
-
+  Widget metric(String label, dynamic value, {IconData? icon}) =>
+      GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: TechColors.sectionGlass,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+        child: Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: TechColors.borderActive),
+              const SizedBox(width: 9),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _eyebrow(label),
+                  const SizedBox(height: 4),
+                  Text(
+                    (value ?? 0).toString(),
+                    style: const TextStyle(
+                      color: TechColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
