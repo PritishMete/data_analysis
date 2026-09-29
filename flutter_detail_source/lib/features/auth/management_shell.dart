@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -93,6 +94,19 @@ class _ManagementGlassDialog extends StatelessWidget {
   }
 }
 
+
+/// Exact glass navigation preset used by DataScreen's NavigationTabs.
+const _kManagementNavigationGlassSettings = LiquidGlassSettings(
+  thickness: 20,
+  blur: 20,
+  glassColor: Color(0x26FFFFFF),
+  lightAngle: 0.75 * math.pi,
+  lightIntensity: 0.7,
+  ambientStrength: 0.5,
+  saturation: 1.2,
+  refractiveIndex: 1.2,
+  chromaticAberration: 0.0,
+);
 
 class ManagementShell extends StatefulWidget {
   const ManagementShell({super.key});
@@ -443,9 +457,10 @@ class _ManagementShellState extends State<ManagementShell> {
                     (value ?? 0).toString(),
                     style: const TextStyle(
                       color: TechColors.textPrimary,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'monospace',
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],
@@ -625,29 +640,108 @@ class _ManagementShellState extends State<ManagementShell> {
     }),
   ]);
 
-  Widget auditView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    _title('Audit Log', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
-    const SizedBox(height: 12),
-    if (audit.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Text('NO AUDIT EVENTS ARE AVAILABLE.', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11))))
-    else GlassCard(
-      margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
-      settings: TechColors.sectionGlass, quality: GlassQuality.standard,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-      child: Column(children: audit.map((e) => _glassRow(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(width: 120, child: Text(e['created_at']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace'))),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(e['action']?.toString() ?? 'EVENT', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-            const SizedBox(height: 3),
-            Text(e['outcome']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-          ])),
-          _statusDot(e['outcome']?.toString() ?? ''),
-        ]),
-      )).toList()),
-    ),
-  ]);
+  Widget auditView() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _title('Audit Log', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
+      const SizedBox(height: 12),
+      if (audit.isEmpty)
+        surface(
+          const Padding(
+            padding: EdgeInsets.all(28),
+            child: Text(
+              'NO AUDIT EVENTS ARE AVAILABLE.',
+              style: TextStyle(
+                color: TechColors.textMuted,
+                fontFamily: 'monospace',
+                fontSize: 11,
+              ),
+            ),
+          ),
+        )
+      else
+        GlassCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(10),
+          settings: TechColors.sectionGlass,
+          quality: GlassQuality.standard,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+          child: Column(
+            children: audit.map((e) {
+              final timestamp = e['created_at']?.toString() ?? '—';
+              final action = e['action']?.toString() ?? 'EVENT';
+              final outcome = e['outcome']?.toString() ?? '—';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: _glassRow(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 520;
+                      final event = Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(action, style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'monospace',
+                            )),
+                            const SizedBox(height: 3),
+                            Text(outcome, style: const TextStyle(
+                              color: TechColors.textMuted,
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                            )),
+                          ],
+                        ),
+                      );
+                      return compact
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(timestamp, style: const TextStyle(
+                                        color: TechColors.textMuted,
+                                        fontSize: 9,
+                                        fontFamily: 'monospace',
+                                      )),
+                                    ),
+                                    _statusDot(outcome),
+                                  ],
+                                ),
+                                const SizedBox(height: 7),
+                                event,
+                              ],
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 120,
+                                  child: Text(timestamp, style: const TextStyle(
+                                    color: TechColors.textMuted,
+                                    fontSize: 9,
+                                    fontFamily: 'monospace',
+                                  )),
+                                ),
+                                const SizedBox(width: 10),
+                                event,
+                                const SizedBox(width: 10),
+                                _statusDot(outcome),
+                              ],
+                            );
+                    },
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+    ],
+  );
 
   Widget legacyView(String title, String text) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow(title), const SizedBox(height: 7),
@@ -960,6 +1054,33 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  Widget _managementAnalysisNavChip() => GlassButton.custom(
+    onTap: () => openInsightFlowAnalysis(context),
+    height: 36,
+    width: 112,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+    useOwnLayer: true,
+    quality: GlassQuality.minimal,
+    settings: dockGlassSettings(
+      glassColor: TechColors.borderActive.withValues(alpha: 0.78),
+    ),
+    glowColor: TechColors.borderActive.withValues(alpha: 0.30),
+    glowRadius: 10,
+    interactionScale: 1.02,
+    child: const Center(
+      child: Text(
+        'ANALYSIS',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+          fontFamily: 'monospace',
+        ),
+      ),
+    ),
+  );
+
   Widget _buildManagementNavigation() {
     final chips = <Widget>[
       _managementNavChip(ManagementSection.overview, 'OVERVIEW'),
@@ -970,21 +1091,13 @@ class _ManagementShellState extends State<ManagementShell> {
       _managementNavChip(ManagementSection.invitations, 'INVITATIONS'),
       _managementNavChip(ManagementSection.dataAccess, 'DATA ACCESS'),
       _managementNavChip(ManagementSection.audit, 'AUDIT LOG'),
+      _managementAnalysisNavChip(),
     ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
       child: AdaptiveLiquidGlassLayer(
-        settings: const LiquidGlassSettings(
-          thickness: 20,
-          blur: 20,
-          glassColor: Color(0x26FFFFFF),
-          lightIntensity: 0.7,
-          ambientStrength: 0.5,
-          saturation: 1.2,
-          refractiveIndex: 1.2,
-          chromaticAberration: 0.0,
-        ),
+        settings: _kManagementNavigationGlassSettings,
         quality: GlassQuality.minimal,
         child: SizedBox(
           height: 56,
