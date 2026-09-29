@@ -168,6 +168,9 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _workspaceLookupFailed = false;
   bool _hasCachedWorkspace = false;
   bool _backgroundRetryScheduled = false;
+  InsightFlowOnboardingState _onboardingState =
+      InsightFlowOnboardingState.noMembership;
+  List<Map<String, dynamic>> _pendingInvitations = const [];
 
   @override
   void initState() {
@@ -184,32 +187,30 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       return;
     }
 
-    final resolved = await reconcileCachedWorkspaceWithRetry(
-      resolve: () => resolveInsightFlowWorkspaceFromBackend(widget.user.uid),
+    final resolved = await reconcileInsightFlowOnboardingWithRetry(
+      resolve: () => resolveInsightFlowOnboardingStateFromBackend(widget.user.uid),
     );
     _backgroundRetryScheduled = false;
     if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
       return;
     }
 
-    if (resolved == true) {
-      setState(() {
-        _loading = false;
-        _workspaceLookupFailed = false;
-      });
-    }
-    // false means the backend rejected access and the resolver has already
-    // invalidated the cached workspace/session. null means bounded transient
-    // retries were exhausted; keep the cached portal visible and wait for the
-    // next auth-state/reconciliation/manual retry rather than looping forever.
+    if (resolved == null) return;
+
+    setState(() {
+      _loading = false;
+      _workspaceLookupFailed = false;
+      _onboardingState = resolved.state;
+      _pendingInvitations = resolved.pendingInvitations;
+    });
   }
 
-  Future<void> _refresh({bool showLoading = true, bool allowBackgroundRetry = true}) async {
+  Future<void> _refresh({
+    bool showLoading = true,
+    bool allowBackgroundRetry = true,
+  }) async {
     if (!mounted) return;
 
-    // Restore the cached workspace before doing network work. Returning
-    // devices should not be held on the Auth / Initializing screen while the
-    // backend is waking up or the browser is restoring a session.
     await loadInsightFlowWorkspaceId(widget.user.uid);
     _hasCachedWorkspace = insightFlowWorkspaceId.trim().isNotEmpty;
 
@@ -222,10 +223,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     }
 
     try {
-      // This is authoritative when it responds, but it is deliberately
-      // bounded. A restored session is allowed to use the cached workspace
-      // while this check is being performed.
-      SupabaseAuthUser? currentUser = InsightFlowSupabaseAuthService.currentUser;
+      SupabaseAuthUser? currentUser =
+          InsightFlowSupabaseAuthService.currentUser;
       try {
         final authoritativeUser =
             await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
@@ -254,9 +253,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
           return;
         }
       } on TimeoutException {
-        // Do not turn a slow Supabase Auth response into a blocking screen.
-        // The cached workspace remains usable while the backend reconciliation
-        // below establishes the authoritative organization state.
+        // Auth restoration can be temporarily slow; workspace reconciliation
+        // remains authoritative and bounded below.
       }
 
       if (currentUser == null ||
@@ -265,33 +263,29 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       }
 
       if (_hasCachedWorkspace) {
-        // The cached workspace is only a render-time hint. The backend still
-        // reconciles membership below, but a returning user is not blocked by
-        // a transient Render/Supabase startup delay.
+        // The cache is render-time continuity only. ManagementShell still
+        // performs backend authorization on every protected request while the
+        // authoritative reconciliation runs in the background.
         if (mounted) {
           setState(() {
             _loading = false;
             _verificationRequired = false;
             _workspaceLookupFailed = false;
+            _onboardingState = InsightFlowOnboardingState.activeMember;
           });
         }
         unawaited(_scheduleBackgroundRetry());
         return;
       }
 
-      // New users have no cached portal, so the authoritative membership
-      // lookup remains blocking: active membership enters the portal and no
-      // membership proceeds to Company Registration.
-      final resolved = await resolveInsightFlowWorkspaceFromBackend(
-        widget.user.uid,
+      final resolved = await reconcileInsightFlowOnboardingWithRetry(
+        resolve: () =>
+            resolveInsightFlowOnboardingStateFromBackend(widget.user.uid),
       );
 
       if (!mounted) return;
 
       if (InsightFlowSupabaseAuthService.currentUser == null) {
-        // Workspace reconciliation may have invalidated a stale session.
-        // Never render Company Registration from that intermediate state;
-        // let the auth-state stream take the user back to Sign In.
         return;
       }
 
@@ -307,6 +301,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         _loading = false;
         _verificationRequired = false;
         _workspaceLookupFailed = false;
+        _onboardingState = resolved.state;
+        _pendingInvitations = resolved.pendingInvitations;
       });
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -330,14 +326,12 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
       }
     } catch (_) {
-      // A returning device keeps its cached portal during transient network
-      // failures. New users still receive the explicit retry state.
       if (mounted) {
         setState(() {
           _loading = false;
           _workspaceLookupFailed = !_hasCachedWorkspace;
         });
-        if (_hasCachedWorkspace) {
+        if (_hasCachedWorkspace && allowBackgroundRetry) {
           await _scheduleBackgroundRetry();
         }
       }
@@ -364,7 +358,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         subtitle: 'AUTHENTICATED IDENTITY VERIFIED',
         children: [
           const AuthGlassMessage(
-            text: 'InsightFlow could not confirm your organization membership. Your account was not sent to the data workspace. Retry when the organization service is available.',
+            text:
+                'InsightFlow could not confirm your organization membership. Your account was not sent to the data workspace. Retry when the organization service is available.',
           ),
           const SizedBox(height: 12),
           GlassButton.custom(
@@ -379,9 +374,27 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       );
     }
 
-    final authenticatedChild = insightFlowWorkspaceId.isNotEmpty
-        ? const ManagementShell()
-        : const CompanyRegistrationScreen();
+    final Widget authenticatedChild;
+    switch (_onboardingState) {
+      case InsightFlowOnboardingState.activeMember:
+        authenticatedChild = const ManagementShell();
+        break;
+      case InsightFlowOnboardingState.pendingInvitation:
+        authenticatedChild = OrganizationOnboardingScreen(
+          state: {'pending_invitations': _pendingInvitations},
+          onCompleted: () async {
+            await _refresh(showLoading: false);
+          },
+        );
+        break;
+      case InsightFlowOnboardingState.noMembership:
+        authenticatedChild = const CompanyRegistrationScreen();
+        break;
+      case InsightFlowOnboardingState.transientFailure:
+      case InsightFlowOnboardingState.authoritativeDenial:
+        authenticatedChild = const CompanyRegistrationScreen();
+        break;
+    }
     return AuthenticatedBrandShell(child: authenticatedChild);
   }
 }
