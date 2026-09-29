@@ -50,14 +50,18 @@ void main() {
     );
   });
 
-  test('Supabase auth-state callback errors do not tear down the auth stream', () {
+  test('Supabase auth-state stream restores the current session safely', () {
     final source = File(
       'lib/core/auth/supabase_auth_service.dart',
     ).readAsStringSync();
 
     expect(
       source,
-      contains('yield* client.auth.onAuthStateChange'),
+      contains('yield AuthState(AuthChangeEvent.initialSession, initialSession);'),
+    );
+    expect(
+      source,
+      contains('await for (final state in client.auth.onAuthStateChange)'),
     );
     expect(
       source,
