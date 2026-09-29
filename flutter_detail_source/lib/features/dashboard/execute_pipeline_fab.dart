@@ -2,7 +2,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import 'analyze_fab.dart'
+import '../../widgets/shared/dock_glass_material.dart'
     show
     kDockThickness,
     kDockBlur,
