@@ -11,7 +11,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/interop/excel_mutation_authorization.dart';
 import '../../core/auth/insightflow_auth_service.dart';
 import '../auth/account_management_screen.dart';
-import '../auth/authorization_management_screen.dart';
+import '../auth/management_navigation.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -6257,20 +6257,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             const Spacer(),
             IconButton(
               tooltip: 'Access management',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => AuthorizationManagementScreen(
-                    onStartWorking: (datasetId) async {
-                      final authorized = await _startWorkingFromDataset(
-                        datasetId,
-                      );
-                      if (authorized && mounted) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                  ),
-                ),
-              ),
+              onPressed: () => openInsightFlowManagement(context),
               icon: const Icon(
                 Icons.admin_panel_settings_outlined,
                 size: 18,
