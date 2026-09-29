@@ -392,8 +392,47 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         authenticatedChild = const CompanyRegistrationScreen();
         break;
       case InsightFlowOnboardingState.transientFailure:
+        authenticatedChild = AuthGlassScaffold(
+          title: 'AUTH / WORKSPACE LOOKUP',
+          subtitle: 'ORGANIZATION AUTHORIZATION TEMPORARILY UNAVAILABLE',
+          children: [
+            const AuthGlassMessage(
+              text:
+                  'InsightFlow could not confirm your organization membership. Your account was not sent to company registration. Retry when the organization service is available.',
+            ),
+            const SizedBox(height: 12),
+            GlassButton.custom(
+              onTap: _refresh,
+              width: double.infinity,
+              height: 44,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: 'Retry',
+              child: const Text('Retry'),
+            ),
+          ],
+        );
+        break;
       case InsightFlowOnboardingState.authoritativeDenial:
-        authenticatedChild = const CompanyRegistrationScreen();
+        authenticatedChild = AuthGlassScaffold(
+          title: 'AUTH / ACCESS DENIED',
+          subtitle: 'ORGANIZATION AUTHORIZATION REJECTED',
+          children: [
+            const AuthGlassMessage(
+              text:
+                  'The organization service rejected this session. Cached workspace data cannot restore access. Sign in again to continue.',
+              error: true,
+            ),
+            const SizedBox(height: 12),
+            GlassButton.custom(
+              onTap: InsightFlowSupabaseAuthService.signOut,
+              width: double.infinity,
+              height: 44,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: 'Sign out',
+              child: const Text('Sign out'),
+            ),
+          ],
+        );
         break;
     }
     return AuthenticatedBrandShell(child: authenticatedChild);
