@@ -4,6 +4,8 @@ import uuid
 import pytest
 from sqlalchemy import text
 
+from core.db import SessionLocal
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
 )
@@ -110,7 +112,7 @@ def test_management_reads_are_organization_scoped():
 
 def test_manager_assignment_conflict_replacement_and_audit_are_atomic():
     from firebase_authz.management_domain import assign_manager, replace_manager, list_audit_events
-    from firebase_authz.service import AuthzError, AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"manager-owner-{suffix}"
