@@ -39,12 +39,15 @@ def _token(value: str | None) -> str:
 
 
 def _claims(authorization: str | None) -> dict:
-    token = _token(authorization)
-    provider = os.environ.get("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
-    if provider == "supabase":
-        return verify_supabase_access_token(token, require_email_verified=True)
-    from .service import verify_id_token, require_email_verified
-    return require_email_verified(verify_id_token(token))
+    try:
+        token = _token(authorization)
+        provider = os.environ.get("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
+        if provider == "supabase":
+            return verify_supabase_access_token(token, require_email_verified=True)
+        from .service import verify_id_token, require_email_verified
+        return require_email_verified(verify_id_token(token))
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc)) from exc
 
 
 def _workspace(value: str | None) -> str:
