@@ -52,7 +52,19 @@ class InsightFlowSupabaseAuthService {
       return;
     }
     try {
-      yield* client.auth.onAuthStateChange;
+      // Publish the locally restored session immediately. Waiting for
+      // Supabase's browser-storage restoration event here can make the entire
+      // Auth page appear frozen after a device wakes from sleep.
+      final initialSession = currentSession;
+      yield AuthState(AuthChangeEvent.initialSession, initialSession);
+      await for (final state in client.auth.onAuthStateChange) {
+        final sameSession = state.session?.accessToken != null &&
+            state.session?.accessToken == initialSession?.accessToken;
+        if (state.event == AuthChangeEvent.initialSession && sameSession) {
+          continue;
+        }
+        yield state;
+      }
     } catch (error, stackTrace) {
       debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
       debugPrintStack(stackTrace: stackTrace);
@@ -69,8 +81,12 @@ class InsightFlowSupabaseAuthService {
   /// Fetch the user from Supabase Auth instead of trusting a possibly stale
   /// locally-restored session object. This is used at the authorization
   /// boundary before organization/workspace access is allowed.
-  static Future<User?> fetchAuthoritativeUser() async {
-    final response = await client.auth.getUser();
+  static Future<User?> fetchAuthoritativeUser({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    // This is an authoritative check, but it must never freeze AuthGate when
+    // the browser/network is temporarily unavailable.
+    final response = await client.auth.getUser().timeout(timeout);
     return response.user;
   }
 
