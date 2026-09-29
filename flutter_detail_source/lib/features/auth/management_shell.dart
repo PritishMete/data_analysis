@@ -42,7 +42,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final headers = await supabaseAuthHeaders();
     if (insightFlowWorkspaceId.isNotEmpty) headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
     if (body != null) headers['Content-Type'] = 'application/json';
-    final uri = Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/management' + path);
+    final uri = Uri.parse('${insightFlowBackendBaseUrl}/v1/authz/management$path');
     final response = method == 'POST'
         ? await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15))
         : await http.get(uri, headers: headers).timeout(const Duration(seconds: 15));
@@ -96,8 +96,11 @@ class _ManagementShellState extends State<ManagementShell> {
     shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
 
   void feedback(Object e) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
+      );
+    }
   }
 
   Future<void> createLocation() async {
@@ -161,11 +164,11 @@ class _ManagementShellState extends State<ManagementShell> {
     final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
       title: Text(replace ? 'Replace Manager' : 'Assign Manager'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        DropdownButtonFormField<String>(value: location, decoration: const InputDecoration(labelText: 'Location'),
+        DropdownButtonFormField<String>(initialValue: location, decoration: const InputDecoration(labelText: 'Location'),
           items: locations.map((x) => DropdownMenuItem(value: x['location_id'].toString(), child: Text(x['name'].toString()))).toList(),
           onChanged: (v) => set(() => location = v ?? location)),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(value: principal, decoration: const InputDecoration(labelText: 'Person'),
+        DropdownButtonFormField<String>(initialValue: principal, decoration: const InputDecoration(labelText: 'Person'),
           items: active.map((x) => DropdownMenuItem(value: x['principal_id'].toString(), child: Text(x['employee_id'].toString()))).toList(),
           onChanged: (v) => set(() => principal = v ?? principal)),
       ]),
@@ -195,15 +198,15 @@ class _ManagementShellState extends State<ManagementShell> {
       return AlertDialog(
         title: const Text('Assign Team Lead'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<String>(value: location, decoration: const InputDecoration(labelText: 'Location'),
+          DropdownButtonFormField<String>(initialValue: location, decoration: const InputDecoration(labelText: 'Location'),
             items: locations.map((x) => DropdownMenuItem(value: x['location_id'].toString(), child: Text(x['name'].toString()))).toList(),
             onChanged: (v) => set(() => location = v ?? location)),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: matching.isEmpty ? null : sectionId, decoration: const InputDecoration(labelText: 'Section'),
+          DropdownButtonFormField<String>(initialValue: matching.isEmpty ? null : sectionId, decoration: const InputDecoration(labelText: 'Section'),
             items: matching.map((x) => DropdownMenuItem(value: x['section_id'].toString(), child: Text(x['name'].toString()))).toList(),
             onChanged: (v) => set(() => sectionId = v ?? sectionId)),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: principal, decoration: const InputDecoration(labelText: 'Person'),
+          DropdownButtonFormField<String>(initialValue: principal, decoration: const InputDecoration(labelText: 'Person'),
             items: active.map((x) => DropdownMenuItem(value: x['principal_id'].toString(), child: Text(x['employee_id'].toString()))).toList(),
             onChanged: (v) => set(() => principal = v ?? principal)),
         ]),
@@ -232,11 +235,11 @@ class _ManagementShellState extends State<ManagementShell> {
     final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
       title: const Text('Reporting relationship'),
       content: DropdownButtonFormField<String?>(
-        value: candidates.any((x) => x['assignment_id'].toString() == parent) ? parent : null,
+        initialValue: candidates.any((x) => x['assignment_id'].toString() == parent) ? parent : null,
         decoration: const InputDecoration(labelText: 'Reports to'),
         items: [
           const DropdownMenuItem<String?>(value: null, child: Text('No direct reporting target')),
-          ...candidates.map((x) => DropdownMenuItem<String?>(value: x['assignment_id'].toString(), child: Text(x['employee_id'].toString() + ' · ' + x['role_id'].toString()))),
+          ...candidates.map((x) => DropdownMenuItem<String?>(value: x['assignment_id'].toString(), child: Text('${x['employee_id']} · ${x['role_id']}'))),
         ],
         onChanged: (v) => set(() => parent = v),
       ),
@@ -265,7 +268,7 @@ class _ManagementShellState extends State<ManagementShell> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       surface(ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.business_outlined, color: TechColors.borderActive),
         title: Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-        subtitle: Text('Workspace ' + (insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId) + ' · ' + (org['status']?.toString() ?? '—')))),
+        subtitle: Text('Workspace ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId} · ${org['status'] ?? '—'}'))),
       const SizedBox(height: 12),
       Wrap(spacing: 10, runSpacing: 10, children: [
         SizedBox(width: 150, child: metric('Locations', sum['location_count'])),
@@ -291,7 +294,7 @@ class _ManagementShellState extends State<ManagementShell> {
             subtitle: Text(managers.isEmpty ? 'Unassigned' : managers.first['employee_id'].toString())),
           for (final s in secs) ...[
             ListTile(dense: true, leading: const Icon(Icons.account_tree_outlined), title: Text(s['name'].toString()),
-              subtitle: Text((s['employee_count'] ?? 0).toString() + ' employees')),
+              subtitle: Text('${s['employee_count'] ?? 0} employees')),
             ...asg.where((a) => a['section_id']?.toString() == s['section_id']?.toString() && (a['role_id'] == 'team_lead' || a['role_id'] == 'employee')).map((a) =>
               Padding(padding: const EdgeInsets.only(left: 26), child: ListTile(dense: true, title: Text(a['employee_id'].toString()), subtitle: Text(a['role_id'].toString())))),
           ],
@@ -310,7 +313,7 @@ class _ManagementShellState extends State<ManagementShell> {
       if (list.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No people match this search.', style: TextStyle(color: TechColors.textMuted)))))
       else surface(Column(children: list.map((p) => ListTile(dense: true, leading: const Icon(Icons.person_outline),
         title: Text(p['employee_id']?.toString() ?? 'Person'),
-        subtitle: Text((p['role_id'] ?? '—').toString() + ' · ' + (p['location_name'] ?? 'Unassigned location').toString() + ' · ' + (p['section_name'] ?? 'Unassigned section').toString() + ' · ' + (p['status'] ?? '—').toString()))).toList())),
+        subtitle: Text('${p['role_id'] ?? '—'} · ${p['location_name'] ?? 'Unassigned location'} · ${p['section_name'] ?? 'Unassigned section'} · ${p['status'] ?? '—'}'))).toList())),
     ]);
   }
 
@@ -321,7 +324,7 @@ class _ManagementShellState extends State<ManagementShell> {
     if (locations.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No locations yet.', style: TextStyle(color: TechColors.textMuted)))))
     else ...locations.map((l) => Padding(padding: const EdgeInsets.only(bottom: 8), child: surface(ListTile(
       contentPadding: EdgeInsets.zero, title: Text(l['name'].toString()),
-      subtitle: Text('Branch: ' + l['branch_identifier'].toString() + ' · ' + (l['section_count'] ?? 0).toString() + ' sections · ' + (l['employee_count'] ?? 0).toString() + ' employees'),
+      subtitle: Text('Branch: ${l['branch_identifier']} · ${l['section_count'] ?? 0} sections · ${l['employee_count'] ?? 0} employees'),
       trailing: Text(l['manager']?['employee_id']?.toString() ?? 'No manager'),
       onTap: () => setState(() => selectedLocation = l['location_id'].toString()),
     )))),
@@ -336,7 +339,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final loc = locations.firstWhere((l) => l['location_id']?.toString() == s['location_id']?.toString(), orElse: () => const {'name': 'Unknown location'});
       final leads = maps(s['team_leads']);
       return Padding(padding: const EdgeInsets.only(bottom: 8), child: surface(ListTile(contentPadding: EdgeInsets.zero,
-        title: Text(s['name'].toString()), subtitle: Text(loc['name'].toString() + ' · ' + (s['employee_count'] ?? 0).toString() + ' employees'),
+        title: Text(s['name'].toString()), subtitle: Text('${loc['name']} · ${s['employee_count'] ?? 0} employees'),
         trailing: Text(leads.isEmpty ? 'No Team Lead' : leads.map((x) => x['employee_id'].toString()).join(', ')))));
     }),
   ]);
@@ -344,7 +347,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget auditView() => audit.isEmpty ? surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('No audit events are available.', style: TextStyle(color: TechColors.textMuted))))) :
     surface(Column(children: audit.map((e) => ListTile(dense: true, leading: const Icon(Icons.history),
       title: Text(e['action']?.toString() ?? 'Event'),
-      subtitle: Text((e['outcome'] ?? '—').toString() + ' · ' + (e['created_at'] ?? '').toString()))).toList()));
+      subtitle: Text('${e['outcome'] ?? '—'} · ${e['created_at'] ?? ''}'))).toList()));
 
   Widget legacyView(String title, String text) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)), const SizedBox(height: 6),
@@ -379,7 +382,7 @@ class _ManagementShellState extends State<ManagementShell> {
     const Text('Organizational assignments', style: TextStyle(fontWeight: FontWeight.w700)), const SizedBox(height: 8),
     if (assignments.isEmpty) const Text('No assignments.', style: TextStyle(color: TechColors.textMuted)),
     ...assignments.map((a) => ListTile(dense: true, title: Text(a['employee_id'].toString()),
-      subtitle: Text((a['role_id'] ?? '—').toString() + ' · ' + (a['location_name'] ?? '—').toString() + ' · ' + (a['section_name'] ?? '—').toString()),
+      subtitle: Text('${a['role_id'] ?? '—'} · ${a['location_name'] ?? '—'} · ${a['section_name'] ?? '—'}'),
       trailing: TextButton(onPressed: a['status'] == 'active' ? () => reporting(a) : null, child: const Text('Reporting')))),
   ]));
 
