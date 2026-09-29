@@ -44,7 +44,7 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
           headers: {'Authorization': 'Bearer ${session.accessToken}'},
         )
-        .timeout(const Duration(seconds: 45));
+        .timeout(const Duration(seconds: 8));
 
     if (response.statusCode == 401) {
       await InsightFlowSupabaseAuthService.signOut();
