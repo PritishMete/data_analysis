@@ -169,6 +169,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _workspaceLookupFailed = false;
   bool _hasCachedWorkspace = false;
   bool _backgroundRetryScheduled = false;
+  int _backgroundRetryAttempts = 0;
 
   @override
   void initState() {
@@ -177,14 +178,39 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   }
 
   Future<void> _scheduleBackgroundRetry() async {
-    if (_backgroundRetryScheduled) return;
+    if (_backgroundRetryScheduled || _backgroundRetryAttempts >= 4) return;
     _backgroundRetryScheduled = true;
-    await Future<void>.delayed(const Duration(seconds: 2));
+    _backgroundRetryAttempts += 1;
+    final delaySeconds = 1 << (_backgroundRetryAttempts - 1);
+    await Future<void>.delayed(Duration(seconds: delaySeconds));
     _backgroundRetryScheduled = false;
     if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
       return;
     }
-    await _refresh(showLoading: false, allowBackgroundRetry: false);
+
+    final resolved = await resolveInsightFlowWorkspaceFromBackend(widget.user.uid);
+    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
+      return;
+    }
+
+    if (resolved == true) {
+      _backgroundRetryAttempts = 0;
+      setState(() {
+        _loading = false;
+        _workspaceLookupFailed = false;
+      });
+      return;
+    }
+
+    if (resolved == false) {
+      _backgroundRetryAttempts = 0;
+      return;
+    }
+
+    // Transient backend/session failure: keep the cached portal visible and
+    // retry with bounded exponential backoff. Do not surface the blocking
+    // membership error for a returning authenticated user.
+    await _scheduleBackgroundRetry();
   }
 
   Future<void> _refresh({bool showLoading = true, bool allowBackgroundRetry = true}) async {
@@ -247,8 +273,25 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         return;
       }
 
-      // The backend is the final source of truth for organization membership.
-      // This no longer blocks a returning device's already-renderable portal.
+      if (_hasCachedWorkspace) {
+        // The cached workspace is only a render-time hint. The backend still
+        // reconciles membership below, but a returning user is not blocked by
+        // a transient Render/Supabase startup delay.
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _verificationRequired = false;
+            _workspaceLookupFailed = false;
+          });
+        }
+        _backgroundRetryAttempts = 0;
+        unawaited(_scheduleBackgroundRetry());
+        return;
+      }
+
+      // New users have no cached portal, so the authoritative membership
+      // lookup remains blocking: active membership enters the portal and no
+      // membership proceeds to Company Registration.
       final resolved = await resolveInsightFlowWorkspaceFromBackend(
         widget.user.uid,
       );
@@ -263,17 +306,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       }
 
       if (resolved == null) {
-        if (_hasCachedWorkspace) {
-          // A temporary backend/cold-start failure must not replace a working
-          // portal with an error screen. Retry in the background instead.
-          setState(() {
-            _loading = false;
-            _workspaceLookupFailed = false;
-          });
-          await _scheduleBackgroundRetry();
-          return;
-        }
-
         setState(() {
           _loading = false;
           _workspaceLookupFailed = true;
