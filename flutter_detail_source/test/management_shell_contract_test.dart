@@ -20,8 +20,8 @@ void main() {
       expect(source, contains(label));
     }
 
-    expect(source, contains("const DataScreen()"));
-    expect(source, contains("MaterialPageRoute(builder: (_) => const DataScreen())"));
+    expect(source, contains('openInsightFlowAnalysis(context)'));
+    expect(source, contains('management_navigation.dart'));
     expect(source, contains("MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())"));
     expect(source, contains("'/overview'"));
     expect(source, contains("'/locations'"));
