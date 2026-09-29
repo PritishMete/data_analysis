@@ -27,6 +27,7 @@ class _ManagementShellState extends State<ManagementShell> {
   List<Map<String, dynamic>> people = [];
   List<Map<String, dynamic>> assignments = [];
   List<Map<String, dynamic>> audit = [];
+  int pendingInvitations = 0;
   String search = '';
   String? selectedLocation;
 
@@ -63,7 +64,7 @@ class _ManagementShellState extends State<ManagementShell> {
     try {
       final r = await Future.wait([
         request('/overview'), request('/locations'), request('/sections'),
-        request('/people'), request('/assignments'), request('/audit?limit=100'),
+        request('/people'), request('/assignments'), request('/audit?limit=100'), request('/invitations/pending'),
       ]);
       if (!mounted) return;
       setState(() {
@@ -73,6 +74,7 @@ class _ManagementShellState extends State<ManagementShell> {
         people = maps(r[3]['people']);
         assignments = maps(r[4]['assignments']);
         audit = maps(r[5]['audit']);
+        pendingInvitations = maps(r[6]['invitations']).length;
         loading = false;
       });
     } catch (e) {
@@ -270,6 +272,7 @@ class _ManagementShellState extends State<ManagementShell> {
         SizedBox(width: 150, child: metric('Managers', sum['manager_count'])),
         SizedBox(width: 150, child: metric('Team Leads', sum['team_lead_count'])),
         SizedBox(width: 150, child: metric('Employees', sum['employee_count'])),
+        SizedBox(width: 150, child: metric('Pending invites', pendingInvitations)),
       ]),
     ]);
   }
