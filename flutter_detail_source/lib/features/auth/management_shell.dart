@@ -656,6 +656,66 @@ class _ManagementShellState extends State<ManagementShell> {
     _actionChip('OPEN LEGACY TOOLS', Icons.open_in_new, () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())), accent: true),
   ]));
 
+  String _sectionLabel(ManagementSection value) => switch (value) {
+    ManagementSection.overview => 'Management Overview',
+    ManagementSection.organization => 'Organization Topology',
+    ManagementSection.people => 'People Registry',
+    ManagementSection.locations => 'Location Registry',
+    ManagementSection.sections => 'Section Hierarchy',
+    ManagementSection.invitations => 'Invitations',
+    ManagementSection.dataAccess => 'Data Access',
+    ManagementSection.audit => 'Audit Log',
+  };
+
+  String _sectionDetail(ManagementSection value) => switch (value) {
+    ManagementSection.overview => 'ORGANIZATION CONTROL PLANE',
+    ManagementSection.organization => 'LOCATION → SECTION → ASSIGNMENT',
+    ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
+    ManagementSection.locations => 'BRANCH REGISTRY',
+    ManagementSection.sections => 'LOCATION → SECTION HIERARCHY',
+    ManagementSection.invitations => 'INVITATION CONTROL',
+    ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
+    ManagementSection.audit => 'SYSTEM EVENT STREAM',
+  };
+
+  IconData _sectionIcon(ManagementSection value) => switch (value) {
+    ManagementSection.overview => Icons.dashboard_outlined,
+    ManagementSection.organization => Icons.account_tree_outlined,
+    ManagementSection.people => Icons.people_outline,
+    ManagementSection.locations => Icons.location_on_outlined,
+    ManagementSection.sections => Icons.account_tree_outlined,
+    ManagementSection.invitations => Icons.mail_outline,
+    ManagementSection.dataAccess => Icons.lock_outline,
+    ManagementSection.audit => Icons.terminal,
+  };
+
+  Widget _telemetry(String label, int value) => GlassContainer(
+    useOwnLayer: true,
+    quality: GlassQuality.minimal,
+    settings: dockGlassSettings(
+      glassColor: TechColors.panelBg.withValues(alpha: 0.18),
+    ),
+    shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _statusDot('active'),
+        const SizedBox(width: 7),
+        Text(
+          '$label ${value.toString().padLeft(2, '0')}',
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 9,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7,
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget body() {
     switch (section) {
       case ManagementSection.overview: return overviewView();
@@ -1045,16 +1105,66 @@ class _ManagementShellState extends State<ManagementShell> {
                                       ),
                                     )
                                   else ...[
-                                    if (section == ManagementSection.overview ||
-                                        section == ManagementSection.organization) ...[
-                                      actions(),
-                                      const SizedBox(height: 12),
-                                    ],
-                                    body(),
-                                    if (section == ManagementSection.organization) ...[
-                                      const SizedBox(height: 12),
-                                      assignmentList(),
-                                    ],
+                                    GlassContainer(
+                                      useOwnLayer: true,
+                                      quality: GlassQuality.minimal,
+                                      settings: dockGlassSettings(
+                                        glassColor: TechColors.panelBg.withValues(alpha: 0.22),
+                                      ),
+                                      shape: const LiquidRoundedSuperellipse(borderRadius: 22),
+                                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          LayoutBuilder(
+                                            builder: (context, inner) {
+                                              final compact = inner.maxWidth < 680;
+                                              final title = _title(
+                                                _sectionLabel(section),
+                                                detail: _sectionDetail(section),
+                                                icon: _sectionIcon(section),
+                                              );
+                                              final telemetry = Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
+                                                children: [
+                                                  _telemetry('LOC', locations.length),
+                                                  _telemetry('PEOPLE', people.length),
+                                                  _telemetry('SECTIONS', sections.length),
+                                                  _telemetry('AUDIT', audit.length),
+                                                ],
+                                              );
+                                              return compact
+                                                  ? Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                      children: [title, const SizedBox(height: 12), telemetry],
+                                                    )
+                                                  : Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Expanded(child: title),
+                                                        const SizedBox(width: 18),
+                                                        telemetry,
+                                                      ],
+                                                    );
+                                            },
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Container(height: 1, color: TechColors.borderMuted.withValues(alpha: 0.55)),
+                                          const SizedBox(height: 16),
+                                          if (section == ManagementSection.overview ||
+                                              section == ManagementSection.organization) ...[
+                                            actions(),
+                                            const SizedBox(height: 14),
+                                          ],
+                                          body(),
+                                          if (section == ManagementSection.organization) ...[
+                                            const SizedBox(height: 14),
+                                            assignmentList(),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   ],
                                 ],
                               ),
