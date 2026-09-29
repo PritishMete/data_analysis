@@ -169,7 +169,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _workspaceLookupFailed = false;
   bool _hasCachedWorkspace = false;
   bool _backgroundRetryScheduled = false;
-  int _backgroundRetryAttempts = 0;
 
   @override
   void initState() {
@@ -178,39 +177,32 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   }
 
   Future<void> _scheduleBackgroundRetry() async {
-    if (_backgroundRetryScheduled || _backgroundRetryAttempts >= 4) return;
+    if (_backgroundRetryScheduled) return;
     _backgroundRetryScheduled = true;
-    _backgroundRetryAttempts += 1;
-    final delaySeconds = 1 << (_backgroundRetryAttempts - 1);
-    await Future<void>.delayed(Duration(seconds: delaySeconds));
+    await Future<void>.delayed(const Duration(seconds: 1));
+    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
+      _backgroundRetryScheduled = false;
+      return;
+    }
+
+    final resolved = await reconcileCachedWorkspaceWithRetry(
+      resolve: () => resolveInsightFlowWorkspaceFromBackend(widget.user.uid),
+    );
     _backgroundRetryScheduled = false;
     if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
       return;
     }
 
-    final resolved = await resolveInsightFlowWorkspaceFromBackend(widget.user.uid);
-    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
-      return;
-    }
-
     if (resolved == true) {
-      _backgroundRetryAttempts = 0;
       setState(() {
         _loading = false;
         _workspaceLookupFailed = false;
       });
-      return;
     }
-
-    if (resolved == false) {
-      _backgroundRetryAttempts = 0;
-      return;
-    }
-
-    // Transient backend/session failure: keep the cached portal visible and
-    // retry with bounded exponential backoff. Do not surface the blocking
-    // membership error for a returning authenticated user.
-    await _scheduleBackgroundRetry();
+    // false means the backend rejected access and the resolver has already
+    // invalidated the cached workspace/session. null means bounded transient
+    // retries were exhausted; keep the cached portal visible and wait for the
+    // next auth-state/reconciliation/manual retry rather than looping forever.
   }
 
   Future<void> _refresh({bool showLoading = true, bool allowBackgroundRetry = true}) async {
