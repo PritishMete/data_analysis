@@ -838,21 +838,46 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   Widget assignmentList() => GlassCard(
-    margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+    margin: EdgeInsets.zero,
+    padding: const EdgeInsets.all(14),
+    settings: dockGlassSettings(
+      glassColor: TechColors.panelBg.withValues(alpha: 0.24),
+    ),
+    quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _eyebrow('Assignment registry'), const SizedBox(height: 9),
-      if (assignments.isEmpty) const Text('NO ASSIGNMENTS', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)),
-      ...assignments.map((a) => Padding(padding: const EdgeInsets.only(bottom: 6), child: _glassRow(child: Row(children: [
-        const Icon(Icons.link, size: 15, color: TechColors.statusBlue), const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(a['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-          Text('${a['role_id'] ?? '—'}  ·  ${a['location_name'] ?? '—'}  ·  ${a['section_name'] ?? '—'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')),
-        ])),
-        if (a['status'] == 'active') _actionChip('REPORTING', Icons.account_tree_outlined, () => reporting(a)),
-      ]))),
-    ]),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _eyebrow('Assignment registry'),
+        const SizedBox(height: 9),
+        if (assignments.isEmpty)
+          const Text('NO ASSIGNMENTS', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)),
+        ...assignments.map((a) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _glassRow(
+              child: Row(
+                children: [
+                  const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(a['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                        Text('${a['role_id'] ?? '—'}  ·  ${a['location_name'] ?? '—'}  ·  ${a['section_name'] ?? '—'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')),
+                      ],
+                    ),
+                  ),
+                  if (a['status'] == 'active')
+                    _actionChip('REPORTING', Icons.account_tree_outlined, () => reporting(a)),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    ),
   );
 
   Widget _glassActionButton({
