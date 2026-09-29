@@ -102,6 +102,7 @@ jobs:
           lib/features/auth/auth_gate.dart
           lib/features/auth/account_management_screen.dart
           lib/features/auth/authorization_management_screen.dart
+          lib/features/auth/management_shell.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
@@ -116,13 +117,17 @@ jobs:
           lib/features/auth/auth_gate.dart
           lib/features/auth/account_management_screen.dart
           lib/features/auth/authorization_management_screen.dart
+          lib/features/auth/management_shell.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
       - name: Run Flutter Auth tests
-        run: flutter test test/firebase_auth_service_test.dart
+        run: >-
+          flutter test
+          test/firebase_auth_service_test.dart
+          test/management_shell_contract_test.dart
 
       - name: Build Flutter web
         run: >-
