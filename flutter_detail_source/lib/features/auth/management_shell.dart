@@ -64,7 +64,10 @@ class _ManagementGlassDialog extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Flexible(
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.62,
+                  ),
                   child: SingleChildScrollView(
                     child: content,
                   ),
