@@ -594,159 +594,378 @@ class _ManagementShellState extends State<ManagementShell> {
     ]),
   );
 
-  Widget navButton(ManagementSection target, String label, IconData icon) {
-    final selected = target == section;
-    return GlassButton.custom(
-      onTap: () => setState(() => section = target),
+  Widget _glassActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool accent = false,
+  }) {
+    final color = accent ? TechColors.borderActive : TechColors.textMuted;
+    return SizedBox(
+      width: 38,
       height: 36,
-      width: 116,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-      useOwnLayer: true,
-      quality: GlassQuality.minimal,
-      settings: selected
-          ? dockGlassSettings(
-              glassColor: TechColors.borderActive.withValues(alpha: 0.12),
-            )
-          : TechColors.sectionGlass,
-      glowColor: selected
-          ? TechColors.borderActive.withValues(alpha: 0.24)
-          : Colors.transparent,
-      glowRadius: selected ? 8 : 0,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 14,
-              color: selected ? TechColors.borderActive : TechColors.textMuted,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? TechColors.textPrimary : TechColors.textMuted,
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ],
+      child: GlassButton.custom(
+        onTap: onPressed ?? () {},
+        enabled: onPressed != null,
+        width: 38,
+        height: 36,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: dockGlassSettings(
+          glassColor: accent
+              ? TechColors.borderActive.withValues(alpha: 0.12)
+              : TechColors.panelBg.withValues(alpha: 0.24),
+        ),
+        glowColor: accent
+            ? TechColors.borderActive.withValues(alpha: 0.24)
+            : Colors.transparent,
+        glowRadius: accent ? 7 : 0,
+        interactionScale: 1.04,
+        child: Tooltip(
+          message: tooltip,
+          child: Center(
+            child: Icon(icon, size: 16, color: color),
+          ),
         ),
       ),
     );
   }
 
-  Widget nav(bool narrow) {
-    final buttons = <Widget>[
-      navButton(ManagementSection.overview, 'Overview', Icons.dashboard_outlined),
-      navButton(ManagementSection.organization, 'Organization', Icons.account_tree_outlined),
-      navButton(ManagementSection.people, 'People', Icons.people_outline),
-      navButton(ManagementSection.locations, 'Locations', Icons.location_on_outlined),
-      navButton(ManagementSection.sections, 'Sections', Icons.view_agenda_outlined),
-      navButton(ManagementSection.invitations, 'Invitations', Icons.mail_outline),
-      navButton(ManagementSection.dataAccess, 'Data Access', Icons.lock_outline),
-      navButton(ManagementSection.audit, 'Audit Log', Icons.receipt_long_outlined),
-    ];
+  Widget _managementAnalysisAction() => GlassButton.custom(
+    onTap: () => openInsightFlowAnalysis(context),
+    height: 38,
+    width: 122,
+    shape: const LiquidRoundedSuperellipse(borderRadius: 13),
+    useOwnLayer: true,
+    quality: GlassQuality.minimal,
+    settings: dockGlassSettings(
+      glassColor: TechColors.borderActive.withValues(alpha: 0.82),
+    ),
+    glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
+    glowRadius: kDockGlowRadius,
+    interactionScale: kDockInteractionScale,
+    child: const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.analytics_outlined, size: 15, color: Colors.white),
+        SizedBox(width: 7),
+        Text(
+          'ANALYSIS',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    ),
+  );
 
-    return GlassCard(
-      margin: EdgeInsets.zero,
-      padding: EdgeInsets.zero,
-      settings: TechColors.panelGlass,
-      quality: GlassQuality.standard,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(narrow ? 9 : 13, 9, 9, 9),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+  Widget _buildGlassAppBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: GlassCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 760;
+            final identity = Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: TechColors.borderActive.withValues(alpha: 0.08),
-                    border: Border.all(
-                      color: TechColors.borderActive.withValues(alpha: 0.38),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.terminal,
-                    size: 15,
-                    color: TechColors.borderActive,
-                  ),
+                const Icon(
+                  Icons.terminal,
+                  color: TechColors.borderActive,
+                  size: 18,
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: 10),
                 const Text(
                   'InsightFlow',
                   style: TextStyle(
                     color: TechColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
                     fontFamily: 'monospace',
                   ),
                 ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 1,
-                  height: 17,
-                  color: TechColors.borderMuted,
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: _eyebrow('ORGANIZATION / MANAGEMENT')),
-                _actionChip(
-                  'ANALYSIS',
-                  Icons.analytics_outlined,
-                  () => openInsightFlowAnalysis(context),
-                  accent: true,
-                  width: 116,
-                ),
-                IconButton(
+              ],
+            );
+            final contextLabel = Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 14),
+                child: _eyebrow('ORGANIZATION / MANAGEMENT'),
+              ),
+            );
+            final controls = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _managementAnalysisAction(),
+                const SizedBox(width: 8),
+                _glassActionButton(
+                  icon: Icons.refresh,
+                  tooltip: 'Refresh management data',
                   onPressed: loadAll,
-                  tooltip: 'Refresh',
-                  splashRadius: 18,
-                  icon: const Icon(
-                    Icons.refresh,
-                    size: 17,
-                    color: TechColors.textMuted,
-                  ),
                 ),
-                IconButton(
-                  onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                const SizedBox(width: 6),
+                _glassActionButton(
+                  icon: Icons.logout,
                   tooltip: 'Log out',
-                  splashRadius: 18,
-                  icon: const Icon(
-                    Icons.logout,
-                    size: 17,
-                    color: TechColors.textMuted,
-                  ),
+                  onPressed: () => InsightFlowSupabaseAuthService.signOut(),
                 ),
               ],
-            ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+            );
+
+            if (!compact) {
+              return Row(
                 children: [
-                  ...buttons.map(
-                    (b) => Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: b,
-                    ),
+                  identity,
+                  Container(
+                    width: 1,
+                    height: 18,
+                    margin: const EdgeInsets.symmetric(horizontal: 14),
+                    color: TechColors.borderMuted,
                   ),
+                  contextLabel,
+                  controls,
                 ],
-              ),
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    identity,
+                    const Spacer(),
+                    _glassActionButton(
+                      icon: Icons.refresh,
+                      tooltip: 'Refresh management data',
+                      onPressed: loadAll,
+                    ),
+                    const SizedBox(width: 6),
+                    _glassActionButton(
+                      icon: Icons.logout,
+                      tooltip: 'Log out',
+                      onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    contextLabel,
+                    _managementAnalysisAction(),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _managementNavChip(
+    ManagementSection target,
+    String label,
+  ) {
+    final selected = target == section;
+    return GlassChip(
+      label: label,
+      selected: selected,
+      selectedColor: TechColors.borderActive.withValues(alpha: 0.32),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      labelStyle: TextStyle(
+        fontSize: 11,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        color: selected
+            ? TechColors.textPrimary
+            : TechColors.textMuted.withValues(alpha: 0.92),
+        fontFamily: 'monospace',
+        letterSpacing: 0.2,
+      ),
+      onTap: () => setState(() => section = target),
+    );
+  }
+
+  Widget _buildManagementNavigation() {
+    final chips = <Widget>[
+      _managementNavChip(ManagementSection.overview, 'OVERVIEW'),
+      _managementNavChip(ManagementSection.organization, 'ORGANIZATION'),
+      _managementNavChip(ManagementSection.people, 'PEOPLE'),
+      _managementNavChip(ManagementSection.locations, 'LOCATIONS'),
+      _managementNavChip(ManagementSection.sections, 'SECTIONS'),
+      _managementNavChip(ManagementSection.invitations, 'INVITATIONS'),
+      _managementNavChip(ManagementSection.dataAccess, 'DATA ACCESS'),
+      _managementNavChip(ManagementSection.audit, 'AUDIT LOG'),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+      child: AdaptiveLiquidGlassLayer(
+        settings: const LiquidGlassSettings(
+          thickness: 20,
+          blur: 20,
+          glassColor: Color(0x26FFFFFF),
+          lightIntensity: 0.7,
+          ambientStrength: 0.5,
+          saturation: 1.2,
+          refractiveIndex: 1.2,
+          chromaticAberration: 0.0,
+        ),
+        quality: GlassQuality.minimal,
+        child: SizedBox(
+          height: 56,
+          child: SafeArea(
+            top: false,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              itemCount: chips.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => chips[index],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
   @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.transparent,
+    body: LiquidGlassScope(
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: GlassBackgroundSource(
+              child: TechAnimatedBackground(),
+            ),
+          ),
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _buildGlassAppBar(),
+                  _buildManagementNavigation(),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        final narrow = c.maxWidth < 820;
+                        return SingleChildScrollView(
+                          padding: EdgeInsets.fromLTRB(
+                            narrow ? 10 : 16,
+                            8,
+                            narrow ? 10 : 16,
+                            28,
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1500),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (loading)
+                                    GlassCard(
+                                      margin: EdgeInsets.zero,
+                                      padding: const EdgeInsets.all(40),
+                                      settings: TechColors.sectionGlass,
+                                      quality: GlassQuality.standard,
+                                      shape: const LiquidRoundedSuperellipse(
+                                        borderRadius: 18,
+                                      ),
+                                      child: const Column(
+                                        children: [
+                                          SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.7,
+                                              color: TechColors.borderActive,
+                                            ),
+                                          ),
+                                          SizedBox(height: 12),
+                                          Text(
+                                            'INITIALIZING MANAGEMENT CONTROL PLANE',
+                                            style: TextStyle(
+                                              color: TechColors.textMuted,
+                                              fontSize: 10,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else if (error != null)
+                                    GlassCard(
+                                      margin: EdgeInsets.zero,
+                                      padding: const EdgeInsets.all(24),
+                                      settings: TechColors.sectionGlass,
+                                      quality: GlassQuality.standard,
+                                      shape: const LiquidRoundedSuperellipse(
+                                        borderRadius: 18,
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          const Icon(
+                                            Icons.error_outline,
+                                            color: TechColors.statusRed,
+                                            size: 22,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          _eyebrow('Management service error'),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            error!,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: TechColors.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 13),
+                                          _actionChip(
+                                            'RETRY',
+                                            Icons.refresh,
+                                            loadAll,
+                                            accent: true,
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else ...[
+                                    if (section == ManagementSection.overview ||
+                                        section == ManagementSection.organization) ...[
+                                      actions(),
+                                      const SizedBox(height: 12),
+                                    ],
+                                    body(),
+                                    if (section == ManagementSection.organization) ...[
+                                      const SizedBox(height: 12),
+                                      assignmentList(),
+                                    ],
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+erride
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
     body: LiquidGlassScope(child: Stack(children: [
