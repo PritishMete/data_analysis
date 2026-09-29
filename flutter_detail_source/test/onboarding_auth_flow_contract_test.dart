@@ -87,6 +87,14 @@ void main() {
     expect(dataScreen, contains('openInsightFlowManagement(context)'));
   });
 
+  test('protected Supabase headers restore or refresh the current session', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+
+    expect(http, contains('final session = await InsightFlowSupabaseAuthService.ensureSession();'));
+    expect(http, contains('final token = session?.accessToken;'));
+    expect(http, contains("throw StateError('Supabase authentication required.')"));
+  });
+
   test('execute pipeline uses the shared dock glass constants', () {
     final execute =
         File('lib/features/dashboard/execute_pipeline_fab.dart').readAsStringSync();
