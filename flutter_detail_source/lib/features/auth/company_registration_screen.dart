@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'authorization_management_screen.dart';
+import 'management_shell.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -178,7 +178,7 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
       await setInsightFlowWorkspaceId(user.uid, workspaceId);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen()),
+        MaterialPageRoute(builder: (_) => const ManagementShell()),
       );
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
