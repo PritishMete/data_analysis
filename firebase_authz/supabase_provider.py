@@ -231,16 +231,36 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: 
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
-        existing = _principal_for_claims(db, claims, workspace_id)
-        if existing and existing["status"] not in {"removed", "suspended"}:
-            principal_id = existing["principal_id"]
+
+        identity = db.execute(
+            text("""SELECT principal_id FROM identity_bindings
+                    WHERE provider=:provider AND provider_subject=:subject
+                      AND status='active'
+                    FOR UPDATE"""),
+            {"provider": provider, "subject": subject},
+        ).scalar_one_or_none()
+
+        principal_id = str(identity) if identity else None
+        if principal_id:
+            active_membership = db.execute(
+                text("""SELECT organization_id FROM organization_members
+                        WHERE principal_id=:principal AND status='active'
+                        ORDER BY organization_id
+                        LIMIT 1
+                        FOR UPDATE"""),
+                {"principal": principal_id},
+            ).scalar_one_or_none()
+            if active_membership and str(active_membership) != str(workspace_id):
+                raise AuthzError(
+                    "This account already has an active organization membership."
+                )
         else:
             principal_id = _id("prn")
             db.execute(text("INSERT INTO principals(principal_id) VALUES (:id)"), {"id": principal_id})
             db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
-                VALUES (:provider,:subject,:uid,:principal)
-                ON CONFLICT (provider, provider_subject) DO UPDATE SET firebase_uid=EXCLUDED.firebase_uid,
-                status='active'"""), {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
+                VALUES (:provider,:subject,:uid,:principal)"""),
+                       {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
+
         db.execute(text("""INSERT INTO organization_members(organization_id, workspace_id, principal_id, employee_id, status)
             VALUES (:org,:workspace,:principal,:employee,'active')
             ON CONFLICT (organization_id, principal_id) DO UPDATE SET employee_id=EXCLUDED.employee_id,status='active'"""),
@@ -253,7 +273,6 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: 
             accepted_at=now() WHERE invitation_id=:id"""),
                    {"id": invitation_id, "principal": principal_id})
     return {"accepted": True, "organization_id": workspace_id}
-
 
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
