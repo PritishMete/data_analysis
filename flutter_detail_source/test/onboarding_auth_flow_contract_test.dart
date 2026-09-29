@@ -21,6 +21,22 @@ void main() {
     expect(source, contains('OrganizationOnboardingScreen('));
     expect(source, contains('CompanyRegistrationScreen()'));
     expect(source, contains('ManagementShell()'));
+    expect(
+      source,
+      contains("case InsightFlowOnboardingState.transientFailure:"),
+    );
+    expect(
+      source,
+      contains("case InsightFlowOnboardingState.authoritativeDenial:"),
+    );
+    expect(
+      source,
+      contains("ORGANIZATION AUTHORIZATION TEMPORARILY UNAVAILABLE"),
+    );
+    expect(
+      source,
+      contains("Cached workspace data cannot restore access."),
+    );
   });
 
   test('pending invitation lookup and acceptance use Supabase authentication', () {
