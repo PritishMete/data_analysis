@@ -118766,44 +118766,47 @@ A.adx.prototype={
 py(a){return this.ai_(a)},
 ai_(a3){var s=0,r=A.r(t.H),q,p=2,o=[],n=this,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2
 var $async$py=A.n(function(a4,a5){if(a4===1){o.push(a5)
-s=p}for(;;)switch(s){case 0:b=J.a1(a3)
-a=b.h(a3,"workspace_id")
-a0=a==null?null:J.A(a)
-a1=a0==null?"":a0
-b=b.h(a3,"invitation_id")
-e=b==null?null:J.A(b)
-m=e==null?"":e
-if(J.as(a1)===0||J.as(m)===0){s=1
+s=p}for(;;)switch(s){case 0:a0=J.a1(a3)
+a1=a0.h(a3,"workspace_id")
+a1=a1==null?null:J.A(a1)
+if(a1==null){a1=a0.h(a3,"organization_id")
+a1=a1==null?null:J.A(a1)
+d=a1}else d=a1
+m=d==null?"":d
+a0=a0.h(a3,"invitation_id")
+c=a0==null?null:J.A(a0)
+l=c==null?"":c
+if(J.as(m)===0||J.as(l)===0){s=1
 break}n.F(new A.b1u(n))
 p=4
 s=7
 return A.h(A.re(),$async$py)
-case 7:l=a5
-if(l==null||l.c.length===0){j=A.X("Your authentication session could not be restored.")
-throw A.c(j)}s=8
+case 7:k=a5
+if(k==null||k.c.length===0){i=A.X("Your authentication session could not be restored.")
+throw A.c(i)}s=8
 return A.h(A.EF(null),$async$py)
-case 8:k=a5
-b=A.cC("https://data-analysis-oajs.onrender.com/v1/authz/invitations/accept",0,null)
-a=t.N
-j=A.db(k,a,a)
-J.bx(j,"Content-Type","application/json")
+case 8:j=a5
+a0=A.cC("https://data-analysis-oajs.onrender.com/v1/authz/invitations/accept",0,null)
+a1=t.N
+i=A.db(j,a1,a1)
+J.bx(i,"Content-Type","application/json")
 s=9
-return A.h(A.mZ(b,B.u.hz(A.y(["workspace_id",a1,"invitation_id",m],a,a),null),null,j),$async$py)
-case 9:i=a5
-j=i
-if(B.c.V(A.eo(A.em(j.e),B.af).bu(0,j.w)).length===0)d=A.v(a,t.z)
-else{j=i
-d=B.u.en(0,A.eo(A.em(j.e),B.af).bu(0,j.w),null)}h=d
-if(i.b!==200){if(t.f.b(h)){j=J.w(h,"detail")
-j=j==null?null:J.A(j)
-if(j==null)j="Invitation could not be accepted."}else j="Invitation could not be accepted."
-j=A.X(j)
-throw A.c(j)}j=A.m9()
-g=j==null?null:j.a
-s=g!=null?10:11
+return A.h(A.mZ(a0,B.u.hz(A.y(["workspace_id",m,"invitation_id",l],a1,a1),null),null,i),$async$py)
+case 9:h=a5
+i=h
+if(B.c.V(A.eo(A.em(i.e),B.af).bu(0,i.w)).length===0)b=A.v(a1,t.z)
+else{i=h
+b=B.u.en(0,A.eo(A.em(i.e),B.af).bu(0,i.w),null)}g=b
+if(h.b!==200){if(t.f.b(g)){i=J.w(g,"detail")
+i=i==null?null:J.A(i)
+if(i==null)i="Invitation could not be accepted."}else i="Invitation could not be accepted."
+i=A.X(i)
+throw A.c(i)}i=A.m9()
+f=i==null?null:i.a
+s=f!=null?10:11
 break
 case 10:s=12
-return A.h(A.ED(g,a1),$async$py)
+return A.h(A.ED(f,m),$async$py)
 case 12:case 11:s=13
 return A.h(n.a.aKA(),$async$py)
 case 13:p=2
@@ -118811,9 +118814,9 @@ s=6
 break
 case 4:p=3
 a2=o.pop()
-f=A.Y(a2)
+e=A.Y(a2)
 if(n.c==null){s=1
-break}n.F(new A.b1v(n,f))
+break}n.F(new A.b1v(n,e))
 s=6
 break
 case 3:s=2
@@ -118828,28 +118831,30 @@ s=A.F(c,A.u(c).i("t.E"))}else s=A.b([],t.H7)
 r=s.length!==0?B.b.gN(s):g
 c=r==null
 if(c)q=g
-else{p=J.w(r,"organization_name")
-p=p==null?g:J.A(p)
-q=p}if(q==null)q="your organization"
+else{q=J.w(r,"organization_name")
+q=q==null?g:J.A(q)}if(q==null){if(c)q=g
+else{q=J.w(r,"organization_id")
+q=q==null?g:J.A(q)}p=q}else p=q
+if(p==null)p="your organization"
 if(c)o=g
-else{p=J.w(r,"role_id")
-p=p==null?g:J.A(p)
-o=p}if(o==null)o="assigned role"
+else{q=J.w(r,"role_id")
+q=q==null?g:J.A(q)
+o=q}if(o==null)o="assigned role"
 if(c)n=g
-else{p=J.w(r,"employee_id")
-n=p==null?g:J.A(p)}p=t.p
-m=A.b([],p)
+else{q=J.w(r,"employee_id")
+n=q==null?g:J.A(q)}q=t.p
+m=A.b([],q)
 if(!c){c=n==null?"":" \xb7 Employee ID: "+n
 l=h.d
 k=l?new A.b1x():new A.b1y(h,r)
 j=l?e:d
-i=A.b([],p)
+i=A.b([],q)
 if(h.d)i.push(B.dv)
 if(h.d)i.push(B.bP)
 i.push(A.ag(h.d?e:d,g,g,g,B.fr,g,g))
-B.b.I(m,A.b([new A.hj("You have an active invitation to "+q+". Role: "+o+c,!0,g),B.cF,A.fb(!0,B.aV,A.cd(i,B.t,B.m,B.aH,0,g),!l,g,g,1,46,1.05,j,k,!0,!1,g,g,B.bk,0.5,!1,1/0)],p))}else B.b.I(m,A.b([B.Or],p))
+B.b.I(m,A.b([new A.hj("You have an active invitation to "+p+". Role: "+o+c,!0,g),B.cF,A.fb(!0,B.aV,A.cd(i,B.t,B.m,B.aH,0,g),!l,g,g,1,46,1.05,j,k,!0,!1,g,g,B.bk,0.5,!1,1/0)],q))}else B.b.I(m,A.b([B.Or],q))
 c=h.e
-if(c!=null)B.b.I(m,A.b([B.bQ,new A.hj(c,!0,g)],p))
+if(c!=null)B.b.I(m,A.b([B.bQ,new A.hj(c,!0,g)],q))
 m.push(B.bQ)
 m.push(A.de(B.mU,h.d?g:A.brh(),g))
 return A.qC(m,"Your authenticated identity must be approved by an organization.","EMPLOYEE / ACCESS")}}
