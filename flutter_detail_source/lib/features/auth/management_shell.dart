@@ -6,6 +6,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
+import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
 import 'authorization_management_screen.dart';
 
@@ -611,6 +612,52 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  Widget navButton(ManagementSection target, String label, IconData icon) {
+    final selected = target == section;
+    return GlassButton.custom(
+      onTap: () => setState(() => section = target),
+      height: 34,
+      width: 116,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 11),
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: selected
+          ? dockGlassSettings(
+              glassColor: TechColors.borderActive.withValues(alpha: 0.12),
+            )
+          : TechColors.sectionGlass,
+      glowColor: selected
+          ? TechColors.borderActive.withValues(alpha: 0.22)
+          : Colors.transparent,
+      glowRadius: selected ? 8 : 0,
+      interactionScale: 1.02,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(
+            icon,
+            size: 14,
+            color: selected ? TechColors.borderActive : TechColors.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? TechColors.textPrimary : TechColors.textMuted,
+                fontSize: 9.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                letterSpacing: 0.35,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
   Widget nav(bool narrow) {
     final buttons = <Widget>[
       navButton(ManagementSection.overview, 'Overview', Icons.dashboard_outlined),
@@ -622,32 +669,100 @@ class _ManagementShellState extends State<ManagementShell> {
       navButton(ManagementSection.dataAccess, 'Data Access', Icons.lock_outline),
       navButton(ManagementSection.audit, 'Audit Log', Icons.receipt_long_outlined),
     ];
-    final trailing = <Widget>[
-      _actionChip('ANALYSIS', Icons.analytics_outlined, () => openInsightFlowAnalysis(context), accent: true),
-      IconButton(onPressed: loadAll, tooltip: 'Refresh', icon: const Icon(Icons.refresh, size: 18, color: TechColors.textMuted)),
-      IconButton(onPressed: () => InsightFlowSupabaseAuthService.signOut(), tooltip: 'Log out', icon: const Icon(Icons.logout, size: 18, color: TechColors.textMuted)),
-    ];
+
     return GlassCard(
-      margin: EdgeInsets.zero, padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      settings: TechColors.panelGlass, quality: GlassQuality.standard,
+      margin: EdgeInsets.zero,
+      padding: EdgeInsets.zero,
+      settings: TechColors.panelGlass,
+      quality: GlassQuality.standard,
       shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      child: narrow
-          ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-              ...buttons.map((b) => Padding(padding: const EdgeInsets.only(right: 4), child: b)),
-              const SizedBox(width: 5), ...trailing,
-            ]))
-          : Row(children: [
-              const Icon(Icons.terminal, size: 18, color: TechColors.borderActive),
-              const SizedBox(width: 9),
-              const Text('InsightFlow', style: TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-              const SizedBox(width: 16),
-              _eyebrow('ORGANIZATION / MANAGEMENT'),
-              const SizedBox(width: 18),
-              Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-                ...buttons.map((b) => Padding(padding: const EdgeInsets.only(right: 4), child: b)),
-              ]))),
-              const SizedBox(width: 6), ...trailing,
-            ]),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(narrow ? 9 : 13, 9, 9, 9),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: TechColors.borderActive.withValues(alpha: 0.08),
+                    border: Border.all(
+                      color: TechColors.borderActive.withValues(alpha: 0.38),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.terminal,
+                    size: 15,
+                    color: TechColors.borderActive,
+                  ),
+                ),
+                const SizedBox(width: 9),
+                const Text(
+                  'InsightFlow',
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 1,
+                  height: 17,
+                  color: TechColors.borderMuted,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: _eyebrow('ORGANIZATION / MANAGEMENT')),
+                _actionChip(
+                  'ANALYSIS',
+                  Icons.analytics_outlined,
+                  () => openInsightFlowAnalysis(context),
+                  accent: true,
+                  width: 116,
+                ),
+                IconButton(
+                  onPressed: loadAll,
+                  tooltip: 'Refresh',
+                  splashRadius: 18,
+                  icon: const Icon(
+                    Icons.refresh,
+                    size: 17,
+                    color: TechColors.textMuted,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                  tooltip: 'Log out',
+                  splashRadius: 18,
+                  icon: const Icon(
+                    Icons.logout,
+                    size: 17,
+                    color: TechColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...buttons.map(
+                    (b) => Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: b,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
