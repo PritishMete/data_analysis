@@ -35,45 +35,64 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   if (session == null || session.accessToken.isEmpty) return false;
 
   try {
+    // Workspace resolution is deliberately independent of the locally cached
+    // workspace. A device can retain yesterday's workspace after the account
+    // was removed, recreated, or assigned to a different organization on
+    // another device. The backend must return the current memberships first.
     final response = await http
         .get(
           Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
-          headers: await supabaseAuthHeaders(),
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
         )
         .timeout(const Duration(seconds: 45));
 
+    if (response.statusCode == 401) {
+      await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      return false;
+    }
     if (response.statusCode != 200) return null;
+
     final decoded = jsonDecode(response.body);
-  if (decoded is! Map) return false;
+    if (decoded is! Map) return false;
 
-  final workspaces = decoded['workspaces'];
-  if (workspaces is! List) return false;
+    final workspaces = decoded['workspaces'];
+    if (workspaces is! List) return false;
 
-  final active = workspaces
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .where(
-        (item) =>
-            item['membership_status']?.toString().toLowerCase() == 'active',
-      )
-      .toList();
+    final active = workspaces
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where(
+          (item) =>
+              item['membership_status']?.toString().toLowerCase() == 'active',
+        )
+        .toList();
 
-  if (active.isEmpty) {
-    insightFlowWorkspaceId = '';
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('insightflow.workspace.$uid');
-    return false;
-  }
+    if (active.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final hadCachedWorkspace =
+          (prefs.getString('insightflow.workspace.$uid')?.trim().isNotEmpty ??
+              false) ||
+          insightFlowWorkspaceId.trim().isNotEmpty;
+      insightFlowWorkspaceId = '';
+      await prefs.remove('insightflow.workspace.$uid');
 
-  final workspaceId = active.first['workspace_id']?.toString().trim() ?? '';
-  if (workspaceId.isEmpty) return false;
+      // If this device previously had an organization but the authoritative
+      // backend now has no membership, do not silently turn the stale session
+      // into Company Registration. Require a fresh authentication boundary.
+      if (hadCachedWorkspace) {
+        await InsightFlowSupabaseAuthService.signOut();
+      }
+      return false;
+    }
+
+    final workspaceId = active.first['workspace_id']?.toString().trim() ?? '';
+    if (workspaceId.isEmpty) return false;
 
     await setInsightFlowWorkspaceId(uid, workspaceId);
     return true;
   } catch (_) {
     // A failed organization lookup must never be interpreted as "new user".
-    // The caller can keep the authenticated user out of the data workspace
-    // until the authoritative authorization context is available.
     return null;
   }
 }
