@@ -17,6 +17,10 @@ from .service import AuthzError
 from . import registration_diagnostics
 
 
+class OrganizationRegistrationConflict(AuthzError):
+    """The authenticated identity is already onboarded for this product model."""
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
@@ -40,7 +44,7 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
 
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
-        raise ValueError("Authenticated Firebase identity is required.")
+        raise ValueError("Authenticated identity is required.")
     firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
     provider = str(claims.get("provider") or firebase.get("sign_in_provider") or "firebase").strip().lower()
     identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
@@ -69,6 +73,23 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
                              VALUES (:provider, :subject, :uid, :principal)"""),
                        {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
         registration_diagnostics.stage("PRINCIPAL_SETUP_COMPLETE")
+
+        active_membership = db.execute(
+            text("""
+                SELECT organization_id, workspace_id
+                FROM organization_members
+                WHERE principal_id=:principal AND status='active'
+                ORDER BY organization_id
+                LIMIT 1
+            """),
+            {"principal": principal_id},
+        ).mappings().first()
+        if active_membership:
+            raise OrganizationRegistrationConflict(
+                "This account already has an active organization membership. "
+                "Open the existing organization instead of registering another one."
+            )
+        registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
 
         db.execute(text("""INSERT INTO organizations(organization_id, name, created_by_principal_id)
                          VALUES (:id, :name, :principal)"""),
