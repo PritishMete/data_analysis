@@ -276,7 +276,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
             _workspaceLookupFailed = false;
           });
         }
-        _backgroundRetryAttempts = 0;
         unawaited(_scheduleBackgroundRetry());
         return;
       }
