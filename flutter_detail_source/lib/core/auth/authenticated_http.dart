@@ -32,7 +32,10 @@ Future<void> loadInsightFlowWorkspaceId(String uid) async {
 
 Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
-  if (session == null || session.accessToken.isEmpty) return false;
+  // Session restoration can briefly lag behind AuthGate on browser startup.
+  // Treat that as transient so a cached portal can reconcile in the background
+  // instead of misclassifying it as an authorization result.
+  if (session == null || session.accessToken.isEmpty) return null;
 
   try {
     // Workspace resolution is deliberately independent of the locally cached
@@ -46,9 +49,11 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
         )
         .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode == 401) {
+    if (response.statusCode == 401 || response.statusCode == 403) {
       await InsightFlowSupabaseAuthService.signOut();
       insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
       return false;
     }
     if (response.statusCode != 200) return null;
