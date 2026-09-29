@@ -42,7 +42,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final headers = await supabaseAuthHeaders();
     if (insightFlowWorkspaceId.isNotEmpty) headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
     if (body != null) headers['Content-Type'] = 'application/json';
-    final uri = Uri.parse('${insightFlowBackendBaseUrl}/v1/authz/management$path');
+    final uri = Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management$path');
     final response = method == 'POST'
         ? await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15))
         : await http.get(uri, headers: headers).timeout(const Duration(seconds: 15));
@@ -134,7 +134,7 @@ class _ManagementShellState extends State<ManagementShell> {
       title: const Text('Create section'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         DropdownButtonFormField<String>(
-          value: location, decoration: const InputDecoration(labelText: 'Location'),
+          initialValue: location, decoration: const InputDecoration(labelText: 'Location'),
           items: locations.map((x) => DropdownMenuItem(value: x['location_id'].toString(), child: Text(x['name'].toString()))).toList(),
           onChanged: (v) => set(() => location = v ?? location)),
         const SizedBox(height: 12),
