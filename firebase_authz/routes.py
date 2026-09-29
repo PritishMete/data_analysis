@@ -169,6 +169,8 @@ def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
         return bootstrap_owner(_token(authorization), req.organization_name)
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
     except BootstrapDenied as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -194,7 +196,10 @@ def founder_organization_register(
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
             from .supabase_auth import verify_supabase_access_token
-            from .supabase_provider import register_organization
+            from .supabase_provider import (
+                OrganizationRegistrationConflict,
+                register_organization,
+            )
             claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
             if not req.organization_name or not req.branch_name or not req.branch_identifier:
