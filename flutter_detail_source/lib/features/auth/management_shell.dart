@@ -965,44 +965,4 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
     ),
   );
-erride
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.transparent,
-    body: LiquidGlassScope(child: Stack(children: [
-      const Positioned.fill(child: GlassBackgroundSource(child: TechAnimatedBackground())),
-      Positioned.fill(child: SafeArea(child: LayoutBuilder(builder: (context, c) {
-        final narrow = c.maxWidth < 820;
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(narrow ? 10 : 20, 10, narrow ? 10 : 20, 28),
-          child: Center(child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1500),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              nav(narrow), const SizedBox(height: 12),
-              if (loading)
-                GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(40), settings: TechColors.sectionGlass, quality: GlassQuality.standard, shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-                  child: const Column(children: [
-                    SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)),
-                    SizedBox(height: 12),
-                    Text('INITIALIZING MANAGEMENT CONTROL PLANE', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-                  ]))
-              else if (error != null)
-                GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(24), settings: TechColors.sectionGlass, quality: GlassQuality.standard, shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-                  child: Column(children: [
-                    const Icon(Icons.error_outline, color: TechColors.statusRed, size: 22),
-                    const SizedBox(height: 8), _eyebrow('Management service error'),
-                    const SizedBox(height: 5),
-                    Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textPrimary)),
-                    const SizedBox(height: 13), _actionChip('RETRY', Icons.refresh, loadAll, accent: true),
-                  ]))
-              else ...[
-                if (section == ManagementSection.overview || section == ManagementSection.organization) ...[actions(), const SizedBox(height: 12)],
-                body(),
-                if (section == ManagementSection.organization) ...[const SizedBox(height: 12), assignmentList()],
-              ],
-            ]),
-          )),
-        );
-      }))),
-    ])),
-  );
 }
