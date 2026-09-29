@@ -21,6 +21,14 @@ void main() {
     }
 
     expect(source, contains('openInsightFlowAnalysis(context)'));
+    expect(source, contains('LiquidGlassScope'));
+    expect(source, contains('GlassBackgroundSource'));
+    expect(source, contains('TechAnimatedBackground'));
+    expect(source, contains('GlassCard'));
+    expect(source, contains('GlassContainer'));
+    expect(source, contains('GlassChip'));
+    expect(source, contains('AdaptiveLiquidGlassLayer'));
+    expect(source, contains('_managementAnalysisNavChip'));
     expect(source, contains('management_navigation.dart'));
     expect(source, contains("MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())"));
     expect(source, contains("'/overview'"));
