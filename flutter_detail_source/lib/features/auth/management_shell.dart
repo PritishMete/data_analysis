@@ -598,24 +598,6 @@ class _ManagementShellState extends State<ManagementShell> {
     final selected = target == section;
     return GlassButton.custom(
       onTap: () => setState(() => section = target),
-      height: 38, width: 128,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-      useOwnLayer: true, quality: GlassQuality.minimal,
-      settings: selected ? TechColors.panelGlass : TechColors.sectionGlass,
-      glowColor: selected ? TechColors.borderActive.withValues(alpha: 0.24) : Colors.transparent,
-      glowRadius: selected ? 9 : 0,
-      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 11), child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 15, color: selected ? TechColors.borderActive : TechColors.textMuted),
-        const SizedBox(width: 7),
-        Text(label, style: TextStyle(color: selected ? TechColors.textPrimary : TechColors.textMuted, fontSize: 10, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, fontFamily: 'monospace')),
-      ])),
-    );
-  }
-
-  Widget navButton(ManagementSection target, String label, IconData icon) {
-    final selected = target == section;
-    return GlassButton.custom(
-      onTap: () => setState(() => section = target),
       height: 34,
       width: 116,
       shape: const LiquidRoundedSuperellipse(borderRadius: 11),
