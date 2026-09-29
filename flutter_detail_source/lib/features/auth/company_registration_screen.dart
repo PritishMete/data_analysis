@@ -232,6 +232,11 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
             child: const Text('Continue with Google'),
           ),
         ] else ...[
+          const AuthGlassMessage(
+            text:
+                'You will become the initial branch head for this organization. After registration, you can configure locations, managers, sections, team leads, and employees from Organization Management.',
+          ),
+          const SizedBox(height: 12),
           const AuthGlassFieldLabel('Company / Organization Name'),
           GlassTextField(
             controller: _organizationController,
@@ -250,6 +255,13 @@ class _CompanyRegistrationScreenState extends State<CompanyRegistrationScreen> {
           ),
           const SizedBox(height: 12),
           const AuthGlassFieldLabel('Unique Branch Identifier'),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Required: this is the branch\'s unique identity label. Active branches cannot reuse it; punctuation and special characters are allowed.',
+              style: TextStyle(fontSize: 10, color: TechColors.textMuted),
+            ),
+          ),
           GlassTextField(
             controller: _branchIdentifierController,
             placeholder: 'e.g. TCS-KOL-A',
