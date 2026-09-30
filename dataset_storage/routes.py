@@ -26,12 +26,22 @@ def _token(value: str | None) -> str:
 
 
 def _workspace(value: str | None, authorization: str | None = None) -> str:
-    """Resolve workspace from the explicit header or authoritative identity context."""
-    normalized = (value or "").strip()
-    if normalized:
-        return normalized
+    """Resolve an authenticated workspace; never trust a client-supplied ID by itself.
+
+    The header is only a workspace selector. Authorization is still resolved from
+    the bearer identity, and the selected workspace must be an active membership
+    of that identity. If the cached header is stale/missing, recover the unique
+    active workspace from the authoritative Supabase authorization context.
+    """
     token = _token(authorization)
     claims = verify_id_token(token)
+    normalized = (value or "").strip()
+
+    if normalized:
+        selected = authorization_context(claims, normalized)
+        if selected.get("workspace_authorized"):
+            return str(selected["workspace_id"]).strip()
+
     context = authorization_context(claims)
     workspaces = context.get("workspaces") or []
     active = [
