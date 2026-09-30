@@ -119,7 +119,7 @@ class DatasetRow(Base):
         Index("ix_dataset_rows_version_row", "version_pk", "row_number"),
     )
 
-    row_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     version_pk: Mapped[str] = mapped_column(
         String(36), ForeignKey("dataset_versions.version_pk", ondelete="CASCADE"), nullable=False, index=True
     )
