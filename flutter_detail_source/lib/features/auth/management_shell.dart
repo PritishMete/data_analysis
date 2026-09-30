@@ -816,11 +816,38 @@ class _ManagementShellState extends State<ManagementShell> {
     ],
   );
 
-  Widget legacyView(String title, String text) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget legacyView(String title, String text, {String actionLabel = 'OPEN LEGACY TOOLS'}) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow(title), const SizedBox(height: 7),
     Text(text, style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
     const SizedBox(height: 14),
-    _actionChip('OPEN LEGACY TOOLS', Icons.open_in_new, () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())), accent: true),
+    _actionChip(
+      actionLabel,
+      Icons.open_in_new,
+      () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AuthorizationManagementScreen(
+            onStartWorking: (datasetId) async {
+              final headers = await supabaseAuthHeaders();
+              final response = await http.post(
+                Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/working-copies'),
+                headers: {
+                  ...headers,
+                  if (insightFlowWorkspaceId.isNotEmpty)
+                    'X-InsightFlow-Workspace-ID': insightFlowWorkspaceId,
+                },
+              );
+              if (response.statusCode < 200 || response.statusCode >= 300) {
+                throw StateError('Unable to create a managed dataset working copy.');
+              }
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              openInsightFlowAnalysis(context);
+            },
+          ),
+        ),
+      ),
+      accent: true,
+    ),
   ]));
 
   String _sectionLabel(ManagementSection value) => switch (value) {
@@ -864,7 +891,11 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.locations: return locationsView();
       case ManagementSection.sections: return sectionsView();
       case ManagementSection.invitations: return legacyView('Invitations', 'Existing invitation creation and acceptance behavior is preserved.');
-      case ManagementSection.dataAccess: return legacyView('Data Access', 'Existing dataset grants, resource access, delegations, managed datasets, and working-copy controls are preserved.');
+      case ManagementSection.dataAccess: return legacyView(
+        'Managed Datasets',
+        'Supabase-backed dataset registry, CSV ingestion, versions, structured rows, protected downloads, grants, and working-copy controls.',
+        actionLabel: 'OPEN MANAGED DATASETS',
+      );
       case ManagementSection.audit: return auditView();
     }
   }
