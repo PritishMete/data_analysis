@@ -328,6 +328,11 @@ class DatasetRepository:
         dataset = self.get_by_id(dataset_id)
         if dataset is None:
             return
+        for version in self.list_versions(dataset_id):
+            if version.data_table_name:
+                from .physical_table import drop_physical_table
+                drop_physical_table(self.db.connection(), version.data_table_name)
+                version.data_table_name = None
         self.db.delete(dataset)
         self.db.flush()
         if commit:
