@@ -5,6 +5,8 @@ import io
 import os
 import re
 import uuid
+
+import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
 from sqlalchemy import delete, select
@@ -233,6 +235,50 @@ def get_managed_dataset_rows(
                 for row in rows
             ],
         }
+    finally:
+        repo.db.close()
+
+
+def load_managed_dataset_dataframe(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    version_id: str | None = None,
+) -> pd.DataFrame:
+    """Materialize one authorized managed version for an analysis request.
+
+    Ingestion remains chunked/bulk. This materialization is deliberately kept
+    on the backend so a managed 500k-row dataset is never copied into the
+    browser just to run a remote analytical query.
+    """
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id, version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Dataset version not found.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        names = [column.column_name for column in columns]
+        stmt = (
+            select(DatasetRow.row_data)
+            .where(DatasetRow.version_pk == version.version_pk)
+            .order_by(DatasetRow.row_number.asc())
+            .execution_options(yield_per=1000)
+        )
+        rows = [
+            [row_data.get(name) for name in names]
+            for (row_data,) in repo.db.execute(stmt)
+        ]
+        return pd.DataFrame.from_records(rows, columns=names)
     finally:
         repo.db.close()
 
