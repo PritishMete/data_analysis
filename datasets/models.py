@@ -105,6 +105,7 @@ class DatasetVersion(Base):
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     failure_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    data_table_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="versions")
     rows: Mapped[list["DatasetRow"]] = relationship(
