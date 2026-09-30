@@ -57,26 +57,6 @@ class _AuthorizationManagementScreenState
     }
   }
 
-  Future<List<Map<String, dynamic>>> _loadManagedDatasets(
-    Map<String, String> headers,
-  ) async {
-    final response = await http.get(
-      Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets'),
-      headers: headers,
-    );
-    if (response.statusCode != 200) {
-      throw StateError('Managed dataset registry is unavailable.');
-    }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map || decoded['datasets'] is! List) {
-      throw StateError('Managed dataset registry returned an invalid response.');
-    }
-    return (decoded['datasets'] as List)
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
-
   Future<void> _load() async {
     setState(() {
       _loading = true;
