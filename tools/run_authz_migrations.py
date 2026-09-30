@@ -180,6 +180,35 @@ def verify_managed_dataset_security(engine) -> None:
         if bucket_exists is None:
             raise RuntimeError("Private managed-datasets Supabase Storage bucket is missing.")
 
+        physical_schema = conn.execute(text("""
+            SELECT 1
+            FROM information_schema.schemata
+            WHERE schema_name = 'managed_data'
+        """)).scalar_one_or_none()
+        if physical_schema is None:
+            raise RuntimeError("managed_data schema is missing.")
+
+        version_columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("dataset_versions")
+        }
+        if "data_table_name" not in version_columns:
+            raise RuntimeError("dataset_versions.data_table_name is missing.")
+
+        bad_physical_rls = conn.execute(text("""
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'managed_data'
+              AND c.relkind = 'r'
+              AND c.relrowsecurity = false
+            LIMIT 1
+        """)).scalar_one_or_none()
+        if bad_physical_rls is not None:
+            raise RuntimeError(
+                "RLS is not enabled on managed_data table: " + str(bad_physical_rls)
+            )
+
 def run_migrations() -> None:
     """Apply and verify pending production PostgreSQL migrations.
 
