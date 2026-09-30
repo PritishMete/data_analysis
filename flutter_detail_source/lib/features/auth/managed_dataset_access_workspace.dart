@@ -113,7 +113,20 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       var path = '/v1/managed-datasets/' + id + '/download';
       if (v != null && v.isNotEmpty) path += '?version_id=' + Uri.encodeQueryComponent(v);
       final r = await http.get(Uri.parse(insightFlowBackendBaseUrl + path), headers: await _headers()).timeout(const Duration(minutes: 2));
-      if (r.statusCode != 200) throw StateError('Dataset download was rejected.');
+      if (r.statusCode != 200) {
+        dynamic decoded;
+        try { decoded = jsonDecode(r.body); } catch (_) {}
+        final detail = decoded is Map && decoded['detail'] != null
+            ? decoded['detail'].toString()
+            : switch (r.statusCode) {
+                401 => 'Authentication required.',
+                403 => 'Permission denied for this resource.',
+                404 => 'Dataset version not found.',
+                409 => 'Workspace context conflict.',
+                _ => 'Managed dataset operation failed.',
+              };
+        throw StateError(detail);
+      }
       var filename = _name(selected!);
       if (!filename.toLowerCase().endsWith('.csv')) filename += '.csv';
       await FilePicker.platform.saveFile(dialogTitle: 'Save managed dataset', fileName: filename, bytes: r.bodyBytes);
