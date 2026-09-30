@@ -44,7 +44,10 @@ def test_csv_rows_are_persisted_and_profiled(db_session):
     assert rows[1].row_data["active"] is True
     columns = DatasetRepository(db_session).get_columns_for_version(result.version.version_pk)
     assert {c.column_name for c in columns} == {"id", "amount", "active", "date", "note"}
-    assert next(c for c in columns if c.column_name == "id").detected_type == "integer"
+    id_column = next(c for c in columns if c.column_name == "id")
+    assert id_column.detected_type == "integer"
+    assert id_column.missing_count == 0
+    assert id_column.missing_percentage == 0.0
 
 
 def test_exact_duplicate_is_idempotent_per_organization(db_session):
