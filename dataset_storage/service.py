@@ -446,6 +446,10 @@ def _mark_failed_sql_version(
         dataset = repo.get_by_id(dataset_id)
         version = repo.get_version(dataset_id, version_id)
         if version is not None:
+            if version.data_table_name:
+                from datasets.physical_table import drop_physical_table
+                drop_physical_table(repo.db.connection(), version.data_table_name)
+                version.data_table_name = None
             repo.db.execute(
                 delete(DatasetRow).where(DatasetRow.version_pk == version.version_pk)
             )
