@@ -158,13 +158,25 @@ List<dynamic> decodeSourceMatrix(String raw) {
 }
 
 class DataScreen extends StatefulWidget {
-  const DataScreen({super.key});
+  const DataScreen({
+    super.key,
+    this.managedDatasetId,
+    this.managedVersionId,
+    this.managedWorkingCopyId,
+  });
+
+  final String? managedDatasetId;
+  final String? managedVersionId;
+  final String? managedWorkingCopyId;
 
   @override
   State<DataScreen> createState() => DataScreenState();
 }
 
 class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
+  bool get isManagedDatasetSession =>
+      widget.managedDatasetId?.trim().isNotEmpty == true;
+
   // ── Analysis ──────────────────────────────────────────────────────────────
   Map<String, dynamic>? analysisData;
   bool isLoading = false;
