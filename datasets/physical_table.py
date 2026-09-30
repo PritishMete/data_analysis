@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Iterable
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, MetaData, Numeric, String, Table, Text, create_engine, text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, MetaData, Numeric, Table, Text, text
 from sqlalchemy.engine import Connection
 
 PHYSICAL_SCHEMA = "managed_data"
@@ -59,6 +59,9 @@ def create_physical_table(
     ensure_schema(connection)
     table = build_physical_table(table_name, columns)
     table.create(connection, checkfirst=True)
+    quoted = f'"{PHYSICAL_SCHEMA}"."{table_name}"'
+    connection.execute(text(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY"))
+    connection.execute(text(f"REVOKE ALL ON TABLE {quoted} FROM anon, authenticated"))
     return table
 
 
