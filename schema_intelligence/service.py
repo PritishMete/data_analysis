@@ -59,7 +59,13 @@ class SchemaIntelligenceService:
         self.column_detection_repository = column_detection_repository
         self.duplicate_repository = duplicate_repository
 
-    def analyze_dataset(self, dataset_id: str, df: pd.DataFrame) -> SchemaAnalysisResult:
+    def analyze_dataset(
+        self,
+        dataset_id: str,
+        df: pd.DataFrame,
+        *,
+        version_pk: str | None = None,
+    ) -> SchemaAnalysisResult:
         """Runs every registered ColumnRule against every column, plus every
         registered DatasetRule against the whole DataFrame (duplicate-column
         detection today; whatever's added to rules/ tomorrow). Persists:
@@ -86,7 +92,9 @@ class SchemaIntelligenceService:
 
             winning_role = candidates[0].role if candidates else None
             column_roles[str(column_name)] = winning_role
-            self.dataset_repository.update_column_role(dataset_id, str(column_name), winning_role)
+            self.dataset_repository.update_column_role(
+                dataset_id, str(column_name), winning_role, version_pk=version_pk
+            )
 
             # Extension point: persist the confidence/evidence behind that
             # SAME winning role directly into the Dataset Registry too (see
@@ -99,7 +107,11 @@ class SchemaIntelligenceService:
             winning_confidence = candidates[0].confidence if candidates else None
             winning_evidence = candidates[0].evidence if candidates else None
             self.dataset_repository.update_column_role_metadata(
-                dataset_id, str(column_name), confidence=winning_confidence, evidence=winning_evidence
+                dataset_id,
+                str(column_name),
+                confidence=winning_confidence,
+                evidence=winning_evidence,
+                version_pk=version_pk,
             )
 
             all_detection_rows.extend(
