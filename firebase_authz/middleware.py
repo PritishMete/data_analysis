@@ -77,7 +77,13 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
     if path.startswith(base + "/"):
         suffix = path[len(base) + 1:]
         parts = suffix.split("/")
-        if len(parts) == 2 and parts[1] == "download" and method == "GET":
+        # Dataset identity is already part of the protected URL. These reads
+        # must use the same resource boundary as the service layer instead of
+        # falling through to the generic analysis policy (which would require
+        # a separate X-InsightFlow-Resource-ID header).
+        if len(parts) == 1 and method == "GET":
+            return "dataset.view_original", True
+        if len(parts) == 2 and parts[1] in {"profile", "rows", "download"} and method == "GET":
             return "dataset.view_original", True
         if len(parts) == 2 and parts[1] == "versions" and method == "POST":
             return "dataset.upload", False
@@ -147,6 +153,16 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
 
             action, requires_resource = policy
             resource_id = request.headers.get("x-insightflow-resource-id", "").strip()
+            if requires_resource and not resource_id and managed_policy is not None:
+                # For managed-dataset endpoints the dataset ID is the resource
+                # identifier by definition. Resolve it from the route rather
+                # than requiring the browser to duplicate the same identity in
+                # a mutable header. Authorization still verifies the resource
+                # against the authenticated principal and organization below.
+                suffix = request.url.path[len("/v1/managed-datasets") + 1:]
+                parts = suffix.split("/")
+                if parts and parts[0].strip():
+                    resource_id = parts[0].strip()
             if requires_resource and not resource_id:
                 return JSONResponse(
                     status_code=403,
