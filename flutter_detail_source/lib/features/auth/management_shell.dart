@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -492,7 +493,9 @@ class _ManagementShellState extends State<ManagementShell> {
     useOwnLayer: true,
     quality: GlassQuality.minimal,
     settings: TechColors.sectionGlass,
-    glowColor: accent ? TechColors.borderActive.withValues(alpha: 0.28) : Colors.transparent,
+    glowColor: accent
+        ? TechColors.borderActive.withValues(alpha: 0.28)
+        : Colors.transparent,
     glowRadius: accent ? 10 : 0,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -545,7 +548,7 @@ class _ManagementShellState extends State<ManagementShell> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       GlassCard(
         margin: EdgeInsets.zero, padding: const EdgeInsets.all(18),
-        settings: TechColors.panelGlass, quality: GlassQuality.standard,
+        settings: TechColors.panelGlass, quality: GlassQuality.minimal,
         shape: const LiquidRoundedSuperellipse(borderRadius: 18),
         child: Row(children: [
           Container(width: 42, height: 42, decoration: BoxDecoration(
@@ -592,7 +595,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final managers = asg.where((a) => a['role_id'] == 'manager').toList();
       return Padding(padding: const EdgeInsets.only(bottom: 10), child: GlassCard(
         margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-        settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+        settings: TechColors.sectionGlass, quality: GlassQuality.minimal,
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
@@ -858,9 +861,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _telemetry(String label, int value) => GlassContainer(
     useOwnLayer: true,
     quality: GlassQuality.minimal,
-    settings: dockGlassSettings(
-      glassColor: TechColors.panelBg.withValues(alpha: 0.18),
-    ),
+    settings: TechColors.sectionGlass,,
     shape: const LiquidRoundedSuperellipse(borderRadius: 10),
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     child: Row(
@@ -912,9 +913,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget assignmentList() => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(14),
-    settings: dockGlassSettings(
-      glassColor: TechColors.panelBg.withValues(alpha: 0.24),
-    ),
+    settings: TechColors.sectionGlass,,
     quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: Column(
@@ -990,39 +989,6 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _managementAnalysisAction() => GlassButton.custom(
-    onTap: () => openInsightFlowAnalysis(context),
-    height: 38,
-    width: 122,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 13),
-    useOwnLayer: true,
-    quality: GlassQuality.minimal,
-    settings: dockGlassSettings(
-      glassColor: TechColors.borderActive.withValues(alpha: 0.82),
-    ),
-    glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
-    glowRadius: kDockGlowRadius,
-    interactionScale: kDockInteractionScale,
-    child: const Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.analytics_outlined, size: 15, color: Colors.white),
-        SizedBox(width: 7),
-        Text(
-          'ANALYSIS',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.7,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ],
-    ),
-  );
-
-
   Widget _managementNavChip(
     ManagementSection target,
     String label,
@@ -1031,16 +997,14 @@ class _ManagementShellState extends State<ManagementShell> {
     return GlassChip(
       label: label,
       selected: selected,
-      selectedColor: TechColors.borderActive.withValues(alpha: 0.34),
+      selectedColor: CupertinoColors.activeGreen.withValues(alpha: 0.35),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       labelStyle: TextStyle(
-        fontSize: 11,
-        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
         color: selected
-            ? TechColors.textPrimary
-            : TechColors.textMuted.withValues(alpha: 0.92),
-        fontFamily: 'monospace',
-        letterSpacing: 0.2,
+            ? CupertinoColors.white
+            : CupertinoColors.label.resolveFrom(context).withValues(alpha: 0.85),
       ),
       onTap: () => setState(() => section = target),
     );
@@ -1075,74 +1039,70 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget _buildManagementHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: GlassQuality.minimal,
-        settings: dockGlassSettings(
-          glassColor: TechColors.panelBg.withValues(alpha: 0.22),
-        ),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 760;
+            final compact = constraints.maxWidth < 700;
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.auto_graph_rounded,
+                  Icons.terminal,
                   color: TechColors.borderActive,
                   size: 18,
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: 10),
                 const Text(
-                  'INSIGHTFLOW',
+                  'InsightFlow',
                   style: TextStyle(
                     color: TechColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.0,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
                     fontFamily: 'monospace',
                   ),
                 ),
               ],
             );
-            final contextLabel = Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _eyebrow('MANAGEMENT WORKSPACE'),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'ORGANIZATION CONTROL',
-                      style: TextStyle(
-                        color: TechColors.textPrimary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.7,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
             final controls = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _glassActionButton(
-                  icon: Icons.refresh_rounded,
+                IconButton(
                   tooltip: 'Refresh management data',
                   onPressed: loadAll,
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    size: 18,
+                    color: TechColors.textPrimary,
+                  ),
                 ),
-                const SizedBox(width: 7),
-                _glassActionButton(
-                  icon: Icons.logout_rounded,
-                  tooltip: 'Log out',
+                IconButton(
+                  tooltip: 'Sign out',
                   onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                  icon: const Icon(
+                    Icons.logout,
+                    size: 18,
+                    color: TechColors.textPrimary,
+                  ),
+                ),
+              ],
+            );
+            final contextLabel = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _eyebrow('MANAGEMENT WORKSPACE'),
+                const SizedBox(height: 3),
+                const Text(
+                  'ORGANIZATION CONTROL',
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.7,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ],
             );
@@ -1150,13 +1110,9 @@ class _ManagementShellState extends State<ManagementShell> {
               return Row(
                 children: [
                   identity,
-                  Container(
-                    width: 1,
-                    height: 28,
-                    margin: const EdgeInsets.symmetric(horizontal: 14),
-                    color: TechColors.borderMuted.withValues(alpha: 0.75),
-                  ),
+                  const Spacer(),
                   contextLabel,
+                  const SizedBox(width: 8),
                   controls,
                 ],
               );
@@ -1164,8 +1120,14 @@ class _ManagementShellState extends State<ManagementShell> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(children: [identity, const Spacer(), controls]),
-                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    identity,
+                    const Spacer(),
+                    controls,
+                  ],
+                ),
+                const SizedBox(height: 8),
                 contextLabel,
               ],
             );
@@ -1177,23 +1139,31 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget _buildManagementNavigation() {
     final chips = <Widget>[
-      _managementNavChip(ManagementSection.overview, 'OVERVIEW'),
-      _managementNavChip(ManagementSection.organization, 'ORGANIZATION'),
-      _managementNavChip(ManagementSection.people, 'PEOPLE'),
-      _managementNavChip(ManagementSection.locations, 'LOCATIONS'),
-      _managementNavChip(ManagementSection.sections, 'SECTIONS'),
-      _managementNavChip(ManagementSection.invitations, 'INVITATIONS'),
-      _managementNavChip(ManagementSection.dataAccess, 'DATA ACCESS'),
-      _managementNavChip(ManagementSection.audit, 'AUDIT LOG'),
+      ...[
+        [ManagementSection.overview, 'OVERVIEW'],
+        [ManagementSection.organization, 'ORGANIZATION'],
+        [ManagementSection.people, 'PEOPLE'],
+        [ManagementSection.locations, 'LOCATIONS'],
+        [ManagementSection.sections, 'SECTIONS'],
+        [ManagementSection.invitations, 'INVITATIONS'],
+        [ManagementSection.dataAccess, 'DATA ACCESS'],
+        [ManagementSection.audit, 'AUDIT LOG'],
+      ].map(
+        (entry) => _managementNavChip(
+          entry[0] as ManagementSection,
+          entry[1] as String,
+        ),
+      ),
       _managementAnalysisNavChip(),
     ];
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 7),
+      padding: const EdgeInsets.symmetric(horizontal: 0),
       child: AdaptiveLiquidGlassLayer(
         settings: _kManagementNavigationGlassSettings,
         quality: GlassQuality.minimal,
         child: SizedBox(
-          height: 58,
+          height: 56,
           child: SafeArea(
             top: false,
             child: ListView.separated(
@@ -1210,14 +1180,12 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget _managementWorkspaceFrame(Widget child) {
-    return GlassContainer(
-      useOwnLayer: true,
+    return GlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      settings: TechColors.panelGlass,
       quality: GlassQuality.minimal,
-      settings: dockGlassSettings(
-        glassColor: TechColors.panelBg.withValues(alpha: 0.18),
-      ),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 22),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
       child: child,
     );
   }
