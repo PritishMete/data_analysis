@@ -412,3 +412,64 @@ def test_owner_profile_preview_returns_schema_and_rows_after_authorization(monke
     assert result["column_count"] == 2
     assert result["column_names"] == ["id", "name"]
     assert result["preview"] == [[1, "customer-1"], [2, "customer-2"]]
+
+
+def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch):
+    class Result:
+        def __init__(self, rows=None, scalars=None):
+            self.rows = rows or []
+            self.values = scalars or []
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self.rows
+
+        def scalars(self):
+            return self
+
+    class Db:
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            if "FROM identity_bindings b" in sql and "JOIN workspaces w" in sql:
+                return Result(rows=[{
+                    "principal_id": "prn_c19e78f229844218968ab1dea905b567",
+                    "organization_id": "org_869423bba8814fa0a2ddf6ebb546194e",
+                    "name": "TCS",
+                    "workspace_id": "org_869423bba8814fa0a2ddf6ebb546194e",
+                    "employee_id": "owner",
+                    "status": "active",
+                }])
+            if "FROM member_roles" in sql:
+                return Result(scalars=["branch_head"])
+            if "FROM role_permissions" in sql:
+                return Result(scalars=[
+                    "dataset.view_original",
+                    "dataset.upload",
+                    "dataset.create_working_copy",
+                    "dataset.manage_acl",
+                ])
+            raise AssertionError(f"unexpected authorization query: {sql}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: Db())
+    context = supabase_provider.authorization_context(
+        {
+            "sub": "d23f7f86-2aba-4e72-9ba7-b05e614740bd",
+            "uid": "d23f7f86-2aba-4e72-9ba7-b05e614740bd",
+            "provider": "supabase",
+        },
+        "org_869423bba8814fa0a2ddf6ebb546194e",
+    )
+
+    assert context["principal_id"] == "prn_c19e78f229844218968ab1dea905b567"
+    assert context["organization_id"] == "org_869423bba8814fa0a2ddf6ebb546194e"
+    assert context["workspace_id"] == "org_869423bba8814fa0a2ddf6ebb546194e"
+    assert context["membership_status"] == "active"
+    assert "dataset.view_original" in context["permissions"]
