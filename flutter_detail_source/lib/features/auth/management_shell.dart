@@ -839,7 +839,7 @@ class _ManagementShellState extends State<ManagementShell> {
               if (response.statusCode < 200 || response.statusCode >= 300) {
                 throw StateError('Unable to create a managed dataset working copy.');
               }
-              if (!context.mounted) return;
+              if (!mounted) return;
               Navigator.of(context).pop();
               openInsightFlowAnalysis(context);
             },
