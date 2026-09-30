@@ -29,4 +29,3 @@ LiquidGlassSettings dockGlassSettings({
 }
 
 const kDockWhiteGlow = CupertinoColors.white;
-
