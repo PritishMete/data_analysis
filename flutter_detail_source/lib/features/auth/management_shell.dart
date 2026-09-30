@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -97,19 +96,6 @@ class _ManagementGlassDialog extends StatelessWidget {
   }
 }
 
-
-/// Exact glass navigation preset used by DataScreen's NavigationTabs.
-const _kManagementNavigationGlassSettings = LiquidGlassSettings(
-  thickness: 20,
-  blur: 20,
-  glassColor: Color(0x26FFFFFF),
-  lightAngle: 0.75 * math.pi,
-  lightIntensity: 0.7,
-  ambientStrength: 0.5,
-  saturation: 1.2,
-  refractiveIndex: 1.2,
-  chromaticAberration: 0.0,
-);
 
 class ManagementShell extends StatefulWidget {
   const ManagementShell({super.key});
