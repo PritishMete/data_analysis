@@ -285,17 +285,39 @@ class DatasetRepository:
         *,
         limit: int = 1000,
         offset: int = 0,
-    ) -> list[DatasetRow]:
+    ):
+        version = self.db.get(DatasetVersion, version_pk)
+        if version is None or not version.data_table_name:
+            return []
+        columns = self.get_columns_for_version(version_pk)
+        physical_columns = [(c.column_name, c.detected_type) for c in columns]
+        from .physical_table import ROW_NUMBER_COLUMN, build_physical_table
+
+        table = build_physical_table(version.data_table_name, physical_columns)
         stmt = (
-            select(DatasetRow)
-            .where(DatasetRow.version_pk == version_pk)
-            .order_by(DatasetRow.row_number.asc())
+            select(table)
+            .order_by(table.c[ROW_NUMBER_COLUMN].asc())
             .offset(max(0, offset))
             .limit(min(max(1, limit), 10000))
         )
-        return list(self.db.execute(stmt).scalars().all())
+        return [
+            {
+                "row_number": row[ROW_NUMBER_COLUMN],
+                "row_data": {name: row[name] for name, _ in physical_columns},
+            }
+            for row in self.db.execute(stmt).mappings()
+        ]
 
     def count_rows(self, version_pk: str) -> int:
+        version = self.db.get(DatasetVersion, version_pk)
+        if version is not None and version.data_table_name:
+            from .physical_table import ROW_NUMBER_COLUMN, build_physical_table
+            columns = self.get_columns_for_version(version_pk)
+            table = build_physical_table(
+                version.data_table_name,
+                [(c.column_name, c.detected_type) for c in columns],
+            )
+            return int(self.db.execute(select(func.count(table.c[ROW_NUMBER_COLUMN]))).scalar_one())
         return int(
             self.db.execute(
                 select(func.count(DatasetRow.row_id)).where(DatasetRow.version_pk == version_pk)
@@ -312,6 +334,11 @@ class DatasetRepository:
             self.db.commit()
 
     def delete_version_rows(self, version_pk: str, *, commit: bool = True) -> None:
+        version = self.db.get(DatasetVersion, version_pk)
+        if version is not None and version.data_table_name:
+            from .physical_table import drop_physical_table
+            drop_physical_table(self.db.connection(), version.data_table_name)
+            version.data_table_name = None
         self.db.execute(delete(DatasetRow).where(DatasetRow.version_pk == version_pk))
         if commit:
             self.db.commit()
