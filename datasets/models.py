@@ -143,6 +143,7 @@ class DatasetColumn(Base):
     detected_type: Mapped[str] = mapped_column(String(32), nullable=False)
     nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     unique_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    missing_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     missing_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     inferred_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
     inferred_role_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
