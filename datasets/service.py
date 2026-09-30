@@ -210,7 +210,7 @@ class DatasetRegistryService:
             or not safe_name.lower().endswith(".csv")
             or any(ord(char) < 32 or ord(char) == 127 for char in safe_name)
         ):
-            raise ValueError("Only safe .csv files are accepted as managed datasets.")
+            raise ValueError("Only safe CSV files are accepted as managed datasets.")
 
         file_hash, file_size = self._hash_stream(file_obj, max_bytes)
         existing = None
@@ -278,6 +278,11 @@ class DatasetRegistryService:
         type_map: dict[str, str] = {}
         missing: dict[str, int] = {column: 0 for column in columns}
         row_count = 0
+
+        # Hash/deduplication and current-version lookups above trigger
+        # SQLAlchemy autobegin. End that read-only transaction before opening
+        # the single atomic ingestion transaction.
+        self.repository.db.rollback()
 
         # One transaction owns the entire structured ingestion. A parse,
         # profiling, or bulk-write error therefore rolls back every row/version
