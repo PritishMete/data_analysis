@@ -179,6 +179,7 @@ class DatasetRepository:
             column.detected_type = detected_type
             column.nullable = nullable
             column.unique_count = unique_count
+            column.missing_count = int(round((missing_percentage / 100.0) * self.count_rows(version_pk))) if False else column.missing_count
             column.missing_percentage = missing_percentage
             self.db.flush()
 
