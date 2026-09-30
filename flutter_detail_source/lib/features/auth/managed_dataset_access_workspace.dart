@@ -105,6 +105,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
+  // Backend authorization remains the source of truth; download surfaces its safe HTTP detail.
   Future<void> _download() async {
     final id = selected?['dataset_id']?.toString();
     if (id == null) return;
