@@ -18,6 +18,7 @@ from firebase_authz.supabase_provider import (
     create_working_copy,
     delete_dataset_authorization,
     register_dataset,
+    revoke_dataset_working_copies,
 )
 from datasets.models import DatasetColumn, DatasetRow
 from datasets.repository import DatasetRepository
@@ -534,6 +535,7 @@ def delete_managed_dataset(
                     dataset_id=dataset_id,
                     version_id=version.version_id,
                 )
+        revoke_dataset_working_copies(organization_id, dataset_id)
         repo.delete_dataset(dataset_id)
         _unregister_authorization(organization_id, dataset_id)
         _audit_safely(
