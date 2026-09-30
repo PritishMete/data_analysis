@@ -5654,9 +5654,111 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }).toList();
   }
 
+  Future<Map<String, dynamic>> _loadManagedDatasetProfile() async {
+    final datasetId = widget.managedDatasetId?.trim();
+    if (datasetId == null || datasetId.isEmpty) {
+      throw "Managed dataset identity is missing.";
+    }
+    final headers = await supabaseAuthHeaders();
+    if (insightFlowWorkspaceId.isNotEmpty) {
+      headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+    }
+    final query = <String, String>{'preview_limit': '5'};
+    final versionId = widget.managedVersionId?.trim();
+    if (versionId != null && versionId.isNotEmpty) {
+      query['version_id'] = versionId;
+    }
+    final uri = Uri.parse(
+      '$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/profile',
+    ).replace(queryParameters: query);
+    final response = await http.get(uri, headers: headers).timeout(
+      const Duration(seconds: 30),
+    );
+    final decoded = decodeBackendResponse(
+      response.body,
+      statusCode: response.statusCode,
+    );
+    if (response.statusCode != 200) {
+      throw decoded['error']?.toString() ??
+          decoded['detail']?.toString() ??
+          'Managed dataset profile could not be loaded.';
+    }
+    return decoded;
+  }
+
   Future<void> analyzeData() async {
     setState(() => isLoading = true);
     try {
+      if (isManagedDatasetSession) {
+        final decoded = await _loadManagedDatasetProfile();
+        final schema = decoded['schema'] is List
+            ? (decoded['schema'] as List)
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item))
+                  .toList()
+            : <Map<String, dynamic>>[];
+        final cleanHeaders = schema.isNotEmpty
+            ? schema.map((item) => item['column_name']?.toString() ?? '').toList()
+            : (decoded['column_names'] is List
+                ? (decoded['column_names'] as List)
+                    .map((item) => item?.toString() ?? '')
+                    .toList()
+                : <String>[]);
+        if (cleanHeaders.isEmpty || (decoded['row_count'] ?? 0) <= 0) {
+          throw "Managed dataset is not READY or contains no data.";
+        }
+        final preview = decoded['preview'] is List
+            ? (decoded['preview'] as List)
+                .whereType<List>()
+                .map((row) => List<dynamic>.from(row))
+                .toList()
+            : <List<dynamic>>[];
+        final missing = decoded['missing_values'] is Map
+            ? Map<String, dynamic>.from(decoded['missing_values'] as Map)
+            : <String, dynamic>{};
+        final unique = decoded['unique_values'] is Map
+            ? Map<String, dynamic>.from(decoded['unique_values'] as Map)
+            : <String, dynamic>{};
+        setState(() {
+          detectedHeaders = cleanHeaders;
+          selectedFilterColumn ??= cleanHeaders.first;
+          pivotRowFields = [cleanHeaders.first];
+          pivotValueFields = [
+            {"field": cleanHeaders.last, "op": "sum"},
+          ];
+          lookupSourceColumn = cleanHeaders.first;
+          colorCodeColumn = cleanHeaders.first;
+          analysisData = {
+            "summary": {
+              "rows": decoded['row_count'] ?? 0,
+              "columns": decoded['column_count'] ?? cleanHeaders.length,
+              "column_names": cleanHeaders,
+              "dtypes": {
+                for (final item in schema)
+                  item['column_name']?.toString() ?? '':
+                      item['detected_type']?.toString() ?? 'text',
+              },
+            },
+            "missing_values": missing,
+            "unique_values": unique,
+            "distribution": {
+              "unique_values": unique,
+            },
+            "preview": _rowsToMapRows(preview, cleanHeaders),
+            "sample": _rowsToMapRows(preview, cleanHeaders),
+            "describe": <Map<String, dynamic>>[],
+            "info": decoded['info']?.toString() ??
+                'Managed dataset profile loaded from Supabase PostgreSQL.',
+            "duplicates": {"count": 0, "status": "not_profiled"},
+          };
+          aiReport = null;
+          reportText = null;
+          reportError = null;
+          _pendingReportCleanedData = null;
+          chatFilteredHeaders = cleanHeaders;
+        });
+        return;
+      }
       // Active Selection is an explicit source-selection action. Capture the
       // worksheet identity before scanning can create/activate any generated
       // report sheet. Once captured, all analytical queries use this persisted
