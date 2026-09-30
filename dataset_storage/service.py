@@ -299,10 +299,7 @@ def get_managed_dataset_rows(
             "column_count": version.column_count,
             "offset": max(0, offset),
             "limit": min(max(1, limit), 10000),
-            "rows": [
-                {"row_number": row.row_number, "row_data": row.row_data}
-                for row in rows
-            ],
+            "rows": rows,
         }
     finally:
         repo.db.close()
@@ -337,15 +334,14 @@ def load_managed_dataset_dataframe(
             raise FileNotFoundError("Dataset version not found.")
         columns = repo.get_columns_for_version(version.version_pk)
         names = [column.column_name for column in columns]
-        stmt = (
-            select(DatasetRow.row_data)
-            .where(DatasetRow.version_pk == version.version_pk)
-            .order_by(DatasetRow.row_number.asc())
-            .execution_options(yield_per=1000)
+        physical = repo.get_rows(
+            version.version_pk,
+            limit=version.row_count,
+            offset=0,
         )
         rows = [
-            [row_data.get(name) for name in names]
-            for (row_data,) in repo.db.execute(stmt)
+            [item["row_data"].get(name) for name in names]
+            for item in physical
         ]
         return pd.DataFrame.from_records(rows, columns=names)
     finally:
@@ -387,19 +383,17 @@ def stream_managed_dataset_csv(
             )
             yield header.getvalue().encode("utf-8")
 
-            stmt = (
-                select(DatasetRow.row_data)
-                .where(DatasetRow.version_pk == version.version_pk)
-                .order_by(DatasetRow.row_number.asc())
-                .execution_options(yield_per=1000)
+            physical_rows = repo.get_rows(
+                version.version_pk,
+                limit=version.row_count,
+                offset=0,
             )
-            result = repo.db.execute(stmt)
-            for (row_data,) in result:
+            for item in physical_rows:
                 line = io.StringIO()
-                writer = csv.writer(line, lineterminator="\r\n")
+                writer = csv.writer(line, lineterminator="\\r\\n")
                 writer.writerow([
-                    "" if row_data.get(column.column_name) is None
-                    else row_data.get(column.column_name)
+                    "" if item["row_data"].get(column.column_name) is None
+                    else item["row_data"].get(column.column_name)
                     for column in columns
                 ])
                 yield line.getvalue().encode("utf-8")
