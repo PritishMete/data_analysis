@@ -22,7 +22,7 @@ def _sql_type(detected_type: str):
     if detected_type == "integer":
         return BigInteger()
     if detected_type == "decimal":
-        return Numeric(38, 10)
+        return Numeric()
     if detected_type == "boolean":
         return Boolean()
     if detected_type == "datetime":
