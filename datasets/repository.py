@@ -71,7 +71,6 @@ class DatasetRepository:
                     f"{preparer.quote(table.schema)}."
                     f"{preparer.quote(table.name)}"
                 )
-                column_names = [table.c[DatasetRow.__table__.c.name].name] if False else []
                 column_names = [
                     "__row_number",
                     *[name for name, _ in columns],
