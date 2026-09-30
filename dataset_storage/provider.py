@@ -16,7 +16,6 @@ class StoredDatasetObject:
 class DatasetStorageProvider(ABC):
     """Binary storage contract. Authorization is deliberately outside this interface."""
 
-    @abstractmethod
     def upload_stream(self, *, workspace_id: str, dataset_id: str, version_id: str,
                       stream, original_filename: str, content_type: str | None) -> StoredDatasetObject:
         import hashlib

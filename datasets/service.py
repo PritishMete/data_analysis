@@ -196,6 +196,16 @@ class DatasetRegistryService:
                 raise ValueError("Dataset is not accessible in this organization.")
             if existing.status in {"deleted", "failed"}:
                 raise ValueError("This dataset cannot receive a new version.")
+            if existing.file_hash == file_hash and existing.current_version_id:
+                version = self.repository.get_version(existing.dataset_id, existing.current_version_id)
+                if version is None:
+                    raise ValueError("Dataset current version is missing.")
+                self.repository.touch_last_accessed(existing.dataset_id)
+                return StreamingDatasetRegistration(
+                    DatasetRegistration(existing, self.repository.get_columns(existing.dataset_id), True),
+                    version,
+                    pd.DataFrame(),
+                )
 
         file_obj.seek(0)
         try:
