@@ -39,7 +39,7 @@ BEGIN
                 format('%I %s', c.column_name,
                     CASE c.detected_type
                         WHEN 'integer' THEN 'BIGINT'
-                        WHEN 'decimal' THEN 'NUMERIC(38,10)'
+                        WHEN 'decimal' THEN 'NUMERIC'
                         WHEN 'boolean' THEN 'BOOLEAN'
                         WHEN 'datetime' THEN 'TIMESTAMPTZ'
                         ELSE 'TEXT'
@@ -52,7 +52,7 @@ BEGIN
                     WHEN 'integer' THEN
                         format('NULLIF(row_data->>%L, '''')::BIGINT', c.column_name)
                     WHEN 'decimal' THEN
-                        format('NULLIF(row_data->>%L, '''')::NUMERIC(38,10)', c.column_name)
+                        format('NULLIF(row_data->>%L, '''')::NUMERIC', c.column_name)
                     WHEN 'boolean' THEN
                         format(
                             'CASE WHEN lower(NULLIF(row_data->>%L, '''')) IN (''true'',''1'',''yes'') THEN true
