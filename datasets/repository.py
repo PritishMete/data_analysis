@@ -116,11 +116,21 @@ class DatasetRepository:
             self.db.refresh(version)
         return version
 
-    def update_column_role(self, dataset_id: str, column_name: str, inferred_role: str | None) -> None:
-        stmt = select(DatasetColumn).where(
+    def update_column_role(
+        self,
+        dataset_id: str,
+        column_name: str,
+        inferred_role: str | None,
+        *,
+        version_pk: str | None = None,
+    ) -> None:
+        conditions = [
             DatasetColumn.dataset_id == dataset_id,
             DatasetColumn.column_name == column_name,
-        )
+        ]
+        if version_pk is not None:
+            conditions.append(DatasetColumn.version_pk == version_pk)
+        stmt = select(DatasetColumn).where(*conditions)
         column = self.db.execute(stmt).scalars().first()
         if column is not None:
             column.inferred_role = inferred_role
@@ -134,11 +144,15 @@ class DatasetRepository:
         confidence: float | None,
         evidence: dict | None = None,
         detected_at: datetime | None = None,
+        version_pk: str | None = None,
     ) -> None:
-        stmt = select(DatasetColumn).where(
+        conditions = [
             DatasetColumn.dataset_id == dataset_id,
             DatasetColumn.column_name == column_name,
-        )
+        ]
+        if version_pk is not None:
+            conditions.append(DatasetColumn.version_pk == version_pk)
+        stmt = select(DatasetColumn).where(*conditions)
         column = self.db.execute(stmt).scalars().first()
         if column is not None:
             column.inferred_role_confidence = confidence
