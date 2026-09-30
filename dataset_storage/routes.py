@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -17,6 +19,7 @@ from .service import (
 )
 
 router = APIRouter(prefix="/v1/managed-datasets", tags=["managed-datasets"])
+logger = logging.getLogger(__name__)
 
 
 def _token(value: str | None) -> str:
@@ -39,11 +42,25 @@ def _workspace(value: str | None, authorization: str | None = None) -> str:
 
     if normalized:
         selected = authorization_context(claims, normalized)
+        logger.info(
+            "managed_dataset_workspace_resolution selected=%s authorized=%s principal=%s organization=%s",
+            normalized,
+            bool(selected.get("workspace_authorized")),
+            selected.get("principal_id"),
+            selected.get("organization_id"),
+        )
         if selected.get("workspace_authorized"):
             return str(selected["workspace_id"]).strip()
 
     context = authorization_context(claims)
     workspaces = context.get("workspaces") or []
+    logger.info(
+        "managed_dataset_workspace_resolution fallback authorized=%s principal=%s organization=%s workspace_count=%s",
+        bool(context.get("workspace_authorized")),
+        context.get("principal_id"),
+        context.get("organization_id"),
+        len(workspaces),
+    )
     active = [
         item for item in workspaces
         if isinstance(item, dict)
