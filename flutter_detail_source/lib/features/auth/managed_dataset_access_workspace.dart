@@ -169,7 +169,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, padding: const EdgeInsets.symmetric(horizontal: 11), shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
+  bool get canManage => roles.contains('organization_owner') || roles.contains('branch_head') || roles.contains('manager');
+
+  Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   @override Widget build(BuildContext context) {
     if (loading) return _surface(const SizedBox(height: 240, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive))));

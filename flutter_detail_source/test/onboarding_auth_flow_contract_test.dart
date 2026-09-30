@@ -123,7 +123,7 @@ void main() {
     expect(workspace, contains('/v1/managed-datasets'));
     expect(workspace, contains('/profile?preview_limit=5'));
     expect(workspace, contains('/rows?'));
-    expect(workspace, contains('limit=' + 'pageSize'));
+    expect(workspace, contains("'limit=' + pageSize.toString()"));
     expect(workspace, contains('/working-copies'));
     expect(workspace, contains('/v1/authz/datasets/grants'));
     expect(workspace, contains('openInsightFlowAnalysis(context'));

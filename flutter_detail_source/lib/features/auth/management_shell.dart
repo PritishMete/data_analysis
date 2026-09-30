@@ -1184,7 +1184,7 @@ class _ManagementShellState extends State<ManagementShell> {
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
                                         if (section != ManagementSection.dataAccess) ...[
-                                          _surface(_title(
+                                          surface(_title(
                                             _sectionLabel(section),
                                             detail: _sectionDetail(section),
                                             icon: _sectionIcon(section),
