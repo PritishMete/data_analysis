@@ -394,7 +394,7 @@ class DatasetRegistryService:
         storage_provider: str | None = None,
         storage_object_id: str | None = None,
     ) -> Dataset:
-        with self.repository.db.begin():
+        try:
             dataset = self.repository.get_by_id(dataset_id)
             version = self.repository.get_version(dataset_id, version_id)
             if dataset is None or version is None:
@@ -418,7 +418,11 @@ class DatasetRegistryService:
             dataset.storage_object_id = storage_object_id
             dataset.last_accessed = datetime.now(timezone.utc)
             self.repository.db.flush()
-        return dataset
+            self.repository.db.commit()
+            return dataset
+        except Exception:
+            self.repository.db.rollback()
+            raise
 
     def mark_failed(self, dataset_id: str, version_id: str, reason: str) -> None:
         with self.repository.db.begin():
