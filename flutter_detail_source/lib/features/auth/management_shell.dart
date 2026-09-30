@@ -579,10 +579,12 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget organizationView() {
-    if (locations.isEmpty) return surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _eyebrow('Organization topology'), const SizedBox(height: 8),
-      const Text('No organizational structure is configured yet.', style: TextStyle(color: TechColors.textMuted)),
-    ]));
+    if (locations.isEmpty) {
+      return surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow('Organization topology'), const SizedBox(height: 8),
+        const Text('No organizational structure is configured yet.', style: TextStyle(color: TechColors.textMuted)),
+      ]));
+    }
     return Column(children: locations.map((l) {
       final id = l['location_id'].toString();
       final secs = sections.where((s) => s['location_id'].toString() == id).toList();
