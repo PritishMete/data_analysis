@@ -256,7 +256,7 @@ class DatasetRegistryService:
         try:
             chunks = pd.read_csv(
                 file_obj,
-                chunksize=max(100, chunk_rows),
+                chunksize=max(1, chunk_rows),
                 encoding="utf-8-sig",
                 on_bad_lines="error",
             )
