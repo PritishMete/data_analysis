@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -672,17 +673,32 @@ def audit_dataset_event(
     workspace_id: str, actor_uid: str, action: str, outcome: str,
     *, metadata: dict[str, Any] | None = None,
 ) -> None:
-    claims = {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"}
-    context = authorization_context(claims, workspace_id)
-    if not context.get("workspace_authorized"):
-        return
+    provider_mode = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
     with SessionLocal.begin() as db:
+        if provider_mode == "supabase":
+            context = authorization_context(
+                {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"},
+                workspace_id,
+            )
+            if not context.get("workspace_authorized"):
+                return
+            organization_id = str(context["organization_id"])
+            principal_id = str(context["principal_id"])
+        else:
+            actor = _principal_for_claims(
+                db,
+                {"uid": actor_uid, "sub": actor_uid, "provider": "firebase"},
+                workspace_id,
+            )
+            if not actor:
+                return
+            organization_id = str(workspace_id)
+            principal_id = str(actor["principal_id"])
         db.execute(text("""INSERT INTO audit_events
             (event_id, organization_id, actor_principal_id, action, outcome, metadata)
             VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),
-            {"event": _id("evt"), "org": context["organization_id"],
-             "principal": context["principal_id"], "action": action,
-             "outcome": outcome, "metadata": json.dumps(metadata or {})})
+            {"event": _id("evt"), "org": organization_id, "principal": principal_id,
+             "action": action, "outcome": outcome, "metadata": json.dumps(metadata or {})})
 
 
 def _organization_id_for_workspace(db, workspace_id: str) -> str:
