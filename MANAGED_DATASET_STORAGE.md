@@ -1,27 +1,56 @@
-# Managed dataset storage (development/test)
+# Managed dataset storage
 
-InsightFlow has two dataset modes: local datasets continue through the existing local Excel workflow; managed organization datasets are explicitly uploaded by authorized organization managers and stored as binary objects in the Firebase Storage test provider.
+Managed datasets use **Supabase PostgreSQL as the authoritative analytical store**. A CSV selected on the user's PC is parsed into dataset/version/schema/row records; the CSV is not stored as a PostgreSQL binary or as authorization metadata.
 
 ## Configuration
 
-In addition to the existing Firebase Auth/RTDB configuration, the trusted backend requires `FIREBASE_STORAGE_BUCKET`. The optional `INSIGHTFLOW_DATASET_MAX_BYTES` defaults to 100 MiB. Service-account credentials or Application Default Credentials are backend-only.
+INSIGHTFLOW_DATASET_MAX_BYTES defaults to 100 MiB.
 
-## Storage layout
+Original-file archival is optional and disabled by default:
 
-`organizations/<workspace_id>/datasets/<dataset_id>/versions/<version_id>/source`
+- INSIGHTFLOW_DATASET_ARCHIVE_ORIGINAL=false
+- INSIGHTFLOW_DATASET_STORAGE_BUCKET=managed-datasets
+- SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required only when archival is enabled.
 
-`organizations/<workspace_id>/datasets/<dataset_id>/working-copies/<working_copy_id>/source`
+The service key is backend-only. Flutter uses the existing authenticated API and never receives it.
 
-IDs are validated server-side. Filenames are metadata, never authorization identifiers.
+## Analytical storage
 
-## Authorization and privacy
+PostgreSQL stores:
 
-Firebase Auth authenticates. The existing RTDB `firebase_authz` layer authorizes membership, capabilities, dataset ACLs, delegation, working-copy provenance, and audit metadata. Firebase Storage holds binary files only.
+- datasets
+- dataset_versions
+- dataset_columns
+- dataset_rows (JSONB row records keyed by version_pk and ordered by row_number)
 
-Downloads are backend-controlled streams after `dataset.view_original` authorization; no permanent public URL is returned. Retrieved managed files remain eligible for local Excel/InsightFlow analysis. Workbook rows, cell values, prompts, worksheet data, and analysis results are not written to authorization metadata.
+CSV ingestion is chunked. PostgreSQL production uses COPY-style bulk ingestion; test/local non-PostgreSQL dialects use batched inserts.
 
-## Emulator
+## Optional original archive
 
-`firebase.json` enables Auth, RTDB, and Storage emulators. Run `firebase emulators:start` for local testing. Configure the usual Firebase emulator environment variables for the backend test process; no production bucket is required.
+When enabled, the original CSV is stored only in the private Supabase Storage bucket:
 
-Storage rules deliberately deny all direct client reads/writes. The trusted backend uses Firebase Admin SDK.
+organizations/<organization_id>/datasets/<dataset_id>/versions/<version_id>/original.csv
+
+The bucket is private and direct authenticated Storage access is denied. Server-side Storage access is performed only by the trusted backend.
+
+## Authorization
+
+Supabase Auth provides the authenticated identity. The existing Supabase-backed InsightFlow authorization model resolves the organization/workspace membership, role, dataset grants, and working-copy permissions server-side.
+
+Dataset rows and CSV contents are never stored in membership, grant, or audit metadata.
+
+## Download
+
+Download CSV reconstructs the file from PostgreSQL:
+
+dataset_version -> version columns -> ordered JSONB rows -> streamed CSV response
+
+The original archived object is not the primary download mechanism.
+
+## Working copies
+
+Start Working uses the existing managed-dataset working-copy authorization path and passes the managed dataset/version identity into the existing DataScreen flow. No second analysis application or DataScreen is created.
+
+## Firebase boundary
+
+Firebase authentication compatibility elsewhere in InsightFlow remains outside this feature. Firebase Storage, RTDB dataset storage, Firestore dataset storage, Firebase dataset metadata, Firebase dataset versions, and Firebase dataset downloads are not used by this managed dataset lifecycle.
