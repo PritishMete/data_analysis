@@ -158,12 +158,16 @@ class _ManagementShellState extends State<ManagementShell> {
       final session = await InsightFlowSupabaseAuthService.ensureSession(
         timeout: const Duration(seconds: 8),
       );
-      if (session == null || session.accessToken.isEmpty) rethrow;
+      if (session == null || session.accessToken.isEmpty) {
+        rethrow;
+      }
       final refreshedHeaders = await supabaseAuthHeaders();
       if (insightFlowWorkspaceId.isNotEmpty) {
         refreshedHeaders['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
       }
-      if (body != null) refreshedHeaders['Content-Type'] = 'application/json';
+      if (body != null) {
+        refreshedHeaders['Content-Type'] = 'application/json';
+      }
       return await sendWithHeaders(
         send: () => method == 'POST'
             ? http.post(uri, headers: refreshedHeaders, body: jsonEncode(body))
@@ -193,7 +197,9 @@ class _ManagementShellState extends State<ManagementShell> {
     if (insightFlowWorkspaceId.isNotEmpty) {
       headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
     }
-    if (body != null) headers['Content-Type'] = 'application/json';
+    if (body != null) {
+      headers['Content-Type'] = 'application/json';
+    }
     final uri = Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management$path');
     final response = await _sendManagementRequest(
       uri,
