@@ -25,11 +25,45 @@ import pandas as pd
 import io
 import json
 import traceback
-from command_agent import parse_agentic_command, parse_filter_intent, parse_filter_plan
-from categorization_agent import categorize_dataframe, classify_column_operation
+# Defer modules that pull in the heavyweight Google ADK dependency. Their
+# functions are still imported transparently on first use, but importing
+# main:app no longer performs the ADK import chain before Render can bind $PORT.
+def parse_agentic_command(*args, **kwargs):
+    from command_agent import parse_agentic_command as _fn
+    return _fn(*args, **kwargs)
+
+
+def parse_filter_intent(*args, **kwargs):
+    from command_agent import parse_filter_intent as _fn
+    return _fn(*args, **kwargs)
+
+
+def parse_filter_plan(*args, **kwargs):
+    from command_agent import parse_filter_plan as _fn
+    return _fn(*args, **kwargs)
+
+
+def categorize_dataframe(*args, **kwargs):
+    from categorization_agent import categorize_dataframe as _fn
+    return _fn(*args, **kwargs)
+
+
+def classify_column_operation(*args, **kwargs):
+    from categorization_agent import classify_column_operation as _fn
+    return _fn(*args, **kwargs)
+
+
 from currency_utils import convert_amount, currency_format, detect_currency_from_value, parse_amount, normalize_currency
-from location_agent import enrich_rows
-from query_router import handle_smart_query
+
+
+def enrich_rows(*args, **kwargs):
+    from location_agent import enrich_rows as _fn
+    return _fn(*args, **kwargs)
+
+
+def handle_smart_query(*args, **kwargs):
+    from query_router import handle_smart_query as _fn
+    return _fn(*args, **kwargs)
 from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
 from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
