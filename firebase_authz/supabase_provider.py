@@ -432,7 +432,8 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
     context = authorization_context(claims, workspace_id)
     if "organization.view" not in context["permissions"]:
         raise AuthzError("Workspace authorization denied.")
-    org = workspace_id
+    org = str(context["organization_id"])
+    resolved_workspace_id = str(context["workspace_id"])
     with SessionLocal() as db:
         members = db.execute(text("""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
             COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids
@@ -465,7 +466,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             ORDER BY created_at DESC LIMIT 100"""), {"org": org}).mappings().all()
         invitations = db.execute(text("""SELECT invitation_id,email,employee_id,role_id,status,expires_at
             FROM invitations WHERE organization_id=:org"""), {"org": org}).mappings().all()
-    return {"organization_id": org, "workspace_id": workspace_id,
+    return {"organization_id": org, "workspace_id": resolved_workspace_id,
             "role_ids": context.get("role_ids", []),
             "members": [dict(row) for row in members],
             "datasets": [
@@ -671,19 +672,17 @@ def audit_dataset_event(
     workspace_id: str, actor_uid: str, action: str, outcome: str,
     *, metadata: dict[str, Any] | None = None,
 ) -> None:
+    claims = {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"}
+    context = authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        return
     with SessionLocal.begin() as db:
-        actor = _principal_for_claims(
-            db,
-            {"uid": actor_uid, "sub": actor_uid, "provider": "firebase"},
-            workspace_id,
-        )
-        if not actor:
-            return
         db.execute(text("""INSERT INTO audit_events
             (event_id, organization_id, actor_principal_id, action, outcome, metadata)
             VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),
-            {"event": _id("evt"), "org": workspace_id, "principal": actor["principal_id"],
-             "action": action, "outcome": outcome, "metadata": json.dumps(metadata or {})})
+            {"event": _id("evt"), "org": context["organization_id"],
+             "principal": context["principal_id"], "action": action,
+             "outcome": outcome, "metadata": json.dumps(metadata or {})})
 
 
 def _organization_id_for_workspace(db, workspace_id: str) -> str:
@@ -819,10 +818,12 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     if action not in {"working_copy.view", "working_copy.modify", "working_copy.delete"}:
         raise ValueError("Invalid working copy action.")
     result = authorize(claims, workspace_id, action, working_copy_id)
+    organization_id = str(result["organization_id"])
     with SessionLocal() as db:
         row = db.execute(text("""SELECT source_dataset_id, source_version, version
-            FROM working_copy_authorization WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
-                         {"org": workspace_id, "copy": working_copy_id}).mappings().first()
+            FROM working_copy_authorization
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+                         {"org": organization_id, "copy": working_copy_id}).mappings().first()
     if not row:
         raise AuthzError("Working copy is not accessible.")
     return {**result, "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
