@@ -199,6 +199,75 @@ def get_managed_dataset(
         repo.db.close()
 
 
+def get_managed_dataset_profile(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    version_id: str | None,
+    preview_limit: int = 5,
+) -> dict[str, Any]:
+    """Return authorized persisted metadata and a small preview for DataScreen.
+
+    The analytical rows remain server-side. This endpoint exposes only schema,
+    profiling counters, and a bounded preview so the managed DataScreen can
+    initialize its existing analysis UI without downloading the full dataset.
+    """
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id, version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Dataset version not found.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        rows = repo.get_rows(
+            version.version_pk,
+            limit=min(max(1, preview_limit), 20),
+            offset=0,
+        )
+        ordered_names = [column.column_name for column in columns]
+        column_stats = [
+            {
+                "column_name": column.column_name,
+                "detected_type": column.detected_type,
+                "nullable": column.nullable,
+                "unique_count": column.unique_count,
+                "missing_count": column.missing_count,
+                "missing_percentage": column.missing_percentage,
+                "inferred_role": column.inferred_role,
+                "inferred_role_confidence": column.inferred_role_confidence,
+            }
+            for column in columns
+        ]
+        return {
+            **_structured_summary(dataset, len(repo.list_versions(dataset_id))),
+            "version_id": version.version_id,
+            "version_status": version.status,
+            "schema": column_stats,
+            "column_names": ordered_names,
+            "missing_values": {
+                item["column_name"]: item["missing_count"] for item in column_stats
+            },
+            "unique_values": {
+                item["column_name"]: item["unique_count"] for item in column_stats
+            },
+            "preview": [
+                [row.row_data.get(name) for name in ordered_names] for row in rows
+            ],
+            "info": "Managed dataset profile loaded from Supabase PostgreSQL; full rows remain server-side.",
+        }
+    finally:
+        repo.db.close()
+
+
 def get_managed_dataset_rows(
     *,
     workspace_id: str,
