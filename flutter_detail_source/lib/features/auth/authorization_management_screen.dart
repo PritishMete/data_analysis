@@ -544,7 +544,7 @@ class _AuthorizationManagementScreenState
       final version = dataset['current_version']?.toString();
       var url = '$insightFlowBackendBaseUrl/v1/managed-datasets/$id/download';
       if (version != null && version.isNotEmpty) {
-        url += '?version_id=' + Uri.encodeQueryComponent(version);
+        url += '?version_id=${Uri.encodeQueryComponent(version)}';
       }
       final response = await http.get(Uri.parse(url), headers: headers);
       if (response.statusCode != 200) {
@@ -650,12 +650,12 @@ class _AuthorizationManagementScreenState
       final uploadedBy = dataset['uploaded_by_uid']?.toString() ?? '—';
       final size = dataset['file_size']?.toString();
 
-      rows.add(_MetaRow(name, rowCount + ' rows · ' + columnCount + ' columns'));
-      rows.add(_MetaRow('Version', version + ' · ' + status.toUpperCase()));
+      rows.add(_MetaRow(name, '${rowCount} rows · ${columnCount} columns'));
+      rows.add(_MetaRow('Version', '${version} · ${status.toUpperCase()}'));
       rows.add(_MetaRow(
         'Uploaded',
-        uploadedBy + ' · ' + (dataset['created_at']?.toString() ?? '—') +
-            (size == null ? '' : ' · ' + size + ' bytes'),
+        '${uploadedBy} · ${dataset['created_at']?.toString() ?? '—'}'
+            '${size == null ? '' : ' · ' + size + ' bytes'}',
       ));
       rows.add(_MetaRow('Status', status.toUpperCase()));
       rows.add(
