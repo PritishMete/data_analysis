@@ -1,21 +1,20 @@
 // lib/features/dashboard/navigation_tabs.dart
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'data_screen.dart';
+import '../../widgets/shared/dock_glass_material.dart';
 
 /// Same glass preset as `RecommendedGlassSettings.bottomBar` from the
 /// liquid_glass_widgets *example app* — that class lives only in the
 /// package's example project, not the package itself, so it isn't
 /// available here. Inlined directly instead of depending on it.
-const _kBottomBarGlassSettings = LiquidGlassSettings(
+const kInsightFlowNavigationGlassSettings = LiquidGlassSettings(
   thickness: 20,
   blur: 20,
-  glassColor: Color(0x26FFFFFF), // ~15% white
-  lightAngle: 0.75 * math.pi, // 135° — upper-left, iOS 26 standard
+  glassColor: Color(0x26FFFFFF),
+  lightAngle: 0.75 * 3.141592653589793,
   lightIntensity: 0.7,
   ambientStrength: 0.5,
   saturation: 1.2,
@@ -37,7 +36,7 @@ class NavigationTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AdaptiveLiquidGlassLayer(
-      settings: _kBottomBarGlassSettings,
+      settings: kInsightFlowNavigationGlassSettings,
       quality: GlassQuality.minimal,
       child: Container(
         height: 56,
