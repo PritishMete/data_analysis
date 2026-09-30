@@ -840,8 +840,18 @@ class _ManagementShellState extends State<ManagementShell> {
                 throw StateError('Unable to create a managed dataset working copy.');
               }
               if (!mounted) return;
+              final decoded = jsonDecode(response.body);
+              final workingCopy = decoded is Map && decoded['working_copy'] is Map
+                  ? Map<String, dynamic>.from(decoded['working_copy'] as Map)
+                  : <String, dynamic>{};
               Navigator.of(context).pop();
-              openInsightFlowAnalysis(context);
+              openInsightFlowAnalysis(
+                context,
+                managedDatasetId: datasetId,
+                managedVersionId: workingCopy['structured_version_id']?.toString() ??
+                    workingCopy['source_version']?.toString(),
+                managedWorkingCopyId: workingCopy['working_copy_id']?.toString(),
+              );
             },
           ),
         ),
