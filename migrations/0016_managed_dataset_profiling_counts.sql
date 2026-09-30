@@ -17,3 +17,7 @@ WHERE missing_count = 0
 
 CREATE INDEX IF NOT EXISTS ix_dataset_columns_version_type
     ON dataset_columns(version_pk, detected_type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_datasets_org_active_file_hash
+    ON datasets(organization_id, file_hash)
+    WHERE status NOT IN ('failed', 'deleted');
