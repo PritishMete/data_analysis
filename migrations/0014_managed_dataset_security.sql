@@ -113,6 +113,17 @@ REVOKE ALL ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows FR
 GRANT SELECT ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows TO authenticated;
 
 
+-- Existing interrupted records may still carry a legacy Firebase storage marker.
+-- Structured PostgreSQL rows remain authoritative; clear that obsolete marker so
+-- the managed dataset lifecycle no longer depends on Firebase objects.
+UPDATE dataset_versions
+SET storage_provider = NULL, storage_object_id = NULL
+WHERE storage_provider = 'firebase_storage';
+
+UPDATE datasets
+SET storage_provider = NULL, storage_object_id = NULL
+WHERE storage_provider = 'firebase_storage';
+
 -- Optional original CSV archive: private bucket, server-side access only.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
