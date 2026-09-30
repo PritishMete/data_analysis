@@ -90,7 +90,6 @@ BEGIN
              SET data_table_name = %L
              WHERE version_pk = %L',
             table_name,
-            table_name,
             v.version_pk
         );
     END LOOP;
