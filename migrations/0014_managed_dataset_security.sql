@@ -111,3 +111,39 @@ USING (
 -- direct write access to anon/authenticated through the Data API.
 REVOKE ALL ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows FROM anon, authenticated;
 GRANT SELECT ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows TO authenticated;
+
+
+-- Optional original CSV archive: private bucket, server-side access only.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'managed-datasets',
+    'managed-datasets',
+    false,
+    104857600,
+    ARRAY['text/csv']
+)
+ON CONFLICT (id) DO UPDATE
+SET public = false,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_read ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_read
+ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_write ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_write
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_update ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_update
+ON storage.objects FOR UPDATE TO authenticated
+USING (bucket_id = 'managed-datasets' AND false)
+WITH CHECK (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_delete ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_delete
+ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'managed-datasets' AND false);
