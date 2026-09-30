@@ -35,7 +35,10 @@ BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".
 
 
 def _safe_filename(filename: str) -> str:
-    name = os.path.basename(str(filename or "").replace("\\", "/")).strip()
+    raw_name = str(filename or "").strip()
+    if "/" in raw_name or "\\" in raw_name:
+        raise ValueError("Unsafe dataset filename.")
+    name = os.path.basename(raw_name)
     if (
         not name
         or name in {".", ".."}
