@@ -408,13 +408,14 @@ class _AuthorizationManagementScreenState
     final file = await FilePicker.platform.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['csv'],
+      withReadStream: true,
     );
     if (file == null) return null;
     if (!file.name.toLowerCase().endsWith('.csv')) {
       throw StateError('Managed datasets currently accept CSV files only.');
     }
-    final size = await file.length();
-    if (size == null || size <= 0) {
+    final size = file.size;
+    if (size <= 0 || file.readStream == null) {
       throw StateError('The selected CSV is empty or could not be read.');
     }
     return file;
@@ -463,9 +464,10 @@ class _AuthorizationManagementScreenState
     PlatformFile file,
     String successMessage,
   ) async {
-    final size = await file.length();
-    if (size == null || size <= 0) {
-      throw StateError('The selected CSV is empty.');
+    final size = file.size;
+    final stream = file.readStream;
+    if (size <= 0 || stream == null) {
+      throw StateError('The selected CSV is empty or could not be streamed.');
     }
     setState(() {
       _datasetUploading = true;
@@ -485,7 +487,7 @@ class _AuthorizationManagementScreenState
       request.files.add(
         http.MultipartFile(
           'file',
-          http.ByteStream(file.readAsByteStream()),
+          http.ByteStream(stream),
           size,
           filename: file.name,
         ),
