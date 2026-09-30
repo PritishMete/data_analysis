@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import itertools
 import os
 from dataclasses import dataclass
@@ -162,6 +164,32 @@ class DatasetRegistryService:
             )
         return DatasetRegistration(dataset, columns, False)
 
+    @staticmethod
+    def _validate_csv_structure(file_obj: BinaryIO) -> list[str]:
+        file_obj.seek(0)
+        text_stream = io.TextIOWrapper(file_obj, encoding="utf-8-sig", newline="")
+        try:
+            reader = csv.reader(text_stream, strict=True)
+            header = next(reader, None)
+            if not header or any(not str(column).strip() for column in header):
+                raise ValueError("CSV header must contain named columns.")
+            columns = [str(column) for column in header]
+            if len(columns) > MAX_COLUMNS:
+                raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
+            if len(set(columns)) != len(columns):
+                raise ValueError("CSV contains duplicate column names.")
+            for row_number, row in enumerate(reader, start=2):
+                if len(row) != len(columns):
+                    raise ValueError(
+                        f"CSV row {row_number} has {len(row)} fields; expected {len(columns)}."
+                    )
+            return columns
+        except csv.Error as exc:
+            raise ValueError(f"CSV could not be parsed safely: {exc}") from exc
+        finally:
+            text_stream.detach()
+            file_obj.seek(0)
+
     def register_csv_stream(
         self,
         *,
@@ -221,6 +249,8 @@ class DatasetRegistryService:
                     pd.DataFrame(),
                 )
 
+        expected_columns = self._validate_csv_structure(file_obj)
+
         file_obj.seek(0)
         try:
             chunks = pd.read_csv(
@@ -238,12 +268,8 @@ class DatasetRegistryService:
             raise ValueError(f"CSV could not be parsed safely: {exc}") from exc
 
         columns = [str(column) for column in first.columns]
-        if not columns or any(not column.strip() for column in columns):
-            raise ValueError("CSV header must contain named columns.")
-        if len(columns) > MAX_COLUMNS:
-            raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
-        if len(set(columns)) != len(columns):
-            raise ValueError("CSV contains duplicate column names.")
+        if columns != expected_columns:
+            raise ValueError("CSV header could not be parsed consistently.")
 
         is_version = existing is not None
         version_number = existing.version_number + 1 if is_version else 1
