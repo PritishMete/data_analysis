@@ -60,6 +60,9 @@ jobs:
       - name: Run Data Workspace focused tests
         run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
 
+      - name: Run managed dataset ingestion and storage tests
+        run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
+
       - name: Run backend regression suite
         run: pytest -q
 
@@ -129,6 +132,7 @@ jobs:
           flutter test
           test/firebase_auth_service_test.dart
           test/management_shell_contract_test.dart
+          test/managed_dataset_upload_contract_test.dart
 
       - name: Build Flutter web
         run: >-
