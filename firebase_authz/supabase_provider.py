@@ -439,10 +439,17 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
             LEFT JOIN member_roles mr ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
             WHERE m.organization_id=:org GROUP BY b.firebase_uid,m.employee_id,m.status"""), {"org": org}).mappings().all()
-        datasets = db.execute(text("""SELECT d.dataset_id, d.protected_original, d.status,
-            r.owner_principal_id FROM dataset_authorization d
-            JOIN authorization_resources r ON r.organization_id=d.organization_id AND r.resource_id=d.dataset_id
-            WHERE d.organization_id=:org AND d.status='active'"""), {"org": org}).mappings().all()
+        datasets = db.execute(text("""SELECT da.dataset_id, da.protected_original,
+            da.status AS authorization_status, r.owner_principal_id,
+            ds.dataset_name, ds.original_filename, ds.row_count, ds.column_count,
+            ds.current_version_id AS current_version, ds.version_number,
+            ds.file_size, ds.uploaded_by, ds.created_at, ds.status AS dataset_status
+            FROM dataset_authorization da
+            JOIN authorization_resources r
+              ON r.organization_id=da.organization_id AND r.resource_id=da.dataset_id
+            LEFT JOIN datasets ds
+              ON ds.organization_id=da.organization_id AND ds.dataset_id=da.dataset_id
+            WHERE da.organization_id=:org AND da.status='active'"""), {"org": org}).mappings().all()
         working_copies = db.execute(text("""SELECT working_copy_id, source_dataset_id,
             source_version, version, status, created_by_principal_id
             FROM working_copy_authorization WHERE organization_id=:org AND status='active'"""),
@@ -460,7 +467,17 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             FROM invitations WHERE organization_id=:org"""), {"org": org}).mappings().all()
     return {"organization_id": org, "workspace_id": workspace_id,
             "role_ids": context.get("role_ids", []),
-            "members": [dict(row) for row in members], "datasets": [dict(row) for row in datasets],
+            "members": [dict(row) for row in members],
+            "datasets": [
+                {
+                    **dict(row),
+                    "status": row["dataset_status"] or row["authorization_status"],
+                    "display_name": row["dataset_name"] or row["original_filename"] or row["dataset_id"],
+                    "uploaded_by_uid": row["uploaded_by"],
+                    "version": row["version_number"],
+                }
+                for row in datasets
+            ],
             "working_copies": [dict(row) for row in working_copies],
             "invitations": [dict(row) for row in invitations],
             "approved_employees": [dict(row) for row in approved],
