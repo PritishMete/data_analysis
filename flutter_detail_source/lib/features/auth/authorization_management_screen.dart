@@ -405,19 +405,17 @@ class _AuthorizationManagementScreenState
   }
 
   Future<PlatformFile?> _pickManagedCsv() async {
-    final picked = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.platform.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['csv'],
-      allowMultiple: false,
-      withData: true,
     );
-    if (picked == null || picked.files.isEmpty) return null;
-    final file = picked.files.single;
+    if (file == null) return null;
     if (!file.name.toLowerCase().endsWith('.csv')) {
       throw StateError('Managed datasets currently accept CSV files only.');
     }
-    if (file.bytes == null || file.bytes!.isEmpty) {
-      throw StateError('The selected CSV could not be read by the browser.');
+    final size = await file.length();
+    if (size == null || size <= 0) {
+      throw StateError('The selected CSV is empty or could not be read.');
     }
     return file;
   }
@@ -427,7 +425,11 @@ class _AuthorizationManagementScreenState
     try {
       final file = await _pickManagedCsv();
       if (file == null) return;
-      await _sendManagedFile('/v1/managed-datasets', file.name, file.bytes!, 'Managed dataset imported.');
+      await _sendManagedFile(
+        '/v1/managed-datasets',
+        file,
+        'Managed dataset imported.',
+      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -443,9 +445,8 @@ class _AuthorizationManagementScreenState
       final file = await _pickManagedCsv();
       if (file == null) return;
       await _sendManagedFile(
-        '/v1/managed-datasets/' + datasetId + '/versions',
-        file.name,
-        file.bytes!,
+        '/v1/managed-datasets/$datasetId/versions',
+        file,
         'New protected dataset version imported.',
       );
     } catch (error) {
@@ -457,21 +458,15 @@ class _AuthorizationManagementScreenState
     }
   }
 
-  Iterable<List<int>> _uploadChunks(List<int> bytes) sync* {
-    const chunkSize = 1024 * 1024;
-    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
-      final end = (offset + chunkSize < bytes.length) ? offset + chunkSize : bytes.length;
-      yield bytes.sublist(offset, end);
-    }
-  }
-
   Future<void> _sendManagedFile(
     String path,
-    String filename,
-    List<int> bytes,
+    PlatformFile file,
     String successMessage,
   ) async {
-    if (bytes.isEmpty) throw StateError('The selected CSV is empty.');
+    final size = await file.length();
+    if (size == null || size <= 0) {
+      throw StateError('The selected CSV is empty.');
+    }
     setState(() {
       _datasetUploading = true;
       _datasetUploadStatus = 'Preparing...';
@@ -481,19 +476,27 @@ class _AuthorizationManagementScreenState
       if (insightFlowWorkspaceId.isNotEmpty) {
         headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
       }
-      setState(() => _datasetUploadStatus = 'Uploading & processing...');
-      final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
+      setState(() => _datasetUploadStatus = 'Uploading...');
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(insightFlowBackendBaseUrl + path),
+      );
       request.headers.addAll(headers);
-      request.files.add(http.MultipartFile(
-        'file',
-        http.ByteStream(Stream<List<int>>.fromIterable(_uploadChunks(bytes))),
-        bytes.length,
-        filename: filename,
-      ));
+      request.files.add(
+        http.MultipartFile(
+          'file',
+          http.ByteStream(file.readAsByteStream()),
+          size,
+          filename: file.name,
+        ),
+      );
       final response = await request.send();
+      setState(() => _datasetUploadStatus = 'Validating & importing...');
       final body = await response.stream.bytesToString();
       dynamic decoded;
-      try { decoded = jsonDecode(body); } catch (_) {}
+      try {
+        decoded = jsonDecode(body);
+      } catch (_) {}
       if (response.statusCode != 200) {
         throw StateError(
           decoded is Map && decoded['detail'] != null
@@ -501,10 +504,12 @@ class _AuthorizationManagementScreenState
               : 'Managed dataset operation was rejected.',
         );
       }
-      setState(() => _datasetUploadStatus = 'Completed');
+      setState(() => _datasetUploadStatus = 'Ready');
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(successMessage)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -517,166 +522,12 @@ class _AuthorizationManagementScreenState
       if (mounted) {
         setState(() {
           _datasetUploading = false;
-          if (_datasetUploadStatus == 'Completed' || _datasetUploadStatus == 'Failed') {
+          if (_datasetUploadStatus == 'Ready' || _datasetUploadStatus == 'Failed') {
             _datasetUploadStatus = null;
           }
         });
       }
     }
-  }
-
-  Future<void> _downloadManagedDataset(Map<String, dynamic> dataset) async {
-    try {
-      final headers = await firebaseAuthHeaders();
-      if (insightFlowWorkspaceId.isNotEmpty) {
-        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
-      }
-      final id = dataset['dataset_id'].toString();
-      final version = dataset['current_version']?.toString();
-      headers['X-InsightFlow-Resource-ID'] = id;
-      var url = '$insightFlowBackendBaseUrl/v1/managed-datasets/$id/download';
-      if (version != null && version.isNotEmpty) {
-        url += '?version_id=${Uri.encodeQueryComponent(version)}';
-      }
-      final response = await http.get(Uri.parse(url), headers: headers);
-      if (response.statusCode != 200) {
-        dynamic decoded;
-        try {
-          decoded = jsonDecode(response.body);
-        } catch (_) {}
-        throw StateError(
-          decoded is Map && decoded['detail'] != null
-              ? decoded['detail'].toString()
-              : 'Dataset retrieval was rejected.',
-        );
-      }
-      await FilePicker.platform.saveFile(
-        dialogTitle: 'Save managed dataset',
-        fileName: dataset['original_filename']?.toString() ?? 'dataset.bin',
-        bytes: response.bodyBytes,
-      );
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteManagedDataset(String datasetId) async {
-    try {
-      final headers = await firebaseAuthHeaders();
-      if (insightFlowWorkspaceId.isNotEmpty) {
-        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
-      }
-      headers['X-InsightFlow-Resource-ID'] = datasetId;
-      final response = await http.delete(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId'),
-        headers: headers,
-      );
-      if (response.statusCode != 200) {
-        dynamic decoded;
-        try {
-          decoded = jsonDecode(response.body);
-        } catch (_) {}
-        throw StateError(
-          decoded is Map && decoded['detail'] != null
-              ? decoded['detail'].toString()
-              : 'Dataset deletion was rejected.',
-        );
-      }
-      await _load();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
-        );
-      }
-    }
-  }
-
-  List<Widget> _managedDatasetRows(bool canManage) {
-    final datasets = (_snapshot['datasets'] as List? ?? const [])
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .where((d) => d['status']?.toString() != 'deleted')
-        .toList();
-
-    final rows = <Widget>[
-      if (canManage)
-        GlassButton.custom(
-          onTap: _datasetUploading ? () {} : _uploadManagedDataset,
-          width: double.infinity,
-          height: 42,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: _datasetUploading ? 'Upload in progress' : 'Upload Dataset',
-          child: Text(_datasetUploading ? 'UPLOAD IN PROGRESS' : 'Upload Dataset'),
-        ),
-      if (_datasetUploading && _datasetUploadStatus != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: _MetaRow('Status', _datasetUploadStatus!),
-        ),
-    ];
-
-    if (datasets.isEmpty) {
-      rows.add(const _MetaRow('Status', 'No managed datasets in this scope.'));
-      return rows;
-    }
-
-    for (final dataset in datasets) {
-      final id = dataset['dataset_id']?.toString() ?? '';
-      final name = dataset['original_filename']?.toString() ??
-          dataset['display_name']?.toString() ?? id;
-      final version = dataset['current_version']?.toString() ?? 'v1';
-      final status = dataset['status']?.toString() ?? 'READY';
-      final rowCount = dataset['row_count']?.toString() ?? '—';
-      final columnCount = dataset['column_count']?.toString() ?? '—';
-      final uploadedBy = dataset['uploaded_by_uid']?.toString() ?? '—';
-      final protected = dataset['protected_original'] == true;
-      final size = dataset['file_size']?.toString();
-
-      rows.add(_MetaRow(name, rowCount + ' rows · ' + columnCount + ' columns'));
-      rows.add(_MetaRow(
-        'Version',
-        version + ' · ' + (protected ? 'PROTECTED ORIGINAL' : 'MANAGED'),
-      ));
-      rows.add(_MetaRow(
-        'Uploaded',
-        uploadedBy + ' · ' + (dataset['created_at']?.toString() ?? '—') +
-            (size == null ? '' : ' · ' + size + ' bytes'),
-      ));
-      rows.add(_MetaRow('Status', status.toUpperCase()));
-      rows.add(
-        Wrap(
-          spacing: 5,
-          runSpacing: 5,
-          children: [
-            if (widget.onStartWorking != null)
-              TextButton(
-                onPressed: () => widget.onStartWorking!(id),
-                child: const Text('Start Working'),
-              ),
-            TextButton(
-              onPressed: () => _downloadManagedDataset(dataset),
-              child: const Text('Download Original'),
-            ),
-            if (canManage)
-              TextButton(
-                onPressed: () => _uploadManagedVersion(id),
-                child: const Text('Upload New Version'),
-              ),
-            if (canManage)
-              TextButton(
-                onPressed: () => _deleteManagedDataset(id),
-                child: const Text('Delete'),
-              ),
-          ],
-        ),
-      );
-    }
-    return rows;
   }
 
   Future<void> _createDelegation() async {
