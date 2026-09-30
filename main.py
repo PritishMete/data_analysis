@@ -234,12 +234,10 @@ def _queue_learning_event(
 # it's backward compatible with every existing caller.
 from core.db import SessionLocal, init_db
 from datasets.repository import DatasetRepository
-from datasets.routes import dataset_registry_router
 from schema_intelligence.routes import schema_intelligence_router
 from query_history.repository import QueryHistoryRepository
 from query_history.routes import query_history_router
 from query_history.service import QueryHistoryService
-from ingestion.routes import ingestion_router
 from plan_cache.repository import PlanCacheRepository
 from plan_cache.routes import plan_cache_router
 from plan_cache.service import PlanCacheService
@@ -2600,10 +2598,8 @@ if ai_router is not None:
 # ---------------------------------------------------------
 _run_production_authz_migrations()
 init_db()
-app.include_router(dataset_registry_router)
 app.include_router(schema_intelligence_router)
 app.include_router(query_history_router)
-app.include_router(ingestion_router)
 app.include_router(plan_cache_router)
 app.include_router(sql_cache_router)
 app.include_router(memory_engine_router)
