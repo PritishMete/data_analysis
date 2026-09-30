@@ -538,7 +538,8 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                 JOIN workspaces w ON w.workspace_id = m.workspace_id
                 WHERE b.provider=:provider AND b.provider_subject=:subject
                   AND (CAST(:workspace AS TEXT) IS NULL OR w.workspace_id=CAST(:workspace AS TEXT))
-                  AND b.status='active' AND m.status='active'"""),
+                  AND b.status='active' AND m.status='active'
+                  AND o.status='active' AND w.status='active'"""),
                          {"provider": provider, "subject": subject, "workspace": workspace_id}).mappings().first()
         if not row:
             return {"membership_status": "none", "workspace_authorized": False,
@@ -564,16 +565,31 @@ def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_i
     context = authorization_context(claims, workspace_id)
     if not context["workspace_authorized"] or action not in context["permissions"]:
         raise AuthzError("Workspace authorization denied.")
+    resolved_workspace_id = str(context["workspace_id"])
+    organization_id = str(context["organization_id"])
     if resource_id:
         with SessionLocal() as db:
-            resource = db.execute(text("SELECT 1 FROM authorization_resources WHERE organization_id=:org AND resource_id=:resource"),
-                                   {"org": context["organization_id"], "resource": resource_id}).scalar_one_or_none()
-            grant = db.execute(text("SELECT permissions FROM resource_grants WHERE organization_id=:org AND resource_id=:resource AND principal_id=:principal"),
-                               {"org": context["organization_id"], "resource": resource_id, "principal": context["principal_id"]}).scalar_one_or_none()
-        if not resource or action not in set(grant or []):
+            resource = db.execute(
+                text("""SELECT resource_type, owner_principal_id
+                        FROM authorization_resources
+                        WHERE organization_id=:org AND resource_id=:resource"""),
+                {"org": organization_id, "resource": resource_id},
+            ).mappings().first()
+            grant = db.execute(
+                text("""SELECT permissions
+                        FROM resource_grants
+                        WHERE organization_id=:org
+                          AND resource_id=:resource
+                          AND principal_id=:principal"""),
+                {"org": organization_id, "resource": resource_id,
+                 "principal": context["principal_id"]},
+            ).scalar_one_or_none()
+        if not resource:
+            raise AuthzError("Resource is not accessible.")
+        if action not in set(grant or []):
             raise AuthzError("Permission denied for this resource.")
-    return {"authorized": True, "workspace_id": workspace_id, "action": action,
-            "principal_id": context["principal_id"]}
+    return {"authorized": True, "workspace_id": resolved_workspace_id, "organization_id": organization_id,
+            "action": action, "principal_id": context["principal_id"]}
 
 
 def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: str,
@@ -585,23 +601,26 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
         raise AuthzError("Workspace authorization denied.")
     from .schema import clean_permissions
     permissions = clean_permissions(permissions)
+    organization_id = str(actor["organization_id"])
     with SessionLocal.begin() as db:
         target = db.execute(text("""SELECT b.principal_id FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE b.firebase_uid=:uid
-              AND m.organization_id=:org AND m.status='active'"""),
-                            {"uid": target_uid, "org": actor["organization_id"]}).scalar_one_or_none()
+            WHERE ((b.provider='supabase' AND b.provider_subject=:uid)
+                OR (b.provider='firebase' AND b.firebase_uid=:uid))
+              AND m.organization_id=:org AND m.status='active'
+              AND b.status='active'"""),
+                            {"uid": target_uid, "org": organization_id}).scalar_one_or_none()
         if not target:
             raise AuthzError("Grant target is not a workspace member.")
         exists = db.execute(text("SELECT 1 FROM authorization_resources WHERE organization_id=:org AND resource_id=:resource"),
-                            {"org": actor["organization_id"], "resource": resource_id}).scalar_one_or_none()
+                            {"org": organization_id, "resource": resource_id}).scalar_one_or_none()
         if not exists:
             raise AuthzError("Resource is not accessible.")
         db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :resource, :principal, CAST(:permissions AS jsonb))
             ON CONFLICT (organization_id, resource_id, principal_id)
             DO UPDATE SET permissions=EXCLUDED.permissions"""),
-                   {"org": actor["organization_id"], "resource": resource_id,
+                   {"org": organization_id, "resource": resource_id,
                     "principal": target, "permissions": __import__('json').dumps(permissions)})
     return True
 
@@ -611,28 +630,41 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
     context = authorization_context(claims, workspace_id)
     if "dataset.manage_acl" not in context["permissions"]:
         raise AuthzError("Workspace authorization denied.")
+    organization_id = str(context["organization_id"])
+    resolved_workspace_id = str(context["workspace_id"])
     dataset_id = str(dataset_id or _id("ds"))
+    provider, subject = _identity(claims)
     with SessionLocal.begin() as db:
         owner = db.execute(text("""SELECT b.principal_id
             FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE b.firebase_uid=:uid AND m.organization_id=:org AND m.status='active'"""),
-                           {"uid": owner_uid, "org": workspace_id}).scalar_one_or_none()
+            WHERE ((b.provider=:provider AND b.provider_subject=:owner_uid)
+                OR (b.provider='firebase' AND b.firebase_uid=:owner_uid))
+              AND m.organization_id=:org AND m.workspace_id=:workspace
+              AND m.status='active' AND b.status='active'"""),
+                           {"provider": provider, "owner_uid": str(owner_uid),
+                            "org": organization_id, "workspace": resolved_workspace_id}).scalar_one_or_none()
         if not owner:
             raise AuthzError("Dataset owner must be an active organization member.")
         db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
-            VALUES (:org, :dataset, 'dataset', :owner) ON CONFLICT DO NOTHING"""),
-                   {"org": workspace_id, "dataset": dataset_id, "owner": owner})
+            VALUES (:org, :dataset, 'dataset', :owner)
+            ON CONFLICT (organization_id, resource_id)
+            DO UPDATE SET resource_type=EXCLUDED.resource_type, owner_principal_id=EXCLUDED.owner_principal_id"""),
+                   {"org": organization_id, "dataset": dataset_id, "owner": owner})
         db.execute(text("""INSERT INTO dataset_authorization(organization_id, dataset_id, owner_principal_id, protected_original)
             VALUES (:org, :dataset, :owner, :protected)
-            ON CONFLICT (organization_id, dataset_id) DO UPDATE SET protected_original=EXCLUDED.protected_original"""),
-                   {"org": workspace_id, "dataset": dataset_id, "owner": owner, "protected": protected})
+            ON CONFLICT (organization_id, dataset_id)
+            DO UPDATE SET owner_principal_id=EXCLUDED.owner_principal_id,
+                          protected_original=EXCLUDED.protected_original,
+                          status='active'"""),
+                   {"org": organization_id, "dataset": dataset_id, "owner": owner, "protected": protected})
         db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :dataset, :owner, CAST(:permissions AS jsonb))
-            ON CONFLICT (organization_id, resource_id, principal_id) DO NOTHING"""),
-                   {"org": workspace_id, "dataset": dataset_id, "owner": owner,
+            ON CONFLICT (organization_id, resource_id, principal_id)
+            DO UPDATE SET permissions=EXCLUDED.permissions"""),
+                   {"org": organization_id, "dataset": dataset_id, "owner": owner,
                     "permissions": '["dataset.view_original","dataset.create_working_copy","dataset.manage_acl"]'})
-    return {"dataset_id": dataset_id, "organization_id": workspace_id}
+    return {"dataset_id": dataset_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id}
 
 
 def audit_dataset_event(
@@ -697,13 +729,40 @@ def revoke_dataset_working_copies(workspace_id: str, dataset_id: str) -> None:
 def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str) -> dict[str, Any]:
     if not action.startswith("dataset."):
         raise ValueError("Dataset authorization requires a dataset capability.")
-    result = authorize(claims, workspace_id, action, dataset_id)
+    context = authorization_context(claims, workspace_id)
+    if not context["workspace_authorized"]:
+        raise AuthzError("Workspace authorization denied.")
+    organization_id = str(context["organization_id"])
+    resolved_workspace_id = str(context["workspace_id"])
     with SessionLocal() as db:
-        protected = db.execute(text("SELECT protected_original FROM dataset_authorization WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"),
-                               {"org": workspace_id, "dataset": dataset_id}).scalar_one_or_none()
+        resource = db.execute(
+            text("""SELECT resource_type, owner_principal_id
+                    FROM authorization_resources
+                    WHERE organization_id=:org AND resource_id=:dataset"""),
+            {"org": organization_id, "dataset": dataset_id},
+        ).mappings().first()
+        if not resource or resource["resource_type"] != "dataset":
+            raise AuthzError("Resource is not accessible.")
+        protected = db.execute(
+            text("""SELECT protected_original
+                    FROM dataset_authorization
+                    WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"""),
+            {"org": organization_id, "dataset": dataset_id},
+        ).scalar_one_or_none()
+        grant = db.execute(
+            text("""SELECT permissions
+                    FROM resource_grants
+                    WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:principal"""),
+            {"org": organization_id, "dataset": dataset_id,
+             "principal": context["principal_id"]},
+        ).scalar_one_or_none()
     if protected is None:
         raise AuthzError("Dataset is not accessible.")
-    return {**result, "dataset_id": dataset_id, "protected_original": bool(protected)}
+    if action not in set(grant or []):
+        raise AuthzError("Permission denied for this resource.")
+    return {**context, "authorized": True, "workspace_id": resolved_workspace_id,
+            "organization_id": organization_id, "dataset_id": dataset_id,
+            "protected_original": bool(protected)}
 
 
 def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str,
@@ -723,20 +782,22 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
     context = authorization_context(claims, workspace_id)
     copy_id = working_copy_id or _id("wc")
     version = source_version or "1"
+    organization_id = str(context["organization_id"])
+    resolved_workspace_id = str(context["workspace_id"])
     with SessionLocal.begin() as db:
         db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
             VALUES (:org, :copy, 'working_copy', :principal)"""),
-                   {"org": workspace_id, "copy": copy_id, "principal": context["principal_id"]})
+                   {"org": organization_id, "copy": copy_id, "principal": context["principal_id"]})
         db.execute(text("""INSERT INTO working_copy_authorization
             (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id)
             VALUES (:org, :copy, :dataset, :version, :principal)"""),
-                   {"org": workspace_id, "copy": copy_id, "dataset": dataset_id,
+                   {"org": organization_id, "copy": copy_id, "dataset": dataset_id,
                     "version": version, "principal": context["principal_id"]})
         db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
-                   {"org": workspace_id, "copy": copy_id, "principal": context["principal_id"],
+                   {"org": organization_id, "copy": copy_id, "principal": context["principal_id"],
                     "permissions": '["working_copy.view","working_copy.modify","working_copy.delete"]'})
-    return {"working_copy_id": copy_id, "organization_id": workspace_id,
+    return {"working_copy_id": copy_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id,
             "source_dataset_id": dataset_id, "source_version": version}
 
 
