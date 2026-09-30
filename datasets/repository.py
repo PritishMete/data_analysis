@@ -221,6 +221,18 @@ class DatasetRepository:
         )
         return int(self.db.execute(stmt).scalar_one() or 0)
 
+    def count_distinct_physical_value(
+        self,
+        table_name: str,
+        column_name: str,
+        columns: list[tuple[str, str]],
+    ) -> int:
+        from .physical_table import build_physical_table
+
+        table = build_physical_table(table_name, columns)
+        stmt = select(func.count(func.distinct(table.c[column_name])))
+        return int(self.db.execute(stmt).scalar_one() or 0)
+
     def get_by_id(self, dataset_id: str) -> Dataset | None:
         return self.db.get(Dataset, dataset_id)
 
