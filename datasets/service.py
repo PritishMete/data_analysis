@@ -110,6 +110,7 @@ class DatasetRegistryService:
 
         schema_hash = compute_schema_hash((str(col), str(df[col].dtype)) for col in df.columns)
         now = datetime.now(timezone.utc)
+        self.repository.db.rollback()
         with self.repository.db.begin():
             dataset = Dataset(
                 organization_id=organization_id,
