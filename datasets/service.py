@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -293,7 +294,7 @@ class DatasetRegistryService:
             )
             self.repository.add_version(version, commit=False)
 
-            for chunk in (first, *chunks):
+            for chunk in itertools.chain((first,), chunks):
                 chunk_columns = [str(c) for c in chunk.columns]
                 if chunk_columns != columns:
                     raise ValueError("CSV rows do not have a consistent column structure.")
