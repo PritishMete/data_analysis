@@ -261,9 +261,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget surface(Widget child) => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(16),
-    settings: dockGlassSettings(
-      glassColor: TechColors.panelBg.withValues(alpha: 0.30),
-    ),
+    settings: TechColors.sectionGlass,
     quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: child,
@@ -861,7 +859,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _telemetry(String label, int value) => GlassContainer(
     useOwnLayer: true,
     quality: GlassQuality.minimal,
-    settings: TechColors.sectionGlass,,
+    settings: TechColors.sectionGlass,
     shape: const LiquidRoundedSuperellipse(borderRadius: 10),
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     child: Row(
@@ -898,7 +896,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget actions() => GlassCard(
     margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-    settings: TechColors.sectionGlass, quality: GlassQuality.standard,
+    settings: TechColors.sectionGlass, quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _eyebrow('Contextual controls'), const SizedBox(height: 9),
@@ -969,11 +967,7 @@ class _ManagementShellState extends State<ManagementShell> {
         shape: const LiquidRoundedSuperellipse(borderRadius: 12),
         useOwnLayer: true,
         quality: GlassQuality.minimal,
-        settings: dockGlassSettings(
-          glassColor: accent
-              ? TechColors.borderActive.withValues(alpha: 0.12)
-              : TechColors.panelBg.withValues(alpha: 0.24),
-        ),
+        settings: TechColors.sectionGlass,
         glowColor: accent
             ? TechColors.borderActive.withValues(alpha: 0.24)
             : Colors.transparent,
@@ -1018,7 +1012,7 @@ class _ManagementShellState extends State<ManagementShell> {
     useOwnLayer: true,
     quality: GlassQuality.minimal,
     settings: dockGlassSettings(
-      glassColor: TechColors.borderActive.withValues(alpha: 0.80),
+      glassColor: TechColors.borderActive.withValues(alpha: 0.85),
     ),
     glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
     glowRadius: kDockGlowRadius,
