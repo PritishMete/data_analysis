@@ -3339,7 +3339,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Sentiment only needs the review and restaurant columns. Sending the
       // whole workbook duplicates unnecessary data in browser and Render.
       List<List<dynamic>> requestRows = rows;
-      if (isSentimentQuery) {
+      if (isSentimentQuery && managedRemoteSession) {
+        // Managed datasets remain server-side; the dedicated backend sentiment
+        // endpoint receives the persisted dataset identity instead of a copied
+        // browser-side CSV.
+        requestRows = const <List<dynamic>>[];
+      } else if (isSentimentQuery) {
         final headers = rows.first
             .map((e) => e?.toString().trim() ?? '')
             .toList();
@@ -3421,6 +3426,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           // Dedicated sentiment endpoint: bypasses the general-purpose router.
           request.fields['batch_size'] = '150';
           request.fields['include_details'] = 'false';
+          if (managedRemoteSession) {
+            request.fields['managed_dataset_id'] = widget.managedDatasetId!;
+            if (widget.managedVersionId?.trim().isNotEmpty == true) {
+              request.fields['managed_version_id'] = widget.managedVersionId!;
+            }
+          }
         } else {
           request.fields['text'] = userText;
           request.fields['available_sheets'] = json.encode(availableSheets);
