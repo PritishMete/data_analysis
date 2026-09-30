@@ -1,4 +1,5 @@
 // lib/features/dashboard/navigation_tabs.dart
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -14,7 +15,7 @@ const kInsightFlowNavigationGlassSettings = LiquidGlassSettings(
   thickness: 20,
   blur: 20,
   glassColor: Color(0x26FFFFFF),
-  lightAngle: 0.75 * 3.141592653589793,
+  lightAngle: 0.75 * math.pi,
   lightIntensity: 0.7,
   ambientStrength: 0.5,
   saturation: 1.2,
