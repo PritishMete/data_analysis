@@ -11,6 +11,7 @@ import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
+import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
 
 enum ManagementSection { overview, organization, people, locations, sections, invitations, dataAccess, audit }
@@ -1033,11 +1034,7 @@ class _ManagementShellState extends State<ManagementShell> {
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               if (index == tabs.length) {
-                return GlassButton(
-                  onTap: () => openInsightFlowAnalysis(context),
-                  label: 'ANALYSIS',
-                  icon: const Icon(CupertinoIcons.chart_bar_fill, size: 18, color: CupertinoColors.white),
-                );
+                return _managementAnalysisNavChip();
               }
               final tab = tabs[index];
               final selected = section == tab.key;
@@ -1061,6 +1058,16 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
     );
   }
+
+  Widget _managementAnalysisNavChip() => GlassButton(
+    onTap: () => openInsightFlowAnalysis(context),
+    label: 'ANALYSIS',
+    icon: const Icon(
+      CupertinoIcons.chart_bar_fill,
+      size: 18,
+      color: CupertinoColors.white,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) => Scaffold(
