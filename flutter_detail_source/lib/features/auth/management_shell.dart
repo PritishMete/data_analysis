@@ -12,6 +12,7 @@ import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
+import 'managed_dataset_access_workspace.dart';
 
 enum ManagementSection { overview, organization, people, locations, sections, invitations, dataAccess, audit }
 
@@ -948,11 +949,7 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.locations: return locationsView();
       case ManagementSection.sections: return sectionsView();
       case ManagementSection.invitations: return legacyView('Invitations', 'Existing invitation creation and acceptance behavior is preserved.');
-      case ManagementSection.dataAccess: return legacyView(
-        'Managed Datasets',
-        'Supabase-backed dataset registry, CSV ingestion, versions, structured rows, protected downloads, grants, and working-copy controls.',
-        actionLabel: 'OPEN MANAGED DATASETS',
-      );
+      case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
       case ManagementSection.audit: return auditView();
     }
   }
@@ -1116,14 +1113,12 @@ class _ManagementShellState extends State<ManagementShell> {
               return GlassChip(
                 label: tab.value,
                 selected: selected,
-                selectedColor: CupertinoColors.activeGreen.withValues(alpha: 0.35),
+                selectedColor: TechColors.borderActive.withValues(alpha: 0.18),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 labelStyle: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: selected
-                      ? CupertinoColors.white
-                      : CupertinoColors.label.resolveFrom(context).withValues(alpha: 0.85),
+                  color: selected ? TechColors.textPrimary : TechColors.textMuted,
                 ),
                 onTap: () => setState(() => section = tab.key),
               );
@@ -1185,28 +1180,23 @@ class _ManagementShellState extends State<ManagementShell> {
                                         ],
                                       ),
                                     )
-                                  : GlassContainer(
-                                      useOwnLayer: true,
-                                      quality: GlassQuality.minimal,
-                                      settings: TechColors.panelGlass,
-                                      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-                                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                                        children: [
-                                          _title(
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (section != ManagementSection.dataAccess) ...[
+                                          _surface(_title(
                                             _sectionLabel(section),
                                             detail: _sectionDetail(section),
                                             icon: _sectionIcon(section),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          body(),
-                                          if (section == ManagementSection.organization) ...[
-                                            const SizedBox(height: 16),
-                                            assignmentList(),
-                                          ],
+                                          )),
+                                          const SizedBox(height: 12),
                                         ],
-                                      ),
+                                        body(),
+                                        if (section == ManagementSection.organization) ...[
+                                          const SizedBox(height: 16),
+                                          assignmentList(),
+                                        ],
+                                      ],
                                     ),
                         ),
                       ),
