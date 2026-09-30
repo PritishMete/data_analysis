@@ -302,3 +302,113 @@ def test_managed_dataset_workspace_header_uses_authoritative_selected_workspace(
     monkeypatch.setattr(dataset_routes, "authorization_context", context)
 
     assert dataset_routes._workspace("workspace-owner", "Bearer token") == "workspace-owner"
+
+
+def test_owner_profile_preview_returns_schema_and_rows_after_authorization(monkeypatch):
+    class Column:
+        def __init__(self, name):
+            self.column_name = name
+            self.detected_type = "text"
+            self.nullable = False
+            self.unique_count = 100000
+            self.missing_count = 0
+            self.missing_percentage = 0.0
+            self.inferred_role = None
+            self.inferred_role_confidence = None
+
+    class Dataset:
+        organization_id = "org-owner"
+        dataset_id = "dataset-owner"
+        dataset_name = "customers.csv"
+        original_filename = "customers.csv"
+        content_type = "text/csv"
+        file_size = 1
+        uploaded_by = "owner"
+        created_at = None
+        status = "ready"
+        storage_provider = None
+        current_version_id = "v1"
+        version_number = 1
+        row_count = 100000
+        column_count = 2
+
+        versions = []
+
+    class Version:
+        version_id = "v1"
+        version_pk = "version-pk"
+        status = "ready"
+        row_count = 100000
+        column_count = 2
+        original_filename = "customers.csv"
+        content_type = "text/csv"
+        file_size = 1
+        created_by = "owner"
+        created_at = None
+        storage_provider = None
+
+    class Repo:
+        def __init__(self, db):
+            self.db = db
+
+        def get_by_id(self, dataset_id):
+            return Dataset() if dataset_id == "dataset-owner" else None
+
+        def get_version(self, dataset_id, version_id):
+            assert dataset_id == "dataset-owner"
+            assert version_id == "v1"
+            return Version()
+
+        def get_columns_for_version(self, version_pk):
+            assert version_pk == "version-pk"
+            return [Column("id"), Column("name")]
+
+        def get_rows(self, version_pk, limit, offset):
+            assert version_pk == "version-pk"
+            assert limit == 5
+            assert offset == 0
+            return [
+                {"row_number": 1, "row_data": {"id": 1, "name": "customer-1"}},
+                {"row_number": 2, "row_data": {"id": 2, "name": "customer-2"}},
+            ]
+
+        def list_versions(self, dataset_id):
+            return [Version()]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(dataset_service, "DatasetRepository", Repo)
+    monkeypatch.setattr(
+        dataset_service,
+        "_claims",
+        lambda token: {"uid": "owner", "sub": "owner", "provider": "supabase"},
+    )
+    monkeypatch.setattr(
+        dataset_service,
+        "_authorization_context",
+        lambda claims, workspace_id: _context(),
+    )
+    monkeypatch.setattr(
+        dataset_service,
+        "_authorize_dataset",
+        lambda claims, workspace_id, dataset_id, action: {
+            "authorized": True,
+            "organization_id": "org-owner",
+            "workspace_id": "workspace-owner",
+            "dataset_id": dataset_id,
+        },
+    )
+
+    result = dataset_service.get_managed_dataset_profile(
+        workspace_id="workspace-owner",
+        token="token",
+        dataset_id="dataset-owner",
+        version_id="v1",
+        preview_limit=5,
+    )
+
+    assert result["row_count"] == 100000
+    assert result["column_count"] == 2
+    assert result["column_names"] == ["id", "name"]
+    assert result["preview"] == [[1, "customer-1"], [2, "customer-2"]]
