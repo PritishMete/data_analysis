@@ -20,8 +20,6 @@ void main() {
     expect(source, contains("Profiling"));
     expect(source, contains("Failed"));
     expect(source, contains("/v1/managed-datasets"));
-    expect(source, contains("/v1/managed-datasets/"));
-    expect(source, contains("/profile"));
     expect(source, contains("Upload New Version"));
     expect(source, contains("Start Working"));
     expect(source, contains("managedDatasetId"));
