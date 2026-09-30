@@ -135,14 +135,71 @@ class _ManagementShellState extends State<ManagementShell> {
       ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
       : <Map<String, dynamic>>[];
 
-  Future<Map<String, dynamic>> request(String path, {String method = 'GET', Map<String, dynamic>? body}) async {
+  static const _managementRequestTimeout = Duration(seconds: 45);
+
+  Future<http.Response> _sendManagementRequest(
+    Uri uri,
+    Map<String, String> headers, {
+    required String method,
+    Map<String, dynamic>? body,
+  }) async {
+    Future<http.Response> send() => method == 'POST'
+        ? http.post(uri, headers: headers, body: jsonEncode(body))
+        : http.get(uri, headers: headers);
+
+    try {
+      return await send().timeout(_managementRequestTimeout);
+    } on TimeoutException {
+      // Render's free instance can be asleep after the site has been closed
+      // overnight. The first request may spend ~20-25s waking the service.
+      // Retry once with a fresh authenticated session instead of surfacing
+      // the old 15-second timeout to a user whose account is still valid.
+      final session = await InsightFlowSupabaseAuthService.ensureSession(
+        timeout: const Duration(seconds: 8),
+      );
+      if (session == null || session.accessToken.isEmpty) rethrow;
+      final refreshedHeaders = await supabaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        refreshedHeaders['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      if (body != null) refreshedHeaders['Content-Type'] = 'application/json';
+      return await sendWithHeaders(
+        send: () => method == 'POST'
+            ? http.post(uri, headers: refreshedHeaders, body: jsonEncode(body))
+            : http.get(uri, headers: refreshedHeaders),
+      );
+    }
+  }
+
+  Future<http.Response> sendWithHeaders({
+    required Future<http.Response> Function() send,
+  }) {
+    return send().timeout(_managementRequestTimeout);
+  }
+
+  Future<Map<String, dynamic>> request(
+    String path, {
+    String method = 'GET',
+    Map<String, dynamic>? body,
+  }) async {
+    final session = await InsightFlowSupabaseAuthService.ensureSession(
+      timeout: const Duration(seconds: 8),
+    );
+    if (session == null || session.accessToken.isEmpty) {
+      throw StateError('Your authenticated session could not be restored. Please retry.');
+    }
     final headers = await supabaseAuthHeaders();
-    if (insightFlowWorkspaceId.isNotEmpty) headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+    if (insightFlowWorkspaceId.isNotEmpty) {
+      headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+    }
     if (body != null) headers['Content-Type'] = 'application/json';
     final uri = Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management$path');
-    final response = method == 'POST'
-        ? await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 15))
-        : await http.get(uri, headers: headers).timeout(const Duration(seconds: 15));
+    final response = await _sendManagementRequest(
+      uri,
+      headers,
+      method: method,
+      body: body,
+    );
     dynamic data;
     try { data = jsonDecode(response.body); } catch (_) {}
     if (response.statusCode == 401) {
@@ -150,9 +207,15 @@ class _ManagementShellState extends State<ManagementShell> {
       throw StateError('Your session is no longer authorized.');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(data is Map && data['detail'] != null ? data['detail'].toString() : 'Management request failed.');
+      throw StateError(
+        data is Map && data['detail'] != null
+            ? data['detail'].toString()
+            : 'Management request failed.',
+      );
     }
-    if (data is! Map) throw StateError('Management service returned an invalid response.');
+    if (data is! Map) {
+      throw StateError('Management service returned an invalid response.');
+    }
     return Map<String, dynamic>.from(data);
   }
 
