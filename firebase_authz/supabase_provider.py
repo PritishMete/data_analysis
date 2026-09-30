@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -16,6 +17,9 @@ from sqlalchemy import text
 from core.db import SessionLocal
 from .service import AuthzError
 from . import registration_diagnostics
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrganizationRegistrationConflict(AuthzError):
@@ -815,9 +819,21 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
             {"org": organization_id, "dataset": dataset_id,
              "principal": context["principal_id"]},
         ).scalar_one_or_none()
+    grant_permissions = list(grant or [])
+    logger.info(
+        "managed_dataset_authorization dataset=%s action=%s principal=%s organization=%s workspace=%s resource_owner=%s protected=%s grant_present=%s",
+        dataset_id,
+        action,
+        context.get("principal_id"),
+        organization_id,
+        resolved_workspace_id,
+        resource.get("owner_principal_id"),
+        protected is not None,
+        bool(grant_permissions),
+    )
     if protected is None:
         raise AuthzError("Dataset is not accessible.")
-    if action not in set(grant or []):
+    if action not in set(grant_permissions):
         raise AuthzError("Permission denied for this resource.")
     return {**context, "authorized": True, "workspace_id": resolved_workspace_id,
             "organization_id": organization_id, "dataset_id": dataset_id,
