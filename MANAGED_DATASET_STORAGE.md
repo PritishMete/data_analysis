@@ -23,7 +23,7 @@ PostgreSQL stores:
 - dataset_columns
 - dataset_rows (JSONB row records keyed by version_pk and ordered by row_number)
 
-CSV ingestion is chunked. PostgreSQL production uses COPY-style bulk ingestion; test/local non-PostgreSQL dialects use batched inserts.
+CSV ingestion is chunked. PostgreSQL production uses COPY-style bulk ingestion; test/local non-PostgreSQL dialects use batched inserts. An organization-scoped active file-hash index prevents concurrent exact duplicate dataset creation.
 
 ## Optional original archive
 
@@ -49,7 +49,7 @@ The original archived object is not the primary download mechanism.
 
 ## Working copies
 
-Start Working uses the existing managed-dataset working-copy authorization path and passes the managed dataset/version identity into the existing DataScreen flow. No second analysis application or DataScreen is created.
+Start Working uses the existing managed-dataset working-copy authorization path and passes the managed dataset/version identity into the existing DataScreen flow. Remote Smart Query/Sentiment requests can resolve that identity server-side, so Flutter does not copy the full managed dataset into browser memory. No second analysis application or DataScreen is created.
 
 ## Firebase boundary
 
