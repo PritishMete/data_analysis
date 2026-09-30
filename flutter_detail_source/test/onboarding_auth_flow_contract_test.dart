@@ -114,4 +114,33 @@ void main() {
       contains("import '../../widgets/shared/dock_glass_material.dart'"),
     );
   });
+  test('management Data Access is an integrated managed dataset workspace', () {
+    final shell = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final workspace = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
+
+    expect(shell, contains('ManagedDatasetAccessWorkspace'));
+    expect(shell, isNot(contains("actionLabel: 'OPEN MANAGED DATASETS'")));
+    expect(workspace, contains('/v1/managed-datasets'));
+    expect(workspace, contains('/profile?preview_limit=5'));
+    expect(workspace, contains('/rows?'));
+    expect(workspace, contains('limit=' + 'pageSize'));
+    expect(workspace, contains('/working-copies'));
+    expect(workspace, contains('/v1/authz/datasets/grants'));
+    expect(workspace, contains('openInsightFlowAnalysis(context'));
+    expect(workspace, contains('DOWNLOAD CSV'));
+  });
+
+  test('managed dataset backend reads physical tables when data_table_name is present', () {
+    final repository = File('../datasets/repository.py').readAsStringSync();
+    final physical = File('../datasets/physical_table.py').readAsStringSync();
+
+    expect(repository, contains('if version is None or not version.data_table_name'));
+    expect(repository, contains('version.data_table_name'));
+    expect(repository, contains('schema="managed_data"'));
+    expect(repository, contains('offset(max(0, offset))'));
+    expect(repository, contains('limit(min(max(1, limit), 10000))'));
+    expect(physical, contains('PHYSICAL_SCHEMA = "managed_data"'));
+    expect(physical, contains('def physical_table_name(version_pk: str)'));
+  });
+
 }
