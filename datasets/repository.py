@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, insert, select
+from sqlalchemy.schema import Table
 from sqlalchemy.orm import Session
 
 from .models import Dataset, DatasetColumn, DatasetRow, DatasetVersion
@@ -42,49 +43,70 @@ class DatasetRepository:
         version_pk: str,
         rows: list[dict],
         *,
+        table_name: str | None = None,
+        columns: list[tuple[str, str]] | None = None,
         commit: bool = False,
     ) -> int:
         if not rows:
             return 0
-        payload = [
-            {
-                "version_pk": version_pk,
-                "row_number": int(row["row_number"]),
-                "row_data": row["row_data"],
-            }
-            for row in rows
-        ]
-        # PostgreSQL production path: COPY the chunk in one server-side bulk
-        # operation. SQLite and other test dialects retain executemany fallback.
-        if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
-            import csv
-            import io
-            import json
+        if table_name and columns:
+            from .physical_table import build_physical_table, normalize_record
+
+            table = build_physical_table(table_name, columns)
+            payload = [
+                normalize_record(
+                    row["row_data"],
+                    columns,
+                    int(row["row_number"]),
+                )
+                for row in rows
+            ]
             connection = self.db.connection()
-            raw = connection.connection.dbapi_connection
-            with raw.cursor() as cursor:
-                with cursor.copy(
-                    "COPY dataset_rows (version_pk, row_number, row_data) FROM STDIN WITH (FORMAT CSV)"
-                ) as copy:
-                    buffer = io.StringIO()
-                    writer = csv.writer(buffer, lineterminator="\n")
-                    for item in payload:
-                        writer.writerow([
-                            item["version_pk"],
-                            item["row_number"],
-                            json.dumps(item["row_data"], ensure_ascii=False, separators=(",", ":")),
-                        ])
-                        if buffer.tell() >= 1024 * 1024:
+            if connection.dialect.name == "postgresql":
+                import csv
+                import io
+                raw = connection.connection.dbapi_connection
+                preparer = connection.dialect.identifier_preparer
+                quoted_table = (
+                    f"{preparer.quote(table.schema)}."
+                    f"{preparer.quote(table.name)}"
+                )
+                column_names = [table.c[DatasetRow.__table__.c.name].name] if False else []
+                column_names = [
+                    "__row_number",
+                    *[name for name, _ in columns],
+                ]
+                quoted_columns = ", ".join(preparer.quote(name) for name in column_names)
+                with raw.cursor() as cursor:
+                    with cursor.copy(
+                        f"COPY {quoted_table} ({quoted_columns}) "
+                        "FROM STDIN WITH (FORMAT CSV)"
+                    ) as copy:
+                        buffer = io.StringIO()
+                        writer = csv.writer(buffer, lineterminator="\\n")
+                        for item in payload:
+                            writer.writerow([item[name] for name in column_names])
+                            if buffer.tell() >= 1024 * 1024:
+                                copy.write(buffer.getvalue())
+                                buffer.seek(0)
+                                buffer.truncate(0)
+                        if buffer.tell():
                             copy.write(buffer.getvalue())
-                            buffer.seek(0)
-                            buffer.truncate(0)
-                    if buffer.tell():
-                        copy.write(buffer.getvalue())
+            else:
+                self.db.execute(table.insert(), payload)
         else:
+            payload = [
+                {
+                    "version_pk": version_pk,
+                    "row_number": int(row["row_number"]),
+                    "row_data": row["row_data"],
+                }
+                for row in rows
+            ]
             self.db.execute(insert(DatasetRow), payload)
         if commit:
             self.db.commit()
-        return len(payload)
+        return len(rows)
 
     def touch_last_accessed(self, dataset_id: str) -> None:
         dataset = self.get_by_id(dataset_id)
