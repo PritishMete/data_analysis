@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "authorization_resources", "audit_events", "resource_grants",
     "dataset_authorization", "working_copy_authorization",
     "locations", "sections", "organizational_assignments",
+    "datasets", "dataset_versions", "dataset_columns", "dataset_rows",
 }
 
 
@@ -152,6 +153,30 @@ def verify_organizational_structure(engine) -> None:
 
 
 
+def verify_managed_dataset_security(engine) -> None:
+    inspector = inspect(engine)
+    required = {"datasets", "dataset_versions", "dataset_columns", "dataset_rows"}
+    missing = sorted(required - set(inspector.get_table_names()))
+    if missing:
+        raise RuntimeError("Managed dataset tables are missing: " + ",".join(missing))
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT c.relname, c.relrowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = ANY(:tables)
+        """), {"tables": sorted(required)}).all()
+        rls = {row[0]: bool(row[1]) for row in rows}
+        if any(not rls.get(table, False) for table in required):
+            raise RuntimeError("Managed dataset RLS is not enabled on every analytical table.")
+        bucket_exists = conn.execute(text("""
+            SELECT 1 FROM storage.buckets
+            WHERE id = 'managed-datasets' AND public = false
+        """)).scalar_one_or_none()
+        if bucket_exists is None:
+            raise RuntimeError("Private managed-datasets Supabase Storage bucket is missing.")
+
 def run_migrations() -> None:
     """Apply and verify pending production PostgreSQL migrations.
 
@@ -167,6 +192,7 @@ def run_migrations() -> None:
     if missing:
         raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
     verify_organizational_structure(engine)
+    verify_managed_dataset_security(engine)
 
 
 def main() -> int:
@@ -193,6 +219,7 @@ def main() -> int:
         print("REQUIRED_TABLES=FAIL")
     else:
         verify_organizational_structure(engine)
+        verify_managed_dataset_security(engine)
         print("ORGANIZATIONAL_STRUCTURE=PASS")
         print("REQUIRED_TABLES=PASS")
     if missing:
