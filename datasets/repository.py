@@ -233,7 +233,11 @@ class DatasetRepository:
     ) -> int:
         from .physical_table import build_physical_table
 
-        table = build_physical_table(table_name, columns)
+        table = build_physical_table(
+            table_name,
+            columns,
+            schema="managed_data" if self.db.bind.dialect.name == "postgresql" else None,
+        )
         stmt = select(func.count(func.distinct(table.c[column_name])))
         return int(self.db.execute(stmt).scalar_one() or 0)
 
@@ -329,7 +333,11 @@ class DatasetRepository:
         physical_columns = [(c.column_name, c.detected_type) for c in columns]
         from .physical_table import ROW_NUMBER_COLUMN, build_physical_table
 
-        table = build_physical_table(version.data_table_name, physical_columns)
+        table = build_physical_table(
+            version.data_table_name,
+            physical_columns,
+            schema="managed_data" if self.db.bind.dialect.name == "postgresql" else None,
+        )
         stmt = (
             select(table)
             .order_by(table.c[ROW_NUMBER_COLUMN].asc())
