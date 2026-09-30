@@ -80,12 +80,11 @@ def _authorize_delete(claims: dict[str, Any], workspace_id: str) -> dict[str, An
 def _authorize_dataset(
     claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str
 ):
-    context = _authorization_context(claims, workspace_id)
-    if (
-        action in {"dataset.view_original", "dataset.create_working_copy"}
-        and "dataset.manage_acl" in context.get("permissions", [])
-    ):
-        return authorize(claims, workspace_id, action)
+    # Every managed-dataset operation must resolve the dataset resource itself.
+    # Do not short-circuit owners/managers through workspace-only permission
+    # checks: the managed dataset is the resource boundary for profile, rows,
+    # download, and working-copy operations.
+    _authorization_context(claims, workspace_id)
     return authorize_dataset(claims, workspace_id, dataset_id, action)
 
 
