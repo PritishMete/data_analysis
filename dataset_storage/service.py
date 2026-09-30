@@ -44,9 +44,10 @@ def _safe_filename(filename: str) -> str:
         or any(ord(char) < 32 or ord(char) == 127 for char in name)
     ):
         raise ValueError("Unsafe dataset filename.")
-    if os.path.splitext(name)[1].lower() in BLOCKED_EXTENSIONS:
+    extension = os.path.splitext(name)[1].lower()
+    if extension in BLOCKED_EXTENSIONS:
         raise ValueError("This file type is not accepted as a managed dataset.")
-    if not name.lower().endswith(".csv"):
+    if extension != ".csv":
         raise ValueError("Only safe CSV files are accepted as managed datasets.")
     return name
 
