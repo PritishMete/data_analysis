@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -250,6 +250,7 @@ from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
 from firebase_authz.management_routes import router as management_router
 from dataset_storage.routes import router as managed_dataset_router
+from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
 from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
@@ -1750,11 +1751,15 @@ async def agentic_categorize(payload: dict):
 
 @app.post("/sentiment_analysis")
 async def sentiment_analysis(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     review_column: str | None = Form(None),
     restaurant_column: str | None = Form(None),
     batch_size: int = Form(150),
     include_details: bool = Form(False),
+    managed_dataset_id: str | None = Form(None),
+    managed_version_id: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     """Dedicated, router-free endpoint for batched customer-review sentiment.
 
@@ -1763,10 +1768,22 @@ async def sentiment_analysis(
     sentiment request into a generic network-looking failure in the client.
     """
     try:
-        contents = await file.read()
-        df, _excel_context = _load_context_aware_dataframe(
-            file.filename, contents, None, None, None
-        )
+        if managed_dataset_id:
+            if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
+                raise HTTPException(status_code=401, detail="Authentication and workspace authorization are required.")
+            df = load_managed_dataset_dataframe(
+                workspace_id=workspace_id,
+                token=authorization[7:].strip(),
+                dataset_id=managed_dataset_id,
+                version_id=managed_version_id,
+            )
+        else:
+            if file is None:
+                raise HTTPException(status_code=400, detail="A CSV file or managed dataset is required.")
+            contents = await file.read()
+            df, _excel_context = _load_context_aware_dataframe(
+                file.filename, contents, None, None, None
+            )
         from sentiment_agent import analyze_sentiment
         result = await analyze_sentiment(
             df,
@@ -1801,12 +1818,16 @@ async def sentiment_analysis(
 
 @app.post("/smart_query")
 async def smart_query(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     text: str = Form(...),
     available_sheets: str = Form("[]"),
     sheet_name: str | None = Form(None),
     active_cell: str | None = Form(None),
     dataset_range: str | None = Form(None),
+    managed_dataset_id: str | None = Form(None),
+    managed_version_id: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     """
     Single entry point for natural-language requests. The router agent decides
@@ -1841,11 +1862,24 @@ async def smart_query(
     # means that failure mode is now caught here instead of surfacing as an
     # unexplained dropped connection.
     try:
-        contents = await file.read()
-        try:
-            df, excel_context = _load_context_aware_dataframe(
-                file.filename, contents, sheet_name, active_cell, dataset_range
+        if managed_dataset_id:
+            if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
+                return JSONResponse(status_code=401, content={"success": False, "error": "Authentication and workspace authorization are required."})
+            df = load_managed_dataset_dataframe(
+                workspace_id=workspace_id,
+                token=authorization[7:].strip(),
+                dataset_id=managed_dataset_id,
+                version_id=managed_version_id,
             )
+            excel_context = None
+        else:
+            if file is None:
+                return JSONResponse(status_code=400, content={"success": False, "error": "A CSV file or managed dataset is required."})
+            contents = await file.read()
+            try:
+                df, excel_context = _load_context_aware_dataframe(
+                    file.filename, contents, sheet_name, active_cell, dataset_range
+                )
         except (ValueError, ExcelContextError) as e:
             return JSONResponse(status_code=200, content=json_safe(
                 smart_query_error_response(str(e), error_type="DATA_LOAD_FAILED")
