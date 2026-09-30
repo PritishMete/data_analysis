@@ -353,6 +353,7 @@ class DatasetRegistryService:
                     unique_count=self.repository.count_distinct_row_values(
                         version.version_pk, column
                     ),
+                    missing_count=missing[column],
                     missing_percentage=round((missing[column] / row_count) * 100.0, 4),
                 )
                 for column in columns
