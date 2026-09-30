@@ -47,7 +47,7 @@ def _safe_filename(filename: str) -> str:
     if os.path.splitext(name)[1].lower() in BLOCKED_EXTENSIONS:
         raise ValueError("This file type is not accepted as a managed dataset.")
     if not name.lower().endswith(".csv"):
-        raise ValueError("Managed datasets currently accept CSV files only.")
+        raise ValueError("Only safe CSV files are accepted as managed datasets.")
     return name
 
 
