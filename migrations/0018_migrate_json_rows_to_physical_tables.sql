@@ -74,6 +74,15 @@ BEGIN
         );
 
         EXECUTE format(
+            'ALTER TABLE managed_data.%I ENABLE ROW LEVEL SECURITY',
+            table_name
+        );
+        EXECUTE format(
+            'REVOKE ALL ON TABLE managed_data.%I FROM anon, authenticated',
+            table_name
+        );
+
+        EXECUTE format(
             'INSERT INTO managed_data.%I (%s)
              SELECT %s
              FROM public.dataset_rows
