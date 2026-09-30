@@ -258,12 +258,26 @@ from secure_excel.service import list_supported_transforms
 # is harmless there too — it just won't find a .env file and does nothing.
 load_dotenv()
 
-from ai_analyst import (
-    generate_report,
-    generate_structured_report,
-    suggest_analysis_types,
-    explain_business_problems,
-)
+# Keep the heavyweight Google ADK import out of module initialization so
+# Uvicorn can finish loading main:app and bind Render's port promptly.
+async def generate_report(*args, **kwargs):
+    from ai_analyst import generate_report as _generate_report
+    return await _generate_report(*args, **kwargs)
+
+
+async def generate_structured_report(*args, **kwargs):
+    from ai_analyst import generate_structured_report as _generate_structured_report
+    return await _generate_structured_report(*args, **kwargs)
+
+
+async def suggest_analysis_types(*args, **kwargs):
+    from ai_analyst import suggest_analysis_types as _suggest_analysis_types
+    return await _suggest_analysis_types(*args, **kwargs)
+
+
+async def explain_business_problems(*args, **kwargs):
+    from ai_analyst import explain_business_problems as _explain_business_problems
+    return await _explain_business_problems(*args, **kwargs)
 
 app = FastAPI()
 
