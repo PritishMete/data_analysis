@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, BinaryIO
 
 
 @dataclass(frozen=True)
@@ -14,71 +16,36 @@ class StoredDatasetObject:
 
 
 class DatasetStorageProvider(ABC):
-    """Binary storage contract. Authorization is deliberately outside this interface."""
+    """Optional original-file archive. Analytical data never depends on this store."""
 
-    def upload_stream(self, *, workspace_id: str, dataset_id: str, version_id: str,
-                      stream, original_filename: str, content_type: str | None) -> StoredDatasetObject:
-        import hashlib
-        path = self.object_path(workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id)
-        blob = self._bucket().blob(path)
-        blob.metadata = {
-            "dataset_id": dataset_id,
-            "version_id": version_id,
-            "original_filename": original_filename,
-        }
-        digest = hashlib.sha256()
-        total = 0
-        with blob.open("wb", content_type=content_type or "application/octet-stream") as writer:
-            while True:
-                chunk = stream.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-                total += len(chunk)
-                writer.write(chunk)
-        return StoredDatasetObject(path, total, content_type, digest.hexdigest())
+    @abstractmethod
+    def upload_stream(
+        self, *, organization_id: str, dataset_id: str, version_id: str,
+        stream: BinaryIO, original_filename: str, content_type: str | None,
+    ) -> StoredDatasetObject: ...
 
-    def upload(self, *, workspace_id: str, dataset_id: str, version_id: str, data: bytes,
-               original_filename: str, content_type: str | None) -> StoredDatasetObject: ...
+    @abstractmethod
+    def download(self, *, organization_id: str, dataset_id: str, version_id: str) -> bytes: ...
 
-    def upload_stream(self, *, workspace_id: str, dataset_id: str, version_id: str,
-                      stream, original_filename: str, content_type: str | None) -> StoredDatasetObject:
-        # Compatibility fallback for test/custom providers. Production Firebase storage
-        # overrides this method and writes chunks directly to the object store.
-        chunks = []
-        while True:
-            chunk = stream.read(1024 * 1024)
-            if not chunk:
-                break
-            chunks.append(chunk)
-        return self.upload(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id,
-            data=b"".join(chunks), original_filename=original_filename, content_type=content_type,
+    @abstractmethod
+    def delete(self, *, organization_id: str, dataset_id: str, version_id: str) -> None: ...
+
+    @abstractmethod
+    def exists(self, *, organization_id: str, dataset_id: str, version_id: str) -> bool: ...
+
+
+class SupabaseDatasetStorageProvider(DatasetStorageProvider):
+    """Private Supabase Storage archive used only when original-file retention is enabled.
+
+    The backend uses a server-only Supabase secret. Flutter never receives it and
+    never talks to Storage directly for managed datasets.
+    """
+
+    def __init__(self, client=None, bucket: str | None = None):
+        self._client = client
+        self._bucket_name = bucket or os.getenv(
+            "INSIGHTFLOW_DATASET_STORAGE_BUCKET", "managed-datasets"
         )
-
-    @abstractmethod
-    def download(self, *, workspace_id: str, dataset_id: str, version_id: str) -> bytes: ...
-
-    @abstractmethod
-    def delete(self, *, workspace_id: str, dataset_id: str, version_id: str) -> None: ...
-
-    @abstractmethod
-    def exists(self, *, workspace_id: str, dataset_id: str, version_id: str) -> bool: ...
-
-    @abstractmethod
-    def create_working_copy_object(self, *, workspace_id: str, dataset_id: str,
-                                   version_id: str, working_copy_id: str) -> StoredDatasetObject: ...
-
-    @abstractmethod
-    def get_object_metadata(self, *, workspace_id: str, dataset_id: str,
-                            version_id: str) -> dict[str, Any]: ...
-
-
-class FirebaseDatasetStorageProvider(DatasetStorageProvider):
-    """Current TEST provider. Uses Firebase Admin SDK / Google Cloud Storage."""
-
-    def __init__(self, bucket=None):
-        self._bucket_override = bucket
 
     @staticmethod
     def _component(value: str, field: str) -> str:
@@ -87,94 +54,87 @@ class FirebaseDatasetStorageProvider(DatasetStorageProvider):
             raise ValueError(f"Invalid {field}.")
         return value
 
-    def _bucket(self):
-        if self._bucket_override is not None:
-            return self._bucket_override
-        from firebase_admin import storage
-        from firebase_authz.service import initialize_firebase
-        initialize_firebase()
-        import os
-        bucket_name = os.environ.get("FIREBASE_STORAGE_BUCKET", "").strip()
-        if not bucket_name:
-            raise RuntimeError("Firebase Storage is not configured: FIREBASE_STORAGE_BUCKET is required.")
-        return storage.bucket(bucket_name)
+    def _client_for_use(self):
+        if self._client is not None:
+            return self._client
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        if not url:
+            ref = os.getenv("SUPABASE_PROJECT_REF", "").strip()
+            if ref:
+                url = f"https://{ref}.supabase.co"
+        if not url or not key:
+            raise RuntimeError(
+                "Supabase Storage archive is enabled but SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY are not configured."
+            )
+        try:
+            from supabase import create_client
+        except ImportError as exc:
+            raise RuntimeError("Supabase Storage archive requires the Python 'supabase' package.") from exc
+        self._client = create_client(url, key)
+        return self._client
 
-    def object_path(self, *, workspace_id: str, dataset_id: str, version_id: str) -> str:
-        return "organizations/{}/datasets/{}/versions/{}/source".format(
-            self._component(workspace_id, "workspace ID"),
-            self._component(dataset_id, "dataset ID"),
-            self._component(version_id, "version ID"),
+    def object_path(self, *, organization_id: str, dataset_id: str, version_id: str) -> str:
+        return (
+            f"organizations/{self._component(organization_id, 'organization ID')}/"
+            f"datasets/{self._component(dataset_id, 'dataset ID')}/"
+            f"versions/{self._component(version_id, 'version ID')}/original.csv"
         )
 
-    def working_copy_path(self, *, workspace_id: str, dataset_id: str, working_copy_id: str) -> str:
-        return "organizations/{}/datasets/{}/working-copies/{}/source".format(
-            self._component(workspace_id, "workspace ID"),
-            self._component(dataset_id, "dataset ID"),
-            self._component(working_copy_id, "working copy ID"),
+    def upload_stream(
+        self, *, organization_id: str, dataset_id: str, version_id: str,
+        stream: BinaryIO, original_filename: str, content_type: str | None,
+    ) -> StoredDatasetObject:
+        # supabase-py currently accepts a file-like body; the FastAPI upload is
+        # already spooled/streamed and is not copied into a second full bytes object.
+        data = stream
+        path = self.object_path(
+            organization_id=organization_id, dataset_id=dataset_id, version_id=version_id
         )
-
-    def upload(self, *, workspace_id: str, dataset_id: str, version_id: str, data: bytes,
-               original_filename: str, content_type: str | None) -> StoredDatasetObject:
-        import hashlib
-        path = self.object_path(workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id)
-        blob = self._bucket().blob(path)
-        blob.metadata = {
-            "dataset_id": dataset_id,
-            "version_id": version_id,
-            "original_filename": original_filename,
-        }
-        blob.upload_from_string(data, content_type=content_type or "application/octet-stream")
-        return StoredDatasetObject(path, len(data), content_type, hashlib.sha256(data).hexdigest())
-
-    def download(self, *, workspace_id: str, dataset_id: str, version_id: str) -> bytes:
-        blob = self._bucket().blob(self.object_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id
-        ))
-        if not blob.exists():
-            raise FileNotFoundError("Dataset object not found.")
-        return blob.download_as_bytes()
-
-    def delete(self, *, workspace_id: str, dataset_id: str, version_id: str) -> None:
-        blob = self._bucket().blob(self.object_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id
-        ))
-        if blob.exists():
-            blob.delete()
-
-    def exists(self, *, workspace_id: str, dataset_id: str, version_id: str) -> bool:
-        return self._bucket().blob(self.object_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id
-        )).exists()
-
-    def create_working_copy_object(self, *, workspace_id: str, dataset_id: str,
-                                   version_id: str, working_copy_id: str) -> StoredDatasetObject:
-        bucket = self._bucket()
-        source = bucket.blob(self.object_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id
-        ))
-        if not source.exists():
-            raise FileNotFoundError("Source dataset object not found.")
-        path = self.working_copy_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, working_copy_id=working_copy_id
+        client = self._client_for_use()
+        client.storage.from_(self._bucket_name).upload(
+            path,
+            data,
+            {"content-type": content_type or "text/csv", "upsert": "false"},
         )
-        target = bucket.blob(path)
-        source.bucket.copy_blob(source, target.bucket, target.name)
-        target.reload()
-        return StoredDatasetObject(
-            path, int(target.size or 0), target.content_type, target.md5_hash
-        )
+        stream.seek(0)
+        digest = hashlib.sha256()
+        size = 0
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
+        stream.seek(0)
+        return StoredDatasetObject(path, size, content_type or "text/csv", digest.hexdigest())
 
-    def get_object_metadata(self, *, workspace_id: str, dataset_id: str,
-                            version_id: str) -> dict[str, Any]:
-        blob = self._bucket().blob(self.object_path(
-            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id
-        ))
-        if not blob.exists():
-            raise FileNotFoundError("Dataset object not found.")
-        blob.reload()
-        return {
-            "storage_object_id": blob.name,
-            "size": int(blob.size or 0),
-            "content_type": blob.content_type,
-            "etag": blob.etag,
-        }
+    def download(self, *, organization_id: str, dataset_id: str, version_id: str) -> bytes:
+        path = self.object_path(
+            organization_id=organization_id, dataset_id=dataset_id, version_id=version_id
+        )
+        return self._client_for_use().storage.from_(self._bucket_name).download(path)
+
+    def delete(self, *, organization_id: str, dataset_id: str, version_id: str) -> None:
+        path = self.object_path(
+            organization_id=organization_id, dataset_id=dataset_id, version_id=version_id
+        )
+        self._client_for_use().storage.from_(self._bucket_name).remove([path])
+
+    def exists(self, *, organization_id: str, dataset_id: str, version_id: str) -> bool:
+        path = self.object_path(
+            organization_id=organization_id, dataset_id=dataset_id, version_id=version_id
+        )
+        prefix = "/".join(path.split("/")[:-1])
+        name = path.rsplit("/", 1)[-1]
+        try:
+            items = self._client_for_use().storage.from_(self._bucket_name).list(prefix)
+            return any(item.get("name") == name for item in (items or []))
+        except Exception:
+            return False
+
+
+def archive_original_enabled() -> bool:
+    return os.getenv("INSIGHTFLOW_DATASET_ARCHIVE_ORIGINAL", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
