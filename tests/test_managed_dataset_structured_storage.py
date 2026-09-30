@@ -76,6 +76,8 @@ def test_new_version_preserves_previous_rows(db_session):
     assert [v.version_id for v in versions] == ["v1", "v2"]
     assert repo.count_rows(versions[0].version_pk) == 3
     assert repo.count_rows(versions[1].version_pk) == 4
+    assert all(column.version_pk == versions[0].version_pk for column in repo.get_columns_for_version(versions[0].version_pk))
+    assert all(column.version_pk == versions[1].version_pk for column in repo.get_columns_for_version(versions[1].version_pk))
 
 
 def test_malformed_csv_does_not_create_dataset(db_session):
@@ -84,6 +86,22 @@ def test_malformed_csv_does_not_create_dataset(db_session):
     with pytest.raises(ValueError):
         register(service, db_session, b"id,amount\n1,10\n2,\"unterminated\n")
     assert repo.list_by_organization("org_1") == []
+
+
+
+
+def test_missing_header_is_rejected(db_session):
+    service = DatasetRegistryService(DatasetRepository(db_session))
+    with pytest.raises(ValueError, match="header"):
+        register(service, db_session, b",amount\n1,10\n")
+    assert DatasetRepository(db_session).list_by_organization("org_1") == []
+
+
+def test_inconsistent_row_width_is_rejected(db_session):
+    service = DatasetRegistryService(DatasetRepository(db_session))
+    with pytest.raises(ValueError, match="row 3"):
+        register(service, db_session, b"id,amount\n1,10\n2\n")
+    assert DatasetRepository(db_session).list_by_organization("org_1") == []
 
 
 def test_unsupported_extension_is_rejected(db_session):
