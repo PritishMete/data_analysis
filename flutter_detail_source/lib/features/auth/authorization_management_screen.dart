@@ -31,6 +31,8 @@ class _AuthorizationManagementScreenState
   String? _error;
   Map<String, dynamic> _snapshot = const {};
   String? _datasetUploadStatus;
+  String? _datasetUploadFileName;
+  int? _datasetUploadFileSize;
   bool _datasetUploading = false;
 
   @override
@@ -473,14 +475,16 @@ class _AuthorizationManagementScreenState
     }
     setState(() {
       _datasetUploading = true;
-      _datasetUploadStatus = 'Preparing...';
+      _datasetUploadFileName = file.name;
+      _datasetUploadFileSize = size;
+      _datasetUploadStatus = 'Preparing';
     });
     try {
       final headers = await firebaseAuthHeaders();
       if (insightFlowWorkspaceId.isNotEmpty) {
         headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
       }
-      setState(() => _datasetUploadStatus = 'Uploading...');
+      setState(() => _datasetUploadStatus = 'Uploading');
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(insightFlowBackendBaseUrl + path),
@@ -495,7 +499,7 @@ class _AuthorizationManagementScreenState
         ),
       );
       final response = await request.send();
-      setState(() => _datasetUploadStatus = 'Validating & importing...');
+      setState(() => _datasetUploadStatus = 'Validating');
       final body = await response.stream.bytesToString();
       dynamic decoded;
       try {
@@ -508,7 +512,11 @@ class _AuthorizationManagementScreenState
               : 'Managed dataset operation was rejected.',
         );
       }
-      setState(() => _datasetUploadStatus = 'Ready');
+      setState(() => _datasetUploadStatus = 'Importing');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) setState(() => _datasetUploadStatus = 'Profiling');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) setState(() => _datasetUploadStatus = 'Ready');
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -528,6 +536,8 @@ class _AuthorizationManagementScreenState
           _datasetUploading = false;
           if (_datasetUploadStatus == 'Ready' || _datasetUploadStatus == 'Failed') {
             _datasetUploadStatus = null;
+            _datasetUploadFileName = null;
+            _datasetUploadFileSize = null;
           }
         });
       }
@@ -607,6 +617,13 @@ class _AuthorizationManagementScreenState
     }
   }
 
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '${bytes} B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
   List<Widget> _managedDatasetRows(bool canManage) {
     final datasets = (_snapshot['datasets'] as List? ?? const [])
         .whereType<Map>()
@@ -626,11 +643,21 @@ class _AuthorizationManagementScreenState
             _datasetUploading ? 'UPLOAD IN PROGRESS' : 'Upload Dataset',
           ),
         ),
-      if (_datasetUploading && _datasetUploadStatus != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: _MetaRow('Status', _datasetUploadStatus!),
-        ),
+      if (_datasetUploading) ...[
+        if (_datasetUploadFileName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: _MetaRow(
+              'File',
+              '${_datasetUploadFileName!} · ${_formatBytes(_datasetUploadFileSize ?? 0)}',
+            ),
+          ),
+        if (_datasetUploadStatus != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _MetaRow('Status', _datasetUploadStatus!),
+          ),
+      ],
     ];
 
     if (datasets.isEmpty) {
