@@ -178,13 +178,15 @@ def get_managed_dataset(
     *, workspace_id: str, token: str, dataset_id: str
 ) -> dict[str, Any]:
     claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
     _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
     try:
+        organization_id = str(context["organization_id"])
         dataset = repo.get_by_id(dataset_id)
-        if dataset is None or dataset.organization_id != workspace_id:
+        if dataset is None or dataset.organization_id != organization_id:
             raise FileNotFoundError("Dataset not found.")
         return _structured_summary(dataset, len(repo.list_versions(dataset_id)))
     finally:
@@ -201,13 +203,15 @@ def get_managed_dataset_rows(
     offset: int,
 ) -> dict[str, Any]:
     claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
     _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
     try:
+        organization_id = str(context["organization_id"])
         dataset = repo.get_by_id(dataset_id)
-        if dataset is None or dataset.organization_id != workspace_id:
+        if dataset is None or dataset.organization_id != organization_id:
             raise FileNotFoundError("Dataset not found.")
         version = repo.get_version(dataset_id, version_id)
         if version is None or version.status != "ready":
