@@ -3286,7 +3286,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         }
         return;
       }
-      if (secureLocalOnly) {
+      if (secureLocalOnly && !isManagedDatasetSession) {
         setState(() {
           isSearchingChat = false;
           chatHistory.add({
@@ -3297,22 +3297,31 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         });
         return;
       }
-      final String? jsonString = await _fetchSourceData();
-      if (jsonString == null || jsonString.isEmpty) {
-        throw "No data found. Select a range or load a file first.";
-      }
-      final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
-      if (rawRows.isEmpty || rawRows.first is! List) {
-        throw "Unrecognised data shape — expected a 2D array from Excel or file.";
-      }
-      final List<List<dynamic>> rows = rawRows
-          .whereType<List<dynamic>>()
-          .where(
-            (r) => r.any((c) => c != null && c.toString().trim().isNotEmpty),
-          )
-          .toList();
-      if (rows.length < 2) {
-        throw "Dataset too small — needs at least a header row and one data row.";
+      final bool managedRemoteSession = isManagedDatasetSession;
+      final List<List<dynamic>> rows;
+      if (managedRemoteSession) {
+        // Managed analytical data stays server-side. The backend resolves the
+        // authorized dataset/version for the query instead of copying the full
+        // dataset into Flutter memory.
+        rows = const <List<dynamic>>[];
+      } else {
+        final String? jsonString = await _fetchSourceData();
+        if (jsonString == null || jsonString.isEmpty) {
+          throw "No data found. Select a range or load a file first.";
+        }
+        final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
+        if (rawRows.isEmpty || rawRows.first is! List) {
+          throw "Unnrecognised data shape — expected a 2D array from Excel or file.";
+        }
+        rows = rawRows
+            .whereType<List<dynamic>>()
+            .where(
+              (r) => r.any((c) => c != null && c.toString().trim().isNotEmpty),
+            )
+            .toList();
+        if (rows.length < 2) {
+          throw "Dataset too small — needs at least a header row and one data row.";
+        }
       }
       final lowerQuery = userText.toLowerCase();
       final isSentimentQuery =
@@ -3416,13 +3425,20 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           request.fields['text'] = userText;
           request.fields['available_sheets'] = json.encode(availableSheets);
         }
-        request.files.add(
-          http.MultipartFile.fromString(
-            'file',
-            csvData,
-            filename: 'data_source.csv',
-          ),
-        );
+        if (managedRemoteSession) {
+          request.fields['managed_dataset_id'] = widget.managedDatasetId!;
+          if (widget.managedVersionId?.trim().isNotEmpty == true) {
+            request.fields['managed_version_id'] = widget.managedVersionId!;
+          }
+        } else {
+          request.files.add(
+            http.MultipartFile.fromString(
+              'file',
+              csvData,
+              filename: 'data_source.csv',
+            ),
+          );
+        }
 
         final streamedResponse = await request.send().timeout(
           isSentimentQuery
