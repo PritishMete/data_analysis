@@ -58,10 +58,8 @@ def _logical_type(series: pd.Series) -> str:
 
 
 def _merge_types(current: str | None, incoming: str) -> str:
-    if not current:
+    if not current or current == incoming:
         return incoming
-    if current == incoming:
-        return current
     if {current, incoming} <= {"integer", "decimal"}:
         return "decimal"
     if current == "boolean" or incoming == "boolean":
@@ -103,9 +101,10 @@ class DatasetRegistryService:
         existing = self.repository.find_by_file_hash(file_hash, organization_id)
         if existing is not None and existing.status not in {"failed", "deleted"}:
             self.repository.touch_last_accessed(existing.dataset_id)
-            return DatasetRegistration(existing, self.repository.get_columns(existing.dataset_id), True)
+            return DatasetRegistration(
+                existing, self.repository.get_columns(existing.dataset_id), True
+            )
 
-        self.repository.db.rollback()
         schema_hash = compute_schema_hash((str(col), str(df[col].dtype)) for col in df.columns)
         now = datetime.now(timezone.utc)
         with self.repository.db.begin():
@@ -143,12 +142,20 @@ class DatasetRegistryService:
                 created_at=now,
             )
             self.repository.add_version(version, commit=False)
-            columns = [self._build_column_row(dataset.dataset_id, df, col) for col in df.columns]
+            columns = [
+                self._build_column_row(dataset.dataset_id, df, col, version.version_pk)
+                for col in df.columns
+            ]
             self.repository.add_columns(columns, commit=False)
             self.repository.bulk_add_rows(
                 version.version_pk,
                 [
-                    {"row_number": index + 1, "row_data": {str(k): _json_value(v) for k, v in row.items()}}
+                    {
+                        "row_number": index + 1,
+                        "row_data": {
+                            str(k): _json_value(v) for k, v in row.items()
+                        },
+                    }
                     for index, row in enumerate(df.to_dict(orient="records"))
                 ],
             )
@@ -181,12 +188,16 @@ class DatasetRegistryService:
         if existing_dataset_id is None:
             existing = self.repository.find_by_file_hash(file_hash, organization_id)
             if existing is not None and existing.status not in {"failed", "deleted"}:
-                self.repository.touch_last_accessed(existing.dataset_id)
                 version = self.repository.get_version(existing.dataset_id)
-                if version is None:
-                    raise ValueError("Duplicate dataset has no current version.")
+                if version is None or version.status != "ready":
+                    raise ValueError("Duplicate dataset has no READY current version.")
+                self.repository.touch_last_accessed(existing.dataset_id)
                 return StreamingDatasetRegistration(
-                    DatasetRegistration(existing, self.repository.get_columns(existing.dataset_id), True),
+                    DatasetRegistration(
+                        existing,
+                        self.repository.get_columns_for_version(version.version_pk),
+                        True,
+                    ),
                     version,
                     pd.DataFrame(),
                 )
@@ -194,16 +205,18 @@ class DatasetRegistryService:
             existing = self.repository.get_by_id(existing_dataset_id)
             if existing is None or existing.organization_id != organization_id:
                 raise ValueError("Dataset is not accessible in this organization.")
-            if existing.status in {"deleted", "failed"}:
+            if existing.status == "deleted":
                 raise ValueError("This dataset cannot receive a new version.")
-            if existing.file_hash == file_hash and existing.current_version_id:
-                version = self.repository.get_version(existing.dataset_id, existing.current_version_id)
-                if version is None:
-                    raise ValueError("Dataset current version is missing.")
+            current = self.repository.get_version(existing.dataset_id)
+            if current is not None and current.file_hash == file_hash:
                 self.repository.touch_last_accessed(existing.dataset_id)
                 return StreamingDatasetRegistration(
-                    DatasetRegistration(existing, self.repository.get_columns(existing.dataset_id), True),
-                    version,
+                    DatasetRegistration(
+                        existing,
+                        self.repository.get_columns_for_version(current.version_pk),
+                        True,
+                    ),
+                    current,
                     pd.DataFrame(),
                 )
 
@@ -232,19 +245,19 @@ class DatasetRegistryService:
             raise ValueError("CSV contains duplicate column names.")
 
         is_version = existing is not None
-        version_number = (existing.version_number + 1) if is_version else 1
+        version_number = existing.version_number + 1 if is_version else 1
         sample_frames: list[pd.DataFrame] = []
         sample_count = 0
         type_map: dict[str, str] = {}
         missing: dict[str, int] = {column: 0 for column in columns}
         row_count = 0
 
-        self.repository.db.rollback()
+        # One transaction owns the entire structured ingestion. A parse,
+        # profiling, or bulk-write error therefore rolls back every row/version
+        # instead of leaving a partial dataset behind.
         with self.repository.db.begin():
             if is_version:
                 dataset = existing
-                dataset.status = "processing"
-                self.repository.db.flush()
             else:
                 dataset = Dataset(
                     organization_id=organization_id,
@@ -280,20 +293,9 @@ class DatasetRegistryService:
             )
             self.repository.add_version(version, commit=False)
 
-            all_chunks = [first]
-            all_chunks_iter = iter(all_chunks)
-            for chunk in all_chunks_iter:
-                added, sample = self._prepare_chunk(
-                    chunk, row_count, type_map, missing, sample_count, SAMPLE_ROWS
-                )
-                self.repository.bulk_add_rows(version.version_pk, added)
-                row_count += len(added)
-                if sample is not None:
-                    sample_frames.append(sample)
-                    sample_count += len(sample)
-
-            for chunk in chunks:
-                if [str(c) for c in chunk.columns] != columns:
+            for chunk in (first, *chunks):
+                chunk_columns = [str(c) for c in chunk.columns]
+                if chunk_columns != columns:
                     raise ValueError("CSV rows do not have a consistent column structure.")
                 added, sample = self._prepare_chunk(
                     chunk, row_count, type_map, missing, sample_count, SAMPLE_ROWS
@@ -308,36 +310,45 @@ class DatasetRegistryService:
                 raise ValueError("CSV must contain at least one data row.")
 
             schema_hash = compute_schema_hash(type_map.items())
-            column_rows = []
-            for column in columns:
-                column_rows.append(
-                    DatasetColumn(
-                        dataset_id=dataset.dataset_id,
-                        column_name=column,
-                        detected_type=type_map.get(column, "text"),
-                        nullable=missing[column] > 0,
-                        unique_count=self.repository.count_distinct_row_values(version.version_pk, column),
-                        missing_percentage=round((missing[column] / row_count) * 100.0, 4),
-                    )
+            column_rows = [
+                DatasetColumn(
+                    dataset_id=dataset.dataset_id,
+                    version_pk=version.version_pk,
+                    column_name=column,
+                    detected_type=type_map.get(column, "text"),
+                    nullable=missing[column] > 0,
+                    unique_count=self.repository.count_distinct_row_values(
+                        version.version_pk, column
+                    ),
+                    missing_percentage=round((missing[column] / row_count) * 100.0, 4),
                 )
+                for column in columns
+            ]
             self.repository.add_columns(column_rows, commit=False)
-            dataset.schema_hash = schema_hash
-            dataset.file_hash = file_hash
-            dataset.row_count = row_count
-            dataset.column_count = len(columns)
-            dataset.status = "processing"
-            dataset.version_number = version_number
-            dataset.original_filename = safe_name
-            dataset.content_type = content_type or "text/csv"
-            dataset.file_size = file_size
+
             version.schema_hash = schema_hash
             version.row_count = row_count
             version.status = "processing"
             self.repository.db.flush()
 
-        sample = pd.concat(sample_frames, ignore_index=True) if sample_frames else first.head(0)
+            if not is_version:
+                dataset.schema_hash = schema_hash
+                dataset.file_hash = file_hash
+                dataset.row_count = row_count
+                dataset.column_count = len(columns)
+                dataset.version_number = version_number
+                dataset.original_filename = safe_name
+                dataset.content_type = content_type or "text/csv"
+                dataset.file_size = file_size
+                dataset.status = "processing"
+
+        sample = (
+            pd.concat(sample_frames, ignore_index=True)
+            if sample_frames
+            else first.head(0)
+        )
         return StreamingDatasetRegistration(
-            DatasetRegistration(dataset, self.repository.get_columns(dataset.dataset_id), False),
+            DatasetRegistration(dataset, column_rows, False),
             version,
             sample,
         )
@@ -347,35 +358,44 @@ class DatasetRegistryService:
         dataset_id: str,
         version_id: str,
         *,
-        storage_provider: str,
-        storage_object_id: str,
+        storage_provider: str | None = None,
+        storage_object_id: str | None = None,
     ) -> Dataset:
         with self.repository.db.begin():
             dataset = self.repository.get_by_id(dataset_id)
             version = self.repository.get_version(dataset_id, version_id)
             if dataset is None or version is None:
                 raise ValueError("Dataset version does not exist.")
+            if version.status != "processing":
+                raise ValueError("Only a PROCESSING version can become READY.")
             version.status = "ready"
             version.storage_provider = storage_provider
             version.storage_object_id = storage_object_id
             dataset.status = "ready"
             dataset.current_version_id = version.version_id
+            dataset.version_number = version.version_number
+            dataset.schema_hash = version.schema_hash
+            dataset.file_hash = version.file_hash
+            dataset.row_count = version.row_count
+            dataset.column_count = version.column_count
+            dataset.original_filename = version.original_filename
+            dataset.content_type = version.content_type
+            dataset.file_size = version.file_size
             dataset.storage_provider = storage_provider
             dataset.storage_object_id = storage_object_id
-            dataset.updated_at = datetime.now(timezone.utc) if hasattr(dataset, "updated_at") else dataset.last_accessed
             dataset.last_accessed = datetime.now(timezone.utc)
             self.repository.db.flush()
         return dataset
 
     def mark_failed(self, dataset_id: str, version_id: str, reason: str) -> None:
         with self.repository.db.begin():
-            dataset = self.repository.get_by_id(dataset_id)
             version = self.repository.get_version(dataset_id, version_id)
+            dataset = self.repository.get_by_id(dataset_id)
             if version is not None:
                 version.status = "failed"
                 version.failure_reason = str(reason)[:1000]
-            if dataset is not None:
-                dataset.status = "failed" if dataset.current_version_id is None else "ready"
+            if dataset is not None and dataset.current_version_id is None:
+                dataset.status = "failed"
             self.repository.db.flush()
 
     @staticmethod
@@ -392,27 +412,39 @@ class DatasetRegistryService:
             name = str(column)
             missing[name] += int(chunk[name].isna().sum())
             type_map[name] = _merge_types(type_map.get(name), _logical_type(chunk[name]))
-        for row_offset, record in enumerate(chunk.to_dict(orient="records"), start=1):
+        for row_offset, record in enumerate(
+            chunk.to_dict(orient="records"), start=1
+        ):
             rows.append({
                 "row_number": current_row_count + row_offset,
-                "row_data": {str(key): _json_value(value) for key, value in record.items()},
+                "row_data": {
+                    str(key): _json_value(value) for key, value in record.items()
+                },
             })
         remaining = max(0, sample_limit - sample_count)
         sample = chunk.head(remaining).copy() if remaining else None
         return rows, sample
 
     @staticmethod
-    def _build_column_row(dataset_id: str, df: pd.DataFrame, column_name: str) -> DatasetColumn:
+    def _build_column_row(
+        dataset_id: str,
+        df: pd.DataFrame,
+        column_name: str,
+        version_pk: str,
+    ) -> DatasetColumn:
         series = df[column_name]
         row_count = len(series)
         missing_count = int(series.isnull().sum())
         return DatasetColumn(
             dataset_id=dataset_id,
+            version_pk=version_pk,
             column_name=str(column_name),
             detected_type=str(series.dtype),
             nullable=missing_count > 0,
             unique_count=int(series.nunique(dropna=True)),
-            missing_percentage=round((missing_count / row_count * 100.0), 4) if row_count else 0.0,
+            missing_percentage=round(
+                (missing_count / row_count * 100.0), 4
+            ) if row_count else 0.0,
             inferred_role=None,
         )
 
@@ -427,7 +459,9 @@ class DatasetRegistryService:
                 break
             total += len(chunk)
             if total > max_bytes:
-                raise ValueError(f"Dataset exceeds the configured {max_bytes} byte limit.")
+                raise ValueError(
+                    f"Dataset exceeds the configured {max_bytes} byte limit."
+                )
             digest.update(chunk)
         file_obj.seek(0)
         if total == 0:
