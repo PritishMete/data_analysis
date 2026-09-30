@@ -11,9 +11,13 @@ void main() {
     expect(source, contains("FileType.custom"));
     expect(source, contains("allowedExtensions: const ['csv']"));
     expect(source, contains("_datasetUploading"));
-    expect(source, contains("Preparing..."));
-    expect(source, contains("Uploading..."));
-    expect(source, contains("Validating & importing..."));
+    expect(source, contains("_datasetUploadFileName"));
+    expect(source, contains("_datasetUploadFileSize"));
+    expect(source, contains("Preparing"));
+    expect(source, contains("Uploading"));
+    expect(source, contains("Validating"));
+    expect(source, contains("Importing"));
+    expect(source, contains("Profiling"));
     expect(source, contains("Failed"));
     expect(source, contains("/v1/managed-datasets"));
     expect(source, contains("Upload New Version"));
