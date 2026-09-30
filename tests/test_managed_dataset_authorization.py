@@ -189,7 +189,7 @@ def test_owner_rows_preview_returns_first_100_of_100000_after_authorization(monk
 
     class Repo:
         def __init__(self, db):
-            pass
+            self.db = db
 
         def get_by_id(self, dataset_id):
             assert dataset_id == "dataset-owner"
