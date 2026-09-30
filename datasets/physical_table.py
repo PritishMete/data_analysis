@@ -50,7 +50,8 @@ def build_physical_table(
 
 
 def ensure_schema(connection: Connection) -> None:
-    connection.execute(text("CREATE SCHEMA IF NOT EXISTS managed_data"))
+    if connection.dialect.name == "postgresql":
+        connection.execute(text("CREATE SCHEMA IF NOT EXISTS managed_data"))
 
 
 def create_physical_table(
@@ -76,7 +77,7 @@ def drop_physical_table(connection: Connection, table_name: str) -> None:
     table = Table(
         table_name,
         metadata,
-        schema=PHYSICAL_SCHEMA,
+        schema=PHYSICAL_SCHEMA if connection.dialect.name == "postgresql" else None,
     )
     table.drop(connection, checkfirst=True)
 
