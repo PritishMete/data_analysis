@@ -424,7 +424,7 @@ def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch)
             return self
 
         def all(self):
-            return self.rows
+            return self.values if self.values else self.rows
 
         def scalars(self):
             return self
