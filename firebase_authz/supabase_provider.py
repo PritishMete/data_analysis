@@ -686,43 +686,57 @@ def audit_dataset_event(
              "action": action, "outcome": outcome, "metadata": json.dumps(metadata or {})})
 
 
+def _organization_id_for_workspace(db, workspace_id: str) -> str:
+    organization_id = db.execute(
+        text("""SELECT organization_id
+                FROM workspaces
+                WHERE workspace_id=:workspace AND status='active'"""),
+        {"workspace": workspace_id},
+    ).scalar_one_or_none()
+    if not organization_id:
+        raise AuthzError("Workspace authorization denied.")
+    return str(organization_id)
+
+
 def delete_dataset_authorization(workspace_id: str, dataset_id: str) -> None:
     with SessionLocal.begin() as db:
+        organization_id = _organization_id_for_workspace(db, workspace_id)
         db.execute(text("DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:dataset"),
-                   {"org": workspace_id, "dataset": dataset_id})
+                   {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM dataset_authorization WHERE organization_id=:org AND dataset_id=:dataset"),
-                   {"org": workspace_id, "dataset": dataset_id})
+                   {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM authorization_resources WHERE organization_id=:org AND resource_id=:dataset"),
-                   {"org": workspace_id, "dataset": dataset_id})
+                   {"org": organization_id, "dataset": dataset_id})
 
 
 def revoke_dataset_working_copies(workspace_id: str, dataset_id: str) -> None:
     """Revoke working-copy authorization records that point at a deleted dataset."""
     with SessionLocal.begin() as db:
+        organization_id = _organization_id_for_workspace(db, workspace_id)
         copies = db.execute(
             text("""SELECT working_copy_id
                 FROM working_copy_authorization
                 WHERE organization_id=:org AND source_dataset_id=:dataset
                   AND status='active'"""),
-            {"org": workspace_id, "dataset": dataset_id},
+            {"org": organization_id, "dataset": dataset_id},
         ).scalars().all()
         for copy_id in copies:
             db.execute(
                 text("""UPDATE working_copy_authorization
                     SET status='revoked'
                     WHERE organization_id=:org AND working_copy_id=:copy"""),
-                {"org": workspace_id, "copy": copy_id},
+                {"org": organization_id, "copy": copy_id},
             )
             db.execute(
                 text("""DELETE FROM resource_grants
                     WHERE organization_id=:org AND resource_id=:copy"""),
-                {"org": workspace_id, "copy": copy_id},
+                {"org": organization_id, "copy": copy_id},
             )
             db.execute(
                 text("""DELETE FROM authorization_resources
                     WHERE organization_id=:org AND resource_id=:copy
                       AND resource_type='working_copy'"""),
-                {"org": workspace_id, "copy": copy_id},
+                {"org": organization_id, "copy": copy_id},
             )
 
 
