@@ -126,6 +126,7 @@ class _ManagementShellState extends State<ManagementShell> {
       : <Map<String, dynamic>>[];
 
   static const _managementRequestTimeout = Duration(seconds: 45);
+  Future<void>? _refreshFuture;
 
   Future<http.Response> _sendManagementRequest(
     Uri uri,
@@ -139,36 +140,25 @@ class _ManagementShellState extends State<ManagementShell> {
 
     try {
       return await send().timeout(_managementRequestTimeout);
-    } on TimeoutException {
-      // Render's free instance can be asleep after the site has been closed
-      // overnight. The first request may spend ~20-25s waking the service.
-      // Retry once with a fresh authenticated session instead of surfacing
-      // the old 15-second timeout to a user whose account is still valid.
-      final session = await InsightFlowSupabaseAuthService.ensureSession(
-        timeout: const Duration(seconds: 8),
+    } on TimeoutException catch (error) {
+      // A Future.timeout only bounds the caller; it does not cancel the
+      // underlying browser request. Do not start a second 45-second request
+      // here: that used to turn one slow request into two overlapping
+      // management calls and could amplify a cold-start/session problem.
+      debugPrint(
+        '[management] timeout ' +
+            method.toUpperCase() +
+            ' ' +
+            uri.path +
+            ': ' +
+            error.runtimeType.toString(),
       );
-      if (session == null || session.accessToken.isEmpty) {
-        rethrow;
-      }
-      final refreshedHeaders = await supabaseAuthHeaders();
-      if (insightFlowWorkspaceId.isNotEmpty) {
-        refreshedHeaders['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
-      }
-      if (body != null) {
-        refreshedHeaders['Content-Type'] = 'application/json';
-      }
-      return await sendWithHeaders(
-        send: () => method == 'POST'
-            ? http.post(uri, headers: refreshedHeaders, body: jsonEncode(body))
-            : http.get(uri, headers: refreshedHeaders),
+      throw StateError(
+        'Management service timed out while loading ' +
+            uri.path +
+            '. The backend may be starting or temporarily unavailable. Please retry.',
       );
     }
-  }
-
-  Future<http.Response> sendWithHeaders({
-    required Future<http.Response> Function() send,
-  }) {
-    return send().timeout(_managementRequestTimeout);
   }
 
   Future<Map<String, dynamic>> request(
@@ -215,8 +205,24 @@ class _ManagementShellState extends State<ManagementShell> {
     return Map<String, dynamic>.from(data);
   }
 
-  Future<void> loadAll() async {
-    setState(() { loading = true; error = null; });
+  Future<void> loadAll() {
+    final active = _refreshFuture;
+    if (active != null) {
+      return active;
+    }
+    final future = _loadAll();
+    _refreshFuture = future;
+    return future.whenComplete(() {
+      if (identical(_refreshFuture, future)) {
+        _refreshFuture = null;
+      }
+    });
+  }
+
+  Future<void> _loadAll() async {
+    if (mounted) {
+      setState(() { loading = true; error = null; });
+    }
     try {
       final r = await Future.wait([
         request('/overview'), request('/locations'), request('/sections'),
@@ -234,7 +240,12 @@ class _ManagementShellState extends State<ManagementShell> {
         loading = false;
       });
     } catch (e) {
-      if (mounted) setState(() { loading = false; error = e.toString().replaceFirst('Bad state: ', ''); });
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = e.toString().replaceFirst('Bad state: ', '');
+        });
+      }
     }
   }
 
