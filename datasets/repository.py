@@ -280,6 +280,11 @@ class DatasetRepository:
         if commit:
             self.db.commit()
 
+    def delete_version_columns(self, version_pk: str, *, commit: bool = True) -> None:
+        self.db.execute(delete(DatasetColumn).where(DatasetColumn.version_pk == version_pk))
+        if commit:
+            self.db.commit()
+
     def list_all_for_organization_excluding(
         self, organization_id: str, exclude_dataset_id: str, limit: int = 25
     ) -> list[Dataset]:
