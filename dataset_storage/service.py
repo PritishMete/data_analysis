@@ -649,7 +649,7 @@ def delete_managed_dataset(
                 )
         revoke_dataset_working_copies(organization_id, dataset_id)
         repo.delete_dataset(dataset_id)
-        _unregister_authorization(organization_id, dataset_id)
+        _unregister_authorization(workspace_id, dataset_id)
         _audit_safely(
             workspace_id,
             str(claims["uid"]),
