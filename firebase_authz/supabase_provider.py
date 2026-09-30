@@ -664,6 +664,36 @@ def delete_dataset_authorization(workspace_id: str, dataset_id: str) -> None:
                    {"org": workspace_id, "dataset": dataset_id})
 
 
+def revoke_dataset_working_copies(workspace_id: str, dataset_id: str) -> None:
+    """Revoke working-copy authorization records that point at a deleted dataset."""
+    with SessionLocal.begin() as db:
+        copies = db.execute(
+            text("""SELECT working_copy_id
+                FROM working_copy_authorization
+                WHERE organization_id=:org AND source_dataset_id=:dataset
+                  AND status='active'"""),
+            {"org": workspace_id, "dataset": dataset_id},
+        ).scalars().all()
+        for copy_id in copies:
+            db.execute(
+                text("""UPDATE working_copy_authorization
+                    SET status='revoked'
+                    WHERE organization_id=:org AND working_copy_id=:copy"""),
+                {"org": workspace_id, "copy": copy_id},
+            )
+            db.execute(
+                text("""DELETE FROM resource_grants
+                    WHERE organization_id=:org AND resource_id=:copy"""),
+                {"org": workspace_id, "copy": copy_id},
+            )
+            db.execute(
+                text("""DELETE FROM authorization_resources
+                    WHERE organization_id=:org AND resource_id=:copy
+                      AND resource_type='working_copy'"""),
+                {"org": workspace_id, "copy": copy_id},
+            )
+
+
 def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str) -> dict[str, Any]:
     if not action.startswith("dataset."):
         raise ValueError("Dataset authorization requires a dataset capability.")
