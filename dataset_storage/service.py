@@ -259,7 +259,13 @@ def get_managed_dataset_profile(
                 item["column_name"]: item["unique_count"] for item in column_stats
             },
             "preview": [
-                [row.row_data.get(name) for name in ordered_names] for row in rows
+                [
+                    (
+                        row["row_data"] if isinstance(row, dict) else row.row_data
+                    ).get(name)
+                    for name in ordered_names
+                ]
+                for row in rows
             ],
             "info": "Managed dataset profile loaded from Supabase PostgreSQL; full rows remain server-side.",
         }
