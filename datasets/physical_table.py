@@ -33,6 +33,8 @@ def _sql_type(detected_type: str):
 def build_physical_table(
     table_name: str,
     columns: Iterable[tuple[str, str]],
+    *,
+    schema: str | None = PHYSICAL_SCHEMA,
 ) -> Table:
     if not _TABLE_RE.fullmatch(table_name):
         raise ValueError("Invalid managed dataset table name.")
@@ -44,7 +46,7 @@ def build_physical_table(
         Column(str(name), _sql_type(str(detected_type)), nullable=True)
         for name, detected_type in columns
     )
-    return Table(table_name, metadata, *sql_columns, schema=PHYSICAL_SCHEMA)
+    return Table(table_name, metadata, *sql_columns, schema=schema)
 
 
 def ensure_schema(connection: Connection) -> None:
@@ -57,11 +59,13 @@ def create_physical_table(
     columns: Iterable[tuple[str, str]],
 ) -> Table:
     ensure_schema(connection)
-    table = build_physical_table(table_name, columns)
+    schema = PHYSICAL_SCHEMA if connection.dialect.name == "postgresql" else None
+    table = build_physical_table(table_name, columns, schema=schema)
     table.create(connection, checkfirst=True)
-    quoted = f'"{PHYSICAL_SCHEMA}"."{table_name}"'
-    connection.execute(text(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY"))
-    connection.execute(text(f"REVOKE ALL ON TABLE {quoted} FROM anon, authenticated"))
+    if schema:
+        quoted = f'"{schema}"."{table_name}"'
+        connection.execute(text(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY"))
+        connection.execute(text(f"REVOKE ALL ON TABLE {quoted} FROM anon, authenticated"))
     return table
 
 
