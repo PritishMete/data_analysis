@@ -52,7 +52,11 @@ class DatasetRepository:
         if table_name and columns:
             from .physical_table import build_physical_table, normalize_record
 
-            table = build_physical_table(table_name, columns)
+            table = build_physical_table(
+                table_name,
+                columns,
+                schema="managed_data" if self.db.bind.dialect.name == "postgresql" else None,
+            )
             payload = [
                 normalize_record(
                     row["row_data"],
@@ -293,7 +297,11 @@ class DatasetRepository:
         physical_columns = [(c.column_name, c.detected_type) for c in columns]
         from .physical_table import ROW_NUMBER_COLUMN, build_physical_table
 
-        table = build_physical_table(version.data_table_name, physical_columns)
+        table = build_physical_table(
+            version.data_table_name,
+            physical_columns,
+            schema="managed_data" if self.db.bind.dialect.name == "postgresql" else None,
+        )
         stmt = (
             select(table)
             .order_by(table.c[ROW_NUMBER_COLUMN].asc())
@@ -341,6 +349,7 @@ class DatasetRepository:
             table = build_physical_table(
                 version.data_table_name,
                 [(c.column_name, c.detected_type) for c in columns],
+                schema="managed_data" if self.db.bind.dialect.name == "postgresql" else None,
             )
             return int(self.db.execute(select(func.count(table.c[ROW_NUMBER_COLUMN]))).scalar_one())
         return int(
