@@ -20,6 +20,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool loading = true, rowsLoading = false;
   String? error, rowsError, search;
   List<Map<String,dynamic>> datasets = [], members = [], rows = [];
+  List<String> roles = [];
   Map<String,dynamic>? selected, profile;
   int offset = 0;
   static const pageSize = 100;
@@ -59,6 +60,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       setState(() {
         datasets = ds;
         members = (mg['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+        roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
         loading = false;
       });
     } catch (e) {
@@ -174,8 +176,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (loading) return _surface(const SizedBox(height: 240, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive))));
     if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('DATA ACCESS / ERROR'), const SizedBox(height: 8), Text(error!, style: const TextStyle(color: TechColors.textPrimary)), const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true)]));
     final q = (search ?? '').trim().toLowerCase();
-    final roleIds = members.isEmpty ? const <String>[] : (members.first['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
-    final canManage = roleIds.contains('organization_owner') || roleIds.contains('branch_head') || roleIds.contains('manager');
+    final canManage = roles.contains('organization_owner') || roles.contains('branch_head') || roles.contains('manager');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
