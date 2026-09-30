@@ -170,7 +170,7 @@ class _ManagementShellState extends State<ManagementShell> {
     // Build the bearer header from that exact session instead of resolving the
     // session a second time for every one of the six startup requests.
     final headers = <String, String>{
-      'Authorization': 'Bearer ' + session.accessToken,
+      'Authorization': 'Bearer ${session.accessToken}',
     };
     if (insightFlowWorkspaceId.isNotEmpty) {
       headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
