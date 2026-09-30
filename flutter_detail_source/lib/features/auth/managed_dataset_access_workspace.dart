@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -118,6 +119,37 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
+  Future<void> _upload({String? datasetId}) async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['csv'], withData: true);
+      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) return;
+      final file = picked.files.single;
+      final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
+      final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
+      request.headers.addAll(await _headers());
+      request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
+      final response = await request.send().timeout(const Duration(minutes: 5));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final body = await response.stream.bytesToString();
+        dynamic decoded; try { decoded = jsonDecode(body); } catch (_) {}
+        throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Dataset import was rejected.');
+      }
+      _snack(datasetId == null ? 'Managed dataset imported.' : 'New dataset version imported.');
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _deleteDataset() async {
+    final id = selected?['dataset_id']?.toString();
+    if (id == null) return;
+    try {
+      final response = await http.delete(Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + id), headers: await _headers()).timeout(const Duration(seconds: 45));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw StateError('Dataset deletion was rejected.');
+      setState(() { selected = null; profile = null; rows = []; });
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
   Future<void> _startWorking() async {
     final id = selected?['dataset_id']?.toString();
     if (id == null) return;
@@ -142,12 +174,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (loading) return _surface(const SizedBox(height: 240, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive))));
     if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('DATA ACCESS / ERROR'), const SizedBox(height: 8), Text(error!, style: const TextStyle(color: TechColors.textPrimary)), const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true)]));
     final q = (search ?? '').trim().toLowerCase();
+    final roleIds = members.isEmpty ? const <String>[] : (members.first['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
+    final canManage = roleIds.contains('organization_owner') || roleIds.contains('branch_head') || roleIds.contains('manager');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         _eye('MANAGED DATA / AUTHORIZED WORKSPACE'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: const InputDecoration(hintText: 'SEARCH DATASETS...', prefixIcon: Icon(Icons.search, size: 16), isDense: true))),
-        _action('REFRESH', Icons.refresh, _load),
+        _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -181,6 +215,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
         _action('START WORKING', Icons.edit_note, _startWorking, active: true),
         _action('DOWNLOAD CSV', Icons.download_outlined, _download),
+        if (canManage) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
+        if (canManage) _action('DELETE', Icons.delete_outline, _deleteDataset),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
