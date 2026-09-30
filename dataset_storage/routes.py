@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 
 from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied
 from .service import (
     create_managed_working_copy,
     delete_managed_dataset,
-    download_managed_dataset,
+    stream_managed_dataset_csv,
     get_managed_dataset,
     get_managed_dataset_rows,
     list_authorized_datasets,
@@ -134,15 +134,18 @@ def managed_dataset_download(
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     try:
-        data, metadata = download_managed_dataset(
+        iterator, metadata = stream_managed_dataset_csv(
             workspace_id=_workspace(workspace_id), token=_token(authorization),
             dataset_id=dataset_id, version_id=version_id,
         )
-        return Response(
-            content=data,
-            media_type=metadata.get("content_type") or "text/csv",
+        filename = metadata.get("original_filename") or "dataset.csv"
+        if not str(filename).lower().endswith(".csv"):
+            filename = f"{filename}.csv"
+        return StreamingResponse(
+            iterator,
+            media_type="text/csv; charset=utf-8",
             headers={
-                "Content-Disposition": f'attachment; filename="{metadata.get("original_filename", "dataset.csv")}"',
+                "Content-Disposition": f'attachment; filename="{filename}"',
                 "X-InsightFlow-Dataset-ID": dataset_id,
                 "X-InsightFlow-Version": str(metadata.get("version_id", version_id or "")),
             },
