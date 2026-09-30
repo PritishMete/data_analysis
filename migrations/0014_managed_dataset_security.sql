@@ -55,10 +55,15 @@ FOR SELECT TO authenticated
 USING (
     EXISTS (
         SELECT 1
-        FROM public.organization_members m
-        WHERE m.organization_id = datasets.organization_id
-          AND m.principal_id = (SELECT private.insightflow_principal_id())
-          AND m.status = 'active'
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.organization_id = datasets.organization_id
+          AND da.dataset_id = datasets.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
     )
 );
 
@@ -68,12 +73,14 @@ FOR SELECT TO authenticated
 USING (
     EXISTS (
         SELECT 1
-        FROM public.datasets d
-        JOIN public.organization_members m
-          ON m.organization_id = d.organization_id
-        WHERE d.dataset_id = dataset_versions.dataset_id
-          AND m.principal_id = (SELECT private.insightflow_principal_id())
-          AND m.status = 'active'
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_versions.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
     )
 );
 
@@ -83,12 +90,14 @@ FOR SELECT TO authenticated
 USING (
     EXISTS (
         SELECT 1
-        FROM public.datasets d
-        JOIN public.organization_members m
-          ON m.organization_id = d.organization_id
-        WHERE d.dataset_id = dataset_columns.dataset_id
-          AND m.principal_id = (SELECT private.insightflow_principal_id())
-          AND m.status = 'active'
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_columns.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
     )
 );
 
@@ -99,11 +108,15 @@ USING (
     EXISTS (
         SELECT 1
         FROM public.dataset_versions v
-        JOIN public.datasets d ON d.dataset_id = v.dataset_id
-        JOIN public.organization_members m ON m.organization_id = d.organization_id
+        JOIN public.dataset_authorization da
+          ON da.dataset_id = v.dataset_id
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
         WHERE v.version_pk = dataset_rows.version_pk
-          AND m.principal_id = (SELECT private.insightflow_principal_id())
-          AND m.status = 'active'
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
     )
 );
 
