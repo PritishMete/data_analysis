@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    BigInteger,
     String,
     UniqueConstraint,
 )
@@ -61,7 +62,7 @@ class Dataset(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready", index=True)
     original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     storage_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_object_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     current_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -98,7 +99,7 @@ class DatasetVersion(Base):
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     storage_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_object_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -118,7 +119,7 @@ class DatasetRow(Base):
         Index("ix_dataset_rows_version_row", "version_pk", "row_number"),
     )
 
-    row_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    row_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     version_pk: Mapped[str] = mapped_column(
         String(36), ForeignKey("dataset_versions.version_pk", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -135,6 +136,9 @@ class DatasetColumn(Base):
     dataset_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("datasets.dataset_id", ondelete="CASCADE"), nullable=False, index=True
     )
+    version_pk: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("dataset_versions.version_pk", ondelete="CASCADE"), nullable=True, index=True
+    )
     column_name: Mapped[str] = mapped_column(String(255), nullable=False)
     detected_type: Mapped[str] = mapped_column(String(32), nullable=False)
     nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -146,3 +150,4 @@ class DatasetColumn(Base):
     role_detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="columns")
+    version: Mapped["DatasetVersion | None"] = relationship("DatasetVersion", foreign_keys=[version_pk])
