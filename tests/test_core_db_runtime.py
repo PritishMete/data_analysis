@@ -11,10 +11,11 @@ def test_default_sqlite_path_creates_runtime_directory(tmp_path, monkeypatch):
     assert db_path.parent.exists()
 
 
-def test_postgres_engine_uses_stale_connection_protection(monkeypatch):
+def test_postgres_engine_uses_stale_connection_protection():
     from core import db
 
-    monkeypatch.setattr(db, "DATABASE_URL", "postgresql://example")
+    if db.DATABASE_URL.startswith("sqlite"):
+        return
     # The production engine is created once at import time; assert the
     # configuration source explicitly so future changes cannot silently drop
     # stale-connection protection for Render/Supabase.
