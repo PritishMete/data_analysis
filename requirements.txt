@@ -17,3 +17,5 @@ psycopg[binary]
 PyJWT>=2.8
 # Location enrichment uses the Python standard-library HTTP client; no extra geocoder dependency is required.
 google-genai
+
+supabase>=2.20,<3
