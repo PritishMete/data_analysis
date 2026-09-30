@@ -38,6 +38,11 @@ void main() {
     expect(source, contains("'/people'"));
     expect(source, contains("'/assignments'"));
     expect(source, contains("'/audit?limit=100'"));
+    expect(source, contains('Future<void>? _refreshFuture'));
+    expect(source, contains('final active = _refreshFuture'));
+    expect(source, contains('identical(_refreshFuture, future)'));
+    expect(source, contains('Management service timed out while loading'));
+    expect(source, isNot(contains('return await sendWithHeaders(')));
     expect(source, contains("'/assignments/manager'"));
     expect(source, contains("'/assignments/manager/change'"));
     expect(source, contains("'/assignments/team-lead'"));
