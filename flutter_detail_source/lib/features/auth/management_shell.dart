@@ -949,40 +949,6 @@ class _ManagementShellState extends State<ManagementShell> {
     ),
   );
 
-  Widget _glassActionButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    bool accent = false,
-  }) {
-    final color = accent ? TechColors.borderActive : TechColors.textMuted;
-    return SizedBox(
-      width: 38,
-      height: 36,
-      child: GlassButton.custom(
-        onTap: onPressed ?? () {},
-        enabled: onPressed != null,
-        width: 38,
-        height: 36,
-        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-        useOwnLayer: true,
-        quality: GlassQuality.minimal,
-        settings: TechColors.sectionGlass,
-        glowColor: accent
-            ? TechColors.borderActive.withValues(alpha: 0.24)
-            : Colors.transparent,
-        glowRadius: accent ? 7 : 0,
-        interactionScale: 1.04,
-        child: Tooltip(
-          message: tooltip,
-          child: Center(
-            child: Icon(icon, size: 16, color: color),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _managementNavChip(
     ManagementSection target,
     String label,
