@@ -7,7 +7,7 @@ import re
 import uuid
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -19,7 +19,7 @@ from firebase_authz.supabase_provider import (
     delete_dataset_authorization,
     register_dataset,
 )
-from datasets.models import DatasetRow
+from datasets.models import DatasetColumn, DatasetRow
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from schema_intelligence.repository import RelationshipRepository
@@ -334,13 +334,11 @@ def _mark_failed_sql_version(
         version = repo.get_version(dataset_id, version_id)
         if version is not None:
             repo.db.execute(
-                __import__("sqlalchemy").delete(DatasetRow).where(
-                    DatasetRow.version_pk == version.version_pk
-                )
+                delete(DatasetRow).where(DatasetRow.version_pk == version.version_pk)
             )
             repo.db.execute(
-                __import__("sqlalchemy").delete(__import__("datasets.models", fromlist=["DatasetColumn"]).DatasetColumn).where(
-                    __import__("datasets.models", fromlist=["DatasetColumn"]).DatasetColumn.version_pk == version.version_pk
+                delete(DatasetColumn).where(
+                    DatasetColumn.version_pk == version.version_pk
                 )
             )
             version.status = "failed"
@@ -451,7 +449,7 @@ def upload_managed_dataset_stream(
             },
         )
         return _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
-    except Exception:
+    except Exception as exc:
         if stored is not None:
             try:
                 provider.delete(
