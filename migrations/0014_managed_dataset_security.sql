@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS dataset_columns (
     detected_type VARCHAR(32) NOT NULL,
     nullable BOOLEAN NOT NULL DEFAULT true,
     unique_count INTEGER NOT NULL DEFAULT 0,
+    missing_count INTEGER NOT NULL DEFAULT 0,
     missing_percentage DOUBLE PRECISION NOT NULL DEFAULT 0,
     inferred_role VARCHAR(32),
     inferred_role_confidence DOUBLE PRECISION,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS dataset_columns (
 );
 
 ALTER TABLE dataset_columns ADD COLUMN IF NOT EXISTS version_pk VARCHAR(36);
+ALTER TABLE dataset_columns ADD COLUMN IF NOT EXISTS missing_count INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS ix_dataset_columns_dataset_version
     ON dataset_columns(dataset_id, version_pk);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_dataset_columns_version_name
