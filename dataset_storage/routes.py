@@ -10,6 +10,7 @@ from .service import (
     stream_managed_dataset_csv,
     get_managed_dataset,
     get_managed_dataset_rows,
+    get_managed_dataset_profile,
     list_authorized_datasets,
     upload_managed_dataset_stream,
 )
@@ -63,6 +64,26 @@ def managed_dataset_detail(
     try:
         return get_managed_dataset(
             workspace_id=_workspace(workspace_id), token=_token(authorization), dataset_id=dataset_id
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/{dataset_id}/profile")
+def managed_dataset_profile(
+    dataset_id: str,
+    version_id: str | None = Query(default=None),
+    preview_limit: int = Query(default=5, ge=1, le=20),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_managed_dataset_profile(
+            workspace_id=_workspace(workspace_id),
+            token=_token(authorization),
+            dataset_id=dataset_id,
+            version_id=version_id,
+            preview_limit=preview_limit,
         )
     except Exception as exc:
         raise _map_error(exc)
