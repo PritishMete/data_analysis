@@ -30,7 +30,8 @@ void main() {
     expect(source, contains('_managementAnalysisNavChip'));
     expect(source, contains('kInsightFlowNavigationGlassSettings'));
     expect(source, contains('management_navigation.dart'));
-    expect(source, contains("MaterialPageRoute(builder: (_) => const AuthorizationManagementScreen())"));
+    expect(source, contains('AuthorizationManagementScreen('));
+    expect(source, contains('onStartWorking:'));
     expect(source, contains("'/overview'"));
     expect(source, contains("'/locations'"));
     expect(source, contains("'/sections'"));
