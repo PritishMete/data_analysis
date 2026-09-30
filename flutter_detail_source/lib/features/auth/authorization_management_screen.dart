@@ -484,8 +484,9 @@ class _AuthorizationManagementScreenState
       setState(() => _datasetUploadStatus = 'Uploading & processing...');
       final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
       request.headers.addAll(headers);
-      request.files.add(http.MultipartFile.fromStream(
-        Stream<List<int>>.fromIterable(_uploadChunks(bytes)),
+      request.files.add(http.MultipartFile(
+        'file',
+        http.ByteStream(Stream<List<int>>.fromIterable(_uploadChunks(bytes))),
         bytes.length,
         filename: filename,
       ));
