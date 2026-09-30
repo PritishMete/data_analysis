@@ -618,6 +618,35 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
     return {"dataset_id": dataset_id, "organization_id": workspace_id}
 
 
+def audit_dataset_event(
+    workspace_id: str, actor_uid: str, action: str, outcome: str,
+    *, metadata: dict[str, Any] | None = None,
+) -> None:
+    with SessionLocal.begin() as db:
+        actor = _principal_for_claims(
+            db,
+            {"uid": actor_uid, "sub": actor_uid, "provider": "firebase"},
+            workspace_id,
+        )
+        if not actor:
+            return
+        db.execute(text("""INSERT INTO audit_events
+            (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+            VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),
+            {"event": _id("evt"), "org": workspace_id, "principal": actor["principal_id"],
+             "action": action, "outcome": outcome, "metadata": json.dumps(metadata or {})})
+
+
+def delete_dataset_authorization(workspace_id: str, dataset_id: str) -> None:
+    with SessionLocal.begin() as db:
+        db.execute(text("DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:dataset"),
+                   {"org": workspace_id, "dataset": dataset_id})
+        db.execute(text("DELETE FROM dataset_authorization WHERE organization_id=:org AND dataset_id=:dataset"),
+                   {"org": workspace_id, "dataset": dataset_id})
+        db.execute(text("DELETE FROM authorization_resources WHERE organization_id=:org AND resource_id=:dataset"),
+                   {"org": workspace_id, "dataset": dataset_id})
+
+
 def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str) -> dict[str, Any]:
     if not action.startswith("dataset."):
         raise ValueError("Dataset authorization requires a dataset capability.")

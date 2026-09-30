@@ -17,8 +17,45 @@ class DatasetStorageProvider(ABC):
     """Binary storage contract. Authorization is deliberately outside this interface."""
 
     @abstractmethod
+    def upload_stream(self, *, workspace_id: str, dataset_id: str, version_id: str,
+                      stream, original_filename: str, content_type: str | None) -> StoredDatasetObject:
+        import hashlib
+        path = self.object_path(workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id)
+        blob = self._bucket().blob(path)
+        blob.metadata = {
+            "dataset_id": dataset_id,
+            "version_id": version_id,
+            "original_filename": original_filename,
+        }
+        digest = hashlib.sha256()
+        total = 0
+        with blob.open("wb", content_type=content_type or "application/octet-stream") as writer:
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                total += len(chunk)
+                writer.write(chunk)
+        return StoredDatasetObject(path, total, content_type, digest.hexdigest())
+
     def upload(self, *, workspace_id: str, dataset_id: str, version_id: str, data: bytes,
                original_filename: str, content_type: str | None) -> StoredDatasetObject: ...
+
+    def upload_stream(self, *, workspace_id: str, dataset_id: str, version_id: str,
+                      stream, original_filename: str, content_type: str | None) -> StoredDatasetObject:
+        # Compatibility fallback for test/custom providers. Production Firebase storage
+        # overrides this method and writes chunks directly to the object store.
+        chunks = []
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return self.upload(
+            workspace_id=workspace_id, dataset_id=dataset_id, version_id=version_id,
+            data=b"".join(chunks), original_filename=original_filename, content_type=content_type,
+        )
 
     @abstractmethod
     def download(self, *, workspace_id: str, dataset_id: str, version_id: str) -> bytes: ...
