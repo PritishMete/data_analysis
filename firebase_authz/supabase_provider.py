@@ -529,9 +529,15 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
 
 
 def authorization_context(claims: dict[str, Any], workspace_id: str | None = None) -> dict[str, Any]:
+    """Resolve identity -> principal -> active membership -> organization/workspace.
+
+    A supplied workspace is only a selector. It can never create or override
+    membership context. When no selector is supplied, return every active
+    workspace so callers can deterministically recover a unique context.
+    """
     provider, subject = _identity(claims)
     with SessionLocal() as db:
-        row = db.execute(text("""SELECT p.principal_id, o.organization_id, o.name,
+        rows = db.execute(text("""SELECT p.principal_id, o.organization_id, o.name,
                     w.workspace_id, m.employee_id, m.status
                 FROM identity_bindings b
                 JOIN principals p ON p.principal_id = b.principal_id
@@ -541,27 +547,51 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                 WHERE b.provider=:provider AND b.provider_subject=:subject
                   AND (CAST(:workspace AS TEXT) IS NULL OR w.workspace_id=CAST(:workspace AS TEXT))
                   AND b.status='active' AND m.status='active'
-                  AND o.status='active' AND w.status='active'"""),
-                         {"provider": provider, "subject": subject, "workspace": workspace_id}).mappings().first()
-        if not row:
+                  AND o.status='active' AND w.status='active'
+                ORDER BY w.workspace_id"""),
+                         {"provider": provider, "subject": subject, "workspace": workspace_id}).mappings().all()
+        if not rows:
             return {"membership_status": "none", "workspace_authorized": False,
                     "authorization_state": "no_organization_access", "principal_id": None,
                     "organization_id": None, "workspace_id": workspace_id,
                     "employee_id": None, "workspaces": [], "role_ids": [], "permissions": []}
+
+        # A selected workspace must resolve to exactly one active membership.
+        if workspace_id is not None and len(rows) != 1:
+            return {"membership_status": "none", "workspace_authorized": False,
+                    "authorization_state": "workspace_not_authorized", "principal_id": str(rows[0]["principal_id"]),
+                    "organization_id": None, "workspace_id": workspace_id,
+                    "employee_id": None, "workspaces": [
+                        {"workspace_id": str(row["workspace_id"]),
+                         "organization_id": str(row["organization_id"]),
+                         "employee_id": row["employee_id"],
+                         "membership_status": "active"}
+                        for row in rows
+                    ], "role_ids": [], "permissions": []}
+
+        selected = rows[0]
         roles = db.execute(text("""SELECT mr.role_id FROM member_roles mr
             WHERE mr.organization_id=:organization AND mr.principal_id=:principal"""),
-                           {"organization": row["organization_id"], "principal": row["principal_id"]}).scalars().all()
+                           {"organization": selected["organization_id"], "principal": selected["principal_id"]}).scalars().all()
         permissions = db.execute(text("""SELECT DISTINCT rp.permission_id FROM role_permissions rp
             WHERE rp.role_id = ANY(:roles)"""), {"roles": list(roles)}).scalars().all() if roles else []
-    return {"membership_status": "active", "workspace_authorized": True,
-            "authorization_state": "active_identity", "principal_id": row["principal_id"],
-            "organization_id": row["organization_id"], "workspace_id": row["workspace_id"],
-            "employee_id": row["employee_id"], "role_ids": list(roles),
-            "permissions": list(permissions), "organization_name": row["name"],
-            "workspaces": [{"workspace_id": row["workspace_id"], "organization_id": row["organization_id"],
-                            "employee_id": row["employee_id"], "membership_status": "active",
-                            "role_ids": list(roles)}]}
 
+        workspaces = []
+        for row in rows:
+            workspaces.append({
+                "workspace_id": str(row["workspace_id"]),
+                "organization_id": str(row["organization_id"]),
+                "employee_id": row["employee_id"],
+                "membership_status": "active",
+                "role_ids": list(roles) if row["organization_id"] == selected["organization_id"] else [],
+            })
+
+    return {"membership_status": "active", "workspace_authorized": True,
+            "authorization_state": "active_identity", "principal_id": selected["principal_id"],
+            "organization_id": selected["organization_id"], "workspace_id": selected["workspace_id"],
+            "employee_id": selected["employee_id"], "role_ids": list(roles),
+            "permissions": list(permissions), "organization_name": selected["name"],
+            "workspaces": workspaces}
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
