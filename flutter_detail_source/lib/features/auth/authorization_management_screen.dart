@@ -104,11 +104,10 @@ class _AuthorizationManagementScreenState
         throw StateError('Invalid authorization response.');
       }
       final snapshot = Map<String, dynamic>.from(decoded);
-      try {
-        snapshot['datasets'] = await _loadManagedDatasets(headers);
-      } catch (_) {
-        // Keep the authorization snapshot usable if the analytical registry is temporarily unavailable.
-      }
+      // Managed dataset metadata is included in the same authorized management
+      // snapshot. Do not issue a second browser request to /v1/managed-datasets:
+      // the snapshot already carries the server-authorized registry and avoids
+      // a redundant cross-origin request during ManagementShell initialization.
       if (mounted) {
         setState(() {
           _snapshot = snapshot;
