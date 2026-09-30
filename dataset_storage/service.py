@@ -334,10 +334,9 @@ def load_managed_dataset_dataframe(
             raise FileNotFoundError("Dataset version not found.")
         columns = repo.get_columns_for_version(version.version_pk)
         names = [column.column_name for column in columns]
-        physical = repo.get_rows(
+        physical = repo.iter_physical_rows(
             version.version_pk,
-            limit=version.row_count,
-            offset=0,
+            batch_size=5000,
         )
         rows = [
             [item["row_data"].get(name) for name in names]
@@ -383,12 +382,10 @@ def stream_managed_dataset_csv(
             )
             yield header.getvalue().encode("utf-8")
 
-            physical_rows = repo.get_rows(
+            for item in repo.iter_physical_rows(
                 version.version_pk,
-                limit=version.row_count,
-                offset=0,
-            )
-            for item in physical_rows:
+                batch_size=5000,
+            ):
                 line = io.StringIO()
                 writer = csv.writer(line, lineterminator="\\r\\n")
                 writer.writerow([
