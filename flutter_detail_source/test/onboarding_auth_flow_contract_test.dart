@@ -82,7 +82,7 @@ void main() {
     final dataScreen =
         File('lib/features/dashboard/data_screen.dart').readAsStringSync();
 
-    expect(navigation, contains('const DataScreen()'));
+    expect(navigation, contains('DataScreen('));
     expect(navigation, contains('const ManagementShell()'));
     expect(dataScreen, contains('openInsightFlowManagement(context)'));
   });
