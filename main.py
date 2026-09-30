@@ -293,10 +293,12 @@ def _run_production_authz_migrations() -> None:
         raise
 
 
-# Production authz migrations are applied by the deployment build step, not during
-# module import. Keeping database work out of the Uvicorn import path ensures the
-# web process can bind to $PORT promptly; the migration runner itself remains
-# unchanged and is still available to the deployment workflow/build command.
+# Run the same idempotent migration runner at service startup as a safety
+# net for the live Render service, whose Build Command may not include the
+# Blueprint migration step. This keeps Supabase schema and application code
+# synchronized without introducing a second migration system.
+app.add_event_handler("startup", _run_production_authz_migrations)
+
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
