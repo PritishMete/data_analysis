@@ -172,7 +172,12 @@ class _ManagementShellState extends State<ManagementShell> {
     if (session == null || session.accessToken.isEmpty) {
       throw StateError('Your authenticated session could not be restored. Please retry.');
     }
-    final headers = await supabaseAuthHeaders();
+    // ensureSession() already resolved the authoritative session above.
+    // Build the bearer header from that exact session instead of resolving the
+    // session a second time for every one of the six startup requests.
+    final headers = <String, String>{
+      'Authorization': 'Bearer ' + session.accessToken,
+    };
     if (insightFlowWorkspaceId.isNotEmpty) {
       headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
     }
