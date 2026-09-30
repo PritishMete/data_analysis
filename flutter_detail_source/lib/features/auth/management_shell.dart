@@ -253,7 +253,6 @@ class _ManagementShellState extends State<ManagementShell> {
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
     labelStyle: const TextStyle(color: TechColors.textMuted),
-    filled: true,
     border: const OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(16)),
     ),
@@ -481,7 +480,7 @@ class _ManagementShellState extends State<ManagementShell> {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: (accent ? TechColors.borderActive : CupertinoColors.black).withValues(alpha: 0.28),
+            color: CupertinoColors.black.withValues(alpha: 0.4),
             blurRadius: 16,
             offset: const Offset(0, 5),
           ),
@@ -899,8 +898,6 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget assignmentList() => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(14),
-    settings: TechColors.sectionGlass,
-    quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -936,27 +933,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ],
     ),
   );
-
-  Widget _managementNavChip(
-    ManagementSection target,
-    String label,
-  ) {
-    final selected = target == section;
-    return GlassChip(
-      label: label,
-      selected: selected,
-      selectedColor: CupertinoColors.activeGreen.withValues(alpha: 0.35),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      labelStyle: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-        color: selected
-            ? CupertinoColors.white
-            : CupertinoColors.label.resolveFrom(context).withValues(alpha: 0.85),
-      ),
-      onTap: () => setState(() => section = target),
-    );
-  }
 
   Widget _buildManagementHeader() {
     return Padding(
