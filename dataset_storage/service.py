@@ -389,6 +389,7 @@ def upload_managed_dataset_stream(
             intelligence.analyze_dataset(
                 registration.registration.dataset.dataset_id,
                 registration.sample,
+                version_pk=registration.version.version_pk,
             )
 
         if archive_original_enabled():
