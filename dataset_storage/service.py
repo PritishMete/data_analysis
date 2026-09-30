@@ -319,19 +319,40 @@ def _unregister_authorization(workspace_id: str, dataset_id: str) -> None:
         pass
 
 
-def _cleanup_sql_version(
+def _mark_failed_sql_version(
     repo: DatasetRepository,
     dataset_id: str,
     version_id: str,
     was_new_dataset: bool,
+    reason: str,
 ) -> None:
+    # Preserve the explicit FAILED lifecycle state for audit/retry visibility,
+    # but remove every structured row/column so the failed version is never
+    # usable as an analytical dataset. Existing READY versions are untouched.
     with repo.db.begin():
         dataset = repo.get_by_id(dataset_id)
         version = repo.get_version(dataset_id, version_id)
         if version is not None:
-            repo.db.delete(version)
+            repo.db.execute(
+                __import__("sqlalchemy").delete(DatasetRow).where(
+                    DatasetRow.version_pk == version.version_pk
+                )
+            )
+            repo.db.execute(
+                __import__("sqlalchemy").delete(__import__("datasets.models", fromlist=["DatasetColumn"]).DatasetColumn).where(
+                    __import__("datasets.models", fromlist=["DatasetColumn"]).DatasetColumn.version_pk == version.version_pk
+                )
+            )
+            version.status = "failed"
+            version.failure_reason = str(reason)[:1000]
+            version.row_count = 0
+            version.column_count = 0
         if dataset is not None and was_new_dataset:
-            repo.db.delete(dataset)
+            dataset.status = "failed"
+            dataset.current_version_id = None
+            dataset.row_count = 0
+            dataset.column_count = 0
+            dataset.schema_hash = ""
         repo.db.flush()
 
 
@@ -442,11 +463,12 @@ def upload_managed_dataset_stream(
                 pass
         if registration is not None:
             try:
-                _cleanup_sql_version(
+                _mark_failed_sql_version(
                     repo,
                     registration.registration.dataset.dataset_id,
                     registration.version.version_id,
                     new_dataset,
+                    str(exc),
                 )
             except Exception:
                 pass
