@@ -36,7 +36,7 @@ BEGIN
             ORDER BY id
         LOOP
             column_defs := column_defs || ', ' ||
-                format('%I %s', c.column_name,
+                format('%%I %%s', c.column_name,
                     CASE c.detected_type
                         WHEN 'integer' THEN 'BIGINT'
                         WHEN 'decimal' THEN 'NUMERIC'
@@ -45,48 +45,48 @@ BEGIN
                         ELSE 'TEXT'
                     END);
 
-            column_names := column_names || ', ' || format('%I', c.column_name);
+            column_names := column_names || ', ' || format('%%I', c.column_name);
 
             select_exprs := select_exprs || ', ' ||
                 CASE c.detected_type
                     WHEN 'integer' THEN
-                        format('NULLIF(row_data->>%L, '''')::BIGINT', c.column_name)
+                        format('NULLIF(row_data->>%%L, '''')::BIGINT', c.column_name)
                     WHEN 'decimal' THEN
-                        format('NULLIF(row_data->>%L, '''')::NUMERIC', c.column_name)
+                        format('NULLIF(row_data->>%%L, '''')::NUMERIC', c.column_name)
                     WHEN 'boolean' THEN
                         format(
-                            'CASE WHEN lower(NULLIF(row_data->>%L, '''')) IN (''true'',''1'',''yes'') THEN true
-                                  WHEN lower(NULLIF(row_data->>%L, '''')) IN (''false'',''0'',''no'') THEN false
+                            'CASE WHEN lower(NULLIF(row_data->>%%L, '''')) IN (''true'',''1'',''yes'') THEN true
+                                  WHEN lower(NULLIF(row_data->>%%L, '''')) IN (''false'',''0'',''no'') THEN false
                                   ELSE NULL END',
                             c.column_name, c.column_name
                         )
                     WHEN 'datetime' THEN
-                        format('NULLIF(row_data->>%L, '''')::TIMESTAMPTZ', c.column_name)
+                        format('NULLIF(row_data->>%%L, '''')::TIMESTAMPTZ', c.column_name)
                     ELSE
-                        format('row_data->>%L', c.column_name)
+                        format('row_data->>%%L', c.column_name)
                 END;
         END LOOP;
 
         EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS managed_data.%I (%s)',
+            'CREATE TABLE IF NOT EXISTS managed_data.%%I (%%s)',
             table_name,
             column_defs
         );
 
         EXECUTE format(
-            'ALTER TABLE managed_data.%I ENABLE ROW LEVEL SECURITY',
+            'ALTER TABLE managed_data.%%I ENABLE ROW LEVEL SECURITY',
             table_name
         );
         EXECUTE format(
-            'REVOKE ALL ON TABLE managed_data.%I FROM anon, authenticated',
+            'REVOKE ALL ON TABLE managed_data.%%I FROM anon, authenticated',
             table_name
         );
 
         EXECUTE format(
-            'INSERT INTO managed_data.%I (%s)
-             SELECT %s
+            'INSERT INTO managed_data.%%I (%%s)
+             SELECT %%s
              FROM public.dataset_rows
-             WHERE version_pk = %L
+             WHERE version_pk = %%L
              ORDER BY row_number',
             table_name,
             column_names,
@@ -96,8 +96,8 @@ BEGIN
 
         EXECUTE format(
             'UPDATE public.dataset_versions
-             SET data_table_name = %L
-             WHERE version_pk = %L',
+             SET data_table_name = %%L
+             WHERE version_pk = %%L',
             table_name,
             v.version_pk
         );
