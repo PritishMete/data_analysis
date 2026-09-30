@@ -146,10 +146,10 @@ class _ManagementShellState extends State<ManagementShell> {
       // here: that used to turn one slow request into two overlapping
       // management calls and could amplify a cold-start/session problem.
       debugPrint(
-        '[management] timeout \${method.toUpperCase()} \${uri.path}: \${error.runtimeType}',
+        '[management] timeout ${method.toUpperCase()} ${uri.path}: ${error.runtimeType}',
       );
       throw StateError(
-        'Management service timed out while loading \${uri.path}. '
+        'Management service timed out while loading ${uri.path}. '
         'The backend may be starting or temporarily unavailable. Please retry.',
       );
     }
