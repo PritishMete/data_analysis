@@ -194,9 +194,26 @@ class InsightFlowSupabaseAuthService {
 
   static Future<void> signOut() => client.auth.signOut();
 
+  static Future<Session?>? _ensureSessionFuture;
+
   static Future<Session?> ensureSession({
     Duration timeout = const Duration(seconds: 3),
-  }) async {
+  }) {
+    final active = _ensureSessionFuture;
+    if (active != null) {
+      return active;
+    }
+
+    final future = _ensureSession(timeout);
+    _ensureSessionFuture = future;
+    return future.whenComplete(() {
+      if (identical(_ensureSessionFuture, future)) {
+        _ensureSessionFuture = null;
+      }
+    });
+  }
+
+  static Future<Session?> _ensureSession(Duration timeout) async {
     var session = currentSession;
     if (session == null) {
       try {
@@ -219,9 +236,16 @@ class InsightFlowSupabaseAuthService {
         expiresAt <= DateTime.now().millisecondsSinceEpoch ~/ 1000 + 30;
     if (needsRefresh) {
       try {
-        final refreshed = await client.auth.refreshSession();
+        final refreshed = await client.auth
+            .refreshSession()
+            .timeout(timeout);
         session = refreshed.session ?? currentSession;
-      } catch (_) {
+      } on TimeoutException {
+        debugPrint('[supabase-auth] session refresh timed out');
+        return null;
+      } catch (error, stackTrace) {
+        debugPrint('[supabase-auth] session refresh failed: ${error.runtimeType}');
+        debugPrintStack(stackTrace: stackTrace);
         return null;
       }
     }
