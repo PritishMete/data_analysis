@@ -530,6 +530,167 @@ class _AuthorizationManagementScreenState
     }
   }
 
+  Future<void> _downloadManagedDataset(Map<String, dynamic> dataset) async {
+    try {
+      final headers = await firebaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      final id = dataset['dataset_id'].toString();
+      final version = dataset['current_version']?.toString();
+      var url = '$insightFlowBackendBaseUrl/v1/managed-datasets/$id/download';
+      if (version != null && version.isNotEmpty) {
+        url += '?version_id=' + Uri.encodeQueryComponent(version);
+      }
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode != 200) {
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Dataset download was rejected.',
+        );
+      }
+      final filename =
+          dataset['original_filename']?.toString() ?? 'dataset.csv';
+      await FilePicker.platform.saveFile(
+        dialogTitle: 'Save managed dataset',
+        fileName: filename.toLowerCase().endsWith('.csv')
+            ? filename
+            : filename + '.csv',
+        bytes: response.bodyBytes,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteManagedDataset(String datasetId) async {
+    try {
+      final headers = await firebaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      final response = await http.delete(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) {
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Dataset deletion was rejected.',
+        );
+      }
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  List<Widget> _managedDatasetRows(bool canManage) {
+    final datasets = (_snapshot['datasets'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((d) => d['status']?.toString() != 'deleted')
+        .toList();
+
+    final rows = <Widget>[
+      if (canManage)
+        GlassButton.custom(
+          onTap: _datasetUploading ? () {} : _uploadManagedDataset,
+          width: double.infinity,
+          height: 42,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: _datasetUploading ? 'Upload in progress' : 'Upload Dataset',
+          child: Text(
+            _datasetUploading ? 'UPLOAD IN PROGRESS' : 'Upload Dataset',
+          ),
+        ),
+      if (_datasetUploading && _datasetUploadStatus != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: _MetaRow('Status', _datasetUploadStatus!),
+        ),
+    ];
+
+    if (datasets.isEmpty) {
+      rows.add(const _MetaRow('Status', 'No managed datasets in this scope.'));
+      return rows;
+    }
+
+    for (final dataset in datasets) {
+      final id = dataset['dataset_id']?.toString() ?? '';
+      final name = dataset['original_filename']?.toString() ??
+          dataset['display_name']?.toString() ??
+          id;
+      final version = dataset['current_version']?.toString() ?? '—';
+      final status = dataset['status']?.toString() ?? 'processing';
+      final rowCount = dataset['row_count']?.toString() ?? '—';
+      final columnCount = dataset['column_count']?.toString() ?? '—';
+      final uploadedBy = dataset['uploaded_by_uid']?.toString() ?? '—';
+      final size = dataset['file_size']?.toString();
+
+      rows.add(_MetaRow(name, rowCount + ' rows · ' + columnCount + ' columns'));
+      rows.add(_MetaRow('Version', version + ' · ' + status.toUpperCase()));
+      rows.add(_MetaRow(
+        'Uploaded',
+        uploadedBy + ' · ' + (dataset['created_at']?.toString() ?? '—') +
+            (size == null ? '' : ' · ' + size + ' bytes'),
+      ));
+      rows.add(_MetaRow('Status', status.toUpperCase()));
+      rows.add(
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            if (widget.onStartWorking != null && status == 'ready')
+              TextButton(
+                onPressed: () => widget.onStartWorking!(id),
+                child: const Text('Open'),
+              ),
+            if (widget.onStartWorking != null && status == 'ready')
+              TextButton(
+                onPressed: () => widget.onStartWorking!(id),
+                child: const Text('Start Working'),
+              ),
+            if (status == 'ready')
+              TextButton(
+                onPressed: () => _downloadManagedDataset(dataset),
+                child: const Text('Download CSV'),
+              ),
+            if (canManage && status == 'ready')
+              TextButton(
+                onPressed: () => _uploadManagedVersion(id),
+                child: const Text('Upload New Version'),
+              ),
+            if (canManage && status != 'processing')
+              TextButton(
+                onPressed: () => _deleteManagedDataset(id),
+                child: const Text('Delete'),
+              ),
+          ],
+        ),
+      );
+    }
+    return rows;
+  }
+
   Future<void> _createDelegation() async {
     final memberIds = <String>{};
     final datasetIds = <String>{};
