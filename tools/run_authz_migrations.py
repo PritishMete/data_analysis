@@ -160,6 +160,9 @@ def verify_managed_dataset_security(engine) -> None:
     if missing:
         raise RuntimeError("Managed dataset tables are missing: " + ",".join(missing))
     with engine.connect() as conn:
+        dataset_columns = {column["name"] for column in inspect(engine).get_columns("dataset_columns")}
+        if "missing_count" not in dataset_columns:
+            raise RuntimeError("Managed dataset profiling column missing: dataset_columns.missing_count.")
         rows = conn.execute(text("""
             SELECT c.relname, c.relrowsecurity
             FROM pg_class c
