@@ -54,7 +54,34 @@ class DatasetRepository:
             }
             for row in rows
         ]
-        self.db.execute(insert(DatasetRow), payload)
+        # PostgreSQL production path: COPY the chunk in one server-side bulk
+        # operation. SQLite and other test dialects retain executemany fallback.
+        if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
+            import csv
+            import io
+            import json
+            connection = self.db.connection()
+            raw = connection.connection.dbapi_connection
+            with raw.cursor() as cursor:
+                with cursor.copy(
+                    "COPY dataset_rows (version_pk, row_number, row_data) FROM STDIN WITH (FORMAT CSV)"
+                ) as copy:
+                    buffer = io.StringIO()
+                    writer = csv.writer(buffer, lineterminator="\n")
+                    for item in payload:
+                        writer.writerow([
+                            item["version_pk"],
+                            item["row_number"],
+                            json.dumps(item["row_data"], ensure_ascii=False, separators=(",", ":")),
+                        ])
+                        if buffer.tell() >= 1024 * 1024:
+                            copy.write(buffer.getvalue())
+                            buffer.seek(0)
+                            buffer.truncate(0)
+                    if buffer.tell():
+                        copy.write(buffer.getvalue())
+        else:
+            self.db.execute(insert(DatasetRow), payload)
         if commit:
             self.db.commit()
         return len(payload)
@@ -141,6 +168,14 @@ class DatasetRepository:
             column.missing_percentage = missing_percentage
             self.db.flush()
 
+    def get_columns_for_version(self, version_pk: str) -> list[DatasetColumn]:
+        stmt = (
+            select(DatasetColumn)
+            .where(DatasetColumn.version_pk == version_pk)
+            .order_by(DatasetColumn.id.asc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
     def count_distinct_row_values(self, version_pk: str, column_name: str) -> int:
         expression = DatasetRow.row_data[column_name].as_string()
         stmt = select(func.count(func.distinct(expression))).where(
@@ -171,7 +206,7 @@ class DatasetRepository:
         return list(self.db.execute(stmt).scalars().all())
 
     def get_columns(self, dataset_id: str) -> list[DatasetColumn]:
-        stmt = select(DatasetColumn).where(DatasetColumn.dataset_id == dataset_id)
+        stmt = select(DatasetColumn).where(DatasetColumn.dataset_id == dataset_id).order_by(DatasetColumn.id.asc())
         return list(self.db.execute(stmt).scalars().all())
 
     def get_version(self, dataset_id: str, version_id: str | None = None) -> DatasetVersion | None:
