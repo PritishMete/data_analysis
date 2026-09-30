@@ -96,7 +96,12 @@ def _authorize_delete(claims: dict[str, Any], workspace_id: str) -> dict[str, An
 
 def _authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str):
     if _provider_mode() == "supabase":
-        from firebase_authz.supabase_provider import authorize_dataset as provider_authorize_dataset
+        from firebase_authz.supabase_provider import authorize, authorize_dataset as provider_authorize_dataset
+        context = _authorization_context(claims, workspace_id)
+        # Organization managers/branch heads retain their workspace-level dataset
+        # control-plane access; delegated employees still require the resource grant.
+        if action in {"dataset.view_original", "dataset.create_working_copy"} and "dataset.manage_acl" in context["permissions"]:
+            return authorize(claims, workspace_id, action)
         return provider_authorize_dataset(claims, workspace_id, dataset_id, action)
     return authorize_dataset(str(claims["uid"]), workspace_id, dataset_id, action)
 
