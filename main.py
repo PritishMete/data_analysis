@@ -297,7 +297,14 @@ def _run_production_authz_migrations() -> None:
 # net for the live Render service, whose Build Command may not include the
 # Blueprint migration step. This keeps Supabase schema and application code
 # synchronized without introducing a second migration system.
-app.add_event_handler("startup", _run_production_authz_migrations)
+def _initialize_production_database() -> None:
+    # Keep database initialization out of module import so Uvicorn can load
+    # main:app and bind Render's port before any database work begins.
+    _run_production_authz_migrations()
+    init_db()
+
+
+app.add_event_handler("startup", _initialize_production_database)
 
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
@@ -2598,8 +2605,6 @@ if ai_router is not None:
 # (datasets, dataset_columns, dataset_relationships, query_history) if they
 # don't already exist; safe to call on every process start.
 # ---------------------------------------------------------
-_run_production_authz_migrations()
-init_db()
 app.include_router(schema_intelligence_router)
 app.include_router(query_history_router)
 app.include_router(plan_cache_router)
