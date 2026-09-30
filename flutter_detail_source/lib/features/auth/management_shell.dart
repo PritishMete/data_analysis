@@ -911,7 +911,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget assignmentList() => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(14),
-    settings: TechColors.sectionGlass,,
+    settings: TechColors.sectionGlass,
     quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: Column(
