@@ -308,6 +308,31 @@ class DatasetRepository:
             for row in self.db.execute(stmt).mappings()
         ]
 
+    def iter_physical_rows(
+        self,
+        version_pk: str,
+        *,
+        batch_size: int = 5000,
+    ):
+        version = self.db.get(DatasetVersion, version_pk)
+        if version is None or not version.data_table_name:
+            return
+        columns = self.get_columns_for_version(version_pk)
+        physical_columns = [(c.column_name, c.detected_type) for c in columns]
+        from .physical_table import ROW_NUMBER_COLUMN, build_physical_table
+
+        table = build_physical_table(version.data_table_name, physical_columns)
+        stmt = (
+            select(table)
+            .order_by(table.c[ROW_NUMBER_COLUMN].asc())
+            .execution_options(yield_per=max(1, batch_size))
+        )
+        for row in self.db.execute(stmt).mappings():
+            yield {
+                "row_number": row[ROW_NUMBER_COLUMN],
+                "row_data": {name: row[name] for name, _ in physical_columns},
+            }
+
     def count_rows(self, version_pk: str) -> int:
         version = self.db.get(DatasetVersion, version_pk)
         if version is not None and version.data_table_name:
