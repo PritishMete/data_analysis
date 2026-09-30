@@ -36,8 +36,10 @@ class _ManagementGlassDialog extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 520),
         child: GlassContainer(
           useOwnLayer: true,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          quality: GlassQuality.standard,
+          settings: TechColors.panelGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
           child: DefaultTextStyle(
             style: const TextStyle(color: TechColors.textPrimary),
             child: Column(
@@ -251,9 +253,9 @@ class _ManagementShellState extends State<ManagementShell> {
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
     labelStyle: const TextStyle(color: TechColors.textMuted),
-    border: const OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(16)),
-    ),
+    filled: true,
+    fillColor: Colors.white.withValues(alpha: 0.04),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
   );
 
   Widget surface(Widget child) => GlassCard(
@@ -466,31 +468,21 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget _glassRow({
     required Widget child,
-    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
-      horizontal: 14,
-      vertical: 11,
-    ),
-  }) =>
-      GlassCard(
-        margin: EdgeInsets.zero,
-        padding: padding,
-        child: child,
-      );
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+  }) => GlassCard(
+    margin: EdgeInsets.zero,
+    padding: padding,
+    child: child,
+  );
 
-  Widget _actionChip(
-    String label,
-    IconData icon,
-    VoidCallback? onPressed, {
-    bool accent = false,
-  }) {
+  Widget _actionChip(String label, IconData icon, VoidCallback? onPressed, {bool accent = false}) {
     final fillColor = accent ? TechColors.borderActive : TechColors.panelBg;
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: (accent ? TechColors.borderActive : CupertinoColors.black)
-                .withValues(alpha: 0.28),
+            color: (accent ? TechColors.borderActive : CupertinoColors.black).withValues(alpha: 0.28),
             blurRadius: 16,
             offset: const Offset(0, 5),
           ),
@@ -517,9 +509,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 shape: const LiquidRoundedSuperellipse(borderRadius: 28),
                 useOwnLayer: true,
                 quality: GlassQuality.minimal,
-                settings: dockGlassSettings(
-                  glassColor: fillColor.withValues(alpha: 0.85),
-                ),
+                settings: dockGlassSettings(glassColor: fillColor.withValues(alpha: 0.85)),
                 glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
                 glowRadius: kDockGlowRadius,
                 interactionScale: 1.02,
@@ -528,15 +518,12 @@ class _ManagementShellState extends State<ManagementShell> {
                   children: [
                     Icon(icon, size: 22, color: CupertinoColors.white),
                     const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: CupertinoColors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
+                    Text(label, style: const TextStyle(
+                      color: CupertinoColors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    )),
                   ],
                 ),
               ),
@@ -547,60 +534,31 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _actionChip(String label, IconData icon, VoidCallback? onPressed, {bool accent = false}) => GlassButton.custom(
-    onTap: onPressed ?? () {},
-    enabled: onPressed != null,
-    height: 38,
-    width: 150,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-    useOwnLayer: true,
-    quality: GlassQuality.minimal,
-    settings: TechColors.sectionGlass,
-    glowColor: accent
-        ? TechColors.borderActive.withValues(alpha: 0.28)
-        : Colors.transparent,
-    glowRadius: accent ? 10 : 0,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 15, color: accent ? TechColors.borderActive : TechColors.textMuted),
-        const SizedBox(width: 7),
-        Text(label, style: TextStyle(color: accent ? TechColors.textPrimary : TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-      ]),
+  Widget metric(String label, dynamic value, {IconData? icon}) => GlassCard(
+    margin: EdgeInsets.zero,
+    padding: const EdgeInsets.all(16),
+    child: Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 18, color: TechColors.borderActive),
+          const SizedBox(width: 10),
+        ],
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _eyebrow(label),
+            const SizedBox(height: 4),
+            Text((value ?? 0).toString(), style: const TextStyle(
+              color: TechColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            )),
+          ],
+        )),
+      ],
     ),
   );
-
-  Widget metric(String label, dynamic value, {IconData? icon}) =>
-      GlassCard(
-        margin: EdgeInsets.zero,
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 18, color: TechColors.borderActive),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _eyebrow(label),
-                  const SizedBox(height: 4),
-                  Text(
-                    (value ?? 0).toString(),
-                    style: const TextStyle(
-                      color: TechColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
 
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
@@ -1026,33 +984,6 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _managementAnalysisNavChip() => GlassButton.custom(
-    onTap: () => openInsightFlowAnalysis(context),
-    height: 36,
-    width: 112,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-    useOwnLayer: true,
-    quality: GlassQuality.minimal,
-    settings: dockGlassSettings(
-      glassColor: TechColors.borderActive.withValues(alpha: 0.85),
-    ),
-    glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
-    glowRadius: kDockGlowRadius,
-    interactionScale: kDockInteractionScale,
-    child: const Center(
-      child: Text(
-        'ANALYSIS',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-          fontFamily: 'monospace',
-        ),
-      ),
-    ),
-  );
-
   Widget _buildManagementHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
@@ -1065,21 +996,14 @@ class _ManagementShellState extends State<ManagementShell> {
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.terminal,
-                  color: TechColors.borderActive,
-                  size: 18,
-                ),
+                const Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
                 const SizedBox(width: 10),
-                const Text(
-                  'InsightFlow',
-                  style: TextStyle(
-                    color: TechColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace',
-                  ),
-                ),
+                const Text('InsightFlow', style: TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                )),
               ],
             );
             final contextLabel = Column(
@@ -1087,15 +1011,12 @@ class _ManagementShellState extends State<ManagementShell> {
               children: [
                 _eyebrow('MANAGEMENT WORKSPACE'),
                 const SizedBox(height: 4),
-                const Text(
-                  'ORGANIZATION CONTROL',
-                  style: TextStyle(
-                    color: TechColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace',
-                  ),
-                ),
+                const Text('ORGANIZATION CONTROL', style: TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                )),
               ],
             );
             final controls = Row(
@@ -1104,20 +1025,12 @@ class _ManagementShellState extends State<ManagementShell> {
                 IconButton(
                   tooltip: 'Refresh management data',
                   onPressed: loadAll,
-                  icon: const Icon(
-                    Icons.refresh_rounded,
-                    size: 18,
-                    color: TechColors.textPrimary,
-                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 18, color: TechColors.textPrimary),
                 ),
                 IconButton(
                   tooltip: 'Sign out',
                   onPressed: () => InsightFlowSupabaseAuthService.signOut(),
-                  icon: const Icon(
-                    Icons.logout,
-                    size: 18,
-                    color: TechColors.textPrimary,
-                  ),
+                  icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
                 ),
               ],
             );
@@ -1131,15 +1044,13 @@ class _ManagementShellState extends State<ManagementShell> {
                 ],
               );
             }
-            return Row(
-              children: [
-                identity,
-                const Spacer(),
-                contextLabel,
-                const SizedBox(width: 12),
-                controls,
-              ],
-            );
+            return Row(children: [
+              identity,
+              const Spacer(),
+              contextLabel,
+              const SizedBox(width: 12),
+              controls,
+            ]);
           },
         ),
       ),
@@ -1147,10 +1058,6 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget _buildManagementNavigation() {
-    final chips = <Widget>[
-      ...[
-        [ManagementSection.overview, 'OVERVIEW'],
-        [ManagementSection.orga  Widget _buildManagementNavigation() {
     const tabs = <MapEntry<ManagementSection, String>>[
       MapEntry(ManagementSection.overview, 'OVERVIEW'),
       MapEntry(ManagementSection.organization, 'ORGANIZATION'),
@@ -1161,7 +1068,6 @@ class _ManagementShellState extends State<ManagementShell> {
       MapEntry(ManagementSection.dataAccess, 'DATA ACCESS'),
       MapEntry(ManagementSection.audit, 'AUDIT LOG'),
     ];
-
     return AdaptiveLiquidGlassLayer(
       settings: kInsightFlowNavigationGlassSettings,
       quality: GlassQuality.minimal,
@@ -1180,11 +1086,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 return GlassButton(
                   onTap: () => openInsightFlowAnalysis(context),
                   label: 'ANALYSIS',
-                  icon: const Icon(
-                    CupertinoIcons.chart_bar_fill,
-                    size: 18,
-                    color: CupertinoColors.white,
-                  ),
+                  icon: const Icon(CupertinoIcons.chart_bar_fill, size: 18, color: CupertinoColors.white),
                 );
               }
               final tab = tabs[index];
@@ -1192,17 +1094,14 @@ class _ManagementShellState extends State<ManagementShell> {
               return GlassChip(
                 label: tab.value,
                 selected: selected,
-                selectedColor:
-                    CupertinoColors.activeGreen.withValues(alpha: 0.35),
+                selectedColor: CupertinoColors.activeGreen.withValues(alpha: 0.35),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 labelStyle: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: selected
                       ? CupertinoColors.white
-                      : CupertinoColors.label
-                          .resolveFrom(context)
-                          .withValues(alpha: 0.85),
+                      : CupertinoColors.label.resolveFrom(context).withValues(alpha: 0.85),
                 ),
                 onTap: () => setState(() => section = tab.key),
               );
@@ -1216,26 +1115,11 @@ class _ManagementShellState extends State<ManagementShell> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
-    body: LiquidGlassScope(
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: GlassBackgroundSource(
-              child: TechAnimatedBackground(),
-            ),
-          ),
-          Pos  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.transparent,
     extendBodyBehindAppBar: true,
     body: LiquidGlassScope(
       child: Stack(
         children: [
-          Positioned.fill(
-            child: GlassBackgroundSource(
-              child: const TechAnimatedBackground(),
-            ),
-          ),
+          Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
           Positioned.fill(
             child: SafeArea(
               child: Column(
@@ -1251,11 +1135,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           child: loading
                               ? const Padding(
                                   padding: EdgeInsets.only(top: 30),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      color: TechColors.borderActive,
-                                    ),
-                                  ),
+                                  child: Center(child: CircularProgressIndicator(color: TechColors.borderActive)),
                                 )
                               : error != null
                                   ? GlassCard(
@@ -1263,45 +1143,23 @@ class _ManagementShellState extends State<ManagementShell> {
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(
-                                            Icons.error_outline_rounded,
-                                            color: TechColors.statusRed,
-                                            size: 22,
-                                          ),
+                                          const Icon(Icons.error_outline_rounded, color: TechColors.statusRed, size: 22),
                                           const SizedBox(height: 8),
                                           _eyebrow('MANAGEMENT SERVICE ERROR'),
                                           const SizedBox(height: 6),
-                                          Text(
-                                            error!,
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              color: TechColors.textPrimary,
-                                              height: 1.4,
-                                            ),
-                                          ),
+                                          Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
                                           const SizedBox(height: 14),
-                                          _actionChip(
-                                            'RETRY',
-                                            Icons.refresh_rounded,
-                                            loadAll,
-                                            accent: true,
-                                          ),
+                                          _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
                                         ],
                                       ),
                                     )
                                   : Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
-                                        _title(
-                                          _sectionLabel(section),
-                                          detail: _sectionDetail(section),
-                                          icon: _sectionIcon(section),
-                                        ),
+                                        _title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section)),
                                         const SizedBox(height: 16),
                                         body(),
-                                        if (section ==
-                                            ManagementSection.organization) ...[
+                                        if (section == ManagementSection.organization) ...[
                                           const SizedBox(height: 16),
                                           assignmentList(),
                                         ],
