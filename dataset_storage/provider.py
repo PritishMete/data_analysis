@@ -93,9 +93,9 @@ class SupabaseDatasetStorageProvider(DatasetStorageProvider):
         )
         client = self._client_for_use()
         client.storage.from_(self._bucket_name).upload(
-            path,
-            data,
-            {"content-type": content_type or "text/csv", "upsert": "false"},
+            file=data,
+            path=path,
+            file_options={"content-type": content_type or "text/csv", "upsert": "false"},
         )
         stream.seek(0)
         digest = hashlib.sha256()
