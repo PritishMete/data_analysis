@@ -198,7 +198,7 @@ class DatasetRepository:
             select(Dataset)
             .where(
                 Dataset.organization_id == organization_id,
-                Dataset.status.notin_({"deleted", "failed", "processing"}),
+                Dataset.status != "deleted",
             )
             .order_by(Dataset.created_at.desc())
             .limit(limit)
