@@ -564,7 +564,7 @@ class _AuthorizationManagementScreenState
         dialogTitle: 'Save managed dataset',
         fileName: filename.toLowerCase().endsWith('.csv')
             ? filename
-            : filename + '.csv',
+            : '$filename.csv',
         bytes: response.bodyBytes,
       );
     } catch (error) {
@@ -650,12 +650,12 @@ class _AuthorizationManagementScreenState
       final uploadedBy = dataset['uploaded_by_uid']?.toString() ?? '—';
       final size = dataset['file_size']?.toString();
 
-      rows.add(_MetaRow(name, '${rowCount} rows · ${columnCount} columns'));
-      rows.add(_MetaRow('Version', '${version} · ${status.toUpperCase()}'));
+      rows.add(_MetaRow(name, '$rowCount rows · $columnCount columns'));
+      rows.add(_MetaRow('Version', '$version · ${status.toUpperCase()}'));
       rows.add(_MetaRow(
         'Uploaded',
-        '${uploadedBy} · ${dataset['created_at']?.toString() ?? '—'}'
-            '${size == null ? '' : ' · ' + size + ' bytes'}',
+        '$uploadedBy · ${dataset['created_at']?.toString() ?? '—'}'
+            '${size == null ? '' : ' · $size bytes'}',
       ));
       rows.add(_MetaRow('Status', status.toUpperCase()));
       rows.add(
