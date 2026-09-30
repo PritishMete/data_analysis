@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
-from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied
+from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
+from firebase_authz.supabase_provider import authorization_context
 from .service import (
     create_managed_working_copy,
     delete_managed_dataset,
@@ -24,10 +25,26 @@ def _token(value: str | None) -> str:
     return value[7:].strip()
 
 
-def _workspace(value: str | None) -> str:
-    if not value:
+def _workspace(value: str | None, authorization: str | None = None) -> str:
+    """Resolve workspace from the explicit header or authoritative identity context."""
+    normalized = (value or "").strip()
+    if normalized:
+        return normalized
+    token = _token(authorization)
+    claims = verify_id_token(token)
+    context = authorization_context(claims)
+    workspaces = context.get("workspaces") or []
+    active = [
+        item for item in workspaces
+        if isinstance(item, dict)
+        and str(item.get("membership_status") or "").lower() == "active"
+        and str(item.get("workspace_id") or "").strip()
+    ]
+    if len(active) == 1:
+        return str(active[0]["workspace_id"]).strip()
+    if not active:
         raise HTTPException(403, "Workspace authorization context required.")
-    return value.strip()
+    raise HTTPException(409, "Multiple workspace contexts are available; select a workspace.")
 
 
 def _map_error(exc: Exception) -> HTTPException:
@@ -49,7 +66,7 @@ def managed_dataset_list(
 ):
     try:
         return {"datasets": list_authorized_datasets(
-            workspace_id=_workspace(workspace_id), token=_token(authorization)
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
         )}
     except Exception as exc:
         raise _map_error(exc)
@@ -63,7 +80,7 @@ def managed_dataset_detail(
 ):
     try:
         return get_managed_dataset(
-            workspace_id=_workspace(workspace_id), token=_token(authorization), dataset_id=dataset_id
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id
         )
     except Exception as exc:
         raise _map_error(exc)
@@ -79,7 +96,7 @@ def managed_dataset_profile(
 ):
     try:
         return get_managed_dataset_profile(
-            workspace_id=_workspace(workspace_id),
+            workspace_id=_workspace(workspace_id, authorization),
             token=_token(authorization),
             dataset_id=dataset_id,
             version_id=version_id,
@@ -100,7 +117,7 @@ def managed_dataset_rows(
 ):
     try:
         return get_managed_dataset_rows(
-            workspace_id=_workspace(workspace_id), token=_token(authorization),
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
             dataset_id=dataset_id, version_id=version_id, limit=limit, offset=offset,
         )
     except Exception as exc:
@@ -115,7 +132,7 @@ async def managed_dataset_upload(
 ):
     try:
         result = upload_managed_dataset_stream(
-            workspace_id=_workspace(workspace_id),
+            workspace_id=_workspace(workspace_id, authorization),
             token=_token(authorization),
             filename=file.filename or "",
             stream=file.file,
@@ -135,7 +152,7 @@ async def managed_dataset_version(
 ):
     try:
         result = upload_managed_dataset_stream(
-            workspace_id=_workspace(workspace_id),
+            workspace_id=_workspace(workspace_id, authorization),
             token=_token(authorization),
             filename=file.filename or "",
             stream=file.file,
@@ -156,7 +173,7 @@ def managed_dataset_download(
 ):
     try:
         iterator, metadata = stream_managed_dataset_csv(
-            workspace_id=_workspace(workspace_id), token=_token(authorization),
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
             dataset_id=dataset_id, version_id=version_id,
         )
         filename = metadata.get("original_filename") or "dataset.csv"
@@ -183,7 +200,7 @@ def managed_working_copy(
 ):
     try:
         return {"success": True, "working_copy": create_managed_working_copy(
-            workspace_id=_workspace(workspace_id), token=_token(authorization), dataset_id=dataset_id,
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id,
         )}
     except Exception as exc:
         raise _map_error(exc)
@@ -197,7 +214,7 @@ def managed_dataset_delete(
 ):
     try:
         return delete_managed_dataset(
-            workspace_id=_workspace(workspace_id), token=_token(authorization), dataset_id=dataset_id,
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id,
         )
     except Exception as exc:
         raise _map_error(exc)
