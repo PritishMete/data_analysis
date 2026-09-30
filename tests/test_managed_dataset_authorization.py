@@ -250,3 +250,55 @@ def test_owner_rows_preview_returns_first_100_of_100000_after_authorization(monk
     assert len(result["rows"]) == 100
     assert result["rows"][0]["row_data"]["id"] == 1
     assert result["rows"][-1]["row_data"]["id"] == 100
+
+
+def test_managed_dataset_workspace_header_is_validated_against_authoritative_context(monkeypatch):
+    from dataset_storage import routes as dataset_routes
+
+    claims = {"uid": "owner", "sub": "owner", "provider": "supabase"}
+    calls = []
+
+    def context(claims_arg, workspace_id=None):
+        calls.append(workspace_id)
+        if workspace_id == "stale-workspace":
+            return {"workspace_authorized": False, "workspaces": []}
+        return {
+            "workspace_authorized": True,
+            "workspace_id": "workspace-owner",
+            "organization_id": "org-owner",
+            "workspaces": [{
+                "workspace_id": "workspace-owner",
+                "organization_id": "org-owner",
+                "membership_status": "active",
+            }],
+        }
+
+    monkeypatch.setattr(dataset_routes, "verify_id_token", lambda token: claims)
+    monkeypatch.setattr(dataset_routes, "authorization_context", context)
+
+    assert dataset_routes._workspace("stale-workspace", "Bearer token") == "workspace-owner"
+    assert calls == ["stale-workspace", None]
+
+
+def test_managed_dataset_workspace_header_uses_authoritative_selected_workspace(monkeypatch):
+    from dataset_storage import routes as dataset_routes
+
+    claims = {"uid": "owner", "sub": "owner", "provider": "supabase"}
+
+    def context(claims_arg, workspace_id=None):
+        assert workspace_id == "workspace-owner"
+        return {
+            "workspace_authorized": True,
+            "workspace_id": "workspace-owner",
+            "organization_id": "org-owner",
+            "workspaces": [{
+                "workspace_id": "workspace-owner",
+                "organization_id": "org-owner",
+                "membership_status": "active",
+            }],
+        }
+
+    monkeypatch.setattr(dataset_routes, "verify_id_token", lambda token: claims)
+    monkeypatch.setattr(dataset_routes, "authorization_context", context)
+
+    assert dataset_routes._workspace("workspace-owner", "Bearer token") == "workspace-owner"
