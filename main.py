@@ -1880,10 +1880,10 @@ async def smart_query(
                 df, excel_context = _load_context_aware_dataframe(
                     file.filename, contents, sheet_name, active_cell, dataset_range
                 )
-        except (ValueError, ExcelContextError) as e:
-            return JSONResponse(status_code=200, content=json_safe(
-                smart_query_error_response(str(e), error_type="DATA_LOAD_FAILED")
-            ))
+            except (ValueError, ExcelContextError) as e:
+                return JSONResponse(status_code=200, content=json_safe(
+                    smart_query_error_response(str(e), error_type="DATA_LOAD_FAILED")
+                ))
 
         try:
             sheets = json.loads(available_sheets)
