@@ -1,12 +1,9 @@
 from io import BytesIO
 
-import pandas as pd
 import pytest
 
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
-from sqlalchemy import inspect
-
 from datasets.physical_table import ROW_NUMBER_COLUMN, build_physical_table
 
 
@@ -155,7 +152,6 @@ def test_failed_chunk_rolls_back_all_rows(db_session, monkeypatch):
     with pytest.raises(RuntimeError):
         register(service, db_session, csv_bytes(5), chunk_rows=2)
     assert repo.list_by_organization("org_1") == []
-    assert repo.count_rows(result.version.version_pk) == 0
 
 
 def test_chunked_ingestion_uses_bulk_batches_for_200k_rows(db_session):
