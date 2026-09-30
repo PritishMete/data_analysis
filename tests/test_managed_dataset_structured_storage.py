@@ -5,7 +5,9 @@ import pytest
 
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
-from datasets.models import DatasetRow
+from sqlalchemy import inspect
+
+from datasets.physical_table import ROW_NUMBER_COLUMN, build_physical_table
 
 
 def csv_bytes(rows: int = 3, offset: int = 0) -> bytes:
@@ -40,8 +42,17 @@ def test_csv_rows_are_persisted_and_profiled(db_session):
     assert result.version.version_id == "v1"
     rows = DatasetRepository(db_session).get_rows(result.version.version_pk, limit=10)
     assert len(rows) == 4
-    assert rows[0].row_data["id"] == 0
-    assert rows[1].row_data["active"] is True
+    assert rows[0]["row_data"]["id"] == 0
+    assert rows[1]["row_data"]["active"] is True
+    assert result.version.data_table_name
+    table = build_physical_table(
+        result.version.data_table_name,
+        [("id", "integer"), ("amount", "decimal"), ("active", "boolean"), ("date", "datetime"), ("note", "text")],
+        schema=None,
+    )
+    assert {column.name for column in table.columns} == {
+        ROW_NUMBER_COLUMN, "id", "amount", "active", "date", "note"
+    }
     columns = DatasetRepository(db_session).get_columns_for_version(result.version.version_pk)
     assert {c.column_name for c in columns} == {"id", "amount", "active", "date", "note"}
     id_column = next(c for c in columns if c.column_name == "id")
@@ -144,7 +155,7 @@ def test_failed_chunk_rolls_back_all_rows(db_session, monkeypatch):
     with pytest.raises(RuntimeError):
         register(service, db_session, csv_bytes(5), chunk_rows=2)
     assert repo.list_by_organization("org_1") == []
-    assert db_session.query(DatasetRow).count() == 0
+    assert repo.count_rows(result.version.version_pk) == 0
 
 
 def test_chunked_ingestion_uses_bulk_batches_for_200k_rows(db_session):
@@ -175,4 +186,4 @@ def test_delete_cascades_structured_rows(db_session):
     dataset_id = result.registration.dataset.dataset_id
     repo.delete_dataset(dataset_id)
     assert repo.get_by_id(dataset_id) is None
-    assert db_session.query(DatasetRow).count() == 0
+    assert repo.count_rows(result.version.version_pk) == 0
