@@ -254,15 +254,14 @@ class _ManagementShellState extends State<ManagementShell> {
     labelText: label,
     labelStyle: const TextStyle(color: TechColors.textMuted),
     filled: true,
-    fillColor: Colors.white.withValues(alpha: 0.04),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    border: const OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(16)),
+    ),
   );
 
   Widget surface(Widget child) => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(16),
-    settings: TechColors.sectionGlass,
-    quality: GlassQuality.minimal,
     shape: const LiquidRoundedSuperellipse(borderRadius: 16),
     child: child,
   );
@@ -870,31 +869,6 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.dataAccess => Icons.lock_outline,
     ManagementSection.audit => Icons.terminal,
   };
-
-  Widget _telemetry(String label, int value) => GlassContainer(
-    useOwnLayer: true,
-    quality: GlassQuality.minimal,
-    settings: TechColors.sectionGlass,
-    shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _statusDot('active'),
-        const SizedBox(width: 7),
-        Text(
-          '$label ${value.toString().padLeft(2, '0')}',
-          style: const TextStyle(
-            color: TechColors.textMuted,
-            fontSize: 9,
-            fontFamily: 'monospace',
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.7,
-          ),
-        ),
-      ],
-    ),
-  );
 
   Widget body() {
     switch (section) {
