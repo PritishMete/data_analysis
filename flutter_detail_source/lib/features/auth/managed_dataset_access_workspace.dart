@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -102,6 +103,21 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
+  Future<void> _download() async {
+    final id = selected?['dataset_id']?.toString();
+    if (id == null) return;
+    try {
+      final v = profile?['version_id']?.toString();
+      var path = '/v1/managed-datasets/' + id + '/download';
+      if (v != null && v.isNotEmpty) path += '?version_id=' + Uri.encodeQueryComponent(v);
+      final r = await http.get(Uri.parse(insightFlowBackendBaseUrl + path), headers: await _headers()).timeout(const Duration(minutes: 2));
+      if (r.statusCode != 200) throw StateError('Dataset download was rejected.');
+      var filename = _name(selected!);
+      if (!filename.toLowerCase().endsWith('.csv')) filename += '.csv';
+      await FilePicker.platform.saveFile(dialogTitle: 'Save managed dataset', fileName: filename, bytes: r.bodyBytes);
+    } catch (e) { _snack(e); }
+  }
+
   Future<void> _startWorking() async {
     final id = selected?['dataset_id']?.toString();
     if (id == null) return;
@@ -164,6 +180,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
         _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+        _action('DOWNLOAD CSV', Icons.download_outlined, _download),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
