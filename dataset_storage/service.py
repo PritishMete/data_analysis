@@ -241,12 +241,14 @@ def stream_managed_dataset_csv(
     version_id: str | None = None,
 ) -> tuple[Iterator[bytes], dict[str, Any]]:
     claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
     _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
+    organization_id = str(context["organization_id"])
     dataset = repo.get_by_id(dataset_id)
-    if dataset is None or dataset.organization_id != workspace_id:
+    if dataset is None or dataset.organization_id != organization_id:
         repo.db.close()
         raise FileNotFoundError("Dataset not found.")
     version = repo.get_version(dataset_id, version_id)
