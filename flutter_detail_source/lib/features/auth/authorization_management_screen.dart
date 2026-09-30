@@ -405,11 +405,13 @@ class _AuthorizationManagementScreenState
   }
 
   Future<PlatformFile?> _pickManagedCsv() async {
-    final file = await FilePicker.platform.pickFile(
+    final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['csv'],
       withReadStream: true,
+      allowMultiple: false,
     );
+    final file = result?.files.isNotEmpty == true ? result!.files.single : null;
     if (file == null) return null;
     if (!file.name.toLowerCase().endsWith('.csv')) {
       throw StateError('Managed datasets currently accept CSV files only.');
