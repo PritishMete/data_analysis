@@ -13,6 +13,7 @@ import pandas as pd
 
 from .hashing import compute_file_hash, compute_schema_hash
 from .models import Dataset, DatasetColumn, DatasetVersion
+from .physical_table import create_physical_table, physical_table_name
 from .repository import DatasetRepository
 
 
@@ -280,14 +281,37 @@ class DatasetRegistryService:
         missing: dict[str, int] = {column: 0 for column in columns}
         row_count = 0
 
+        # First pass: infer the complete schema and profiling data without
+        # retaining the whole CSV in memory. The file is then rewound and read
+        # a second time for bulk insertion into the typed physical table.
+        for chunk in itertools.chain((first,), chunks):
+            chunk_columns = [str(c) for c in chunk.columns]
+            if chunk_columns != columns:
+                raise ValueError("CSV rows do not have a consistent column structure.")
+            for column in columns:
+                missing[column] += int(chunk[column].isna().sum())
+                type_map[column] = _merge_types(
+                    type_map.get(column),
+                    _logical_type(chunk[column]),
+                )
+            row_count += len(chunk)
+            remaining = max(0, SAMPLE_ROWS - sample_count)
+            if remaining:
+                sample = chunk.head(remaining).copy()
+                sample_frames.append(sample)
+                sample_count += len(sample)
+
+        if row_count <= 0:
+            raise ValueError("CSV must contain at least one data row.")
+
+        schema_hash = compute_schema_hash(type_map.items())
+        physical_columns = [(column, type_map.get(column, "text")) for column in columns]
+
         # Hash/deduplication and current-version lookups above trigger
         # SQLAlchemy autobegin. End that read-only transaction before opening
         # the single atomic ingestion transaction.
         self.repository.db.rollback()
 
-        # One transaction owns the entire structured ingestion. A parse,
-        # profiling, or bulk-write error therefore rolls back every row/version
-        # instead of leaving a partial dataset behind.
         with self.repository.db.begin():
             if is_version:
                 dataset = existing
@@ -316,7 +340,7 @@ class DatasetRegistryService:
                 version_number=version_number,
                 status="processing",
                 file_hash=file_hash,
-                schema_hash="",
+                schema_hash=schema_hash,
                 row_count=0,
                 column_count=len(columns),
                 original_filename=safe_name,
@@ -326,23 +350,50 @@ class DatasetRegistryService:
             )
             self.repository.add_version(version, commit=False)
 
-            for chunk in itertools.chain((first,), chunks):
-                chunk_columns = [str(c) for c in chunk.columns]
-                if chunk_columns != columns:
-                    raise ValueError("CSV rows do not have a consistent column structure.")
-                added, sample = self._prepare_chunk(
-                    chunk, row_count, type_map, missing, sample_count, SAMPLE_ROWS
+            table_name = physical_table_name(version.version_pk)
+            create_physical_table(
+                self.repository.db.connection(),
+                table_name,
+                physical_columns,
+            )
+            version.data_table_name = table_name
+
+            # Second pass: stream chunks into PostgreSQL using COPY (production)
+            # or executemany (test dialects). No full DataFrame is retained.
+            file_obj.seek(0)
+            insert_chunks = pd.read_csv(
+                file_obj,
+                chunksize=max(1, chunk_rows),
+                encoding="utf-8-sig",
+                on_bad_lines="error",
+            )
+            inserted_rows = 0
+            for chunk in insert_chunks:
+                records = []
+                for row_offset, record in enumerate(
+                    chunk.to_dict(orient="records"),
+                    start=1,
+                ):
+                    records.append({
+                        "row_number": inserted_rows + row_offset,
+                        "row_data": {
+                            str(key): _json_value(value) for key, value in record.items()
+                        },
+                    })
+                self.repository.bulk_add_rows(
+                    version.version_pk,
+                    records,
+                    table_name=table_name,
+                    columns=physical_columns,
                 )
-                self.repository.bulk_add_rows(version.version_pk, added)
-                row_count += len(added)
-                if sample is not None:
-                    sample_frames.append(sample)
-                    sample_count += len(sample)
+                inserted_rows += len(records)
 
-            if row_count <= 0:
-                raise ValueError("CSV must contain at least one data row.")
+            if inserted_rows != row_count:
+                raise ValueError(
+                    f"CSV row count changed during ingestion: expected {row_count}, "
+                    f"inserted {inserted_rows}."
+                )
 
-            schema_hash = compute_schema_hash(type_map.items())
             column_rows = [
                 DatasetColumn(
                     dataset_id=dataset.dataset_id,
@@ -350,8 +401,10 @@ class DatasetRegistryService:
                     column_name=column,
                     detected_type=type_map.get(column, "text"),
                     nullable=missing[column] > 0,
-                    unique_count=self.repository.count_distinct_row_values(
-                        version.version_pk, column
+                    unique_count=self.repository.count_distinct_physical_value(
+                        table_name,
+                        column,
+                        physical_columns,
                     ),
                     missing_count=missing[column],
                     missing_percentage=round((missing[column] / row_count) * 100.0, 4),
@@ -360,7 +413,6 @@ class DatasetRegistryService:
             ]
             self.repository.add_columns(column_rows, commit=False)
 
-            version.schema_hash = schema_hash
             version.row_count = row_count
             version.status = "processing"
             self.repository.db.flush()
