@@ -238,10 +238,20 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   InputDecoration input(String label) => InputDecoration(
-    labelText: label,
-    labelStyle: const TextStyle(color: TechColors.textMuted),
-    border: const OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(16)),
+    labelText: label.toUpperCase(),
+    labelStyle: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
+    floatingLabelStyle: const TextStyle(color: TechColors.borderActive, fontSize: 10, fontFamily: 'monospace'),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: TechColors.textMuted.withValues(alpha: 0.28)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: TechColors.textMuted.withValues(alpha: 0.22)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: TechColors.borderActive.withValues(alpha: 0.65)),
     ),
   );
 
@@ -521,18 +531,30 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget metric(String label, dynamic value, {IconData? icon}) => GlassCard(
     margin: EdgeInsets.zero,
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    shape: const LiquidRoundedSuperellipse(borderRadius: 14),
     child: Row(
       children: [
-        if (icon != null) ...[
-          Icon(icon, size: 18, color: TechColors.borderActive),
-          const SizedBox(width: 10),
-        ],
+        Container(
+          width: 6,
+          height: 34,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            color: TechColors.borderActive.withValues(alpha: 0.75),
+            boxShadow: [
+              BoxShadow(
+                color: TechColors.borderActive.withValues(alpha: 0.20),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 11),
         Expanded(child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _eyebrow(label),
-            const SizedBox(height: 4),
+            const SizedBox(height: 5),
             Text((value ?? 0).toString(), style: const TextStyle(
               color: TechColors.textPrimary,
               fontSize: 18,
@@ -541,6 +563,7 @@ class _ManagementShellState extends State<ManagementShell> {
             )),
           ],
         )),
+        if (icon != null) Icon(icon, size: 15, color: TechColors.textMuted),
       ],
     ),
   );
@@ -548,39 +571,63 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GlassCard(
-        margin: EdgeInsets.zero, padding: const EdgeInsets.all(18),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-        child: Row(children: [
-          Container(width: 42, height: 42, decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: TechColors.borderActive.withValues(alpha: 0.10),
-            border: Border.all(color: TechColors.borderActive.withValues(alpha: 0.45)),
-          ), child: const Icon(Icons.business_outlined, color: TechColors.borderActive, size: 20)),
-          const SizedBox(width: 13),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _eyebrow('Organization control'),
-            const SizedBox(height: 4),
-            Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 3),
-            Text('${org['status'] ?? '—'}  ·  workspace ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId}', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-          ])),
-          _statusDot(org['status']?.toString() ?? ''),
-        ]),
-      ),
-      const SizedBox(height: 12),
-      LayoutBuilder(builder: (context, c) {
-        final width = c.maxWidth < 680 ? (c.maxWidth - 10) / 2 : (c.maxWidth - 30) / 4;
-        return Wrap(spacing: 10, runSpacing: 10, children: [
-          SizedBox(width: width, child: metric('Locations', sum['location_count'], icon: Icons.location_on_outlined)),
-          SizedBox(width: width, child: metric('Managers', sum['manager_count'], icon: Icons.manage_accounts_outlined)),
-          SizedBox(width: width, child: metric('Team leads', sum['team_lead_count'], icon: Icons.supervisor_account_outlined)),
-          SizedBox(width: width, child: metric('Employees', sum['employee_count'], icon: Icons.people_outline)),
-          SizedBox(width: width, child: metric('Pending invites', pendingInvitations, icon: Icons.mail_outline)),
-        ]);
-      }),
-    ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassContainer(
+          useOwnLayer: true,
+          quality: GlassQuality.minimal,
+          settings: TechColors.sectionGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 620;
+              final identity = Row(
+                children: [
+                  _statusDot(org['status']?.toString() ?? ''),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _eyebrow('ORGANIZATION CONTROL'),
+                      const SizedBox(height: 5),
+                      Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(
+                        color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700,
+                      )),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${org['status'] ?? '—'}  ·  WORKSPACE ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId}',
+                        style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
+                      ),
+                    ],
+                  )),
+                ],
+              );
+              if (compact) return identity;
+              return Row(children: [
+                Expanded(child: identity),
+                const SizedBox(width: 24),
+                _eyebrow('STATUS'),
+                const SizedBox(width: 8),
+                _statusDot(org['status']?.toString() ?? ''),
+              ]);
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, c) {
+          final width = c.maxWidth < 680 ? (c.maxWidth - 10) / 2 : (c.maxWidth - 40) / 5;
+          return Wrap(spacing: 10, runSpacing: 10, children: [
+            SizedBox(width: width, child: metric('LOCATIONS', sum['location_count'], icon: Icons.location_on_outlined)),
+            SizedBox(width: width, child: metric('MANAGERS', sum['manager_count'], icon: Icons.manage_accounts_outlined)),
+            SizedBox(width: width, child: metric('TEAM LEADS', sum['team_lead_count'], icon: Icons.supervisor_account_outlined)),
+            SizedBox(width: width, child: metric('EMPLOYEES', sum['employee_count'], icon: Icons.people_outline)),
+            SizedBox(width: width, child: metric('PENDING INVITES', pendingInvitations, icon: Icons.mail_outline)),
+          ]);
+        }),
+      ],
+    );
   }
 
   Widget organizationView() {
@@ -963,6 +1010,8 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   Widget _buildManagementHeader() {
+    // Mirrors DataScreen._buildGlassAppBar(): management is another
+    // InsightFlow workspace, not a separate admin theme.
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
       child: GlassCard(
@@ -984,15 +1033,15 @@ class _ManagementShellState extends State<ManagementShell> {
                 )),
               ],
             );
-            final contextLabel = Column(
+            final workspace = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _eyebrow('MANAGEMENT WORKSPACE'),
-                const SizedBox(height: 4),
-                const Text('ORGANIZATION CONTROL', style: TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+                _eyebrow('ORGANIZATION / MANAGEMENT'),
+                const SizedBox(height: 3),
+                const Text('CONTROL PLANE', style: TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
                   fontFamily: 'monospace',
                 )),
               ],
@@ -1017,16 +1066,16 @@ class _ManagementShellState extends State<ManagementShell> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(children: [identity, const Spacer(), controls]),
-                  const SizedBox(height: 8),
-                  contextLabel,
+                  const SizedBox(height: 7),
+                  workspace,
                 ],
               );
             }
             return Row(children: [
               identity,
               const Spacer(),
-              contextLabel,
-              const SizedBox(width: 12),
+              workspace,
+              const SizedBox(width: 14),
               controls,
             ]);
           },
@@ -1046,6 +1095,7 @@ class _ManagementShellState extends State<ManagementShell> {
       MapEntry(ManagementSection.dataAccess, 'DATA ACCESS'),
       MapEntry(ManagementSection.audit, 'AUDIT LOG'),
     ];
+    // Same geometry and glass settings as DataScreen.NavigationTabs.
     return AdaptiveLiquidGlassLayer(
       settings: kInsightFlowNavigationGlassSettings,
       quality: GlassQuality.minimal,
@@ -1060,9 +1110,7 @@ class _ManagementShellState extends State<ManagementShell> {
             itemCount: tabs.length + 1,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              if (index == tabs.length) {
-                return _managementAnalysisNavChip();
-              }
+              if (index == tabs.length) return _managementAnalysisNavChip();
               final tab = tabs[index];
               final selected = section == tab.key;
               return GlassChip(
@@ -1137,18 +1185,29 @@ class _ManagementShellState extends State<ManagementShell> {
                                         ],
                                       ),
                                     )
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        _title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section)),
-                                        const SizedBox(height: 16),
-                                        body(),
-                                        if (section == ManagementSection.organization) ...[
+                                  : GlassContainer(
+                                      useOwnLayer: true,
+                                      quality: GlassQuality.minimal,
+                                      settings: TechColors.panelGlass,
+                                      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+                                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          _title(
+                                            _sectionLabel(section),
+                                            detail: _sectionDetail(section),
+                                            icon: _sectionIcon(section),
+                                          ),
                                           const SizedBox(height: 16),
-                                          assignmentList(),
+                                          body(),
+                                          if (section == ManagementSection.organization) ...[
+                                            const SizedBox(height: 16),
+                                            assignmentList(),
+                                          ],
                                         ],
-                                      ],
-                                    ),
+                                      ),
+                                    ),,
                         ),
                       ),
                     ),
