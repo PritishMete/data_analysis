@@ -11,6 +11,7 @@ import 'management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
+import 'employee_profile_onboarding_screen.dart';
 import 'sign_in_screen.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
@@ -39,6 +40,39 @@ class AuthGate extends StatelessWidget {
   }
 }
 
+
+class _SupabaseRedirectErrorScreen extends StatelessWidget {
+  const _SupabaseRedirectErrorScreen({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthGlassScaffold(
+      title: 'EMAIL / CONFIRMATION LINK',
+      subtitle: 'SUPABASE AUTH',
+      children: [
+        AuthGlassMessage(text: message, error: true),
+        const SizedBox(height: 12),
+        const Text(
+          'Use Sign in to return to InsightFlow. Email confirmation is checked again before workspace access.',
+          style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35),
+        ),
+        const SizedBox(height: 12),
+        GlassButton.custom(
+          onTap: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const SignInScreen()),
+          ),
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'CONTINUE TO SIGN IN',
+          child: const Text('CONTINUE TO SIGN IN'),
+        ),
+      ],
+    );
+  }
+}
 
 class _SupabaseEmailVerificationScreen extends StatefulWidget {
   const _SupabaseEmailVerificationScreen();
@@ -299,8 +333,36 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     }
   }
 
+  static bool _handledRedirectError = false;
+
+  static String? _redirectErrorMessage() {
+    if (_handledRedirectError) return null;
+    final fragment = Uri.base.fragment.trim();
+    if (fragment.isEmpty) return null;
+    Map<String, String> values;
+    try {
+      values = Uri.splitQueryString(
+        fragment.startsWith('#') ? fragment.substring(1) : fragment,
+      );
+    } catch (_) {
+      return null;
+    }
+    final error = (values['error'] ?? '').toLowerCase();
+    final code = (values['error_code'] ?? '').toLowerCase();
+    if (error.isEmpty && code.isEmpty) return null;
+    _handledRedirectError = true;
+    if (code == 'otp_expired') {
+      return 'This confirmation link has expired. Please sign in and request a new confirmation email.';
+    }
+    return 'This confirmation link could not be completed. Please sign in and request a new confirmation email.';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final redirectError = _redirectErrorMessage();
+    if (redirectError != null) {
+      return _SupabaseRedirectErrorScreen(message: redirectError);
+    }
     if (_loading) return const _AuthLoading();
     if (_verificationRequired) {
       return const _SupabaseEmailVerificationScreen();
@@ -334,6 +396,12 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         // only after the authoritative backend lookup explicitly returns
         // noMembership.
         authenticatedChild = const _AuthLoading();
+        break;
+      case InsightFlowOnboardingState.profileIncomplete:
+        authenticatedChild = EmployeeProfileOnboardingScreen(
+          workspaceId: insightFlowWorkspaceId,
+          onCompleted: () async => _refresh(showLoading: false),
+        );
         break;
       case InsightFlowOnboardingState.activeMember:
         authenticatedChild = const ManagementShell();
