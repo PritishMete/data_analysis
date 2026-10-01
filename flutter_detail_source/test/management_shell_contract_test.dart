@@ -47,5 +47,20 @@ void main() {
     expect(source, contains("'/assignments/manager/change'"));
     expect(source, contains("'/assignments/team-lead'"));
     expect(source, contains("'/assignments/reporting'"));
+    // Assignment Registry layout contract: keep compact identifiers intact,
+    // bound the action control, and provide an explicit narrow-width path.
+    expect(source, contains('Widget _assignmentRegistryValue('));
+    expect(source, contains('maxLines: 1'));
+    expect(source, contains('softWrap: false'));
+    expect(source, contains('overflow: TextOverflow.ellipsis'));
+    expect(source, contains('final compact = constraints.maxWidth < 620;'));
+    expect(source, contains('final reportingAction = SizedBox('));
+    expect(source, contains('width: 132'));
+    expect(source, contains('_glassRow(child: _assignmentRegistryRow(a))'));
+    expect(source, contains("a['employee_id']"));
+    expect(source, contains("a['role_id']"));
+    expect(source, contains("a['location_name']"));
+    expect(source, contains("a['section_name']"));
+    expect(source, contains("a['status']"));
   });
 }
