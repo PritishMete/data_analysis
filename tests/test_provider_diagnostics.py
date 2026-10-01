@@ -55,11 +55,18 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "new-user"})
     monkeypatch.setattr(
         "firebase_authz.supabase_auth.verify_supabase_access_token",
-        lambda token, require_email_verified=False: {"uid": "new-user", "email": "new@example.com"},
+        lambda token, require_email_verified=True: {
+            "uid": "new-user",
+            "email": "new@example.com",
+            "email_verified": True,
+            "email_confirmed_at": "2026-10-01T00:00:00Z",
+            "phone": "+15551234567",
+            "phone_confirmed_at": "2026-10-01T00:00:00Z",
+        },
     )
     monkeypatch.setattr(
         "firebase_authz.supabase_provider.register_organization",
-        lambda claims, name, branch_name, branch_identifier: calls.append(("supabase", name, branch_name, branch_identifier)) or {"provider": "supabase"},
+        lambda claims, name, branch_name, branch_identifier, **kwargs: calls.append(("supabase", name, branch_name, branch_identifier)) or {"provider": "supabase"},
     )
     monkeypatch.setattr(
         routes,
@@ -70,7 +77,21 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     supabase_response = TestClient(app).post(
         "/v1/authz/organizations/register",
-        json={"organization_name": "Diagnostic Org", "branch_name": "Main", "branch_identifier": "main"},
+        json={
+            "organization_name": "Diagnostic Org",
+            "branch_name": "Main",
+            "branch_identifier": "main",
+            "employee_id": "EMP001",
+            "full_name": "Diagnostic User",
+            "phone": "+15551234567",
+            "address_line1": "1 Test Way",
+            "city": "Test City",
+            "state": "Test State",
+            "postal_code": "00000",
+            "country": "India",
+            "id_proof_type": "Passport",
+            "id_proof_number": "TEST-001",
+        },
         headers={"Authorization": "Bearer diagnostic-token"},
     )
     assert supabase_response.status_code == 200
