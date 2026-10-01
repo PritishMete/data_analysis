@@ -19,7 +19,7 @@ def _claims(uid: str, *, phone_confirmed: bool = True) -> dict:
         "email": f"{uid}@example.com",
         "email_verified": True,
         "email_confirmed_at": "2026-10-01T00:00:00Z",
-        "phone": "+15551234567",
+        "phone": "+919876543210",
         "phone_confirmed_at": (
             "2026-10-01T00:00:00Z" if phone_confirmed else None
         ),
@@ -31,7 +31,7 @@ def _profile_kwargs(employee_id: str = "EMP001") -> dict:
     return {
         "employee_id": employee_id,
         "full_name": "Pritish Mete",
-        "phone": "+15551234567",
+        "phone": "+919876543210",
         "address_line1": "1 InsightFlow Way",
         "address_line2": "Floor 2",
         "state": "West Bengal",
@@ -41,8 +41,8 @@ def _profile_kwargs(employee_id: str = "EMP001") -> dict:
         "country_code": "IN",
         "id_proof_type": "passport",
         "id_proof_number": "P-1234567",
-        "phone_country_calling_code": "+1",
-        "phone_national_number": "5551234567",
+        "phone_country_calling_code": "+91",
+        "phone_national_number": "9876543210",
     }
 
 
