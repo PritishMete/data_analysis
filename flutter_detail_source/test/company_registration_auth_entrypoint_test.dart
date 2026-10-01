@@ -52,7 +52,7 @@ void main() {
     expect(source, contains('response.statusCode == 403'));
     expect(source, contains('response.statusCode == 409'));
     expect(source, contains('response.statusCode == 422'));
-    expect(source, contains('InsightFlowSupabaseAuthService.ensureSession()'));
+    expect(source, contains('InsightFlowSupabaseAuthService.ensureSession('));
     expect(
       supabaseAuthSource,
       contains('static Future<Session?> ensureSession'),
