@@ -441,6 +441,8 @@ def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch)
                     "employee_id": "owner",
                     "status": "active",
                 }])
+            if "FROM organization_member_profiles" in sql:
+                return Result(rows=[])
             if "FROM member_roles" in sql:
                 return Result(scalars=["branch_head"])
             if "FROM role_permissions" in sql:
