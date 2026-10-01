@@ -203,7 +203,7 @@ class InsightFlowSupabaseAuthService {
     required String email,
     required String token,
   }) {
-    return client.auth.verifyOtp(
+    return client.auth.verifyOTP(
       type: OtpType.email,
       email: email.trim(),
       token: token.trim(),
@@ -220,7 +220,7 @@ class InsightFlowSupabaseAuthService {
     required String phone,
     required String token,
   }) {
-    return client.auth.verifyOtp(
+    return client.auth.verifyOTP(
       type: OtpType.phoneChange,
       phone: phone.trim(),
       token: token.trim(),
