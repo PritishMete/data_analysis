@@ -54,7 +54,7 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
 
 def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
-    suffix = uuid.uuid4().hex[:10]
+    suffix = str(uuid.uuid4().int)[:8]
     return register_organization(
         _claims(owner_uid),
         name,
