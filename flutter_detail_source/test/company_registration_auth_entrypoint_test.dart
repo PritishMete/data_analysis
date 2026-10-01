@@ -106,7 +106,10 @@ void main() {
     );
     expect(authSource, contains("'NETWORK_OR_CORS'"));
     expect(authSource, contains("'NETWORK_ERROR'"));
-    expect(source, contains("response.statusCode == 404"));
+    expect(source, contains("response.statusCode == 401"));
+    expect(source, contains("response.statusCode == 403"));
+    expect(source, contains("response.statusCode == 409"));
+    expect(source, contains("response.statusCode == 422"));
     expect(source, contains("response.statusCode >= 500"));
   });
 }
