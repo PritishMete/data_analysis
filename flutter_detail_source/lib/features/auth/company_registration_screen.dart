@@ -611,6 +611,44 @@ class _CompanyRegistrationScreenState
         ],
       );
 
+  Widget _employeeIdInfo() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassFieldLabel('EMPLOYEE ID'),
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: const LiquidGlassSettings(
+              thickness: 10,
+              blur: 4,
+              glassColor: Color(0x14FFFFFF),
+              refractiveIndex: 1.05,
+            ),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AUTO-GENERATED',
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Assigned automatically after registration',
+                  style: TextStyle(color: TechColors.textMuted, fontSize: 9),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
   Widget _profileStep() => LayoutBuilder(
         builder: (context, constraints) {
           final fields = <Widget>[
