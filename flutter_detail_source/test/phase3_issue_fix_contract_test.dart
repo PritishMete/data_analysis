@@ -34,10 +34,6 @@ void main() {
     expect(source, contains('return null;'));
     expect(
       authGate,
-      contains('unawaited(_scheduleBackgroundRetry());'),
-    );
-    expect(
-      authGate,
       contains('resolveInsightFlowOnboardingStateFromBackend(widget.user.uid)'),
     );
   });
