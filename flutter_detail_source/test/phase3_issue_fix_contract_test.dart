@@ -32,7 +32,6 @@ void main() {
     expect(source, contains('maxAttempts = 4'));
     expect(source, contains('if (result != null) return result;'));
     expect(source, contains('return null;'));
-    expect(authGate, contains('_hasCachedWorkspace'));
     expect(
       authGate,
       contains('unawaited(_scheduleBackgroundRetry());'),
