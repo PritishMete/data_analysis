@@ -11,6 +11,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
       'InsightFlowOnboardingState.activeMember',
       'InsightFlowOnboardingState.pendingInvitation',
       'InsightFlowOnboardingState.noMembership',
+      'InsightFlowOnboardingState.profileIncomplete',
       'InsightFlowOnboardingState.transientFailure',
       'InsightFlowOnboardingState.authoritativeDenial',
     ]) {
@@ -68,6 +69,45 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, contains('Registration is never the default/fallback state'));
     expect(gate, isNot(contains('_hasCachedWorkspace')));
     expect(gate, isNot(contains('unawaited(_scheduleBackgroundRetry());')));
+  });
+
+  test('profile onboarding uses dropdowns and Supabase phone OTP without email OTP', () {
+    final registration =
+        File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
+    final employee =
+        File('lib/features/auth/employee_profile_onboarding_screen.dart').readAsStringSync();
+    final geo =
+        File('lib/core/profile/profile_geo_data.dart').readAsStringSync();
+    final auth =
+        File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
+
+    expect(registration, contains('Country *'));
+    expect(registration, contains('State / Province / Region *'));
+    expect(registration, contains('ID Proof Type *'));
+    expect(registration, contains('phone_country_calling_code'));
+    expect(registration, contains('verifyPhoneChangeOtp'));
+    expect(registration, isNot(contains('EMAIL OTP')));
+    expect(employee, contains('Country *'));
+    expect(employee, contains('State / Province / Region *'));
+    expect(employee, contains('Phone Country Code *'));
+    expect(employee, contains('SEND OTP'));
+    expect(employee, contains('VERIFY PHONE'));
+    expect(employee, contains('RESEND OTP'));
+    expect(employee, isNot(contains('Email OTP')));
+    expect(employee, contains('required: false'));
+    expect(geo, contains('subdivisionsForCountry'));
+    expect(geo, contains('allCountries'));
+    expect(geo, contains('idProofOptions'));
+    expect(auth, contains('updateUser'));
+    expect(auth, contains('OtpType.phoneChange'));
+  });
+
+  test('confirmation callback errors are rendered as a usable InsightFlow route', () {
+    final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    expect(gate, contains('Uri.base.fragment'));
+    expect(gate, contains('otp_expired'));
+    expect(gate, contains('This confirmation link has expired'));
+    expect(gate, contains('_SupabaseRedirectErrorScreen'));
   });
 
   test('company registration explains branch identity and initial role', () {
