@@ -185,7 +185,8 @@ Future<InsightFlowOnboardingResolution>
         );
       }
       await setInsightFlowWorkspaceId(uid, workspaceId);
-      if (selected['profile_complete'] != true) {
+      if (selected.containsKey('profile_complete') &&
+          selected['profile_complete'] != true) {
         return const InsightFlowOnboardingResolution(
           InsightFlowOnboardingState.profileIncomplete,
         );
