@@ -718,8 +718,6 @@ class _CompanyRegistrationScreenState
             _companyBody()
           else if (_step == 1)
             _profileStep()
-          else if (_step == 2)
-            _phoneStep()
           else
             _reviewStep(),
           if (_message != null) ...[
