@@ -40,6 +40,23 @@ void main() {
     expect(company, contains('_state = _states.isEmpty'));
   });
 
+  test('phone calling code and national number are separate responsive controls', () {
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    for (final screen in [company, employee]) {
+      expect(screen, contains('Widget _phoneInputRow(double width)'));
+      expect(screen, contains("label: 'COUNTRY CODE *'"));
+      expect(screen, contains("'PHONE NUMBER'"));
+      expect(screen, contains('if (width < 520)'));
+      expect(screen, contains('Expanded(flex: 2, child: countryCode)'));
+      expect(screen, contains('Expanded(flex: 3, child: nationalNumber)'));
+      expect(screen, contains('_phone.removeListener(_onPhoneChanged)'));
+    }
+    expect(company, isNot(contains("_field('Employee Number'")));
+    expect(company, contains('AUTO-GENERATED'));
+    expect(company, isNot(contains("'employee_id': _employeeId")));
+  });
+
   test('profile fields enforce optional address line 2 and ID-provided semantics', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
