@@ -88,21 +88,12 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
         signing_key = _jwks_client(
             f"{_project_url()}/auth/v1/.well-known/jwks.json"
         ).get_signing_key_from_jwt(token)
-        claims = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["ES256", "RS256"],
-            audience=_setting("SUPABASE_AUTH_AUDIENCE", "authenticated"),
-            issuer=issuer,
-            leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
-            options={"require": ["sub", "exp", "iat"]},
-        )
-        registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
     except Exception as exc:
         # Supabase's legacy HS256 projects intentionally expose no asymmetric
         # key in JWKS. Per Supabase guidance, validate those tokens through the
         # Auth /user endpoint instead of storing the JWT secret in this backend.
-        # The same authoritative fallback also makes key rotation resilient.
+        # The fallback is only for key-discovery failures; once a signing key
+        # has been obtained, JWT validation errors must remain authoritative.
         try:
             user = _fetch_supabase_user(token)
             subject = str(user.get("id") or "").strip()
@@ -112,6 +103,8 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
                 "sub": subject,
                 "email": user.get("email"),
                 "email_confirmed_at": user.get("email_confirmed_at"),
+                "phone": user.get("phone"),
+                "phone_confirmed_at": user.get("phone_confirmed_at"),
                 "aud": "authenticated",
             }
             registration_diagnostics.stage("SUPABASE_AUTH_SERVER_FALLBACK_COMPLETE")
@@ -119,6 +112,20 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
             raise
         except Exception as fallback_exc:
             raise AuthenticationRequired("Supabase authentication failed.") from fallback_exc
+    else:
+        try:
+            claims = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256", "RS256"],
+                audience=_setting("SUPABASE_AUTH_AUDIENCE", "authenticated"),
+                issuer=issuer,
+                leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
+                options={"require": ["sub", "exp", "iat"]},
+            )
+            registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
+        except jwt.InvalidTokenError as exc:
+            raise AuthenticationRequired("Supabase authentication failed.") from exc
     subject = str(claims.get("sub") or "").strip()
     if not subject:
         raise AuthenticationRequired("Supabase authentication failed.")
