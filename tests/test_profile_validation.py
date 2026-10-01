@@ -1,3 +1,4 @@
+import pycountry
 import pytest
 
 from firebase_authz.profile_validation import (
@@ -17,6 +18,23 @@ def test_country_state_consistency():
     )
     assert result["country_code"] == "IN"
     assert result["state_code"] == "IN-WB"
+
+
+def test_country_without_iso_subdivisions_uses_explicit_not_applicable():
+    country = next(
+        item
+        for item in pycountry.countries
+        if not pycountry.subdivisions.get(country_code=item.alpha_2)
+    )
+    result = normalize_location(
+        country_code=country.alpha_2,
+        country=country.name,
+        state_code="",
+        state="",
+    )
+    assert result["country_code"] == country.alpha_2
+    assert result["state_code"] == ""
+    assert result["state"] == "Not applicable"
 
 
 def test_cross_country_state_is_rejected():

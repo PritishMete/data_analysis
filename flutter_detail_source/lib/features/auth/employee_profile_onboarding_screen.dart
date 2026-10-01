@@ -118,6 +118,8 @@ class _EmployeeProfileOnboardingScreenState
       final stateCode = data['state_code']?.toString() ?? '';
       if (stateCode.isNotEmpty) {
         _state = _find(_states, stateCode);
+      } else if (_country != null && _states.isEmpty) {
+        _state = ProfileGeoData.notApplicableState();
       }
 
       _proofs = _country == null
@@ -380,6 +382,9 @@ class _EmployeeProfileOnboardingScreenState
       _proofType = null;
       _proofs = ProfileGeoData.idProofOptions(choice.value);
       _rebuildStates();
+      if (_states.isEmpty) {
+        _state = ProfileGeoData.notApplicableState();
+      }
     });
   }
 
@@ -543,8 +548,12 @@ class _EmployeeProfileOnboardingScreenState
                   value: _state?.label,
                   placeholder: _country == null
                       ? 'Select country first'
-                      : 'Select state / province / region',
-                  onTap: _busy ? null : _pickState,
+                      : _states.isEmpty
+                          ? 'Not applicable for this country'
+                          : 'Select state / province / region',
+                  onTap: _busy || (_country != null && _states.isEmpty)
+                      ? null
+                      : _pickState,
                 ),
                 _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
                 ProfileSelectField(

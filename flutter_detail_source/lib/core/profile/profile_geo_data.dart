@@ -63,6 +63,11 @@ class ProfileGeoData {
     return result;
   }
 
+  static ProfileOption notApplicableState() => const ProfileOption(
+        value: '',
+        label: 'Not applicable (no first-level subdivisions)',
+      );
+
   static List<ProfileOption> idProofOptions(String countryCode) {
     const india = <ProfileOption>[
       ProfileOption(value: 'aadhaar', label: 'Aadhaar'),

@@ -70,7 +70,18 @@ def normalize_location(
     state: str | None = None,
 ) -> dict[str, str]:
     country_obj = country_from_input(country_code)
-    subdivision = subdivision_by_code(str(state_code or ""))
+    raw_state_code = str(state_code or "").strip()
+    if not raw_state_code and not pycountry.subdivisions.get(
+        country_code=country_obj.alpha_2
+    ):
+        return {
+            "country_code": str(country_obj.alpha_2).upper(),
+            "country": str(country_obj.name),
+            "state_code": "",
+            "state": "Not applicable",
+        }
+
+    subdivision = subdivision_by_code(raw_state_code)
     if (
         subdivision is None
         or str(getattr(subdivision, "country_code", "")).upper()

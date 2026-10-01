@@ -315,9 +315,11 @@ class _CompanyRegistrationScreenState
     if (choice == null) return;
     setState(() {
       _country = choice;
-      _state = null;
       _proofType = null;
       _states = ProfileGeoData.subdivisionOptions(choice.value);
+      _state = _states.isEmpty
+          ? ProfileGeoData.notApplicableState()
+          : null;
       _proofs = ProfileGeoData.idProofOptions(choice.value);
     });
   }
@@ -639,8 +641,12 @@ class _CompanyRegistrationScreenState
               value: _state?.label,
               placeholder: _country == null
                   ? 'Select country first'
-                  : 'Select state / province / region',
-              onTap: _busy ? null : _pickState,
+                  : _states.isEmpty
+                      ? 'Not applicable for this country'
+                      : 'Select state / province / region',
+              onTap: _busy || (_country != null && _states.isEmpty)
+                  ? null
+                  : _pickState,
             ),
             _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
             ProfileSelectField(

@@ -30,7 +30,10 @@ void main() {
     final company = source('lib/features/auth/company_registration_screen.dart');
     expect(geo, contains('CountryCodes.allCountries'));
     expect(geo, contains('CountryCodes.subdivisionsForCountry'));
+    expect(geo, contains('notApplicableState'));
     expect(company, contains("label: 'Country *'"));
+    expect(company, contains('Not applicable for this country'));
+    expect(employee, contains('Not applicable for this country'));
     expect(company, contains("label: 'State / Province / Region *'"));
     expect(company, contains('_state = null'));
   });
