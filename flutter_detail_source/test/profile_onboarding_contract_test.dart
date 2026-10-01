@@ -28,6 +28,8 @@ void main() {
   test('profile geography is data-driven and dependent', () {
     final geo = source('lib/core/profile/profile_geo_data.dart');
     final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee =
+        source('lib/features/auth/employee_profile_onboarding_screen.dart');
     expect(geo, contains('CountryCodes.allCountries'));
     expect(geo, contains('CountryCodes.subdivisionsForCountry'));
     expect(geo, contains('notApplicableState'));
