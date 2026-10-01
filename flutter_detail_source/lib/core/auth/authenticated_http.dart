@@ -52,6 +52,7 @@ enum InsightFlowOnboardingState {
   initializing,
   activeMember,
   pendingInvitation,
+  profileIncomplete,
   noMembership,
   transientFailure,
   authoritativeDenial,
@@ -175,14 +176,20 @@ Future<InsightFlowOnboardingResolution>
         .toList();
 
     if (active.isNotEmpty) {
+      final selected = active.first;
       final workspaceId =
-          active.first['workspace_id']?.toString().trim() ?? '';
+          selected['workspace_id']?.toString().trim() ?? '';
       if (workspaceId.isEmpty) {
         return const InsightFlowOnboardingResolution(
           InsightFlowOnboardingState.transientFailure,
         );
       }
       await setInsightFlowWorkspaceId(uid, workspaceId);
+      if (selected['profile_complete'] != true) {
+        return const InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.profileIncomplete,
+        );
+      }
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.activeMember,
       );
