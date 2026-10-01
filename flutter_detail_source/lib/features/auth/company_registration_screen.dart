@@ -30,7 +30,6 @@ class _CompanyRegistrationScreenState
   final _branch = TextEditingController();
   final _branchIdentifier = TextEditingController();
   final _fullName = TextEditingController();
-  final _employeeId = TextEditingController();
   final _phone = TextEditingController();
   final _address1 = TextEditingController();
   final _address2 = TextEditingController();
@@ -72,7 +71,6 @@ class _CompanyRegistrationScreenState
       _branch,
       _branchIdentifier,
       _fullName,
-      _employeeId,
       _phone,
       _address1,
       _address2,
@@ -367,7 +365,6 @@ class _CompanyRegistrationScreenState
 
   bool _profileValid() =>
       _fullName.text.trim().isNotEmpty &&
-      _employeeId.text.trim().isNotEmpty &&
       _email?.isNotEmpty == true &&
       _emailConfirmed &&
       _address1.text.trim().isNotEmpty &&
@@ -456,7 +453,6 @@ class _CompanyRegistrationScreenState
             'organization_name': _organization.text.trim(),
             'branch_name': _branch.text.trim(),
             'branch_identifier': _branchIdentifier.text,
-            'employee_id': _employeeId.text.trim(),
             'full_name': _fullName.text.trim(),
             'phone': phone,
             'phone_country_calling_code': _phoneCountry!.subtitle,
@@ -619,7 +615,7 @@ class _CompanyRegistrationScreenState
         builder: (context, constraints) {
           final fields = <Widget>[
             _field('Full Name', _fullName),
-            _field('Employee Number', _employeeId, placeholder: 'EMP001'),
+            _employeeIdInfo(),
             _emailField(),
             _field('Address Line 1', _address1),
             _field(
@@ -780,7 +776,7 @@ class _CompanyRegistrationScreenState
           _review('BRANCH', _branch.text.trim()),
           _review('BRANCH ID', _branchIdentifier.text.trim()),
           _review('BRANCH HEAD', _fullName.text.trim()),
-          _review('EMPLOYEE NUMBER', _employeeId.text.trim()),
+          _review('EMPLOYEE ID', 'AUTO-GENERATED'),
           _review('EMAIL', (_email ?? '—') + '  ✓'),
           _review('PHONE', (_phoneE164() ?? '—') + '  ✓'),
           _review('ADDRESS LINE 1', _address1.text.trim()),
