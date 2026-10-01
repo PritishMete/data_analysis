@@ -31,19 +31,29 @@ void main() {
       contains(r'$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
     );
     expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
-    expect(source, contains("'organization_name': _organizationController.text.trim()"));
+    expect(source, contains("'organization_name': _organization.text.trim()));
     expect(source, contains('organizationServiceRequest('));
     expect(source, contains('employee_id'));
     expect(source, contains('full_name'));
     expect(source, contains('address_line1'));
     expect(source, contains('id_proof_number'));
-    expect(source, contains('sendEmailOtp'));
-    expect(source, contains('verifyEmailOtp'));
+    expect(source, isNot(contains('sendEmailOtp')));
+    expect(source, isNot(contains('verifyEmailOtp')));
+    expect(source, isNot(contains('EMAIL OTP')));
     expect(source, contains('beginPhoneVerification'));
     expect(source, contains('verifyPhoneChangeOtp'));
     expect(source, contains('resendPhoneChangeOtp'));
-    expect(source, contains('PHONE OTP VERIFIED'));
-    expect(source, contains('ID proof is collected as submitted information'));
+    expect(source, contains('phone_country_calling_code'));
+    expect(source, contains('phone_national_number'));
+    expect(source, contains('Country *'));
+    expect(source, contains('State / Province / Region *'));
+    expect(source, contains('ID Proof Type *'));
+    expect(source, contains("required: false"));
+    expect(source, contains('National / local number only'));
+    expect(supabaseAuthSource, contains("emailRedirectTo: 'https://pritishmete.github.io/data_analysis/'"));
+    expect(supabaseAuthSource, contains("type: OtpType.signup"));
+    expect(source, contains('PHONE VERIFIED'));
+    expect(source, contains('ID PROOF • PROVIDED'));
     expect(
       authSource,
       contains('Future<Map<String, String>> supabaseAuthHeaders'),
