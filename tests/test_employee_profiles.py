@@ -295,6 +295,14 @@ def test_sensitive_profile_requires_users_manage_and_is_cross_company_scoped():
         _cleanup(owner["organization_id"], other["organization_id"])
 
 
+def test_profile_safe_response_masks_short_id_proof():
+    from firebase_authz.profile_domain import _mask
+
+    assert _mask("12") == "XX"
+    assert _mask("1234") == "XXXX"
+    assert _mask("12345") == "X2345"
+
+
 def test_profile_is_removed_when_member_is_deleted():
     suffix = uuid.uuid4().hex
     owner = _seed_registered(f"cleanup-owner-{suffix}", employee_id="EMP001")
