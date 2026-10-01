@@ -168,7 +168,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _verificationRequired = false;
   bool _workspaceLookupFailed = false;
   InsightFlowOnboardingState _onboardingState =
-      InsightFlowOnboardingState.noMembership;
+      InsightFlowOnboardingState.initializing;
   List<Map<String, dynamic>> _pendingInvitations = const [];
 
   @override
@@ -329,6 +329,12 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
 
     final Widget authenticatedChild;
     switch (_onboardingState) {
+      case InsightFlowOnboardingState.initializing:
+        // Registration is never the default/fallback state. It is reachable
+        // only after the authoritative backend lookup explicitly returns
+        // noMembership.
+        authenticatedChild = const _AuthLoading();
+        break;
       case InsightFlowOnboardingState.activeMember:
         authenticatedChild = const ManagementShell();
         break;
