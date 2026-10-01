@@ -17,7 +17,7 @@ MIGRATIONS = ROOT / "migrations"
 HISTORY_TABLE = "insightflow_schema_migrations"
 EXPECTED_TABLES = {
     "principals", "identity_bindings", "organizations", "workspaces",
-    "organization_members", "roles", "permissions", "role_permissions",
+    "organization_members", "organization_member_profiles", "roles", "permissions", "role_permissions",
     "member_roles", "invitations", "approved_employees", "delegations",
     "authorization_resources", "audit_events", "resource_grants",
     "dataset_authorization", "working_copy_authorization",
@@ -105,6 +105,38 @@ def apply_pending(engine) -> tuple[list[str], list[str]]:
                 "SELECT pg_advisory_unlock(hashtext('insightflow-authz-migrations'))"
             ))
     return newly_applied, already_applied
+
+
+def verify_profile_security(engine) -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table("organization_member_profiles"):
+        raise RuntimeError("Employee profile table is missing.")
+    required = {
+        "organization_id", "principal_id", "full_name", "email",
+        "email_verified_at", "phone_e164", "phone_verified_at",
+        "address_line1", "address_line2", "city", "state", "postal_code",
+        "country", "id_proof_type", "id_proof_number", "id_proof_provided_at",
+        "created_at", "updated_at",
+    }
+    actual = {
+        column["name"]
+        for column in inspector.get_columns("organization_member_profiles")
+    }
+    missing = sorted(required - actual)
+    if missing:
+        raise RuntimeError(
+            "Employee profile columns are missing: " + ",".join(missing)
+        )
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT c.relrowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'organization_member_profiles'
+        """)).one_or_none()
+        if not row or not bool(row[0]):
+            raise RuntimeError("Employee profile RLS is not enabled.")
 
 
 def verify_organizational_structure(engine) -> None:
@@ -224,6 +256,7 @@ def run_migrations() -> None:
     if missing:
         raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
     verify_organizational_structure(engine)
+    verify_profile_security(engine)
     verify_managed_dataset_security(engine)
 
 
