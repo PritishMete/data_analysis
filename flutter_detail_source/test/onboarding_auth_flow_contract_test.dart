@@ -74,9 +74,9 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     final source =
         File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
 
-    expect(source, contains('initial branch head'));
-    expect(source, contains('unique identity label'));
-    expect(source, contains('Active branches cannot reuse it'));
+    expect(source, contains('initial Branch Head'));
+    expect(source, contains('Employee Number'));
+    expect(source, contains('Stored in the existing organization_members.employee_id field.'));
     expect(source, contains('special characters are allowed'));
     expect(source, contains('ManagementShell'));
   });
