@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-void main() {
+void main() { // Pages deployment trigger: keep the startup authorization contract deployed.
   test('AuthGate distinguishes active, invitation, no-membership and failure states', () {
     final source = File('lib/features/auth/auth_gate.dart').readAsStringSync();
     final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
