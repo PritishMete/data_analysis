@@ -338,3 +338,11 @@ def test_profile_migration_has_rls_and_no_public_data_api_grants():
     assert "REVOKE ALL ON TABLE organization_member_profiles FROM PUBLIC" in migration
     assert "REFERENCES organization_members (organization_id, principal_id)" in migration
     assert "ON DELETE CASCADE" in migration
+
+    additive = open(
+        "migrations/0020_add_profile_geo_codes.sql",
+        encoding="utf-8",
+    ).read()
+    assert "ADD COLUMN IF NOT EXISTS country_code TEXT" in additive
+    assert "ADD COLUMN IF NOT EXISTS state_code TEXT" in additive
+    assert "idx_member_profiles_org_country_state" in additive
