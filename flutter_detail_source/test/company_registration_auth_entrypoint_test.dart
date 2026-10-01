@@ -33,6 +33,17 @@ void main() {
     expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
     expect(source, contains("'organization_name': name"));
     expect(source, contains('organizationServiceRequest('));
+    expect(source, contains('employee_id'));
+    expect(source, contains('full_name'));
+    expect(source, contains('address_line1'));
+    expect(source, contains('id_proof_number'));
+    expect(source, contains('sendEmailOtp'));
+    expect(source, contains('verifyEmailOtp'));
+    expect(source, contains('beginPhoneVerification'));
+    expect(source, contains('verifyPhoneChangeOtp'));
+    expect(source, contains('resendPhoneChangeOtp'));
+    expect(source, contains('PHONE OTP VERIFIED'));
+    expect(source, contains('ID proof is collected as submitted information'));
     expect(
       authSource,
       contains('Future<Map<String, String>> supabaseAuthHeaders'),
