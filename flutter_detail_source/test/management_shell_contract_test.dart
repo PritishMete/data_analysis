@@ -52,7 +52,7 @@ void main() {
     expect(source, contains("a['phone_verified']"));
     expect(source, contains("a['id_proof_supplied']"));
     expect(source, contains('_showAssignmentProfile(a)'));
-    expect(source, contains("'/profile'"));
+    expect(source, contains('/assignments/' + ' + Uri.encodeComponent(assignmentId) + ' + '/profile'));
     expect(source, contains('BRANCH HEAD'));
     expect(source, contains('No separate manager assigned'));
     // Assignment Registry layout contract: keep compact identifiers intact,
