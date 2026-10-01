@@ -81,7 +81,6 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
             "organization_name": "Diagnostic Org",
             "branch_name": "Main",
             "branch_identifier": "main",
-            "employee_id": "EMP001",
             "full_name": "Diagnostic User",
             "phone": "+919876543210",
             "phone_country_calling_code": "+91",

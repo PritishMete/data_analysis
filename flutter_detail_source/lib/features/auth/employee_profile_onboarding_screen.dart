@@ -544,6 +544,7 @@ class _EmployeeProfileOnboardingScreenState
     final nationalNumber = _field(
       'PHONE NUMBER',
       _phone,
+      required: true,
       placeholder: 'Enter phone number',
       type: TextInputType.phone,
       inputFormatters: <TextInputFormatter>[
@@ -675,7 +676,7 @@ class _EmployeeProfileOnboardingScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'Enter only the national/local number. The selected calling code is combined into the canonical phone value.',
+            'Enter the national/local number only. The country calling code is added automatically.',
             style: TextStyle(color: TechColors.textMuted, fontSize: 9),
           ),
           const SizedBox(height: 12),

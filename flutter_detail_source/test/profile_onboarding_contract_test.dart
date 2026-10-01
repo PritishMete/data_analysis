@@ -47,10 +47,17 @@ void main() {
       expect(screen, contains('Widget _phoneInputRow(double width)'));
       expect(screen, contains("label: 'COUNTRY CODE *'"));
       expect(screen, contains("'PHONE NUMBER'"));
+      expect(screen, contains("placeholder: 'Enter phone number'"));
+      expect(screen, contains('national/local number only'));
+      expect(screen, contains('required: true'));
       expect(screen, contains('if (width < 520)'));
       expect(screen, contains('Expanded(flex: 2, child: countryCode)'));
       expect(screen, contains('Expanded(flex: 3, child: nationalNumber)'));
       expect(screen, contains('_phone.removeListener(_onPhoneChanged)'));
+      expect(screen, contains('_phoneVerified = false;'));
+      expect(screen, contains('_otpSent = false;'));
+      expect(screen, contains('_phoneIdentity = null;'));
+      expect(screen, contains('_otp.clear();'));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));

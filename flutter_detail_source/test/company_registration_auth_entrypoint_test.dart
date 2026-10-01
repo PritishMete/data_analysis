@@ -53,7 +53,7 @@ void main() {
     expect(source, contains('State / Province / Region *'));
     expect(source, contains('ID Proof Type *'));
     expect(source, contains("required: false"));
-    expect(source, contains('National / local number only'));
+    expect(source, contains('national/local number only'));
     expect(supabaseAuthSource, contains("emailRedirectTo: 'https://pritishmete.github.io/data_analysis/'"));
     expect(supabaseAuthSource, contains("type: OtpType.signup"));
     expect(source, contains('PHONE VERIFIED'));

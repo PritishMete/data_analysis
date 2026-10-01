@@ -89,7 +89,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(registration, isNot(contains('EMAIL OTP')));
     expect(employee, contains('Country *'));
     expect(employee, contains('State / Province / Region *'));
-    expect(employee, contains('Phone Country Code *'));
+    expect(employee, contains("label: 'COUNTRY CODE *'"));
     expect(employee, contains('SEND OTP'));
     expect(employee, contains('VERIFY PHONE'));
     expect(employee, contains('RESEND OTP'));
@@ -115,8 +115,9 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
         File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
 
     expect(source, contains('initial Branch Head'));
-    expect(source, contains('Employee Number'));
-    expect(source, contains("'employee_id': _employeeId.text.trim()"));
+    expect(source, contains('AUTO-GENERATED'));
+    expect(source, isNot(contains("'employee_id':")));
+    expect(source, contains("decoded['employee_id']"));
     expect(source, contains('Special characters are allowed.'));
     expect(source, contains('ManagementShell'));
   });

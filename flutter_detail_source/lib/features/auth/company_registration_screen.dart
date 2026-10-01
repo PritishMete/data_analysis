@@ -766,6 +766,7 @@ class _CompanyRegistrationScreenState
     final nationalNumber = _field(
       'PHONE NUMBER',
       _phone,
+      required: true,
       placeholder: 'Enter phone number',
       type: TextInputType.phone,
       inputFormatters: <TextInputFormatter>[
@@ -801,7 +802,7 @@ class _CompanyRegistrationScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'Do not type the country calling code here. InsightFlow combines the two controls into E.164 format.',
+            'Enter the national/local number only. The country calling code is added automatically.',
             style: TextStyle(color: TechColors.textMuted, fontSize: 9),
           ),
           const SizedBox(height: 12),

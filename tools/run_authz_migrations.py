@@ -259,6 +259,7 @@ def run_migrations() -> None:
         raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
     verify_organizational_structure(engine)
     verify_profile_security(engine)
+    verify_employee_id_allocator(engine)
     verify_managed_dataset_security(engine)
 
 
