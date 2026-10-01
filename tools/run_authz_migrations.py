@@ -284,6 +284,7 @@ def main() -> int:
         print("REQUIRED_TABLES=FAIL")
     else:
         verify_organizational_structure(engine)
+        verify_profile_security(engine)
         verify_managed_dataset_security(engine)
         print("ORGANIZATIONAL_STRUCTURE=PASS")
         print("REQUIRED_TABLES=PASS")
