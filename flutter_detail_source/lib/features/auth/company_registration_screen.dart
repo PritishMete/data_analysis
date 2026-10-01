@@ -766,7 +766,7 @@ class _CompanyRegistrationScreenState
         children: [
           const AuthGlassMessage(
             text:
-                'Review the Branch Head profile. Email is already confirmed; phone is verified through Supabase Auth SMS.',
+                'Review the Branch Head profile. The registering account becomes the initial Branch Head; Manager is assigned separately. Email is already confirmed; phone is verified through Supabase Auth SMS.',
             error: false,
           ),
           const SizedBox(height: 12),
