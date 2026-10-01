@@ -117,7 +117,7 @@ def normalize_phone_submission(
         cc = re.sub(r"[\s()-]", "", str(calling_code).strip())
         if not re.fullmatch(r"\+[1-9]\d{0,3}", cc):
             raise ProfileValidationError("Phone country calling code is invalid.")
-        if int(cc[1:]) != phonenumbers.country_code_for_number(parsed):
+        if int(cc[1:]) != int(parsed.country_code):
             raise ProfileValidationError(
                 "Phone number does not match the selected country calling code."
             )
