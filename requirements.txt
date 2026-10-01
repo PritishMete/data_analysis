@@ -19,3 +19,5 @@ PyJWT>=2.8
 google-genai
 
 supabase>=2.20,<3
+phonenumbers==9.0.40
+pycountry==26.2.16
