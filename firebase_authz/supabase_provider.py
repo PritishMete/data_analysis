@@ -32,8 +32,8 @@ def _id(prefix: str) -> str:
 
 def _normalize_phone(value: str) -> str:
     import re
-    normalized = re.sub(r"[\\s\\-().]", "", str(value or "").strip())
-    if not re.fullmatch(r"\\+[1-9]\\d{7,14}", normalized):
+    normalized = re.sub(r"[\s\-().]", "", str(value or "").strip())
+    if not re.fullmatch(r"\+[1-9]\d{7,14}", normalized):
         raise ValueError("Phone number must be a valid E.164 number.")
     return normalized
 
