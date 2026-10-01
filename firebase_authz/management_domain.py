@@ -138,6 +138,78 @@ def _assignment(db, organization_id: str, assignment_id: str) -> dict[str, Any]:
     return dict(row)
 
 
+def _profile_summary_sql(alias: str = "profile") -> str:
+    return f"""
+        {alias}.full_name,
+        {alias}.email_verified_at IS NOT NULL AS email_verified,
+        {alias}.phone_verified_at IS NOT NULL AS phone_verified,
+        ({alias}.id_proof_number IS NOT NULL AND {alias}.id_proof_number <> '') AS id_proof_supplied,
+        (
+            CASE WHEN {alias}.full_name IS NOT NULL AND {alias}.full_name <> '' THEN 1 ELSE 0 END
+            + CASE WHEN {alias}.email IS NOT NULL AND {alias}.email <> '' THEN 1 ELSE 0 END
+            + CASE WHEN {alias}.phone_e164 IS NOT NULL AND {alias}.phone_e164 <> '' THEN 1 ELSE 0 END
+            + CASE
+                WHEN coalesce({alias}.address_line1, '') <> ''
+                 AND coalesce({alias}.city, '') <> ''
+                 AND coalesce({alias}.state, '') <> ''
+                 AND coalesce({alias}.postal_code, '') <> ''
+                 AND coalesce({alias}.country, '') <> ''
+                THEN 1 ELSE 0 END
+            + CASE
+                WHEN coalesce({alias}.id_proof_type, '') <> ''
+                 AND coalesce({alias}.id_proof_number, '') <> ''
+                THEN 1 ELSE 0 END
+        ) * 20 AS profile_completeness_percent
+    """
+
+
+def _require_sensitive_profile_read(db, actor: dict[str, Any]) -> None:
+    if "users.manage" not in _permissions(
+        db, actor["organization_id"], actor["principal_id"]
+    ):
+        raise AuthzError("You don't have permission to view sensitive employee profile details.")
+
+
+def _profile_detail(db, organization_id: str, assignment_id: str) -> dict[str, Any]:
+    row = db.execute(text(f"""
+        SELECT oa.assignment_id, oa.organization_id, oa.principal_id,
+               m.employee_id, oa.role_id, oa.location_id, l.name AS location_name,
+               oa.section_id, s.name AS section_name, oa.status,
+               oa.reports_to_assignment_id,
+               parent_member.employee_id AS reports_to_employee_id,
+               parent.role_id AS reports_to_role_id,
+               profile.full_name, profile.email, profile.email_verified_at,
+               profile.phone_e164, profile.phone_verified_at,
+               profile.address_line1, profile.address_line2, profile.city,
+               profile.state, profile.postal_code, profile.country,
+               profile.id_proof_type, profile.id_proof_number,
+               profile.id_proof_provided_at, profile.created_at AS profile_created_at,
+               profile.updated_at AS profile_updated_at,
+               oa.created_at AS assignment_created_at,
+               oa.updated_at AS assignment_updated_at,
+               {_profile_summary_sql("profile")}
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        LEFT JOIN locations l
+          ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+        LEFT JOIN sections s
+          ON s.organization_id=oa.organization_id AND s.section_id=oa.section_id
+        LEFT JOIN organizational_assignments parent
+          ON parent.assignment_id=oa.reports_to_assignment_id
+        LEFT JOIN organization_members parent_member
+          ON parent_member.organization_id=parent.organization_id
+         AND parent_member.principal_id=parent.principal_id
+        LEFT JOIN organization_member_profiles profile
+          ON profile.organization_id=m.organization_id
+         AND profile.principal_id=m.principal_id
+        WHERE oa.organization_id=:org AND oa.assignment_id=:assignment
+    """), {"org": organization_id, "assignment": assignment_id}).mappings().first()
+    if not row:
+        raise AuthzError("Organizational assignment is not part of your organization.")
+    return dict(row)
+
+
 def _audit(db, organization_id: str, actor_principal_id: str, action: str,
            outcome: str, metadata: dict[str, Any]) -> None:
     import json
@@ -170,12 +242,30 @@ def _role_counts(db, organization_id: str, location_id: str | None = None) -> di
 def _location_summary(db, organization_id: str, location_id: str) -> dict[str, Any]:
     location = _location(db, organization_id, location_id)
     manager = db.execute(text("""
-        SELECT oa.assignment_id, oa.principal_id, m.employee_id
+        SELECT oa.assignment_id, oa.principal_id, m.employee_id,
+               profile.full_name
         FROM organizational_assignments oa
         JOIN organization_members m
           ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        LEFT JOIN organization_member_profiles profile
+          ON profile.organization_id=m.organization_id
+         AND profile.principal_id=m.principal_id
         WHERE oa.organization_id=:org AND oa.location_id=:location
           AND oa.role_id='manager' AND oa.status='active'
+        LIMIT 1
+    """), {"org": organization_id, "location": location_id}).mappings().first()
+    branch_head = db.execute(text("""
+        SELECT oa.assignment_id, oa.principal_id, m.employee_id,
+               profile.full_name
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        LEFT JOIN organization_member_profiles profile
+          ON profile.organization_id=m.organization_id
+         AND profile.principal_id=m.principal_id
+        WHERE oa.organization_id=:org AND oa.location_id=:location
+          AND oa.role_id='branch_head' AND oa.status='active'
+        ORDER BY oa.created_at, oa.assignment_id
         LIMIT 1
     """), {"org": organization_id, "location": location_id}).mappings().first()
     counts = _role_counts(db, organization_id, location_id)
@@ -185,12 +275,12 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
     """), {"org": organization_id, "location": location_id}).scalar_one()
     return {
         **location,
+        "branch_head": dict(branch_head) if branch_head else None,
         "manager": dict(manager) if manager else None,
         "employee_count": counts.get("employee", 0),
         "team_lead_count": counts.get("team_lead", 0),
         "section_count": int(section_count),
     }
-
 
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     with SessionLocal() as db:
@@ -366,7 +456,11 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
         params: dict[str, Any] = {"org": org}
         if search:
             params["search"] = f"%{search.strip()}%"
-            clauses.append("(m.employee_id ILIKE :search OR oa.principal_id ILIKE :search)")
+            clauses.append(
+                "(m.employee_id ILIKE :search OR coalesce(profile.full_name, '') ILIKE :search "
+                "OR oa.role_id ILIKE :search OR coalesce(l.name, '') ILIKE :search "
+                "OR coalesce(s.name, '') ILIKE :search)"
+            )
         if role:
             clauses.append("oa.role_id=:role")
             params["role"] = role
@@ -383,16 +477,46 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
             SELECT oa.assignment_id, oa.principal_id, m.employee_id, oa.role_id,
                    oa.location_id, l.name AS location_name,
                    oa.section_id, s.name AS section_name,
-                   oa.reports_to_assignment_id, oa.status
+                   oa.reports_to_assignment_id,
+                   parent_member.employee_id AS reports_to_employee_id,
+                   parent.role_id AS reports_to_role_id,
+                   oa.status,
+                   profile.full_name,
+                   profile.email_verified_at IS NOT NULL AS email_verified,
+                   profile.phone_verified_at IS NOT NULL AS phone_verified,
+                   (profile.id_proof_number IS NOT NULL AND profile.id_proof_number <> '') AS id_proof_supplied,
+                   (
+                       CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE
+                           WHEN coalesce(profile.address_line1, '') <> ''
+                            AND coalesce(profile.city, '') <> ''
+                            AND coalesce(profile.state, '') <> ''
+                            AND coalesce(profile.postal_code, '') <> ''
+                            AND coalesce(profile.country, '') <> ''
+                           THEN 1 ELSE 0 END
+                       + CASE
+                           WHEN coalesce(profile.id_proof_type, '') <> ''
+                            AND coalesce(profile.id_proof_number, '') <> ''
+                           THEN 1 ELSE 0 END
+                   ) * 20 AS profile_completeness_percent
             FROM organizational_assignments oa
             JOIN organization_members m
               ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            LEFT JOIN organization_member_profiles profile
+              ON profile.organization_id=m.organization_id AND profile.principal_id=m.principal_id
             LEFT JOIN locations l
               ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
             LEFT JOIN sections s
               ON s.organization_id=oa.organization_id AND s.section_id=oa.section_id
+            LEFT JOIN organizational_assignments parent
+              ON parent.assignment_id=oa.reports_to_assignment_id
+            LEFT JOIN organization_members parent_member
+              ON parent_member.organization_id=parent.organization_id
+             AND parent_member.principal_id=parent.principal_id
             WHERE {' AND '.join(clauses)}
-            ORDER BY lower(m.employee_id), oa.assignment_id
+            ORDER BY coalesce(lower(profile.full_name), lower(m.employee_id)), oa.assignment_id
         """), params).mappings().all()
         return [dict(row) for row in rows]
 
@@ -408,10 +532,32 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
                    oa.reports_to_assignment_id, oa.status,
                    parent.principal_id AS reports_to_principal_id,
                    parent_member.employee_id AS reports_to_employee_id,
-                   parent.role_id AS reports_to_role_id
+                   parent.role_id AS reports_to_role_id,
+                   profile.full_name,
+                   profile.email_verified_at IS NOT NULL AS email_verified,
+                   profile.phone_verified_at IS NOT NULL AS phone_verified,
+                   (profile.id_proof_number IS NOT NULL AND profile.id_proof_number <> '') AS id_proof_supplied,
+                   (
+                       CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE
+                           WHEN coalesce(profile.address_line1, '') <> ''
+                            AND coalesce(profile.city, '') <> ''
+                            AND coalesce(profile.state, '') <> ''
+                            AND coalesce(profile.postal_code, '') <> ''
+                            AND coalesce(profile.country, '') <> ''
+                           THEN 1 ELSE 0 END
+                       + CASE
+                           WHEN coalesce(profile.id_proof_type, '') <> ''
+                            AND coalesce(profile.id_proof_number, '') <> ''
+                           THEN 1 ELSE 0 END
+                   ) * 20 AS profile_completeness_percent
             FROM organizational_assignments oa
             JOIN organization_members m
               ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            LEFT JOIN organization_member_profiles profile
+              ON profile.organization_id=m.organization_id AND profile.principal_id=m.principal_id
             LEFT JOIN locations l
               ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
             LEFT JOIN sections s
@@ -422,9 +568,18 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
               ON parent_member.organization_id=parent.organization_id
              AND parent_member.principal_id=parent.principal_id
             WHERE oa.organization_id=:org
-            ORDER BY oa.location_id, oa.section_id, oa.role_id, m.employee_id
+            ORDER BY oa.location_id, oa.section_id, oa.role_id, coalesce(lower(profile.full_name), lower(m.employee_id))
         """), {"org": actor["organization_id"]}).mappings().all()
         return [dict(row) for row in rows]
+
+
+def get_assignment_profile(
+    claims: dict[str, Any], workspace_id: str, assignment_id: str
+) -> dict[str, Any]:
+    with SessionLocal() as db:
+        actor = _actor(db, claims, workspace_id)
+        _require_sensitive_profile_read(db, actor)
+        return _profile_detail(db, actor["organization_id"], assignment_id)
 
 
 def _ensure_assignment_role(db, organization_id: str, principal_id: str, role_id: str) -> None:
