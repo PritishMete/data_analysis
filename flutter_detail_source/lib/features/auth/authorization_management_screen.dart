@@ -227,7 +227,6 @@ class _AuthorizationManagementScreenState
 
   Future<void> _inviteEmployee() async {
     final email = TextEditingController();
-    final employeeId = TextEditingController();
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -238,10 +237,6 @@ class _AuthorizationManagementScreenState
             TextField(
               controller: email,
               decoration: const InputDecoration(labelText: 'Company email'),
-            ),
-            TextField(
-              controller: employeeId,
-              decoration: const InputDecoration(labelText: 'Employee ID'),
             ),
           ],
         ),
@@ -259,22 +254,18 @@ class _AuthorizationManagementScreenState
     );
     if (result != true) {
       email.dispose();
-      employeeId.dispose();
       return;
     }
-    if (email.text.trim().isEmpty || employeeId.text.trim().isEmpty) {
+    if (email.text.trim().isEmpty) {
       email.dispose();
-      employeeId.dispose();
-      throw StateError('Company email and employee ID are required.');
+      throw StateError('Company email is required.');
     }
     await _post('invitations', {
       'workspace_id': insightFlowWorkspaceId,
       'email': email.text.trim(),
-      'employee_id': employeeId.text.trim(),
       'role_id': 'employee',
     });
     email.dispose();
-    employeeId.dispose();
     await _load();
   }
 
