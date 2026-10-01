@@ -14,10 +14,14 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
             "uid": "duplicate-route-user",
             "sub": "duplicate-route-user",
             "email": "duplicate@example.com",
+            "email_verified": True,
+            "email_confirmed_at": "2026-10-01T00:00:00Z",
+            "phone": "+15551234567",
+            "phone_confirmed_at": "2026-10-01T00:00:00Z",
         },
     )
 
-    def reject_duplicate(claims, organization_name, branch_name, branch_identifier):
+    def reject_duplicate(claims, organization_name, branch_name, branch_identifier, **kwargs):
         raise AuthzError(
             "This account already has an active organization membership."
         )
@@ -33,6 +37,16 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
                 organization_name="Second Organization",
                 branch_name="Second Branch",
                 branch_identifier="SECOND-ORG",
+                employee_id="EMP002",
+                full_name="Duplicate Route User",
+                phone="+15551234567",
+                address_line1="1 Route Way",
+                city="Test City",
+                state="Test State",
+                postal_code="00000",
+                country="India",
+                id_proof_type="Passport",
+                id_proof_number="TEST-002",
             ),
             authorization="Bearer test-token",
         )
@@ -63,3 +77,64 @@ def test_founder_registration_keeps_validation_errors_as_400(monkeypatch):
         )
 
     assert exc_info.value.status_code == 400
+
+
+
+def test_founder_registration_rejects_unverified_phone_before_provider_registration(monkeypatch):
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.setattr(
+        "firebase_authz.supabase_auth.verify_supabase_access_token",
+        lambda token, require_email_verified=True: {
+            "uid": "phone-route-user",
+            "sub": "phone-route-user",
+            "email": "phone@example.com",
+            "email_verified": True,
+            "phone": "+15551234567",
+            "phone_confirmed_at": None,
+        },
+    )
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("registration provider must not be called")
+
+    monkeypatch.setattr(
+        "firebase_authz.supabase_provider.register_organization",
+        fail_if_called,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        routes.founder_organization_register(
+            routes.FounderOrganizationRegistration(
+                organization_name="Phone Company",
+                branch_name="Main Branch",
+                branch_identifier="PHONE-ORG",
+                employee_id="EMP001",
+                full_name="Phone User",
+                phone="+15551234567",
+                address_line1="1 Phone Way",
+                city="Test City",
+                state="Test State",
+                postal_code="00000",
+                country="India",
+                id_proof_type="Passport",
+                id_proof_number="TEST-PHONE",
+            ),
+            authorization="Bearer test-token",
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "verified phone" in str(exc_info.value.detail)
+    assert called is False
+
+
+def test_founder_registration_forbids_authz_identity_fields():
+    with pytest.raises(ValueError):
+        routes.FounderOrganizationRegistration(
+            organization_name="Company",
+            branch_name="Branch",
+            branch_identifier="BRANCH-1",
+            organization_id="forbidden",
+        )
