@@ -136,6 +136,19 @@ def test_founder_registration_rejects_unverified_phone_before_provider_registrat
     assert called is False
 
 
+def test_founder_registration_rejects_client_phone_verified_field():
+    with pytest.raises(ValueError):
+        routes.FounderOrganizationRegistration(
+            organization_name="Company",
+            branch_name="Branch",
+            branch_identifier="BRANCH-1",
+            employee_id="EMP001",
+            full_name="User",
+            phone="+919876543210",
+            phone_verified=True,
+        )
+
+
 def test_founder_registration_forbids_authz_identity_fields():
     with pytest.raises(ValueError):
         routes.FounderOrganizationRegistration(
