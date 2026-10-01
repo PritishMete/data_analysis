@@ -48,7 +48,10 @@ void main() {
       authSource,
       contains('Future<Map<String, String>> supabaseAuthHeaders'),
     );
-    expect(source, contains('response.statusCode == 404'));
+    expect(source, contains('response.statusCode == 401'));
+    expect(source, contains('response.statusCode == 403'));
+    expect(source, contains('response.statusCode == 409'));
+    expect(source, contains('response.statusCode == 422'));
     expect(source, contains('InsightFlowSupabaseAuthService.ensureSession()'));
     expect(
       supabaseAuthSource,
