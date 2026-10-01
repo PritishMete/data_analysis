@@ -34,12 +34,15 @@ def _profile_kwargs(employee_id: str = "EMP001") -> dict:
         "phone": "+15551234567",
         "address_line1": "1 InsightFlow Way",
         "address_line2": "Floor 2",
-        "city": "Kolkata",
         "state": "West Bengal",
+        "state_code": "IN-WB",
         "postal_code": "700001",
         "country": "India",
-        "id_proof_type": "Passport",
+        "country_code": "IN",
+        "id_proof_type": "passport",
         "id_proof_number": "P-1234567",
+        "phone_country_calling_code": "+1",
+        "phone_national_number": "5551234567",
     }
 
 
@@ -100,7 +103,7 @@ def test_registration_persists_branch_head_profile_and_assignment():
             profile = session.execute(
                 text("""SELECT full_name, email, email_verified_at, phone_e164,
                                phone_verified_at, address_line1, address_line2,
-                               city, state, postal_code, country,
+                               state, state_code, postal_code, country, country_code,
                                id_proof_type, id_proof_number
                         FROM organization_member_profiles
                         WHERE organization_id=:org"""),
@@ -112,7 +115,7 @@ def test_registration_persists_branch_head_profile_and_assignment():
         assert profile["phone_e164"] == "+15551234567"
         assert profile["phone_verified_at"] is not None
         assert profile["address_line1"] == "1 InsightFlow Way"
-        assert profile["id_proof_type"] == "Passport"
+        assert profile["id_proof_type"] == "passport"
         assert profile["id_proof_number"] == "P-1234567"
 
         overview = management_overview(
