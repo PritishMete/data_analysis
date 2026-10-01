@@ -39,7 +39,8 @@ def test_supabase_registration_persists_branch_head_context():
                                         {"id": result["organization_id"], "principal": claims["uid"]}).one()
     assert row.name == "ABC"
     assert row.workspace_id == result["workspace_id"]
-    assert row.employee_id.startswith("emp_")
+    assert row.employee_id == result["employee_id"]
+    assert row.employee_id == "EMP001"
     assert row.role_id == "branch_head"
     assert row.branch_name == "Kolkata Branch A"
     assert assignment.location_id == result["location_id"]
