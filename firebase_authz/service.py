@@ -1589,6 +1589,10 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
         raise BootstrapDenied("Organization bootstrap could not be verified.")
     if (workspace.get("organization") or {}).get("name") != organization_name:
         raise BootstrapDenied("Organization bootstrap could not be verified.")
+    owner_member = (workspace.get("members") or {}).get(owner_uid) or {}
+    employee_id = str(owner_member.get("employee_id") or "")
+    if not employee_id:
+        raise BootstrapDenied("Organization bootstrap did not assign an Employee ID.")
 
     return {
         "initialized": True,
