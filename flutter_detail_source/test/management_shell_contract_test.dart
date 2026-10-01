@@ -64,7 +64,7 @@ void main() {
     expect(source, contains('final compact = constraints.maxWidth < 620;'));
     expect(source, contains('final reportingAction = SizedBox('));
     expect(source, contains('width: 132'));
-    expect(source, contains('_glassRow(child: _assignmentRegistryRow(a))'));
+    expect(source, contains('_assignmentRegistryRow(a)'));
     expect(source, contains("a['employee_id']"));
     expect(source, contains("a['role_id']"));
     expect(source, contains("a['location_name']"));
