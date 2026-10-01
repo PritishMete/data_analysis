@@ -30,7 +30,50 @@ def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def register_organization(claims: dict[str, Any], organization_name: str, branch_name: str, branch_identifier: str) -> dict[str, Any]:
+def _normalize_phone(value: str) -> str:
+    import re
+    normalized = re.sub(r"[\\s\\-().]", "", str(value or "").strip())
+    if not re.fullmatch(r"\\+[1-9]\\d{7,14}", normalized):
+        raise ValueError("Phone number must be a valid E.164 number.")
+    return normalized
+
+
+def _clean_profile_text(value: str | None, field: str, max_length: int = 200) -> str:
+    text_value = str(value or "").strip()
+    if not text_value or len(text_value) > max_length or any(
+        ord(char) < 32 or ord(char) == 127 for char in text_value
+    ):
+        raise ValueError(f"{field} is required and must be at most {max_length} characters.")
+    return text_value
+
+
+def _auth_timestamp(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def register_organization(
+    claims: dict[str, Any],
+    organization_name: str,
+    branch_name: str,
+    branch_identifier: str,
+    *,
+    employee_id: str,
+    full_name: str,
+    phone: str,
+    address_line1: str,
+    address_line2: str = "",
+    city: str,
+    state: str,
+    postal_code: str,
+    country: str,
+    id_proof_type: str,
+    id_proof_number: str,
+) -> dict[str, Any]:
     name = str(organization_name or "").strip()
     if not 1 <= len(name) <= 120 or any(ord(c) < 32 or ord(c) == 127 for c in name):
         raise ValueError("Organization name must be between 1 and 120 characters.")
@@ -39,54 +82,99 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
     if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
         raise ValueError("Branch name must be between 1 and 160 characters.")
 
-    # Branch identifiers are opaque user-defined identity labels. The only
-    # application-level requirements are that the value is present and that
-    # active branches cannot reuse the same identifier (case-insensitively).
-    # Do not restrict punctuation, symbols, whitespace, or Unicode characters.
     branch_id = str(branch_identifier or "")
     if not branch_id:
         raise ValueError("Branch identifier is required.")
 
+    employee = _clean_profile_text(employee_id, "Employee number", 128)
+    profile_name = _clean_profile_text(full_name, "Full name", 160)
+    profile_phone = _normalize_phone(phone)
+    address1 = _clean_profile_text(address_line1, "Address line 1", 200)
+    address2 = str(address_line2 or "").strip()
+    if len(address2) > 200 or any(ord(char) < 32 or ord(char) == 127 for char in address2):
+        raise ValueError("Address line 2 is invalid.")
+    profile_city = _clean_profile_text(city, "City", 120)
+    profile_state = _clean_profile_text(state, "State", 120)
+    profile_postal = _clean_profile_text(postal_code, "Postal code", 32)
+    profile_country = _clean_profile_text(country, "Country", 120)
+    proof_type = _clean_profile_text(id_proof_type, "ID proof type", 80)
+    proof_number = _clean_profile_text(id_proof_number, "ID proof number", 160)
+
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
         raise ValueError("Authenticated identity is required.")
+
+    if not bool(claims.get("email_verified")):
+        raise AuthzError("Verified email is required to create an organization.")
+
+    authoritative_email = str(claims.get("email") or "").strip().lower()
+    if not authoritative_email or "@" not in authoritative_email:
+        raise AuthzError("A verified authenticated email is required to create an organization.")
+
+    authoritative_phone = _normalize_phone(claims.get("phone") or "")
+    confirmed_phone_at = _auth_timestamp(claims.get("phone_confirmed_at"))
+    if authoritative_phone != profile_phone or confirmed_phone_at is None:
+        raise AuthzError("The submitted phone number must be verified in Supabase Auth before registration.")
+
     firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(claims.get("provider") or firebase.get("sign_in_provider") or "firebase").strip().lower()
+    provider = str(
+        claims.get("provider")
+        or firebase.get("sign_in_provider")
+        or "firebase"
+    ).strip().lower()
     identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
     subjects = identities.get(provider)
-    subject = str(subjects[0]) if isinstance(subjects, list) and subjects else str(claims.get("sub") or uid)
+    subject = (
+        str(subjects[0])
+        if isinstance(subjects, list) and subjects
+        else str(claims.get("sub") or uid)
+    )
 
     principal_id = _id("prn")
     organization_id = _id("org")
     workspace_id = organization_id
     location_id = _id("loc")
-    employee_id = _id("emp")
     assignment_id = _id("asg")
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
         existing = db.execute(
-            text("SELECT principal_id FROM identity_bindings WHERE provider=:provider AND provider_subject=:subject"),
+            text(
+                "SELECT principal_id FROM identity_bindings "
+                "WHERE provider=:provider AND provider_subject=:subject"
+            ),
             {"provider": provider, "subject": subject},
         ).scalar_one_or_none()
         registration_diagnostics.stage("IDENTITY_LOOKUP_COMPLETE")
         if existing:
             principal_id = str(existing)
         else:
-            db.execute(text("INSERT INTO principals(principal_id) VALUES (:id)"), {"id": principal_id})
-            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
-                             VALUES (:provider, :subject, :uid, :principal)"""),
-                       {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
+            db.execute(
+                text("INSERT INTO principals(principal_id) VALUES (:id)"),
+                {"id": principal_id},
+            )
+            db.execute(
+                text(
+                    """INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
+                    VALUES (:provider, :subject, :uid, :principal)"""
+                ),
+                {
+                    "provider": provider,
+                    "subject": subject,
+                    "uid": uid,
+                    "principal": principal_id,
+                },
+            )
         registration_diagnostics.stage("PRINCIPAL_SETUP_COMPLETE")
 
         active_membership = db.execute(
-            text("""
-                SELECT organization_id, workspace_id
+            text(
+                """SELECT organization_id, workspace_id
                 FROM organization_members
                 WHERE principal_id=:principal AND status='active'
                 ORDER BY organization_id
-                LIMIT 1
-            """),
+                LIMIT 1"""
+            ),
             {"principal": principal_id},
         ).mappings().first()
         if active_membership:
@@ -96,60 +184,198 @@ def register_organization(claims: dict[str, Any], organization_name: str, branch
             )
         registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
 
-        db.execute(text("""INSERT INTO organizations(organization_id, name, created_by_principal_id)
-                         VALUES (:id, :name, :principal)"""),
-                   {"id": organization_id, "name": name, "principal": principal_id})
+        duplicate_employee = db.execute(
+            text(
+                """SELECT 1
+                FROM organization_members
+                WHERE workspace_id=:workspace AND lower(employee_id)=lower(:employee)
+                LIMIT 1"""
+            ),
+            {"workspace": workspace_id, "employee": employee},
+        ).scalar_one_or_none()
+        if duplicate_employee:
+            raise OrganizationRegistrationConflict(
+                "Employee number is already in use in this organization."
+            )
+
+        db.execute(
+            text(
+                """INSERT INTO organizations(organization_id, name, created_by_principal_id)
+                VALUES (:id, :name, :principal)"""
+            ),
+            {"id": organization_id, "name": name, "principal": principal_id},
+        )
         registration_diagnostics.stage("ORGANIZATION_CREATED")
-        db.execute(text("""INSERT INTO workspaces(workspace_id, organization_id)
-                         VALUES (:workspace, :organization)"""),
-                   {"workspace": workspace_id, "organization": organization_id})
+        db.execute(
+            text(
+                """INSERT INTO workspaces(workspace_id, organization_id)
+                VALUES (:workspace, :organization)"""
+            ),
+            {"workspace": workspace_id, "organization": organization_id},
+        )
         registration_diagnostics.stage("WORKSPACE_CREATED")
+
         duplicate_branch = db.execute(
-            text("SELECT 1 FROM locations WHERE lower(branch_identifier)=lower(:identifier) AND status='active' LIMIT 1"),
+            text(
+                "SELECT 1 FROM locations "
+                "WHERE lower(branch_identifier)=lower(:identifier) AND status='active' LIMIT 1"
+            ),
             {"identifier": branch_id},
         ).scalar_one_or_none()
         if duplicate_branch:
             raise ValueError("Branch identifier is already in use by an active branch.")
 
-        db.execute(text("""INSERT INTO locations(location_id, organization_id, name, branch_identifier)
-                         VALUES (:location, :organization, :name, :branch_identifier)"""),
-                   {"location": location_id, "organization": organization_id,
-                    "name": branch, "branch_identifier": branch_id})
+        db.execute(
+            text(
+                """INSERT INTO locations(location_id, organization_id, name, branch_identifier)
+                VALUES (:location, :organization, :name, :branch_identifier)"""
+            ),
+            {
+                "location": location_id,
+                "organization": organization_id,
+                "name": branch,
+                "branch_identifier": branch_id,
+            },
+        )
         registration_diagnostics.stage("LOCATION_CREATED")
-        db.execute(text("""INSERT INTO organization_members
-                         (organization_id, workspace_id, principal_id, employee_id)
-                         VALUES (:organization, :workspace, :principal, :employee)"""),
-                   {"organization": organization_id, "workspace": workspace_id,
-                    "principal": principal_id, "employee": employee_id})
+
+        db.execute(
+            text(
+                """INSERT INTO organization_members
+                (organization_id, workspace_id, principal_id, employee_id)
+                VALUES (:organization, :workspace, :principal, :employee)"""
+            ),
+            {
+                "organization": organization_id,
+                "workspace": workspace_id,
+                "principal": principal_id,
+                "employee": employee,
+            },
+        )
         registration_diagnostics.stage("MEMBERSHIP_CREATED")
-        db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
-                         VALUES (:organization, :principal, 'branch_head')"""),
-                   {"organization": organization_id, "principal": principal_id})
-        db.execute(text("""INSERT INTO organizational_assignments
-                         (assignment_id, organization_id, principal_id, location_id,
-                          role_id, section_id, reports_to_assignment_id, status)
-                         VALUES (:assignment, :organization, :principal, :location,
-                                 'branch_head', NULL, NULL, 'active')"""),
-                   {"assignment": assignment_id, "organization": organization_id,
-                    "principal": principal_id, "location": location_id})
+
+        db.execute(
+            text(
+                """INSERT INTO member_roles(organization_id, principal_id, role_id)
+                VALUES (:organization, :principal, 'branch_head')"""
+            ),
+            {"organization": organization_id, "principal": principal_id},
+        )
+
+        db.execute(
+            text(
+                """INSERT INTO organizational_assignments
+                (assignment_id, organization_id, principal_id, location_id,
+                 role_id, section_id, reports_to_assignment_id, status)
+                VALUES (:assignment, :organization, :principal, :location,
+                        'branch_head', NULL, NULL, 'active')"""
+            ),
+            {
+                "assignment": assignment_id,
+                "organization": organization_id,
+                "principal": principal_id,
+                "location": location_id,
+            },
+        )
         registration_diagnostics.stage("OWNER_ASSIGNMENT_CREATED")
-        db.execute(text("""INSERT INTO audit_events
-                         (event_id, organization_id, actor_principal_id, action, outcome)
-                         VALUES (:event, :organization, :principal, 'organization.register', 'succeeded')"""),
-                   {"event": _id("evt"), "organization": organization_id, "principal": principal_id})
+
+        email_verified_at = _auth_timestamp(claims.get("email_confirmed_at"))
+        if email_verified_at is None:
+            email_verified_at = datetime.now(timezone.utc)
+        if confirmed_phone_at is None:
+            raise AuthzError("Verified phone state is required.")
+
+        db.execute(
+            text(
+                """INSERT INTO organization_member_profiles
+                (organization_id, principal_id, full_name, email, email_verified_at,
+                 phone_e164, phone_verified_at, address_line1, address_line2,
+                 city, state, postal_code, country, id_proof_type, id_proof_number,
+                 id_proof_provided_at)
+                VALUES
+                (:organization, :principal, :full_name, :email, :email_verified_at,
+                 :phone, :phone_verified_at, :address_line1, :address_line2,
+                 :city, :state, :postal_code, :country, :id_proof_type, :id_proof_number,
+                 now())"""
+            ),
+            {
+                "organization": organization_id,
+                "principal": principal_id,
+                "full_name": profile_name,
+                "email": authoritative_email,
+                "email_verified_at": email_verified_at,
+                "phone": profile_phone,
+                "phone_verified_at": confirmed_phone_at,
+                "address_line1": address1,
+                "address_line2": address2 or None,
+                "city": profile_city,
+                "state": profile_state,
+                "postal_code": profile_postal,
+                "country": profile_country,
+                "id_proof_type": proof_type,
+                "id_proof_number": proof_number,
+            },
+        )
+        registration_diagnostics.stage("PROFILE_CREATED")
+
+        db.execute(
+            text(
+                """INSERT INTO audit_events
+                (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+                VALUES (:event, :organization, :principal, 'organization.register', 'succeeded',
+                        CAST(:metadata AS jsonb))"""
+            ),
+            {
+                "event": _id("evt"),
+                "organization": organization_id,
+                "principal": principal_id,
+                "metadata": json.dumps(
+                    {
+                        "location_id": location_id,
+                        "assignment_id": assignment_id,
+                        "employee_id": employee,
+                    }
+                ),
+            },
+        )
+        db.execute(
+            text(
+                """INSERT INTO audit_events
+                (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+                VALUES (:event, :organization, :principal, 'people.profile.created', 'succeeded',
+                        CAST(:metadata AS jsonb))"""
+            ),
+            {
+                "event": _id("evt"),
+                "organization": organization_id,
+                "principal": principal_id,
+                "metadata": json.dumps(
+                    {
+                        "assignment_id": assignment_id,
+                        "employee_id": employee,
+                    }
+                ),
+            },
+        )
         registration_diagnostics.stage("AUDIT_EVENT_CREATED")
-        # Keep the final diagnostic stage inside the transaction. If this
-        # stage (or anything else in the transaction) fails, SessionLocal.begin
-        # rolls the entire registration back instead of committing a partial
-        # organization and then returning an error to the caller.
         registration_diagnostics.stage("DB_COMMIT_COMPLETE")
 
-    return {"initialized": True, "organization_id": organization_id,
-            "workspace_id": workspace_id, "location_id": location_id, "branch_identifier": branch_id,
-            "membership_status": "active",
-            "role_ids": ["branch_head"],
-            "branch_head_assignment_id": assignment_id}
-
+    return {
+        "initialized": True,
+        "organization_id": organization_id,
+        "workspace_id": workspace_id,
+        "location_id": location_id,
+        "branch_identifier": branch_id,
+        "membership_status": "active",
+        "role_ids": ["branch_head"],
+        "employee_id": employee,
+        "branch_head_assignment_id": assignment_id,
+        "branch_head": {
+            "principal_id": principal_id,
+            "employee_id": employee,
+            "full_name": profile_name,
+        },
+    }
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
