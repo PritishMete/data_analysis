@@ -44,9 +44,9 @@ void main() {
     expect(source, isNot(contains('sendEmailOtp')));
     expect(source, isNot(contains('verifyEmailOtp')));
     expect(source, isNot(contains('EMAIL OTP')));
-    expect(source, contains('beginPhoneVerification'));
-    expect(source, contains('verifyPhoneChangeOtp'));
-    expect(source, contains('resendPhoneChangeOtp'));
+    expect(source, isNot(contains('beginPhoneVerification')));
+    expect(source, isNot(contains('verifyPhoneChangeOtp')));
+    expect(source, isNot(contains('resendPhoneChangeOtp')));
     expect(source, contains('phone_country_calling_code'));
     expect(source, contains('phone_national_number'));
     expect(source, contains('Country *'));
@@ -56,7 +56,7 @@ void main() {
     expect(source, contains('national/local number only'));
     expect(supabaseAuthSource, contains("emailRedirectTo: 'https://pritishmete.github.io/data_analysis/'"));
     expect(supabaseAuthSource, contains("type: OtpType.signup"));
-    expect(source, contains('PHONE VERIFIED'));
+    expect(source, isNot(contains('PHONE VERIFIED')));
     expect(source, contains('ID PROOF • PROVIDED'));
     expect(
       authSource,

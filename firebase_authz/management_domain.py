@@ -489,7 +489,7 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' AND profile.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
                             AND coalesce(profile.state, '') <> ''
@@ -540,7 +540,7 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' AND profile.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
                             AND coalesce(profile.state, '') <> ''

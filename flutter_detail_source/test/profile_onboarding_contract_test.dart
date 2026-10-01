@@ -7,20 +7,20 @@ String source(String path) => File(path).readAsStringSync();
 void main() {
   test('Branch Head registration has no email OTP step', () {
     final text = source('lib/features/auth/company_registration_screen.dart');
-    expect(text, contains("['COMPANY', 'BRANCH HEAD', 'PHONE', 'REVIEW']"));
+    expect(text, contains("['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW']"));
     expect(text, contains('EMAIL CONFIRMED'));
     expect(text, isNot(contains('sendEmailOtp')));
     expect(text, isNot(contains('verifyEmailOtp')));
     expect(text, isNot(contains('OTP SENT TO EMAIL')));
   });
 
-  test('employee onboarding uses confirmation-link state and native phone OTP', () {
+  test('employee onboarding uses confirmation-link state and without phone OTP', () {
     final text = source('lib/features/auth/employee_profile_onboarding_screen.dart');
-    expect(text, contains('PHONE VERIFIED'));
-    expect(text, contains('SEND OTP'));
-    expect(text, contains('VERIFY PHONE'));
-    expect(text, contains('resendPhoneChangeOtp'));
-    expect(text, contains('verifyPhoneChangeOtp'));
+    expect(text, isNot(contains('PHONE VERIFIED')));
+    expect(text, isNot(contains('SEND OTP')));
+    expect(text, isNot(contains('VERIFY PHONE')));
+    expect(text, isNot(contains('resendPhoneChangeOtp')));
+    expect(text, isNot(contains('verifyPhoneChangeOtp')));
     expect(text, isNot(contains('sendEmailOtp')));
     expect(text, isNot(contains('email OTP')));
   });

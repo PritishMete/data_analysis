@@ -62,21 +62,14 @@ def _completion_percent(
     member: dict[str, Any],
     claims: dict[str, Any] | None = None,
 ) -> int:
-    authoritative_phone = str((claims or {}).get("phone") or "").strip()
     email_is_verified = bool((claims or {}).get("email_verified"))
-    phone_is_verified = (
-        bool((claims or {}).get("phone_confirmed_at"))
-        and authoritative_phone == str(profile.get("phone_e164") or "").strip()
-    )
     checks = [
         bool(str(profile.get("full_name") or "").strip()),
         bool(str(member.get("employee_id") or "").strip()),
         bool(str(profile.get("email") or "").strip())
         and profile.get("email_verified_at") is not None
         and email_is_verified,
-        bool(str(profile.get("phone_e164") or "").strip())
-        and profile.get("phone_verified_at") is not None
-        and phone_is_verified,
+        bool(str(profile.get("phone_e164") or "").strip()),
         bool(str(profile.get("address_line1") or "").strip()),
         bool(str(profile.get("state") or "").strip()),
         bool(str(profile.get("country") or "").strip()),
@@ -102,12 +95,7 @@ def _safe(
     claims: dict[str, Any],
 ) -> dict[str, Any]:
     profile = profile or {}
-    authoritative_phone = str(claims.get("phone") or "").strip()
-    phone_verified = (
-        profile.get("phone_verified_at") is not None
-        and bool(claims.get("phone_confirmed_at"))
-        and authoritative_phone == str(profile.get("phone_e164") or "").strip()
-    )
+    phone_verified = profile.get("phone_verified_at") is not None
     return {
         "organization_id": member["organization_id"],
         "workspace_id": member["workspace_id"],
@@ -179,13 +167,8 @@ def upsert_my_profile(
     if not claims.get("email_verified"):
         raise AuthzError("Verified email is required before completing your profile.")
 
-    auth_phone = str(claims.get("phone") or "").strip()
-    confirmed_at = _auth_time(claims.get("phone_confirmed_at"))
-    if not auth_phone or confirmed_at is None:
-        raise AuthzError(
-            "Verify your phone with Supabase Auth before completing your profile."
-        )
-
+    # Phone is profile data only. Validate/normalize the submitted number and
+    # leave phone_verified_at NULL unless a separate authoritative verification has occurred.
     try:
         fields = validate_profile_fields(
             full_name=full_name,
@@ -269,7 +252,7 @@ def upsert_my_profile(
             "email": email,
             "email_verified_at": email_time,
             "phone": fields["phone_e164"],
-            "phone_verified_at": confirmed_at,
+            "phone_verified_at": existing_phone_verified_at,
             "address_line1": fields["address_line1"],
             "address_line2": fields["address_line2"],
             "state": fields["state"],

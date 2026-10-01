@@ -71,7 +71,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, isNot(contains('unawaited(_scheduleBackgroundRetry());')));
   });
 
-  test('profile onboarding uses dropdowns and Supabase phone OTP without email OTP', () {
+  test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
     final registration =
         File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
     final employee =
@@ -85,21 +85,15 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(registration, contains('State / Province / Region *'));
     expect(registration, contains('ID Proof Type *'));
     expect(registration, contains('phone_country_calling_code'));
-    expect(registration, contains('verifyPhoneChangeOtp'));
     expect(registration, isNot(contains('EMAIL OTP')));
     expect(employee, contains('Country *'));
     expect(employee, contains('State / Province / Region *'));
     expect(employee, contains("label: 'COUNTRY CODE *'"));
-    expect(employee, contains('SEND OTP'));
-    expect(employee, contains('VERIFY PHONE'));
-    expect(employee, contains('RESEND OTP'));
     expect(employee, isNot(contains('Email OTP')));
     expect(employee, contains('required: false'));
     expect(geo, contains('subdivisionsForCountry'));
     expect(geo, contains('allCountries'));
     expect(geo, contains('idProofOptions'));
-    expect(auth, contains('updateUser'));
-    expect(auth, contains('OtpType.phoneChange'));
   });
 
   test('confirmation callback errors are rendered as a usable InsightFlow route', () {

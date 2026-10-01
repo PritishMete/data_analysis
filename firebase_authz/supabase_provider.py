@@ -147,10 +147,8 @@ def register_organization(
     if not authoritative_email or "@" not in authoritative_email:
         raise AuthzError("A verified authenticated email is required to create an organization.")
 
-    authoritative_phone = _normalize_phone(claims.get("phone") or "")
-    confirmed_phone_at = _auth_timestamp(claims.get("phone_confirmed_at"))
-    if authoritative_phone != profile_phone or confirmed_phone_at is None:
-        raise AuthzError("The submitted phone number must be verified in Supabase Auth before registration.")
+    # Phone is validated from the submitted profile fields. No Supabase phone-auth claim is required.
+    confirmed_phone_at = None
 
     firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
     provider = str(
@@ -847,8 +845,6 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             "principal": selected["principal_id"],
         }).mappings().first()
         authoritative_email_verified = bool(claims.get("email_verified"))
-        authoritative_phone = str(claims.get("phone") or "").strip()
-        authoritative_phone_verified = bool(claims.get("phone_confirmed_at"))
         profile_complete = bool(profile_row) and all([
             str(profile_row["full_name"] or "").strip(),
             str(selected["employee_id"] or "").strip(),
@@ -856,9 +852,6 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             profile_row["email_verified_at"] is not None,
             authoritative_email_verified,
             str(profile_row["phone_e164"] or "").strip(),
-            profile_row["phone_verified_at"] is not None,
-            authoritative_phone_verified,
-            profile_row["phone_e164"] == authoritative_phone,
             str(profile_row["address_line1"] or "").strip(),
             str(profile_row["state"] or "").strip(),
             str(profile_row["country"] or "").strip(),

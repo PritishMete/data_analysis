@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -35,7 +34,6 @@ class _CompanyRegistrationScreenState
   final _address2 = TextEditingController();
   final _postal = TextEditingController();
   final _proofNumber = TextEditingController();
-  final _otp = TextEditingController();
 
   List<ProfileOption> _countries = const [];
   List<ProfileOption> _states = const [];
@@ -48,11 +46,6 @@ class _CompanyRegistrationScreenState
   int _step = 0;
   bool _loading = true;
   bool _busy = false;
-  bool _phoneVerified = false;
-  bool _otpSent = false;
-  int _cooldown = 0;
-  Timer? _timer;
-  String? _phoneIdentity;
   String? _message;
   bool _error = false;
   OrganizationServiceDiagnostic? _organizationDiagnostic;
@@ -60,14 +53,11 @@ class _CompanyRegistrationScreenState
   @override
   void initState() {
     super.initState();
-    _phone.addListener(_onPhoneChanged);
     _load();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _phone.removeListener(_onPhoneChanged);
     for (final controller in [
       _organization,
       _branch,
@@ -77,8 +67,6 @@ class _CompanyRegistrationScreenState
       _address1,
       _address2,
       _postal,
-      _proofNumber,
-      _otp,
     ]) {
       controller.dispose();
     }
@@ -124,201 +112,6 @@ class _CompanyRegistrationScreenState
     return dial + national;
   }
 
-  void _onPhoneChanged() {
-    if (!_phoneVerified && !_otpSent && _phoneIdentity == null) return;
-    _timer?.cancel();
-    if (!mounted) return;
-    setState(() {
-      _phoneVerified = false;
-      _otpSent = false;
-      _phoneIdentity = null;
-      _cooldown = 0;
-      _otp.clear();
-      _message = null;
-    });
-  }
-
-  void _fail(String message) {
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = true;
-      _message = message;
-    });
-  }
-
-  void _startCooldown() {
-    _timer?.cancel();
-    setState(() => _cooldown = 60);
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_cooldown <= 1) {
-        timer.cancel();
-        setState(() => _cooldown = 0);
-      } else {
-        setState(() => _cooldown -= 1);
-      }
-    });
-  }
-
-  Future<void> _sendOtp() async {
-    final phone = _phoneE164();
-    if (phone == null) {
-      _fail('Select a phone country code and enter a valid national number.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      final user =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (user == null) {
-        throw StateError('Your authenticated session could not be restored.');
-      }
-      if (user.phone == phone && user.phoneConfirmedAt != null) {
-        if (mounted) {
-          setState(() {
-            _busy = false;
-            _phoneVerified = true;
-            _phoneIdentity = phone;
-            _message = 'PHONE VERIFIED ✓';
-          });
-        }
-        return;
-      }
-
-      await InsightFlowSupabaseAuthService.beginPhoneVerification(phone);
-      _phoneIdentity = phone;
-      _otpSent = true;
-      _phoneVerified = false;
-      _otp.clear();
-      _startCooldown();
-
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _message = 'OTP SENT. Enter the SMS code supplied by Supabase.';
-        });
-      }
-    } on AuthException catch (error) {
-      final lower = error.message.toLowerCase();
-      if (lower.contains('rate') || lower.contains('too many')) {
-        _fail('SMS rate limit reached. Please wait and try again.');
-      } else if (lower.contains('provider') ||
-          lower.contains('sms') ||
-          lower.contains('disabled')) {
-        _fail(
-          'Phone verification is unavailable. Configure Supabase Phone Auth and an SMS provider.',
-        );
-      } else if (lower.contains('already') || lower.contains('exist')) {
-        _fail('That phone number is already associated with another account.');
-      } else {
-        _fail(
-          'The phone number could not be verified. Check the calling code and national number.',
-        );
-      }
-    } catch (error) {
-      _fail(
-        error is StateError
-            ? error.message
-            : 'Phone verification could not be started.',
-      );
-    }
-  }
-
-  Future<void> _resendOtp() async {
-    final phone = _phoneIdentity;
-    if (phone == null || _busy || _cooldown > 0) return;
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      await InsightFlowSupabaseAuthService.resendPhoneChangeOtp(phone);
-      _startCooldown();
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _message = 'A new SMS OTP was requested. Supabase rate limits still apply.';
-        });
-      }
-    } on AuthException catch (_) {
-      _fail('The SMS provider rejected the resend or rate-limited the request.');
-    } catch (_) {
-      _fail('The SMS OTP could not be resent.');
-    }
-  }
-
-  Future<void> _verifyOtp() async {
-    final phone = _phoneIdentity;
-    final token = _otp.text.trim();
-    if (phone == null) {
-      _fail('Start phone verification first.');
-      return;
-    }
-    if (!RegExp(r'^\d{6}$').hasMatch(token)) {
-      _fail('Enter the 6-digit SMS code.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      final before = InsightFlowSupabaseAuthService.currentSupabaseUser;
-      if (before == null) {
-        throw StateError('Your authenticated session could not be restored.');
-      }
-
-      final response =
-          await InsightFlowSupabaseAuthService.verifyPhoneChangeOtp(
-        phone: phone,
-        token: token,
-      );
-      final current =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-
-      if (current == null ||
-          current.id != before.id ||
-          (response.user != null && response.user!.id != before.id)) {
-        throw StateError('Phone verification returned a different account.');
-      }
-      if (current.phone != phone || current.phoneConfirmedAt == null) {
-        throw StateError('Supabase did not confirm this phone number.');
-      }
-
-      _timer?.cancel();
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _phoneVerified = true;
-          _otpSent = false;
-          _cooldown = 0;
-          _message = 'PHONE VERIFIED ✓';
-        });
-      }
-    } on AuthException catch (_) {
-      _fail('The SMS code is invalid or expired. Request a new code.');
-    } catch (error) {
-      _fail(
-        error is StateError ? error.message : 'Phone verification failed.',
-      );
-    }
-  }
-
   Future<void> _pickCountry() async {
     final choice = await showProfileOptionPicker(
       context,
@@ -359,18 +152,7 @@ class _CompanyRegistrationScreenState
       options: _countries.where((item) => item.subtitle.isNotEmpty).toList(),
       selectedValue: _phoneCountry?.value,
     );
-    if (choice != null && choice.value != _phoneCountry?.value) {
-      _timer?.cancel();
-      setState(() {
-        _phoneCountry = choice;
-        _phoneVerified = false;
-        _otpSent = false;
-        _phoneIdentity = null;
-        _cooldown = 0;
-        _otp.clear();
-        _message = null;
-      });
-    }
+    if (choice != null) setState(() => _phoneCountry = choice);
   }
 
   Future<void> _pickProof() async {
@@ -387,6 +169,7 @@ class _CompanyRegistrationScreenState
       _fullName.text.trim().isNotEmpty &&
       _email?.isNotEmpty == true &&
       _emailConfirmed &&
+      _phoneE164() != null &&
       _address1.text.trim().isNotEmpty &&
       _postal.text.trim().isNotEmpty &&
       _country != null &&
@@ -404,12 +187,7 @@ class _CompanyRegistrationScreenState
     }
 
     if (_step == 1 && !_profileValid()) {
-      _fail('Complete every required Branch Head profile field.');
-      return;
-    }
-
-    if (_step == 2 && (_phoneE164() == null || !_phoneVerified)) {
-      _fail('Verify the phone with Supabase SMS OTP before continuing.');
+      _fail('Complete every required Branch Head profile field, including a valid phone number.');
       return;
     }
 
@@ -421,8 +199,9 @@ class _CompanyRegistrationScreenState
   }
 
   Future<void> _register() async {
-    if (!_profileValid() || _phoneE164() == null || !_phoneVerified) {
-      _fail('Complete the Branch Head profile and verify the phone before registering.');
+    final phone = _phoneE164();
+    if (!_profileValid() || phone == null) {
+      _fail('Complete the Branch Head profile, including a valid phone number, before registering.');
       return;
     }
 
@@ -439,17 +218,10 @@ class _CompanyRegistrationScreenState
 
     final authoritative =
         await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-    final phone = _phoneE164();
     if (authoritative == null ||
         authoritative.id != user.id ||
         authoritative.emailConfirmedAt == null) {
       _fail('Your authenticated email is not confirmed. Sign in again.');
-      return;
-    }
-    if (phone == null ||
-        authoritative.phone != phone ||
-        authoritative.phoneConfirmedAt == null) {
-      _fail('PHONE NOT VERIFIED. Verify this exact phone number through Supabase Auth.');
       return;
     }
 
@@ -681,6 +453,16 @@ class _CompanyRegistrationScreenState
             _field('Full Name', _fullName),
             _employeeIdInfo(),
             _emailField(),
+             LayoutBuilder(
+               builder: (context, constraints) =>
+                   _phoneInputRow(constraints.maxWidth),
+             ),
+             const SizedBox(height: 6),
+             const Text(
+               'Enter the national/local number only. The country calling code is added automatically.',
+               style: TextStyle(color: TechColors.textMuted, fontSize: 9),
+             ),
+             const SizedBox(height: 10),
             _field('Address Line 1', _address1),
             _field(
               'Address Line 2',
@@ -793,71 +575,12 @@ class _CompanyRegistrationScreenState
     );
   }
 
-  Widget _phoneStep() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) =>
-                _phoneInputRow(constraints.maxWidth),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Enter the national/local number only. The country calling code is added automatically.',
-            style: TextStyle(color: TechColors.textMuted, fontSize: 9),
-          ),
-          const SizedBox(height: 12),
-          if (_phoneVerified)
-            const AuthGlassMessage(text: 'PHONE VERIFIED ✓', error: false)
-          else if (!_otpSent)
-            GlassButton.custom(
-              onTap: _busy ? () {} : _sendOtp,
-              enabled: !_busy,
-              width: double.infinity,
-              height: 44,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: 'SEND OTP',
-              child: const Text('SEND OTP'),
-            )
-          else ...[
-            const AuthGlassFieldLabel('OTP SENT'),
-            GlassTextField(
-              controller: _otp,
-              placeholder: '6-digit SMS code',
-              keyboardType: TextInputType.number,
-              enabled: !_busy,
-              inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.digitsOnly,
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: _busy ? null : _verifyOtp,
-                  child: const Text('VERIFY PHONE'),
-                ),
-                TextButton(
-                  onPressed: _busy || _cooldown > 0 ? null : _resendOtp,
-                  child: Text(
-                    _cooldown > 0
-                        ? 'RESEND OTP (' + _cooldown.toString() + ')'
-                        : 'RESEND OTP',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      );
-
   Widget _reviewStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const AuthGlassMessage(
             text:
-                'Review the Branch Head profile. The registering account becomes the initial Branch Head; Manager is assigned separately. Email is already confirmed; phone is verified through Supabase Auth SMS.',
+                'Review the Branch Head profile. The registering account becomes the initial Branch Head; Manager is assigned separately. Email is already confirmed; phone is stored in E.164 format and is not phone-verified during onboarding.',
             error: false,
           ),
           const SizedBox(height: 12),
@@ -867,7 +590,7 @@ class _CompanyRegistrationScreenState
           _review('BRANCH HEAD', _fullName.text.trim()),
           _review('EMPLOYEE ID', 'AUTO-GENERATED'),
           _review('EMAIL', (_email ?? '—') + '  ✓'),
-          _review('PHONE', (_phoneE164() ?? '—') + '  ✓'),
+          _review('PHONE', _phoneE164() ?? '—'),
           _review('ADDRESS LINE 1', _address1.text.trim()),
           if (_address2.text.trim().isNotEmpty)
             _review('ADDRESS LINE 2', _address2.text.trim()),
@@ -1036,7 +759,7 @@ class _CompanyRegistrationScreenState
       );
 
   Widget _stepIndicator() {
-    const labels = ['COMPANY', 'BRANCH HEAD', 'PHONE', 'REVIEW'];
+    const labels = ['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW'];
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -1096,17 +819,17 @@ class _CompanyRegistrationScreenState
             child: GlassButton.custom(
               onTap: _busy
                   ? () {}
-                  : (_step == 3 ? _register : _next),
+                  : (_step == 2 ? _register : _next),
               enabled: !_busy,
               width: double.infinity,
               height: 46,
               shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: _step == 3
-                  ? (_busy ? 'Registering…' : 'Register Company')
+              label: _step == 2
+                   ? (_busy ? 'Registering…' : 'Register Company')
                   : 'Continue',
               child: Text(
-                _step == 3
-                    ? (_busy ? 'Registering…' : 'Register Company')
+                _step == 2
+                   ? (_busy ? 'Registering…' : 'Register Company')
                     : 'Continue',
               ),
             ),

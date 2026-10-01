@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -6,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -38,7 +36,6 @@ class _EmployeeProfileOnboardingScreenState
   final _address2 = TextEditingController();
   final _postal = TextEditingController();
   final _proofNumber = TextEditingController();
-  final _otp = TextEditingController();
 
   List<ProfileOption> _countries = const [];
   List<ProfileOption> _states = const [];
@@ -50,12 +47,7 @@ class _EmployeeProfileOnboardingScreenState
   int _step = 0;
   bool _loading = true;
   bool _busy = false;
-  bool _phoneVerified = false;
-  bool _otpSent = false;
-  int _cooldown = 0;
-  Timer? _timer;
   String _employeeId = '';
-  String? _phoneIdentity;
   String _email = '';
   String? _message;
   bool _error = false;
@@ -63,22 +55,17 @@ class _EmployeeProfileOnboardingScreenState
   @override
   void initState() {
     super.initState();
-    _phone.addListener(_onPhoneChanged);
     _load();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _phone.removeListener(_onPhoneChanged);
     for (final controller in [
       _fullName,
       _phone,
       _address1,
       _address2,
       _postal,
-      _proofNumber,
-      _otp,
     ]) {
       controller.dispose();
     }
@@ -147,9 +134,6 @@ class _EmployeeProfileOnboardingScreenState
           }
         }
       }
-      _phoneVerified = data['phone_verified'] == true;
-      if (_phoneVerified) _phoneIdentity = verifiedPhone;
-
       if (_email.isEmpty) {
         _email = InsightFlowSupabaseAuthService.currentSupabaseUser?.email ?? '';
       }
@@ -179,214 +163,6 @@ class _EmployeeProfileOnboardingScreenState
     _states = _country == null
         ? const []
         : ProfileGeoData.subdivisionOptions(_country!.value);
-  }
-
-  void _onPhoneChanged() {
-    if (!_phoneVerified && !_otpSent && _phoneIdentity == null) return;
-    _timer?.cancel();
-    if (!mounted) return;
-    setState(() {
-      _phoneVerified = false;
-      _otpSent = false;
-      _phoneIdentity = null;
-      _cooldown = 0;
-      _otp.clear();
-      _message = null;
-    });
-  }
-
-  void _fail(String message) {
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = true;
-      _message = message;
-    });
-  }
-
-  String? _phoneE164() {
-    final dial = _phoneCountry?.subtitle.replaceAll(RegExp(r'\s+'), '') ?? '';
-    final national = _phone.text.replaceAll(RegExp(r'\D'), '');
-    if (dial.isEmpty || national.length < 4 || national.length > 15) {
-      return null;
-    }
-    return dial + national;
-  }
-
-  void _startCooldown() {
-    _timer?.cancel();
-    setState(() => _cooldown = 60);
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_cooldown <= 1) {
-        timer.cancel();
-        setState(() => _cooldown = 0);
-      } else {
-        setState(() => _cooldown -= 1);
-      }
-    });
-  }
-
-  Future<void> _sendOtp() async {
-    final phone = _phoneE164();
-    if (phone == null) {
-      _fail('Select a country calling code and enter a valid national number.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      final user =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (user == null) {
-        throw StateError('Your authenticated session could not be restored.');
-      }
-
-      if (user.phone == phone && user.phoneConfirmedAt != null) {
-        if (mounted) {
-          setState(() {
-            _busy = false;
-            _phoneVerified = true;
-            _phoneIdentity = phone;
-            _message = 'PHONE VERIFIED ✓';
-          });
-        }
-        return;
-      }
-
-      await InsightFlowSupabaseAuthService.beginPhoneVerification(phone);
-      _phoneIdentity = phone;
-      _otp.clear();
-      _otpSent = true;
-      _phoneVerified = false;
-      _startCooldown();
-
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _message = 'OTP SENT. Enter the SMS code supplied by Supabase.';
-        });
-      }
-    } on AuthException catch (error) {
-      final lower = error.message.toLowerCase();
-      if (lower.contains('rate') || lower.contains('too many')) {
-        _fail('SMS rate limit reached. Please wait and try again.');
-      } else if (lower.contains('provider') ||
-          lower.contains('sms') ||
-          lower.contains('disabled')) {
-        _fail(
-          'Phone verification is unavailable. Configure Supabase Phone Auth and an SMS provider.',
-        );
-      } else if (lower.contains('already') || lower.contains('exist')) {
-        _fail('That phone number is already associated with another account.');
-      } else {
-        _fail(
-          'The phone number could not be verified. Check the number and try again.',
-        );
-      }
-    } catch (error) {
-      _fail(
-        error is StateError
-            ? error.message
-            : 'Phone verification could not be started.',
-      );
-    }
-  }
-
-  Future<void> _resendOtp() async {
-    final phone = _phoneIdentity;
-    if (phone == null || phone != _phoneE164() || _busy || _cooldown > 0) return;
-
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      await InsightFlowSupabaseAuthService.resendPhoneChangeOtp(phone);
-      _startCooldown();
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _message = 'A new SMS OTP was requested. Supabase rate limits still apply.';
-        });
-      }
-    } on AuthException catch (_) {
-      _fail('The SMS provider rejected the resend or rate-limited the request.');
-    } catch (_) {
-      _fail('The SMS OTP could not be resent.');
-    }
-  }
-
-  Future<void> _verifyOtp() async {
-    final phone = _phoneIdentity;
-    final token = _otp.text.trim();
-    if (phone == null || phone != _phoneE164()) {
-      _fail('Enter a valid phone number first.');
-      return;
-    }
-    if (!RegExp(r'^\d{6}$').hasMatch(token)) {
-      _fail('Enter the 6-digit SMS code.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _error = false;
-      _message = null;
-    });
-
-    try {
-      final before = InsightFlowSupabaseAuthService.currentSupabaseUser;
-      if (before == null) {
-        throw StateError('Your authenticated session could not be restored.');
-      }
-
-      final result =
-          await InsightFlowSupabaseAuthService.verifyPhoneChangeOtp(
-        phone: phone,
-        token: token,
-      );
-      final current =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-
-      if (current == null ||
-          current.id != before.id ||
-          (result.user != null && result.user!.id != before.id)) {
-        throw StateError('Phone verification returned a different account.');
-      }
-
-      if (current.phone != phone || current.phoneConfirmedAt == null) {
-        throw StateError('Supabase did not confirm this phone number.');
-      }
-
-      _timer?.cancel();
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _phoneVerified = true;
-          _otpSent = false;
-          _phoneIdentity = phone;
-          _cooldown = 0;
-          _message = 'PHONE VERIFIED ✓';
-        });
-      }
-    } on AuthException catch (_) {
-      _fail('The SMS code is invalid or expired. Request a new code.');
-    } catch (error) {
-      _fail(
-        error is StateError ? error.message : 'Phone verification failed.',
-      );
-    }
   }
 
   Future<void> _pickCountry() async {
@@ -427,23 +203,10 @@ class _EmployeeProfileOnboardingScreenState
     final choice = await showProfileOptionPicker(
       context,
       title: 'Phone country code',
-      options: _countries
-          .where((item) => item.subtitle.isNotEmpty)
-          .toList(),
+      options: _countries.where((item) => item.subtitle.isNotEmpty).toList(),
       selectedValue: _phoneCountry?.value,
     );
-    if (choice != null && choice.value != _phoneCountry?.value) {
-      _timer?.cancel();
-      setState(() {
-        _phoneCountry = choice;
-        _phoneVerified = false;
-        _otpSent = false;
-        _phoneIdentity = null;
-        _cooldown = 0;
-        _otp.clear();
-        _message = null;
-      });
-    }
+    if (choice != null) setState(() => _phoneCountry = choice);
   }
 
   Future<void> _pickProof() async {
@@ -473,8 +236,8 @@ class _EmployeeProfileOnboardingScreenState
       return;
     }
     final phone = _phoneE164();
-    if (phone == null || !_phoneVerified) {
-      _fail('Verify the required phone number with SMS OTP first.');
+    if (phone == null) {
+      _fail('Enter a valid phone number before completing your profile.');
       return;
     }
 
@@ -599,6 +362,15 @@ class _EmployeeProfileOnboardingScreenState
                 _field('Full Name', _fullName),
                 _readonly('Employee ID', _employeeId),
                 _readonly('Email', _email + '  •  CONFIRMED'),
+                 LayoutBuilder(
+                   builder: (context, constraints) =>
+                       _phoneInputRow(constraints.maxWidth),
+                 ),
+                 const SizedBox(height: 6),
+                 const Text(
+                   'Enter the national/local number only. The country calling code is added automatically.',
+                   style: TextStyle(color: TechColors.textMuted, fontSize: 9),
+                 ),
                 _field('Address Line 1', _address1),
                 _field('Address Line 2', _address2, required: false),
                 ProfileSelectField(
@@ -669,71 +441,17 @@ class _EmployeeProfileOnboardingScreenState
                 'ID PROOF • PROVIDED. InsightFlow does not perform ID-proof verification.',
             error: false,
           ),
-        ] else if (_step == 1) ...[
-          LayoutBuilder(
-            builder: (context, constraints) =>
-                _phoneInputRow(constraints.maxWidth),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Enter the national/local number only. The country calling code is added automatically.',
-            style: TextStyle(color: TechColors.textMuted, fontSize: 9),
-          ),
-          const SizedBox(height: 12),
-          if (_phoneVerified)
-            const AuthGlassMessage(text: 'PHONE VERIFIED ✓', error: false)
-          else if (!_otpSent)
-            GlassButton.custom(
-              onTap: _busy ? () {} : _sendOtp,
-              enabled: !_busy,
-              width: double.infinity,
-              height: 44,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: 'SEND OTP',
-              child: const Text('SEND OTP'),
-            )
-          else ...[
-            const AuthGlassFieldLabel('OTP SENT'),
-            GlassTextField(
-              controller: _otp,
-              placeholder: '6-digit SMS code',
-              keyboardType: TextInputType.number,
-              enabled: !_busy,
-              inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.digitsOnly,
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: _busy ? null : _verifyOtp,
-                  child: const Text('VERIFY PHONE'),
-                ),
-                TextButton(
-                  onPressed: _busy || _cooldown > 0 ? null : _resendOtp,
-                  child: Text(
-                    _cooldown > 0
-                        ? 'RESEND OTP (' + _cooldown.toString() + ')'
-                        : 'RESEND OTP',
-                  ),
-                ),
-              ],
-            ),
-          ],
         ] else ...[
           const AuthGlassMessage(
             text:
-                'Review the profile before saving it. Email and phone verification come from Supabase Auth.',
+                'Review the profile before saving it. Email is confirmed; phone is stored in E.164 format and is not phone-verified during onboarding.',
             error: false,
           ),
           const SizedBox(height: 12),
           _review('FULL NAME', _fullName.text),
           _review('EMPLOYEE ID', _employeeId),
           _review('EMAIL', _email + ' ✓'),
-          _review('PHONE', (_phoneE164() ?? '—') + ' ✓'),
+          _review('PHONE', _phoneE164() ?? '—'),
           _review('ADDRESS LINE 1', _address1.text),
           if (_address2.text.trim().isNotEmpty)
             _review('ADDRESS LINE 2', _address2.text),
@@ -767,7 +485,7 @@ class _EmployeeProfileOnboardingScreenState
             onPressed: _busy ? null : () => setState(() => _step -= 1),
             child: const Text('Back'),
           ),
-        if (_step < 2)
+        if (_step < 1)
           GlassButton.custom(
             onTap: _busy ? () {} : _next,
             enabled: !_busy,
@@ -789,10 +507,6 @@ class _EmployeeProfileOnboardingScreenState
   void _next() {
     if (_step == 0 && !_profileValid()) {
       _fail('Complete every required profile field. Address Line 2 is optional.');
-      return;
-    }
-    if (_step == 1 && !_phoneVerified) {
-      _fail('Verify your phone before continuing.');
       return;
     }
     setState(() {

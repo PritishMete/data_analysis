@@ -317,15 +317,8 @@ def founder_organization_register(
                     + ", ".join(missing)
                     + "."
                 )
-            authoritative_phone = str(claims.get("phone") or "").strip()
-            if not claims.get("phone_confirmed_at") or not authoritative_phone:
-                raise AuthzError(
-                    "A verified phone number is required before company registration."
-                )
-            if str(req.phone or "").strip() != authoritative_phone:
-                raise AuthzError(
-                    "The submitted phone number must match the verified Supabase phone identity."
-                )
+            # Phone is profile data, not an authentication factor. The provider validates
+            # and normalizes it; email verification remains authoritative.
             result = register_organization(
                 claims,
                 req.organization_name,
