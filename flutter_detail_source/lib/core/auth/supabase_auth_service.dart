@@ -192,24 +192,6 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithOAuth(provider, redirectTo: redirectTo);
   }
 
-  static Future<void> sendEmailOtp(String email) async {
-    await client.auth.signInWithOtp(
-      email: email.trim(),
-      shouldCreateUser: false,
-    );
-  }
-
-  static Future<AuthResponse> verifyEmailOtp({
-    required String email,
-    required String token,
-  }) {
-    return client.auth.verifyOTP(
-      type: OtpType.email,
-      email: email.trim(),
-      token: token.trim(),
-    );
-  }
-
   static Future<void> beginPhoneVerification(String phone) async {
     await client.auth.updateUser(
       UserAttributes(phone: phone.trim()),
