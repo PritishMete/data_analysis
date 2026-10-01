@@ -93,7 +93,7 @@ def test_founder_registration_allows_unverified_phone(monkeypatch):
         phone="+919876543210",phone_country_calling_code="+91",phone_national_number="9876543210",address_line1="1 Phone Way",
         state="West Bengal",state_code="IN-WB",postal_code="700001",country="India",country_code="IN",id_proof_type="passport",id_proof_number="TEST-PHONE"),
         authorization="Bearer test-token")
-    assert response.status_code == 200
+    assert response["workspace_id"] == "org-phone"
 
 def test_founder_registration_rejects_client_phone_verified_field():
     with pytest.raises(ValueError):
