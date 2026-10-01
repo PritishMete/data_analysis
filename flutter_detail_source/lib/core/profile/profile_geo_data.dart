@@ -48,6 +48,21 @@ class ProfileGeoData {
     return result;
   }
 
+  static List<ProfileOption> phoneCountryOptions(String phone) {
+    final result = <ProfileOption>[];
+    final seen = <String>{};
+    for (final entry in CountryCodes.countriesFromPhoneNumber(phone)) {
+      final code = entry.alpha2Code?.trim().toUpperCase() ?? '';
+      final name = entry.name?.trim() ?? '';
+      final dial = entry.dialCode?.trim() ?? '';
+      if (code.length != 2 || name.isEmpty || dial.isEmpty || !seen.add(code)) {
+        continue;
+      }
+      result.add(ProfileOption(value: code, label: name, subtitle: dial));
+    }
+    return result;
+  }
+
   static List<ProfileOption> idProofOptions(String countryCode) {
     const india = <ProfileOption>[
       ProfileOption(value: 'aadhaar', label: 'Aadhaar'),
