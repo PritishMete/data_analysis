@@ -167,8 +167,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
   bool _verificationRequired = false;
   bool _workspaceLookupFailed = false;
-  bool _hasCachedWorkspace = false;
-  bool _backgroundRetryScheduled = false;
   InsightFlowOnboardingState _onboardingState =
       InsightFlowOnboardingState.noMembership;
   List<Map<String, dynamic>> _pendingInvitations = const [];
@@ -179,45 +177,14 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     _refresh();
   }
 
-  Future<void> _scheduleBackgroundRetry() async {
-    if (_backgroundRetryScheduled) return;
-    _backgroundRetryScheduled = true;
-    await Future<void>.delayed(const Duration(seconds: 1));
-    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
-      _backgroundRetryScheduled = false;
-      return;
-    }
-
-    final resolved = await reconcileInsightFlowOnboardingWithRetry(
-      resolve: () => resolveInsightFlowOnboardingStateFromBackend(widget.user.uid),
-    );
-    _backgroundRetryScheduled = false;
-    if (!mounted || InsightFlowSupabaseAuthService.currentUser == null) {
-      return;
-    }
-
-    if (resolved == null) return;
-
-    setState(() {
-      _loading = false;
-      _workspaceLookupFailed = false;
-      _onboardingState = resolved.state;
-      _pendingInvitations = resolved.pendingInvitations;
-    });
-  }
-
   Future<void> _refresh({
     bool showLoading = true,
-    bool allowBackgroundRetry = true,
   }) async {
     if (!mounted) return;
 
-    await loadInsightFlowWorkspaceId(widget.user.uid);
-    _hasCachedWorkspace = insightFlowWorkspaceId.trim().isNotEmpty;
-
-    if (mounted) {
+    if (showLoading) {
       setState(() {
-        _loading = showLoading && !_hasCachedWorkspace;
+        _loading = true;
         _verificationRequired = false;
         _workspaceLookupFailed = false;
       });
@@ -230,8 +197,11 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         final authoritativeUser =
             await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
         if (authoritativeUser == null) {
-          if (!_hasCachedWorkspace && mounted) {
-            setState(() => _loading = false);
+          if (mounted) {
+            setState(() {
+              _loading = false;
+              _workspaceLookupFailed = true;
+            });
           }
           return;
         }
@@ -254,8 +224,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
           return;
         }
       } on TimeoutException {
-        // Auth restoration can be temporarily slow; workspace reconciliation
-        // remains authoritative and bounded below.
+        // Continue to the authoritative /v1/authz/me lookup. A temporary
+        // profile/identity timeout must never be interpreted as "no company".
       }
 
       if (currentUser == null ||
@@ -263,22 +233,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         return;
       }
 
-      if (_hasCachedWorkspace) {
-        // The cache is render-time continuity only. ManagementShell still
-        // performs backend authorization on every protected request while the
-        // authoritative reconciliation runs in the background.
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _verificationRequired = false;
-            _workspaceLookupFailed = false;
-            _onboardingState = InsightFlowOnboardingState.activeMember;
-          });
-        }
-        unawaited(_scheduleBackgroundRetry());
-        return;
-      }
-
+      // A cached workspace is intentionally NOT sufficient to render the
+      // authenticated application. Browser refresh/session restoration can
+      // briefly contain stale continuity data. The backend authorization
+      // response is the authoritative source for membership/company state.
       final resolved = await reconcileInsightFlowOnboardingWithRetry(
         resolve: () =>
             resolveInsightFlowOnboardingStateFromBackend(widget.user.uid),
@@ -320,21 +278,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _workspaceLookupFailed = !_hasCachedWorkspace;
+          _workspaceLookupFailed = true;
         });
-        if (_hasCachedWorkspace && allowBackgroundRetry) {
-          await _scheduleBackgroundRetry();
-        }
       }
     } catch (_) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _workspaceLookupFailed = !_hasCachedWorkspace;
+          _workspaceLookupFailed = true;
         });
-        if (_hasCachedWorkspace && allowBackgroundRetry) {
-          await _scheduleBackgroundRetry();
-        }
       }
     }
   }
