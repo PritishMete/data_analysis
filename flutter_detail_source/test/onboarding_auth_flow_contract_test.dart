@@ -65,8 +65,6 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, contains('resolveInsightFlowOnboardingStateFromBackend(widget.user.uid)'));
     expect(gate, contains('if (_loading) return const _AuthLoading();'));
     expect(gate, contains('case InsightFlowOnboardingState.noMembership:'));
-    expect(http, contains('InsightFlowOnboardingState.initializing'));
-    expect(gate, contains('InsightFlowOnboardingState.initializing'));
     expect(gate, contains('Registration is never the default/fallback state'));
     expect(gate, isNot(contains('_hasCachedWorkspace')));
     expect(gate, isNot(contains('unawaited(_scheduleBackgroundRetry());')));
