@@ -77,7 +77,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(source, contains('initial Branch Head'));
     expect(source, contains('Employee Number'));
     expect(source, contains('Stored in the existing organization_members.employee_id field.'));
-    expect(source, contains('Special characters are allowed.'));
+    expect(source, contains('special characters are allowed'));
     expect(source, contains('ManagementShell'));
   });
 
