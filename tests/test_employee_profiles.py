@@ -163,6 +163,37 @@ def test_registration_rejects_unverified_phone_authoritatively():
         )
 
 
+def test_profile_update_rejects_mismatched_verified_phone():
+    from firebase_authz.profile_domain import upsert_my_profile
+    from firebase_authz.service import AuthzError
+
+    suffix = uuid.uuid4().hex
+    owner = _seed_registered(f"mismatch-owner-{suffix}", employee_id="EMP009")
+    try:
+        claims = _claims(f"mismatch-owner-{suffix}")
+        claims["phone"] = "+919999999999"
+        with pytest.raises(AuthzError, match="match the verified Supabase phone"):
+            upsert_my_profile(
+                claims,
+                owner["workspace_id"],
+                full_name="Pritish Mete",
+                phone="+919876543210",
+                phone_country_calling_code="+91",
+                phone_national_number="9876543210",
+                address_line1="1 InsightFlow Way",
+                address_line2="",
+                country_code="IN",
+                country="India",
+                state_code="IN-WB",
+                state="West Bengal",
+                postal_code="700001",
+                id_proof_type="passport",
+                id_proof_number="P-1234567",
+            )
+    finally:
+        _cleanup(owner["organization_id"])
+
+
 def test_branch_head_and_manager_are_distinct_roles():
     from firebase_authz.management_domain import assign_manager, management_overview
 
