@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "dataset_authorization", "working_copy_authorization",
     "locations", "sections", "organizational_assignments",
     "datasets", "dataset_versions", "dataset_columns", "dataset_rows",
+    "organization_employee_id_counters",
 }
 
 
@@ -261,6 +262,30 @@ def run_migrations() -> None:
     verify_managed_dataset_security(engine)
 
 
+def verify_employee_id_allocator(engine) -> None:
+    inspector = inspect(engine)
+    required = {"organization_id", "last_issued", "updated_at"}
+    actual = {
+        column["name"]
+        for column in inspector.get_columns("organization_employee_id_counters")
+    }
+    missing = sorted(required - actual)
+    if missing:
+        raise RuntimeError(
+            "Employee ID counter columns are missing: " + ",".join(missing)
+        )
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT c.relrowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'organization_employee_id_counters'
+        """)).one_or_none()
+    if not row or not bool(row[0]):
+        raise RuntimeError("Employee ID counter RLS is not enabled.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inspect", action="store_true", help="read schema only")
@@ -286,6 +311,7 @@ def main() -> int:
     else:
         verify_organizational_structure(engine)
         verify_profile_security(engine)
+        verify_employee_id_allocator(engine)
         verify_managed_dataset_security(engine)
         print("ORGANIZATIONAL_STRUCTURE=PASS")
         print("REQUIRED_TABLES=PASS")
