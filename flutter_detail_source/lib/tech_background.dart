@@ -2,7 +2,11 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
-/// Shared dark background used across the authenticated app.\n///\n/// The ambient glowing bubbles have been intentionally removed so every\n/// screen uses a clean, static background without decorative light blobs.\nclass TechAnimatedBackground extends StatelessWidget {
+/// Shared dark background used across the authenticated app.
+///
+/// The ambient glowing bubbles have been intentionally removed so every
+/// screen uses a clean, static background without decorative light blobs.
+class TechAnimatedBackground extends StatelessWidget {
   const TechAnimatedBackground({super.key});
 
   @override
