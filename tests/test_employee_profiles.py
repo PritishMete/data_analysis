@@ -112,7 +112,7 @@ def test_registration_persists_branch_head_profile_and_assignment():
         assert profile["full_name"] == "Pritish Mete"
         assert profile["email"] == f"founder-{suffix}@example.com"
         assert profile["email_verified_at"] is not None
-        assert profile["phone_e164"] == "+15551234567"
+        assert profile["phone_e164"] == "+919876543210"
         assert profile["phone_verified_at"] is not None
         assert profile["address_line1"] == "1 InsightFlow Way"
         assert profile["id_proof_type"] == "passport"
