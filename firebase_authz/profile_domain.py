@@ -188,9 +188,6 @@ def upsert_my_profile(
     except ValueError as exc:
         raise AuthzError(str(exc)) from exc
 
-    if fields["phone_e164"] != auth_phone:
-        raise AuthzError("The profile phone must match the verified Supabase phone.")
-
     email = str(claims.get("email") or "").strip().lower()
     if not email:
         raise AuthzError("An authenticated email address is required.")
@@ -200,14 +197,20 @@ def upsert_my_profile(
 
     with SessionLocal.begin() as db:
         member = _member(db, claims, workspace_id)
-        exists = db.execute(text("""
-            SELECT 1
+        existing = db.execute(text("""
+            SELECT phone_e164, phone_verified_at
             FROM organization_member_profiles
             WHERE organization_id=:org AND principal_id=:principal
         """), {
             "org": member["organization_id"],
             "principal": member["principal_id"],
-        }).scalar_one_or_none()
+        }).mappings().first()
+        exists = existing is not None
+        existing_phone_verified_at = (
+            existing["phone_verified_at"]
+            if existing and existing["phone_e164"] == fields["phone_e164"]
+            else None
+        )
 
         db.execute(text("""
             INSERT INTO organization_member_profiles
