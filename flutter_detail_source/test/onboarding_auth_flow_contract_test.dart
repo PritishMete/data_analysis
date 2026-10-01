@@ -53,7 +53,7 @@ void main() {
     expect(onboarding, isNot(contains('InsightFlowAuthService.currentUser')));
   });
 
-  test('cached workspace is only continuity and authoritative reconciliation is bounded', () {
+  test('startup waits for authoritative organization lookup before rendering registration', () {
     final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
     final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
 
@@ -61,8 +61,12 @@ void main() {
     expect(http, contains('maxAttempts = 4'));
     expect(http, contains('InsightFlowOnboardingState.authoritativeDenial'));
     expect(http, contains('InsightFlowOnboardingState.noMembership'));
-    expect(gate, contains('_hasCachedWorkspace'));
-    expect(gate, contains('unawaited(_scheduleBackgroundRetry());'));
+    expect(gate, contains('_loading = true;'));
+    expect(gate, contains('resolveInsightFlowOnboardingStateFromBackend(widget.user.uid)'));
+    expect(gate, contains('if (_loading) return const _AuthLoading();'));
+    expect(gate, contains('case InsightFlowOnboardingState.noMembership:'));
+    expect(gate, isNot(contains('_hasCachedWorkspace')));
+    expect(gate, isNot(contains('unawaited(_scheduleBackgroundRetry());')));
   });
 
   test('company registration explains branch identity and initial role', () {
