@@ -93,7 +93,6 @@ def register_organization(
 
     employee = _clean_profile_text(employee_id, "Employee number", 128)
     profile_name = _clean_profile_text(full_name, "Full name", 160)
-    profile_name = _clean_profile_text(full_name, "Full name", 160)
     profile_fields = validate_profile_fields(
         full_name=profile_name,
         country_code=country_code,
