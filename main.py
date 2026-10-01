@@ -75,7 +75,7 @@ from common.order_cleaning import clean_order_fact
 from common.date_dimension import create_date_dimension
 from common.business_analysis import analyze_clean_model
 from common.dashboard import build_dashboard_from_tables
-from common.detail_analysis_agent import enrich_detail_analysis
+# Keep the optional Gemini detail-analysis agent out of module initialization.\n# google-adk pulls in the Google AI Platform stack, which can take long enough\n# on Render's Python 3.14 cold start to prevent Uvicorn from binding $PORT.\n# Import it only when /v2/detail-analysis actually needs the agent.\nasync def enrich_detail_analysis(*args, **kwargs):\n    from common.detail_analysis_agent import enrich_detail_analysis as _fn\n    return await _fn(*args, **kwargs)
 from common.chat_reasoning import (
     ALLOWED_OPERATIONS,
     ALLOWED_ROLES,
