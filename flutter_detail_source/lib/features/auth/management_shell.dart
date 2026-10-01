@@ -1406,43 +1406,6 @@ class _ManagementShellState extends State<ManagementShell> {
         ),
       );
 
-  Widget _assignmentPersonSummary(
-    Map<String, dynamic> assignment, {
-    double? width,
-  }) {
-    final name = assignment['full_name']?.toString().trim() ?? '';
-    final employeeId = assignment['employee_id']?.toString().trim() ?? '—';
-    final displayName = name.isEmpty ? 'Profile incomplete' : name;
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          displayName,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          employeeId,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: TechColors.textMuted,
-            fontSize: 9,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ],
-    );
-    return width == null ? content : SizedBox(width: width, child: content);
-  }
-
   Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
     final text = (value ?? '').trim();
     return Padding(
