@@ -977,6 +977,152 @@ class _ManagementShellState extends State<ManagementShell> {
     ]),
   );
 
+  Widget _assignmentRegistryValue(
+    String value, {
+    TextStyle style = const TextStyle(
+      color: TechColors.textPrimary,
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      fontFamily: 'monospace',
+    ),
+  }) => Text(
+    value,
+    style: style,
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.ellipsis,
+  );
+
+  Widget _assignmentRegistryMeta(String label, String value) => Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      SizedBox(
+        width: 76,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(child: _assignmentRegistryValue(value)),
+    ],
+  );
+
+  Widget _assignmentRegistryRow(Map<String, dynamic> a) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 620;
+      final employeeId = a['employee_id']?.toString() ?? '—';
+      final role = a['role_id']?.toString() ?? '—';
+      final location = a['location_name']?.toString() ?? '—';
+      final section = a['section_name']?.toString() ?? '—';
+      final status = a['status']?.toString() ?? '—';
+      final isActive = a['status'] == 'active';
+      final reporting = SizedBox(
+        width: 132,
+        child: _actionChip(
+          'REPORTING',
+          Icons.account_tree_outlined,
+          () => reporting(a),
+        ),
+      );
+
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
+                const SizedBox(width: 8),
+                Expanded(child: _assignmentRegistryValue(employeeId)),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            _assignmentRegistryMeta('ROLE', role),
+            const SizedBox(height: 6),
+            _assignmentRegistryMeta('LOCATION', location),
+            const SizedBox(height: 6),
+            _assignmentRegistryMeta('SECTION', section),
+            if (isActive) ...[
+              const SizedBox(height: 10),
+              Align(alignment: Alignment.centerRight, child: reporting),
+            ],
+          ],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
+          const SizedBox(width: 8),
+          SizedBox(width: 116, child: _assignmentRegistryValue(employeeId)),
+          const SizedBox(width: 10),
+          SizedBox(width: 92, child: _assignmentRegistryValue(role)),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: _assignmentRegistryValue(location, style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+            fontFamily: 'monospace',
+          ))),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: _assignmentRegistryValue(section, style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+            fontFamily: 'monospace',
+          ))),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 72,
+            child: Text(
+              status,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: TechColors.textMuted,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          if (isActive) ...[
+            const SizedBox(width: 12),
+            reporting,
+          ],
+        ],
+      );
+    },
+  );
+
   Widget assignmentList() => GlassCard(
     margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(14),
@@ -991,25 +1137,7 @@ class _ManagementShellState extends State<ManagementShell> {
         ...assignments.map((a) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: _glassRow(
-              child: Row(
-                children: [
-                  const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(a['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                        Text('${a['role_id'] ?? '—'}  ·  ${a['location_name'] ?? '—'}  ·  ${a['section_name'] ?? '—'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')),
-                      ],
-                    ),
-                  ),
-                  if (a['status'] == 'active')
-                    _actionChip('REPORTING', Icons.account_tree_outlined, () => reporting(a)),
-                ],
-              ),
-            ),
+            child: _glassRow(child: _assignmentRegistryRow(a)),
           );
         }),
       ],
