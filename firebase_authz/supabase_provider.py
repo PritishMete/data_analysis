@@ -17,6 +17,7 @@ from sqlalchemy import text
 from core.db import SessionLocal
 from .service import AuthzError
 from . import registration_diagnostics
+from .profile_validation import normalize_phone_submission, validate_profile_fields
 
 
 logger = logging.getLogger(__name__)
@@ -66,13 +67,17 @@ def register_organization(
     full_name: str,
     phone: str,
     address_line1: str,
-    address_line2: str = "",
-    city: str,
     state: str,
     postal_code: str,
     country: str,
     id_proof_type: str,
     id_proof_number: str,
+    address_line2: str = "",
+    city: str = "",
+    country_code: str | None = None,
+    state_code: str | None = None,
+    phone_country_calling_code: str | None = None,
+    phone_national_number: str | None = None,
 ) -> dict[str, Any]:
     name = str(organization_name or "").strip()
     if not 1 <= len(name) <= 120 or any(ord(c) < 32 or ord(c) == 127 for c in name):
@@ -88,17 +93,33 @@ def register_organization(
 
     employee = _clean_profile_text(employee_id, "Employee number", 128)
     profile_name = _clean_profile_text(full_name, "Full name", 160)
-    profile_phone = _normalize_phone(phone)
-    address1 = _clean_profile_text(address_line1, "Address line 1", 200)
-    address2 = str(address_line2 or "").strip()
-    if len(address2) > 200 or any(ord(char) < 32 or ord(char) == 127 for char in address2):
-        raise ValueError("Address line 2 is invalid.")
-    profile_city = _clean_profile_text(city, "City", 120)
-    profile_state = _clean_profile_text(state, "State", 120)
-    profile_postal = _clean_profile_text(postal_code, "Postal code", 32)
-    profile_country = _clean_profile_text(country, "Country", 120)
-    proof_type = _clean_profile_text(id_proof_type, "ID proof type", 80)
-    proof_number = _clean_profile_text(id_proof_number, "ID proof number", 160)
+    profile_name = _clean_profile_text(full_name, "Full name", 160)
+    profile_fields = validate_profile_fields(
+        full_name=profile_name,
+        country_code=country_code,
+        country=country,
+        state_code=state_code,
+        state=state,
+        address_line1=address_line1,
+        address_line2=address_line2,
+        postal_code=postal_code,
+        id_proof_type=id_proof_type,
+        id_proof_number=id_proof_number,
+        phone=phone,
+        phone_country_calling_code=phone_country_calling_code,
+        phone_national_number=phone_national_number,
+    )
+    profile_phone = profile_fields["phone_e164"]
+    address1 = profile_fields["address_line1"]
+    address2 = profile_fields["address_line2"]
+    profile_city = ""
+    profile_state = profile_fields["state"]
+    profile_postal = profile_fields["postal_code"]
+    profile_country = profile_fields["country"]
+    profile_country_code = profile_fields["country_code"]
+    profile_state_code = profile_fields["state_code"]
+    proof_type = profile_fields["id_proof_type"]
+    proof_number = profile_fields["id_proof_number"]
 
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     if not uid:
@@ -290,13 +311,13 @@ def register_organization(
                 """INSERT INTO organization_member_profiles
                 (organization_id, principal_id, full_name, email, email_verified_at,
                  phone_e164, phone_verified_at, address_line1, address_line2,
-                 city, state, postal_code, country, id_proof_type, id_proof_number,
-                 id_proof_provided_at)
+                 city, state, state_code, postal_code, country, country_code,
+                 id_proof_type, id_proof_number, id_proof_provided_at)
                 VALUES
                 (:organization, :principal, :full_name, :email, :email_verified_at,
                  :phone, :phone_verified_at, :address_line1, :address_line2,
-                 :city, :state, :postal_code, :country, :id_proof_type, :id_proof_number,
-                 now())"""
+                 :city, :state, :state_code, :postal_code, :country, :country_code,
+                 :id_proof_type, :id_proof_number, now())"""
             ),
             {
                 "organization": organization_id,
@@ -310,8 +331,10 @@ def register_organization(
                 "address_line2": address2 or None,
                 "city": profile_city,
                 "state": profile_state,
+                "state_code": profile_state_code,
                 "postal_code": profile_postal,
                 "country": profile_country,
+                "country_code": profile_country_code,
                 "id_proof_type": proof_type,
                 "id_proof_number": proof_number,
             },
