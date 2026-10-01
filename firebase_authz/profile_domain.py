@@ -57,14 +57,26 @@ def _member(db, claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     return dict(row)
 
 
-def _completion_percent(profile: dict[str, Any], member: dict[str, Any]) -> int:
+def _completion_percent(
+    profile: dict[str, Any],
+    member: dict[str, Any],
+    claims: dict[str, Any] | None = None,
+) -> int:
+    authoritative_phone = str((claims or {}).get("phone") or "").strip()
+    email_is_verified = bool((claims or {}).get("email_verified"))
+    phone_is_verified = (
+        bool((claims or {}).get("phone_confirmed_at"))
+        and authoritative_phone == str(profile.get("phone_e164") or "").strip()
+    )
     checks = [
         bool(str(profile.get("full_name") or "").strip()),
         bool(str(member.get("employee_id") or "").strip()),
         bool(str(profile.get("email") or "").strip())
-        and profile.get("email_verified_at") is not None,
+        and profile.get("email_verified_at") is not None
+        and email_is_verified,
         bool(str(profile.get("phone_e164") or "").strip())
-        and profile.get("phone_verified_at") is not None,
+        and profile.get("phone_verified_at") is not None
+        and phone_is_verified,
         bool(str(profile.get("address_line1") or "").strip()),
         bool(str(profile.get("state") or "").strip()),
         bool(str(profile.get("country") or "").strip()),
@@ -90,6 +102,12 @@ def _safe(
     claims: dict[str, Any],
 ) -> dict[str, Any]:
     profile = profile or {}
+    authoritative_phone = str(claims.get("phone") or "").strip()
+    phone_verified = (
+        profile.get("phone_verified_at") is not None
+        and bool(claims.get("phone_confirmed_at"))
+        and authoritative_phone == str(profile.get("phone_e164") or "").strip()
+    )
     return {
         "organization_id": member["organization_id"],
         "workspace_id": member["workspace_id"],
@@ -100,9 +118,9 @@ def _safe(
             claims.get("email") or profile.get("email") or ""
         ).strip().lower(),
         "email_verified": bool(claims.get("email_verified"))
-        or profile.get("email_verified_at") is not None,
+        and profile.get("email_verified_at") is not None,
         "phone_e164": profile.get("phone_e164") or "",
-        "phone_verified": profile.get("phone_verified_at") is not None,
+        "phone_verified": phone_verified,
         "address_line1": profile.get("address_line1") or "",
         "address_line2": profile.get("address_line2") or "",
         "state": profile.get("state") or "",
@@ -112,7 +130,7 @@ def _safe(
         "postal_code": profile.get("postal_code") or "",
         "id_proof_type": profile.get("id_proof_type") or "",
         "id_proof_number_masked": _mask(profile.get("id_proof_number")),
-        "profile_completeness_percent": _completion_percent(profile, member),
+        "profile_completeness_percent": _completion_percent(profile, member, claims),
     }
 
 
