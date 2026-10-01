@@ -192,6 +192,48 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithOAuth(provider, redirectTo: redirectTo);
   }
 
+  static Future<void> sendEmailOtp(String email) async {
+    await client.auth.signInWithOtp(
+      email: email.trim(),
+      shouldCreateUser: false,
+    );
+  }
+
+  static Future<AuthResponse> verifyEmailOtp({
+    required String email,
+    required String token,
+  }) {
+    return client.auth.verifyOtp(
+      type: OtpType.email,
+      email: email.trim(),
+      token: token.trim(),
+    );
+  }
+
+  static Future<void> beginPhoneVerification(String phone) async {
+    await client.auth.updateUser(
+      UserAttributes(phone: phone.trim()),
+    );
+  }
+
+  static Future<AuthResponse> verifyPhoneChangeOtp({
+    required String phone,
+    required String token,
+  }) {
+    return client.auth.verifyOtp(
+      type: OtpType.phoneChange,
+      phone: phone.trim(),
+      token: token.trim(),
+    );
+  }
+
+  static Future<void> resendPhoneChangeOtp(String phone) async {
+    await client.auth.resend(
+      type: OtpType.phoneChange,
+      phone: phone.trim(),
+    );
+  }
+
   static Future<void> signOut() => client.auth.signOut();
 
   static Future<Session?>? _ensureSessionFuture;
