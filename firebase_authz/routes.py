@@ -19,6 +19,17 @@ class FounderOrganizationRegistration(BaseModel):
     organization_name: str | None = None
     branch_name: str | None = None
     branch_identifier: str | None = None
+    employee_id: str | None = None
+    full_name: str | None = None
+    phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    id_proof_type: str | None = None
+    id_proof_number: str | None = None
 
 class AuthorizationCheck(BaseModel):
     workspace_id: str
@@ -202,15 +213,53 @@ def founder_organization_register(
             )
             claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
-            if not req.organization_name or not req.branch_name or not req.branch_identifier:
+            required = {
+                "organization name": req.organization_name,
+                "branch name": req.branch_name,
+                "branch identifier": req.branch_identifier,
+                "employee number": req.employee_id,
+                "full name": req.full_name,
+                "phone": req.phone,
+                "address line 1": req.address_line1,
+                "city": req.city,
+                "state": req.state,
+                "postal code": req.postal_code,
+                "country": req.country,
+                "ID proof type": req.id_proof_type,
+                "ID proof number": req.id_proof_number,
+            }
+            missing = [name for name, value in required.items() if not str(value or "").strip()]
+            if missing:
                 raise ValueError(
-                    "Organization name, branch name, and branch identifier are required."
+                    "The following registration fields are required: "
+                    + ", ".join(missing)
+                    + "."
+                )
+            authoritative_phone = str(claims.get("phone") or "").strip()
+            if not claims.get("phone_confirmed_at") or not authoritative_phone:
+                raise AuthzError(
+                    "A verified phone number is required before company registration."
+                )
+            if str(req.phone or "").strip() != authoritative_phone:
+                raise AuthzError(
+                    "The submitted phone number must match the verified Supabase phone identity."
                 )
             result = register_organization(
                 claims,
                 req.organization_name,
                 req.branch_name,
                 req.branch_identifier,
+                employee_id=req.employee_id,
+                full_name=req.full_name,
+                phone=req.phone,
+                address_line1=req.address_line1,
+                address_line2=req.address_line2 or "",
+                city=req.city,
+                state=req.state,
+                postal_code=req.postal_code,
+                country=req.country,
+                id_proof_type=req.id_proof_type,
+                id_proof_number=req.id_proof_number,
             )
             registration_diagnostics.stage("REGISTRATION_COMPLETE")
             return result
