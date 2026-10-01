@@ -20,7 +20,6 @@ class FounderOrganizationRegistration(BaseModel):
     organization_name: str | None = None
     branch_name: str | None = None
     branch_identifier: str | None = None
-    employee_id: str | None = None
     full_name: str | None = None
     phone: str | None = None
     phone_country_calling_code: str | None = None
@@ -298,7 +297,6 @@ def founder_organization_register(
                 "organization name": req.organization_name,
                 "branch name": req.branch_name,
                 "branch identifier": req.branch_identifier,
-                "employee number": req.employee_id,
                 "full name": req.full_name,
                 "phone": req.phone,
                 "phone country calling code": req.phone_country_calling_code,
@@ -333,7 +331,6 @@ def founder_organization_register(
                 req.organization_name,
                 req.branch_name,
                 req.branch_identifier,
-                employee_id=req.employee_id,
                 full_name=req.full_name,
                 phone=req.phone,
                 phone_country_calling_code=req.phone_country_calling_code,
@@ -412,9 +409,9 @@ class RoleUpsert(BaseModel):
     permissions: list[str]
 
 class InvitationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     workspace_id: str
     email: str
-    employee_id: str
     role_id: str
     expires_at: int | None = None
 
@@ -432,9 +429,9 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     try:
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import create_invitation as provider_create_invitation
-            return provider_create_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.email, req.employee_id, req.role_id, req.expires_at)
+            return provider_create_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.email, req.role_id, req.expires_at)
         return create_invitation(
-            req.workspace_id, req.email, req.employee_id, req.role_id,
+            req.workspace_id, req.email, req.role_id,
             _token(authorization), req.expires_at
         )
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
