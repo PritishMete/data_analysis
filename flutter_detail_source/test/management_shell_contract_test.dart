@@ -47,6 +47,14 @@ void main() {
     expect(source, contains("'/assignments/manager/change'"));
     expect(source, contains("'/assignments/team-lead'"));
     expect(source, contains("'/assignments/reporting'"));
+    expect(source, contains("a['full_name']"));
+    expect(source, contains("a['email_verified']"));
+    expect(source, contains("a['phone_verified']"));
+    expect(source, contains("a['id_proof_supplied']"));
+    expect(source, contains('_showAssignmentProfile(a)'));
+    expect(source, contains("'/profile'"));
+    expect(source, contains('BRANCH HEAD'));
+    expect(source, contains('No separate manager assigned'));
     // Assignment Registry layout contract: keep compact identifiers intact,
     // bound the action control, and provide an explicit narrow-width path.
     expect(source, contains('Widget _assignmentRegistryValue('));
