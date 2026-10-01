@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 
 REQUIRED_INDEX_SNIPPETS = (
+    '<base href="/data_analysis/">',
     'https://appsforoffice.microsoft.com/lib/1/hosted/office.js',
     'excel_data_processor.js',
     'excel_helper.js',
@@ -22,7 +23,21 @@ REQUIRED_INDEX_SNIPPETS = (
     'meta name="detail-analysis-build-id"',
 )
 
-REQUIRED_MAIN_SNIPPETS = ()
+REQUIRED_MAIN_SNIPPETS = (
+    'Country *',
+    'State / Province / Region *',
+    'Phone country code',
+    'ID Proof Type *',
+    'Search ',
+    'No matching options.',
+    'Not applicable for this country',
+    'initial Branch Head',
+)
+
+FORBIDDEN_MAIN_SNIPPETS = (
+    'OTP SENT TO EMAIL',
+    'EMAIL OTP',
+)
 
 
 def _assert_build(root: Path, expected_commit: str) -> None:
@@ -46,7 +61,10 @@ def _assert_build(root: Path, expected_commit: str) -> None:
     main_text = main_js.read_text(encoding="utf-8", errors="ignore")
     for snippet in REQUIRED_MAIN_SNIPPETS:
         if snippet not in main_text:
-            raise AssertionError(f"deployed Flutter bundle is missing secure Excel marker: {snippet}")
+            raise AssertionError(f"deployed Flutter bundle is missing profile UI marker: {snippet}")
+    for snippet in FORBIDDEN_MAIN_SNIPPETS:
+        if snippet in main_text:
+            raise AssertionError(f"deployed Flutter bundle contains legacy email OTP UI: {snippet}")
 
     if "(?i)\\bout\\s+of\\b" in main_text:
         raise AssertionError("deployed main.dart.js still contains the unsupported Dart regex flag")
@@ -79,7 +97,10 @@ def _assert_live(base_url: str, expected_commit: str) -> None:
     main_text = _fetch(base + "main.dart.js")
     for snippet in REQUIRED_MAIN_SNIPPETS:
         if snippet not in main_text:
-            raise AssertionError(f"live Flutter bundle is missing secure Excel marker: {snippet}")
+            raise AssertionError(f"live Flutter bundle is missing profile UI marker: {snippet}")
+    for snippet in FORBIDDEN_MAIN_SNIPPETS:
+        if snippet in main_text:
+            raise AssertionError(f"live Flutter bundle contains legacy email OTP UI: {snippet}")
     if "(?i)\\bout\\s+of\\b" in main_text:
         raise AssertionError("live main.dart.js still contains the unsupported Dart regex flag")
 

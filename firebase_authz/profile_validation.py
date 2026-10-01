@@ -69,6 +69,7 @@ def normalize_location(
     country: str | None = None,
     state: str | None = None,
 ) -> dict[str, str]:
+    """Canonicalize ISO geography; use N/A only when no subdivisions exist."""
     country_obj = country_from_input(country_code)
     raw_state_code = str(state_code or "").strip()
     if not raw_state_code and not pycountry.subdivisions.get(
