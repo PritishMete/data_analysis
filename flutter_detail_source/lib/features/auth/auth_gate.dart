@@ -18,8 +18,31 @@ import '../../widgets/insightflow_floating_brand.dart';
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
+  static String? _redirectErrorMessage() {
+    final fragment = Uri.base.fragment.trim();
+    if (fragment.isEmpty) return null;
+    try {
+      final values = Uri.splitQueryString(
+        fragment.startsWith('#') ? fragment.substring(1) : fragment,
+      );
+      final error = (values['error'] ?? '').toLowerCase();
+      final code = (values['error_code'] ?? '').toLowerCase();
+      if (error.isEmpty && code.isEmpty) return null;
+      if (code == 'otp_expired') {
+        return 'This confirmation link has expired. Please request a new confirmation email.';
+      }
+      return 'This confirmation link could not be completed. Please sign in and request a new confirmation email.';
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final redirectError = _redirectErrorMessage();
+    if (redirectError != null) {
+      return _SupabaseRedirectErrorScreen(message: redirectError);
+    }
     return StreamBuilder<AuthState>(
       stream: InsightFlowSupabaseAuthService.authStateChanges,
       builder: (context, snapshot) {
@@ -333,36 +356,8 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
     }
   }
 
-  static bool _handledRedirectError = false;
-
-  static String? _redirectErrorMessage() {
-    if (_handledRedirectError) return null;
-    final fragment = Uri.base.fragment.trim();
-    if (fragment.isEmpty) return null;
-    Map<String, String> values;
-    try {
-      values = Uri.splitQueryString(
-        fragment.startsWith('#') ? fragment.substring(1) : fragment,
-      );
-    } catch (_) {
-      return null;
-    }
-    final error = (values['error'] ?? '').toLowerCase();
-    final code = (values['error_code'] ?? '').toLowerCase();
-    if (error.isEmpty && code.isEmpty) return null;
-    _handledRedirectError = true;
-    if (code == 'otp_expired') {
-      return 'This confirmation link has expired. Please sign in and request a new confirmation email.';
-    }
-    return 'This confirmation link could not be completed. Please sign in and request a new confirmation email.';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final redirectError = _redirectErrorMessage();
-    if (redirectError != null) {
-      return _SupabaseRedirectErrorScreen(message: redirectError);
-    }
     if (_loading) return const _AuthLoading();
     if (_verificationRequired) {
       return const _SupabaseEmailVerificationScreen();
