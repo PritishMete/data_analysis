@@ -1,5 +1,6 @@
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from sqlalchemy import text
@@ -27,9 +28,8 @@ def _claims(uid: str, *, phone_confirmed: bool = True) -> dict:
     }
 
 
-def _profile_kwargs(employee_id: str = "EMP001") -> dict:
+def _profile_kwargs() -> dict:
     return {
-        "employee_id": employee_id,
         "full_name": "Pritish Mete",
         "phone": "+919876543210",
         "address_line1": "1 InsightFlow Way",
@@ -46,7 +46,7 @@ def _profile_kwargs(employee_id: str = "EMP001") -> dict:
     }
 
 
-def _seed_registered(uid: str, *, employee_id: str = "EMP001") -> dict:
+def _seed_registered(uid: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
 
     suffix = uuid.uuid4().hex
@@ -55,7 +55,7 @@ def _seed_registered(uid: str, *, employee_id: str = "EMP001") -> dict:
         "Profile Test Company",
         "Main Branch",
         f"PROFILE-{suffix}",
-        **_profile_kwargs(employee_id),
+        **_profile_kwargs(),
     )
 
 
@@ -97,7 +97,7 @@ def test_registration_persists_branch_head_profile_and_assignment():
     from firebase_authz.management_domain import list_assignments, management_overview
 
     suffix = uuid.uuid4().hex
-    result = _seed_registered(f"founder-{suffix}", employee_id="EMP001")
+    result = _seed_registered(f"founder-{suffix}")
     try:
         with SessionLocal() as session:
             profile = session.execute(
@@ -159,7 +159,7 @@ def test_registration_rejects_unverified_phone_authoritatively():
             "No Phone Company",
             "Main Branch",
             "NO-PHONE",
-            **_profile_kwargs("EMP-UNVERIFIED"),
+            **_profile_kwargs(),
         )
 
 
@@ -168,7 +168,7 @@ def test_profile_update_rejects_mismatched_verified_phone():
     from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
-    owner = _seed_registered(f"mismatch-owner-{suffix}", employee_id="EMP009")
+    owner = _seed_registered(f"mismatch-owner-{suffix}")
     try:
         claims = _claims(f"mismatch-owner-{suffix}")
         claims["phone"] = "+919999999999"
@@ -198,7 +198,7 @@ def test_branch_head_and_manager_are_distinct_roles():
     from firebase_authz.management_domain import assign_manager, management_overview
 
     suffix = uuid.uuid4().hex
-    owner = _seed_registered(f"branch-head-{suffix}", employee_id="EMP001")
+    owner = _seed_registered(f"branch-head-{suffix}")
     try:
         with SessionLocal.begin() as session:
             manager_principal = _add_member(
@@ -231,8 +231,8 @@ def test_sensitive_profile_requires_users_manage_and_is_cross_company_scoped():
     from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
-    owner = _seed_registered(f"owner-a-{suffix}", employee_id="EMP001")
-    other = _seed_registered(f"owner-b-{suffix}", employee_id="EMP002")
+    owner = _seed_registered(f"owner-a-{suffix}")
+    other = _seed_registered(f"owner-b-{suffix}")
     try:
         with SessionLocal.begin() as session:
             member = _add_member(
@@ -305,7 +305,7 @@ def test_profile_safe_response_masks_short_id_proof():
 
 def test_profile_is_removed_when_member_is_deleted():
     suffix = uuid.uuid4().hex
-    owner = _seed_registered(f"cleanup-owner-{suffix}", employee_id="EMP001")
+    owner = _seed_registered(f"cleanup-owner-{suffix}")
     try:
         with SessionLocal.begin() as session:
             before = session.execute(
