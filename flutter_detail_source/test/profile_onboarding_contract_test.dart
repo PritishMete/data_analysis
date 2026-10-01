@@ -37,7 +37,7 @@ void main() {
     expect(company, contains('Not applicable for this country'));
     expect(employee, contains('Not applicable for this country'));
     expect(company, contains("label: 'State / Province / Region *'"));
-    expect(company, contains('_state = null'));
+    expect(company, contains('_state = _states.isEmpty'));
   });
 
   test('profile fields enforce optional address line 2 and ID-provided semantics', () {
