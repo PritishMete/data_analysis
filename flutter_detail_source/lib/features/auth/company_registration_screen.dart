@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +11,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/profile/profile_form_widgets.dart';
+import '../../core/profile/profile_geo_data.dart';
 import 'auth_glass_widgets.dart';
 import 'management_shell.dart';
 
@@ -22,31 +26,34 @@ class CompanyRegistrationScreen extends StatefulWidget {
 
 class _CompanyRegistrationScreenState
     extends State<CompanyRegistrationScreen> {
-  final _organizationController = TextEditingController();
-  final _branchController = TextEditingController();
-  final _branchIdentifierController = TextEditingController();
-  final _fullNameController = TextEditingController();
-  final _employeeIdController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _addressLine1Controller = TextEditingController();
-  final _addressLine2Controller = TextEditingController();
-  final _cityController = TextEditingController();
-  final _stateController = TextEditingController();
-  final _postalCodeController = TextEditingController();
-  final _countryController = TextEditingController();
-  final _idProofTypeController = TextEditingController();
-  final _idProofNumberController = TextEditingController();
-  final _emailOtpController = TextEditingController();
-  final _phoneOtpController = TextEditingController();
+  final _organization = TextEditingController();
+  final _branch = TextEditingController();
+  final _branchIdentifier = TextEditingController();
+  final _fullName = TextEditingController();
+  final _employeeId = TextEditingController();
+  final _phone = TextEditingController();
+  final _address1 = TextEditingController();
+  final _address2 = TextEditingController();
+  final _postal = TextEditingController();
+  final _proofNumber = TextEditingController();
+  final _otp = TextEditingController();
+
+  List<ProfileOption> _countries = const [];
+  List<ProfileOption> _states = const [];
+  List<ProfileOption> _proofs = const [];
+  ProfileOption? _country;
+  ProfileOption? _state;
+  ProfileOption? _phoneCountry;
+  ProfileOption? _proofType;
 
   int _step = 0;
+  bool _loading = true;
   bool _busy = false;
-  bool _emailOtpSent = false;
-  bool _emailOtpVerified = false;
-  bool _phoneOtpSent = false;
   bool _phoneVerified = false;
-  String? _emailOtpIdentity;
-  String? _phoneOtpIdentity;
+  bool _otpSent = false;
+  int _cooldown = 0;
+  Timer? _timer;
+  String? _phoneIdentity;
   String? _message;
   bool _error = false;
   OrganizationServiceDiagnostic? _organizationDiagnostic;
@@ -54,78 +61,70 @@ class _CompanyRegistrationScreenState
   @override
   void initState() {
     super.initState();
-    _prefillAuthenticatedIdentity();
-  }
-
-  void _prefillAuthenticatedIdentity() {
-    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
-    final metadata = user?.userMetadata ?? const <String, dynamic>{};
-    final suggestedName = (metadata['full_name'] ??
-            metadata['name'] ??
-            metadata['display_name'] ??
-            '')
-        .toString()
-        .trim();
-    if (_fullNameController.text.isEmpty && suggestedName.isNotEmpty) {
-      _fullNameController.text = suggestedName;
-    }
+    _load();
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (final controller in [
-      _organizationController,
-      _branchController,
-      _branchIdentifierController,
-      _fullNameController,
-      _employeeIdController,
-      _phoneController,
-      _addressLine1Controller,
-      _addressLine2Controller,
-      _cityController,
-      _stateController,
-      _postalCodeController,
-      _countryController,
-      _idProofTypeController,
-      _idProofNumberController,
-      _emailOtpController,
-      _phoneOtpController,
+      _organization,
+      _branch,
+      _branchIdentifier,
+      _fullName,
+      _employeeId,
+      _phone,
+      _address1,
+      _address2,
+      _postal,
+      _proofNumber,
+      _otp,
     ]) {
       controller.dispose();
     }
     super.dispose();
   }
 
-  String _normalizePhone(String value) {
-    final normalized = value.trim().replaceAll(RegExp(r'[\s\-().]'), '');
-    if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(normalized)) {
-      throw StateError(
-        'Enter a valid phone number in E.164 format, for example +919876543210.',
-      );
+  Future<void> _load() async {
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+    final metadata = user?.userMetadata ?? const <String, dynamic>{};
+    final suggested = (metadata['full_name'] ??
+            metadata['name'] ??
+            metadata['display_name'] ??
+            '')
+        .toString()
+        .trim();
+    if (suggested.isNotEmpty) _fullName.text = suggested;
+
+    try {
+      await ProfileGeoData.ensureInitialized();
+      _countries = ProfileGeoData.countryOptions();
+    } catch (_) {
+      _error = true;
+      _message = 'Country and state data could not be initialized.';
     }
-    return normalized;
+
+    if (mounted) setState(() => _loading = false);
   }
 
-  String _maskIdProof(String value) {
-    final compact = value.replaceAll(RegExp(r'\s+'), '');
-    if (compact.length <= 4) return compact;
-    return ('X' * (compact.length - 4)) +
-        compact.substring(compact.length - 4);
-  }
+  String? get _email =>
+      InsightFlowSupabaseAuthService.currentSupabaseUser?.email?.trim();
 
-  String get _authenticatedEmail =>
-      InsightFlowSupabaseAuthService.currentSupabaseUser?.email?.trim() ?? '';
-
-  bool get _authoritativeEmailVerified =>
+  bool get _emailConfirmed =>
       InsightFlowSupabaseAuthService.currentSupabaseUser?.emailConfirmedAt !=
       null;
 
-  bool get _emailStepComplete =>
-      _authoritativeEmailVerified || _emailOtpVerified;
+  String? _phoneE164() {
+    final dial =
+        _phoneCountry?.subtitle.replaceAll(RegExp(r'\s+'), '') ?? '';
+    final national = _phone.text.replaceAll(RegExp(r'\D'), '');
+    if (dial.isEmpty || national.length < 4 || national.length > 15) {
+      return null;
+    }
+    return dial + national;
+  }
 
-  bool get _phoneStepComplete => _phoneVerified;
-
-  void _setError(String message) {
+  void _fail(String message) {
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -134,325 +133,278 @@ class _CompanyRegistrationScreenState
     });
   }
 
-  Future<void> _sendEmailOtp() async {
-    if (_authenticatedEmail.isEmpty) {
-      _setError('The authenticated Supabase account has no email address.');
+  void _startCooldown() {
+    _timer?.cancel();
+    setState(() => _cooldown = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldown <= 1) {
+        timer.cancel();
+        setState(() => _cooldown = 0);
+      } else {
+        setState(() => _cooldown -= 1);
+      }
+    });
+  }
+
+  Future<void> _sendOtp() async {
+    final phone = _phoneE164();
+    if (phone == null) {
+      _fail('Select a phone country code and enter a valid national number.');
       return;
     }
+
     setState(() {
       _busy = true;
-      _message = null;
       _error = false;
+      _message = null;
     });
+
     try {
-      final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+      final user =
+          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
       if (user == null) {
         throw StateError('Your authenticated session could not be restored.');
       }
-      _emailOtpIdentity = user.id;
-      await InsightFlowSupabaseAuthService.sendEmailOtp(_authenticatedEmail);
-      if (!mounted) return;
-      setState(() {
-        _emailOtpSent = true;
-        _busy = false;
-        _message = 'Email OTP sent to ' +
-            _authenticatedEmail +
-            '. Enter the code to verify this authenticated identity.';
-      });
-    } on AuthException catch (error) {
-      _setError(
-        error.message.toLowerCase().contains('disabled')
-            ? 'Email OTP is not enabled for this Supabase project.'
-            : 'Email OTP could not be sent. Please try again.',
-      );
-    } catch (_) {
-      _setError('Email OTP could not be sent. Please try again.');
-    }
-  }
-
-  Future<void> _verifyEmailOtp() async {
-    final token = _emailOtpController.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(token)) {
-      _setError('Enter the 6-digit email OTP.');
-      return;
-    }
-    final identity = _emailOtpIdentity;
-    if (identity == null) {
-      _setError('Send a fresh email OTP before verifying it.');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _message = null;
-      _error = false;
-    });
-    try {
-      final response = await InsightFlowSupabaseAuthService.verifyEmailOtp(
-        email: _authenticatedEmail,
-        token: token,
-      );
-      final session = await InsightFlowSupabaseAuthService.ensureSession(
-        timeout: const Duration(seconds: 8),
-      );
-      if (session == null) {
-        throw StateError(
-          'The authenticated session could not be restored after email OTP verification.',
-        );
-      }
-      final current =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (current == null || current.id != identity) {
-        throw StateError('Email OTP verification returned a different account.');
-      }
-      if (response.user != null && response.user!.id != identity) {
-        throw StateError('Email OTP verification returned a different account.');
-      }
-      if (current.emailConfirmedAt == null) {
-        throw StateError(
-          'Supabase did not confirm the authenticated email after the OTP.',
-        );
-      }
-      if (!mounted) return;
-      setState(() {
-        _emailOtpVerified = true;
-        _emailOtpSent = false;
-        _busy = false;
-        _message = 'EMAIL OTP VERIFIED';
-        _error = false;
-      });
-    } on AuthException catch (_) {
-      _setError('The email OTP is invalid or expired. Request a new code.');
-    } catch (error) {
-      _setError(
-        error is StateError
-            ? error.message
-            : 'Email OTP verification failed.',
-      );
-    }
-  }
-
-  Future<void> _startPhoneOtp() async {
-    late final String normalized;
-    try {
-      normalized = _normalizePhone(_phoneController.text);
-    } catch (error) {
-      _setError(error.toString().replaceFirst('Bad state: ', ''));
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _message = null;
-      _error = false;
-    });
-    try {
-      final current =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (current == null) {
-        throw StateError('Your authenticated session could not be restored.');
-      }
-      if (current.phone == normalized && current.phoneConfirmedAt != null) {
-        if (!mounted) return;
-        setState(() {
-          _phoneVerified = true;
-          _phoneOtpSent = false;
-          _phoneOtpIdentity = normalized;
-          _busy = false;
-          _message = 'PHONE VERIFIED • SUPABASE AUTH';
-          _error = false;
-        });
+      if (user.phone == phone && user.phoneConfirmedAt != null) {
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _phoneVerified = true;
+            _phoneIdentity = phone;
+            _message = 'PHONE VERIFIED ✓';
+          });
+        }
         return;
       }
 
-      await InsightFlowSupabaseAuthService.beginPhoneVerification(normalized);
-      _phoneOtpIdentity = normalized;
-      if (!mounted) return;
-      setState(() {
-        _phoneOtpSent = true;
-        _phoneVerified = false;
-        _busy = false;
-        _message = 'Phone verification OTP sent to ' +
-            normalized +
-            '. Enter the 6-digit SMS code.';
-        _error = false;
-      });
+      await InsightFlowSupabaseAuthService.beginPhoneVerification(phone);
+      _phoneIdentity = phone;
+      _otpSent = true;
+      _phoneVerified = false;
+      _otp.clear();
+      _startCooldown();
+
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _message = 'OTP SENT. Enter the SMS code supplied by Supabase.';
+        });
+      }
     } on AuthException catch (error) {
       final lower = error.message.toLowerCase();
-      _setError(
-        lower.contains('provider') ||
-                lower.contains('sms') ||
-                lower.contains('phone')
-            ? 'Phone OTP could not be started. Make sure Supabase Phone Auth and its SMS provider are configured.'
-            : 'Phone verification could not be started.',
-      );
+      if (lower.contains('rate') || lower.contains('too many')) {
+        _fail('SMS rate limit reached. Please wait and try again.');
+      } else if (lower.contains('provider') ||
+          lower.contains('sms') ||
+          lower.contains('disabled')) {
+        _fail(
+          'Phone verification is unavailable. Configure Supabase Phone Auth and an SMS provider.',
+        );
+      } else if (lower.contains('already') || lower.contains('exist')) {
+        _fail('That phone number is already associated with another account.');
+      } else {
+        _fail(
+          'The phone number could not be verified. Check the calling code and national number.',
+        );
+      }
     } catch (error) {
-      _setError(
+      _fail(
         error is StateError
             ? error.message
-            : 'Phone verification could not be started. Configure the Supabase SMS provider before continuing.',
+            : 'Phone verification could not be started.',
       );
     }
   }
 
-  Future<void> _resendPhoneOtp() async {
-    final phone = _phoneOtpIdentity;
-    if (phone == null || phone.isEmpty) {
-      _setError('Start phone verification before requesting another OTP.');
-      return;
-    }
+  Future<void> _resendOtp() async {
+    final phone = _phoneIdentity;
+    if (phone == null || _busy || _cooldown > 0) return;
     setState(() {
       _busy = true;
-      _message = null;
       _error = false;
+      _message = null;
     });
+
     try {
       await InsightFlowSupabaseAuthService.resendPhoneChangeOtp(phone);
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _message = 'A new phone OTP was sent.';
-      });
+      _startCooldown();
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _message = 'A new SMS OTP was requested. Supabase rate limits still apply.';
+        });
+      }
     } on AuthException catch (_) {
-      _setError(
-        'Phone OTP could not be resent. Check the Supabase SMS provider configuration and rate limits.',
-      );
+      _fail('The SMS provider rejected the resend or rate-limited the request.');
     } catch (_) {
-      _setError('Phone OTP could not be resent. Please try again.');
+      _fail('The SMS OTP could not be resent.');
     }
   }
 
-  Future<void> _verifyPhoneOtp() async {
-    final phone = _phoneOtpIdentity;
-    final token = _phoneOtpController.text.trim();
-    if (phone == null || phone.isEmpty) {
-      _setError('Start phone verification before verifying the OTP.');
+  Future<void> _verifyOtp() async {
+    final phone = _phoneIdentity;
+    final token = _otp.text.trim();
+    if (phone == null) {
+      _fail('Start phone verification first.');
       return;
     }
     if (!RegExp(r'^\d{6}$').hasMatch(token)) {
-      _setError('Enter the 6-digit phone OTP.');
+      _fail('Enter the 6-digit SMS code.');
       return;
     }
+
     setState(() {
       _busy = true;
-      _message = null;
       _error = false;
+      _message = null;
     });
+
     try {
       final before = InsightFlowSupabaseAuthService.currentSupabaseUser;
       if (before == null) {
         throw StateError('Your authenticated session could not be restored.');
       }
+
       final response =
           await InsightFlowSupabaseAuthService.verifyPhoneChangeOtp(
         phone: phone,
         token: token,
       );
-      final session = await InsightFlowSupabaseAuthService.ensureSession(
-        timeout: const Duration(seconds: 8),
-      );
-      if (session == null) {
-        throw StateError(
-          'The authenticated session could not be restored after phone OTP verification.',
-        );
-      }
       final current =
           await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-      if (current == null || current.id != before.id) {
-        throw StateError('Phone OTP verification returned a different account.');
-      }
-      if (response.user != null && response.user!.id != before.id) {
-        throw StateError('Phone OTP verification returned a different account.');
+
+      if (current == null ||
+          current.id != before.id ||
+          (response.user != null && response.user!.id != before.id)) {
+        throw StateError('Phone verification returned a different account.');
       }
       if (current.phone != phone || current.phoneConfirmedAt == null) {
-        throw StateError(
-          'Supabase did not confirm this phone number for the authenticated account.',
-        );
+        throw StateError('Supabase did not confirm this phone number.');
       }
-      if (!mounted) return;
-      setState(() {
-        _phoneVerified = true;
-        _phoneOtpSent = false;
-        _busy = false;
-        _message = 'PHONE OTP VERIFIED';
-        _error = false;
-      });
+
+      _timer?.cancel();
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _phoneVerified = true;
+          _otpSent = false;
+          _cooldown = 0;
+          _message = 'PHONE VERIFIED ✓';
+        });
+      }
     } on AuthException catch (_) {
-      _setError('The phone OTP is invalid or expired. Request a new code.');
+      _fail('The SMS code is invalid or expired. Request a new code.');
     } catch (error) {
-      _setError(
-        error is StateError ? error.message : 'Phone OTP verification failed.',
+      _fail(
+        error is StateError ? error.message : 'Phone verification failed.',
       );
     }
   }
 
-  bool _validateStep(int step) {
-    if (step == 0) {
-      if (_organizationController.text.trim().isEmpty ||
-          _branchController.text.trim().isEmpty ||
-          _branchIdentifierController.text.trim().isEmpty) {
-        _setError(
-          'Enter the company name, branch name, and unique branch identifier.',
-        );
-        return false;
-      }
-      return true;
-    }
-    if (step == 1) {
-      final required = <String>[
-        _fullNameController.text,
-        _employeeIdController.text,
-        _phoneController.text,
-        _addressLine1Controller.text,
-        _cityController.text,
-        _stateController.text,
-        _postalCodeController.text,
-        _countryController.text,
-        _idProofTypeController.text,
-        _idProofNumberController.text,
-      ];
-      if (required.any((value) => value.trim().isEmpty)) {
-        _setError('Complete every required Branch Head profile field.');
-        return false;
-      }
-      try {
-        _normalizePhone(_phoneController.text);
-      } catch (error) {
-        _setError(error.toString().replaceFirst('Bad state: ', ''));
-        return false;
-      }
-      return true;
-    }
-    if (step == 2 && !_emailStepComplete) {
-      _setError('Complete the email verification step before continuing.');
-      return false;
-    }
-    if (step == 3 && !_phoneStepComplete) {
-      _setError('Complete phone OTP verification before continuing.');
-      return false;
-    }
-    return true;
-  }
-
-  void _nextStep() {
-    if (!_validateStep(_step)) return;
+  Future<void> _pickCountry() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'Country',
+      options: _countries,
+      selectedValue: _country?.value,
+    );
+    if (choice == null) return;
     setState(() {
-      _message = null;
-      _error = false;
-      _step = (_step + 1).clamp(0, 4);
+      _country = choice;
+      _state = null;
+      _proofType = null;
+      _states = ProfileGeoData.subdivisionOptions(choice.value);
+      _proofs = ProfileGeoData.idProofOptions(choice.value);
     });
   }
 
-  void _previousStep() {
-    if (_step == 0) return;
+  Future<void> _pickState() async {
+    if (_country == null) {
+      _fail('Select a country before selecting the state.');
+      return;
+    }
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'State / Province / Region',
+      options: _states,
+      selectedValue: _state?.value,
+    );
+    if (choice != null) setState(() => _state = choice);
+  }
+
+  Future<void> _pickPhoneCountry() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'Phone country code',
+      options: _countries.where((item) => item.subtitle.isNotEmpty).toList(),
+      selectedValue: _phoneCountry?.value,
+    );
+    if (choice != null) {
+      setState(() {
+        _phoneCountry = choice;
+        _phoneVerified = false;
+        _otpSent = false;
+        _phoneIdentity = null;
+      });
+    }
+  }
+
+  Future<void> _pickProof() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'ID Proof Type',
+      options: _proofs,
+      selectedValue: _proofType?.value,
+    );
+    if (choice != null) setState(() => _proofType = choice);
+  }
+
+  bool _profileValid() =>
+      _fullName.text.trim().isNotEmpty &&
+      _employeeId.text.trim().isNotEmpty &&
+      _email?.isNotEmpty == true &&
+      _emailConfirmed &&
+      _address1.text.trim().isNotEmpty &&
+      _postal.text.trim().isNotEmpty &&
+      _country != null &&
+      _state != null &&
+      _proofType != null &&
+      _proofNumber.text.trim().isNotEmpty;
+
+  void _next() {
+    if (_step == 0 &&
+        (_organization.text.trim().isEmpty ||
+            _branch.text.trim().isEmpty ||
+            _branchIdentifier.text.trim().isEmpty)) {
+      _fail('Enter company name, branch name, and branch identifier.');
+      return;
+    }
+
+    if (_step == 1 && !_profileValid()) {
+      _fail('Complete every required Branch Head profile field.');
+      return;
+    }
+
+    if (_step == 2 && (_phoneE164() == null || !_phoneVerified)) {
+      _fail('Verify the phone with Supabase SMS OTP before continuing.');
+      return;
+    }
+
     setState(() {
-      _step -= 1;
       _message = null;
       _error = false;
+      _step += 1;
     });
   }
 
   Future<void> _register() async {
-    for (var step = 0; step <= 3; step++) {
-      if (!_validateStep(step)) return;
+    if (!_profileValid() || _phoneE164() == null || !_phoneVerified) {
+      _fail('Complete the Branch Head profile and verify the phone before registering.');
+      return;
     }
 
     final session = await InsightFlowSupabaseAuthService.ensureSession(
@@ -462,42 +414,34 @@ class _CompanyRegistrationScreenState
         ? null
         : InsightFlowSupabaseAuthService.currentSupabaseUser;
     if (session == null || user == null) {
-      _setError(
-        'Your Supabase sign-in session could not be restored. Please sign in again.',
-      );
+      _fail('Your authenticated Supabase session could not be restored.');
       return;
     }
 
     final authoritative =
         await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-    if (authoritative == null || authoritative.id != user.id) {
-      _setError(
-        'The authenticated Supabase identity could not be confirmed. Please sign in again.',
-      );
+    final phone = _phoneE164();
+    if (authoritative == null ||
+        authoritative.id != user.id ||
+        authoritative.emailConfirmedAt == null) {
+      _fail('Your authenticated email is not confirmed. Sign in again.');
       return;
     }
-    if (authoritative.emailConfirmedAt == null) {
-      _setError('EMAIL NOT VERIFIED. Verify the authenticated email first.');
-      return;
-    }
-
-    final phone = _normalizePhone(_phoneController.text);
-    if (authoritative.phone != phone ||
+    if (phone == null ||
+        authoritative.phone != phone ||
         authoritative.phoneConfirmedAt == null) {
-      _setError(
-        'PHONE NOT VERIFIED. Verify this exact phone number through Supabase OTP first.',
-      );
+      _fail('PHONE NOT VERIFIED. Verify this exact phone number through Supabase Auth.');
       return;
     }
 
     setState(() {
       _busy = true;
-      _message = null;
       _error = false;
+      _message = null;
     });
 
     try {
-      final result = await organizationServiceRequest(
+      final request = await organizationServiceRequest(
         method: 'POST',
         path: '/v1/authz/organizations/register',
         contentType: 'application/json',
@@ -507,29 +451,30 @@ class _CompanyRegistrationScreenState
           ),
           headers: headers,
           body: jsonEncode({
-            'organization_name': _organizationController.text.trim(),
-            'branch_name': _branchController.text.trim(),
-            'branch_identifier': _branchIdentifierController.text,
-            'employee_id': _employeeIdController.text.trim(),
-            'full_name': _fullNameController.text.trim(),
+            'organization_name': _organization.text.trim(),
+            'branch_name': _branch.text.trim(),
+            'branch_identifier': _branchIdentifier.text,
+            'employee_id': _employeeId.text.trim(),
+            'full_name': _fullName.text.trim(),
             'phone': phone,
-            'address_line1': _addressLine1Controller.text.trim(),
-            'address_line2': _addressLine2Controller.text.trim(),
-            'city': _cityController.text.trim(),
-            'state': _stateController.text.trim(),
-            'postal_code': _postalCodeController.text.trim(),
-            'country': _countryController.text.trim(),
-            'id_proof_type': _idProofTypeController.text.trim(),
-            'id_proof_number': _idProofNumberController.text.trim(),
+            'phone_country_calling_code': _phoneCountry!.subtitle,
+            'phone_national_number':
+                _phone.text.replaceAll(RegExp(r'\D'), ''),
+            'address_line1': _address1.text.trim(),
+            'address_line2': _address2.text.trim(),
+            'country_code': _country!.value,
+            'country': _country!.label,
+            'state_code': _state!.value,
+            'state': _state!.label,
+            'postal_code': _postal.text.trim(),
+            'id_proof_type': _proofType!.value,
+            'id_proof_number': _proofNumber.text.trim(),
           }),
         ),
       );
-      _organizationDiagnostic = result.diagnostic;
-      final response = result.response;
-      final businessError =
-          organizationServiceBusinessErrorMessage(response);
-      if (businessError != null) _organizationDiagnostic = null;
 
+      _organizationDiagnostic = request.diagnostic;
+      final response = request.response;
       dynamic decoded;
       try {
         decoded = response.body.trim().isEmpty
@@ -538,8 +483,11 @@ class _CompanyRegistrationScreenState
       } catch (_) {
         decoded = null;
       }
+
       final detail =
           decoded is Map ? decoded['detail']?.toString().trim() : null;
+      final businessError =
+          organizationServiceBusinessErrorMessage(response);
       if (businessError != null) throw StateError(businessError);
       if (response.statusCode == 401) {
         throw StateError('InsightFlow authentication could not be verified.');
@@ -555,18 +503,14 @@ class _CompanyRegistrationScreenState
         throw StateError(
           detail?.isNotEmpty == true
               ? detail!
-              : 'This organization registration conflicts with existing identity data.',
+              : 'This company registration conflicts with existing identity data.',
         );
       }
       if (response.statusCode == 422) {
-        throw StateError(
-          'Organization registration request was rejected by the server.',
-        );
+        throw StateError('Organization registration request was rejected by the server.');
       }
       if (response.statusCode >= 500) {
-        throw StateError(
-          "InsightFlow's organization service returned a server error.",
-        );
+        throw StateError("InsightFlow's organization service returned a server error.");
       }
       if (response.statusCode != 200) {
         throw StateError(
@@ -578,12 +522,7 @@ class _CompanyRegistrationScreenState
 
       final workspaceId =
           decoded is Map ? decoded['workspace_id']?.toString() : null;
-      final organizationId =
-          decoded is Map ? decoded['organization_id']?.toString() : null;
-      if (workspaceId == null ||
-          workspaceId.isEmpty ||
-          organizationId == null ||
-          organizationId.isEmpty) {
+      if (workspaceId == null || workspaceId.isEmpty) {
         throw StateError(
           'InsightFlow could not create the organization. The server returned an incomplete response.',
         );
@@ -596,9 +535,9 @@ class _CompanyRegistrationScreenState
       );
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
-      _setError('InsightFlow couldn’t reach the organization service.');
+      _fail('InsightFlow couldn’t reach the organization service.');
     } catch (error) {
-      _setError(
+      _fail(
         error is StateError
             ? error.message
             : 'Company registration could not be completed.',
@@ -610,34 +549,30 @@ class _CompanyRegistrationScreenState
     String label,
     TextEditingController controller, {
     String? placeholder,
-    TextInputType keyboardType = TextInputType.text,
-    TextInputAction action = TextInputAction.next,
-    int maxLines = 1,
-    bool readOnly = false,
+    bool required = true,
+    TextInputType type = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
     String? helper,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AuthGlassFieldLabel(label),
+        AuthGlassFieldLabel(label + (required ? ' *' : '')),
         GlassTextField(
           controller: controller,
           placeholder: placeholder ?? label,
           enabled: !_busy,
-          readOnly: readOnly,
-          keyboardType: keyboardType,
-          textInputAction: action,
-          maxLines: maxLines,
+          keyboardType: type,
+          inputFormatters: inputFormatters,
         ),
         if (helper != null) ...[
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(
             helper,
             style: const TextStyle(
               color: TechColors.textMuted,
               fontSize: 9,
               height: 1.3,
-              fontFamily: 'monospace',
             ),
           ),
         ],
@@ -645,105 +580,83 @@ class _CompanyRegistrationScreenState
     );
   }
 
-  Widget _stepIndicator() {
-    const labels = [
-      'COMPANY',
-      'BRANCH HEAD',
-      'EMAIL',
-      'PHONE',
-      'REVIEW',
-    ];
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: List.generate(labels.length, (index) {
-        final active = index == _step;
-        final complete = index < _step;
-        final text = (index + 1).toString() +
-            '  ' +
-            labels[index] +
-            (complete ? '  ✓' : '');
-        return GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.minimal,
-          settings: LiquidGlassSettings(
-            thickness: 10,
-            blur: 4,
-            glassColor: active
-                ? const Color(0x433DDC97)
-                : const Color(0x17FFFFFF),
-            refractiveIndex: 1.05,
-          ),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-          child: Text(
-            text,
-            style: TextStyle(
-              color: active || complete
-                  ? TechColors.textPrimary
-                  : TechColors.textMuted,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  Widget _companyStep() => Column(
+  Widget _emailField() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const AuthGlassMessage(
-            text:
-                'You will become the initial Branch Head. The branch and its active Branch Head assignment are created together in one server transaction.',
-            error: false,
-          ),
-          const SizedBox(height: 14),
-          _field('Company / Organization Name', _organizationController),
-          const SizedBox(height: 12),
-          _field('Branch Name', _branchController),
-          const SizedBox(height: 12),
-          _field(
-            'Unique Branch Identifier',
-            _branchIdentifierController,
-            placeholder: 'e.g. TCS@Singur_1',
-            helper:
-                'Opaque business identifier. Special characters are allowed.',
-            action: TextInputAction.done,
+          const AuthGlassFieldLabel('EMAIL *'),
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: const LiquidGlassSettings(
+              thickness: 10,
+              blur: 4,
+              glassColor: Color(0x15FFFFFF),
+              refractiveIndex: 1.05,
+            ),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              (_email ?? 'Missing authenticated email') +
+                  (_emailConfirmed
+                      ? '  •  EMAIL CONFIRMED'
+                      : '  •  EMAIL NOT CONFIRMED'),
+              style: TextStyle(
+                color: _emailConfirmed
+                    ? TechColors.statusGreen
+                    : TechColors.statusRed,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
+            ),
           ),
         ],
       );
 
   Widget _profileStep() => LayoutBuilder(
         builder: (context, constraints) {
-          final twoColumns = constraints.maxWidth >= 760;
           final fields = <Widget>[
-            _field('Full Name', _fullNameController),
+            _field('Full Name', _fullName),
+            _field('Employee Number', _employeeId, placeholder: 'EMP001'),
+            _emailField(),
+            _field('Address Line 1', _address1),
             _field(
-              'Employee Number',
-              _employeeIdController,
-              placeholder: 'EMP001',
-              helper:
-                  'Stored in the existing organization_members.employee_id field.',
+              'Address Line 2',
+              _address2,
+              required: false,
+              helper: 'Optional',
+            ),
+            ProfileSelectField(
+              label: 'Country *',
+              value: _country?.label,
+              placeholder: _countries.isEmpty
+                  ? 'Loading countries…'
+                  : 'Select country',
+              onTap: _busy ? null : _pickCountry,
+            ),
+            ProfileSelectField(
+              label: 'State / Province / Region *',
+              value: _state?.label,
+              placeholder: _country == null
+                  ? 'Select country first'
+                  : 'Select state / province / region',
+              onTap: _busy ? null : _pickState,
+            ),
+            _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
+            ProfileSelectField(
+              label: 'ID Proof Type *',
+              value: _proofType?.label,
+              placeholder: 'Select government document',
+              onTap: _busy ? null : _pickProof,
             ),
             _field(
-              'Phone Number',
-              _phoneController,
-              placeholder: '+919876543210',
-              keyboardType: TextInputType.phone,
+              'ID Proof Number',
+              _proofNumber,
+              placeholder: 'Government ID number',
             ),
-            _field('Address Line 1', _addressLine1Controller),
-            _field('Address Line 2', _addressLine2Controller),
-            _field('City', _cityController),
-            _field('State', _stateController),
-            _field('Postal Code', _postalCodeController),
-            _field('Country', _countryController),
-            _field('ID Proof Type', _idProofTypeController),
-            _field('ID Proof Number', _idProofNumberController),
           ];
-          if (!twoColumns) {
+
+          if (constraints.maxWidth < 760) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -751,177 +664,79 @@ class _CompanyRegistrationScreenState
                   field,
                   const SizedBox(height: 10),
                 ],
-                const AuthGlassMessage(
-                  text:
-                      'ID proof is collected as submitted information. InsightFlow does not perform ID-proof verification.',
-                  error: false,
-                ),
               ],
             );
           }
+
           final left = <Widget>[];
           final right = <Widget>[];
           for (var i = 0; i < fields.length; i++) {
-            (i.isEven ? left : right).add(fields[i]);
-            (i.isEven ? left : right).add(const SizedBox(height: 10));
+            (i.isEven ? left : right).addAll([
+              fields[i],
+              const SizedBox(height: 10),
+            ]);
           }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: Column(children: left)),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(children: right)),
-                ],
-              ),
-              const AuthGlassMessage(
-                text:
-                    'ID proof is collected as submitted information. InsightFlow does not perform ID-proof verification.',
-                error: false,
-              ),
+              Expanded(child: Column(children: left)),
+              const SizedBox(width: 12),
+              Expanded(child: Column(children: right)),
             ],
           );
         },
       );
 
-  Widget _emailStep() {
-    if (_authoritativeEmailVerified) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const AuthGlassMessage(
-            text:
-                'EMAIL VERIFIED • SUPABASE AUTH\nThis authenticated email is already confirmed by the identity provider. Registration uses the authoritative Supabase state.',
-            error: false,
-          ),
-          const SizedBox(height: 10),
-          _field(
-            'Authenticated Email',
-            TextEditingController(text: _authenticatedEmail),
-            readOnly: true,
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Provider verification is kept distinct from EMAIL OTP VERIFIED. An optional OTP can still be sent through Supabase Auth.',
-            style: TextStyle(
-              color: TechColors.textMuted,
-              fontSize: 9,
-              height: 1.35,
-              fontFamily: 'monospace',
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (!_emailOtpVerified)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: _busy ? null : _sendEmailOtp,
-                child: const Text('Verify email with OTP'),
-              ),
-            )
-          else
-            const Text(
-              'EMAIL OTP VERIFIED',
-              style: TextStyle(
-                color: TechColors.statusGreen,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
-              ),
-            ),
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const AuthGlassMessage(
-          text:
-              'Verify the authenticated email through Supabase Auth before registration.',
-          error: false,
-        ),
-        const SizedBox(height: 10),
-        _field(
-          'Authenticated Email',
-          TextEditingController(text: _authenticatedEmail),
-          readOnly: true,
-        ),
-        const SizedBox(height: 10),
-        if (!_emailOtpSent)
-          GlassButton.custom(
-            onTap: _busy ? () {} : _sendEmailOtp,
-            enabled: !_busy,
-            width: double.infinity,
-            height: 44,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Send email OTP',
-            child: const Text('Send email OTP'),
-          )
-        else ...[
-          _field(
-            'Email OTP',
-            _emailOtpController,
-            placeholder: '6-digit code',
-            keyboardType: TextInputType.number,
-            action: TextInputAction.done,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton(
-                onPressed: _busy ? null : _verifyEmailOtp,
-                child: const Text('Verify email OTP'),
-              ),
-              TextButton(
-                onPressed: _busy ? null : _sendEmailOtp,
-                child: const Text('Resend OTP'),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
   Widget _phoneStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _field(
-            'Phone Number',
-            _phoneController,
-            placeholder: '+919876543210',
-            keyboardType: TextInputType.phone,
-            readOnly: _phoneVerified,
+          ProfileSelectField(
+            label: 'Phone Country Code *',
+            value: _phoneCountry == null
+                ? null
+                : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+            placeholder: 'Select country calling code',
+            onTap: _busy ? null : _pickPhoneCountry,
           ),
           const SizedBox(height: 10),
+          _field(
+            'Phone Number',
+            _phone,
+            placeholder: 'National / local number only',
+            type: TextInputType.phone,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Do not type the country calling code here. InsightFlow combines the two controls into E.164 format.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 9),
+          ),
+          const SizedBox(height: 12),
           if (_phoneVerified)
-            const AuthGlassMessage(
-              text:
-                  'PHONE VERIFIED • SUPABASE AUTH\nThe submitted phone is confirmed by the current authenticated Supabase identity.',
-              error: false,
-            )
-          else if (!_phoneOtpSent)
+            const AuthGlassMessage(text: 'PHONE VERIFIED ✓', error: false)
+          else if (!_otpSent)
             GlassButton.custom(
-              onTap: _busy ? () {} : _startPhoneOtp,
+              onTap: _busy ? () {} : _sendOtp,
               enabled: !_busy,
               width: double.infinity,
               height: 44,
               shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: 'Verify phone',
-              child: const Text('Verify phone'),
+              label: 'SEND OTP',
+              child: const Text('SEND OTP'),
             )
           else ...[
-            _field(
-              'Phone OTP',
-              _phoneOtpController,
+            const AuthGlassFieldLabel('OTP SENT'),
+            GlassTextField(
+              controller: _otp,
               placeholder: '6-digit SMS code',
               keyboardType: TextInputType.number,
-              action: TextInputAction.done,
+              enabled: !_busy,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+              ],
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -929,74 +744,62 @@ class _CompanyRegistrationScreenState
               runSpacing: 8,
               children: [
                 FilledButton(
-                  onPressed: _busy ? null : _verifyPhoneOtp,
-                  child: const Text('Verify phone OTP'),
+                  onPressed: _busy ? null : _verifyOtp,
+                  child: const Text('VERIFY PHONE'),
                 ),
                 TextButton(
-                  onPressed: _busy ? null : _resendPhoneOtp,
-                  child: const Text('Resend OTP'),
+                  onPressed: _busy || _cooldown > 0 ? null : _resendOtp,
+                  child: Text(
+                    _cooldown > 0
+                        ? 'RESEND OTP (' + _cooldown.toString() + ')'
+                        : 'RESEND OTP',
+                  ),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'SMS delivery and phone verification are enforced by Supabase Auth. InsightFlow never accepts a client-side phone_verified flag.',
-              style: TextStyle(
-                color: TechColors.textMuted,
-                fontSize: 9,
-                fontFamily: 'monospace',
-              ),
             ),
           ],
         ],
       );
 
-  Widget _reviewStep() {
-    final idType = _idProofTypeController.text.trim();
-    final idNumber = _idProofNumberController.text.trim();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const AuthGlassMessage(
-          text:
-              'Review the Branch Head profile. Registration creates the company, branch, membership, branch_head assignment, profile, and audit events atomically on the server.',
-          error: false,
-        ),
-        const SizedBox(height: 12),
-        _reviewRow('COMPANY', _organizationController.text.trim()),
-        _reviewRow('BRANCH', _branchController.text.trim()),
-        _reviewRow('BRANCH ID', _branchIdentifierController.text.trim()),
-        _reviewRow('BRANCH HEAD', _fullNameController.text.trim()),
-        _reviewRow('EMPLOYEE NUMBER', _employeeIdController.text.trim()),
-        _reviewRow('EMAIL', _authenticatedEmail + ' ✓'),
-        _reviewRow('PHONE', _phoneController.text.trim() + ' ✓'),
-        _reviewRow(
-          'ADDRESS',
-          [
-            _addressLine1Controller.text.trim(),
-            _addressLine2Controller.text.trim(),
-            _cityController.text.trim(),
-            _stateController.text.trim(),
-            _postalCodeController.text.trim(),
-            _countryController.text.trim(),
-          ].where((value) => value.isNotEmpty).join(', '),
-        ),
-        _reviewRow('ID PROOF', idType + '  ' + _maskIdProof(idNumber)),
-        const SizedBox(height: 12),
-        const Text(
-          'ROLE  branch_head\nASSIGNMENT  active\nREPORTS TO  —\nSECTION  —',
-          style: TextStyle(
-            color: TechColors.textMuted,
-            fontSize: 10,
-            height: 1.4,
-            fontFamily: 'monospace',
+  Widget _reviewStep() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassMessage(
+            text:
+                'Review the Branch Head profile. Email is already confirmed; phone is verified through Supabase Auth SMS.',
+            error: false,
           ),
-        ),
-      ],
-    );
-  }
+          const SizedBox(height: 12),
+          _review('COMPANY', _organization.text.trim()),
+          _review('BRANCH', _branch.text.trim()),
+          _review('BRANCH ID', _branchIdentifier.text.trim()),
+          _review('BRANCH HEAD', _fullName.text.trim()),
+          _review('EMPLOYEE NUMBER', _employeeId.text.trim()),
+          _review('EMAIL', (_email ?? '—') + '  ✓'),
+          _review('PHONE', (_phoneE164() ?? '—') + '  ✓'),
+          _review('ADDRESS LINE 1', _address1.text.trim()),
+          if (_address2.text.trim().isNotEmpty)
+            _review('ADDRESS LINE 2', _address2.text.trim()),
+          _review('STATE', _state?.label ?? ''),
+          _review('COUNTRY', _country?.label ?? ''),
+          _review('PIN / POSTAL CODE', _postal.text.trim()),
+          _review(
+            'ID PROOF',
+            (_proofType?.label ?? '') + '  ' + _mask(_proofNumber.text),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'ID PROOF • PROVIDED. InsightFlow does not perform ID-proof verification.',
+            style: TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 9,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      );
 
-  Widget _reviewRow(String label, String value) => Padding(
+  Widget _review(String label, String value) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: GlassContainer(
           useOwnLayer: true,
@@ -1013,11 +816,10 @@ class _CompanyRegistrationScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
-                width: 110,
+                width: 116,
                 child: Text(
                   label,
                   maxLines: 1,
-                  softWrap: false,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: TechColors.textMuted,
@@ -1031,7 +833,7 @@ class _CompanyRegistrationScreenState
               Expanded(
                 child: Text(
                   value.isEmpty ? '—' : value,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: TechColors.textPrimary,
@@ -1045,79 +847,31 @@ class _CompanyRegistrationScreenState
         ),
       );
 
-  Widget _stepBody() {
-    switch (_step) {
-      case 0:
-        return _companyStep();
-      case 1:
-        return _profileStep();
-      case 2:
-        return _emailStep();
-      case 3:
-        return _phoneStep();
-      case 4:
-        return _reviewStep();
-      default:
-        return const SizedBox.shrink();
-    }
+  String _mask(String value) {
+    final compact = value.replaceAll(RegExp(r'\s+'), '');
+    if (compact.length <= 4) return compact;
+    return ('X' * (compact.length - 4)) +
+        compact.substring(compact.length - 4);
   }
-
-  Widget _navigation() => Row(
-        children: [
-          if (_step > 0)
-            Expanded(
-              child: TextButton(
-                onPressed: _busy ? null : _previousStep,
-                child: const Text('Back'),
-              ),
-            ),
-          if (_step > 0) const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: GlassButton.custom(
-              onTap: _busy
-                  ? () {}
-                  : _step == 4
-                      ? _register
-                      : _nextStep,
-              enabled: !_busy,
-              width: double.infinity,
-              height: 46,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: _step == 4
-                  ? (_busy ? 'Registering…' : 'Register Company')
-                  : 'Continue',
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (_busy) const CupertinoActivityIndicator(),
-                  if (_busy) const SizedBox(width: 8),
-                  Text(
-                    _step == 4
-                        ? (_busy ? 'Registering…' : 'Register Company')
-                        : 'Continue',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
 
   @override
   Widget build(BuildContext context) {
-    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
-    final authenticated = user != null;
+    if (_loading) {
+      return const AuthGlassScaffold(
+        title: 'REGISTER / COMPANY',
+        subtitle: 'Loading profile data…',
+        children: [Center(child: CupertinoActivityIndicator())],
+      );
+    }
+
+    final authenticated =
+        InsightFlowSupabaseAuthService.currentSupabaseUser != null;
 
     return AuthGlassScaffold(
       wideContent: true,
       title: 'REGISTER / COMPANY',
       subtitle: authenticated
-          ? 'Create a company, initial branch, and authenticated Branch Head profile.'
+          ? 'Create the company, initial branch, and Branch Head profile.'
           : 'Authenticate the founder identity first.',
       children: [
         if (!authenticated)
@@ -1137,7 +891,14 @@ class _CompanyRegistrationScreenState
         else ...[
           _stepIndicator(),
           const SizedBox(height: 14),
-          _stepBody(),
+          if (_step == 0)
+            _companyBody()
+          else if (_step == 1)
+            _profileStep()
+          else if (_step == 2)
+            _phoneStep()
+          else
+            _reviewStep(),
           if (_message != null) ...[
             const SizedBox(height: 10),
             AuthGlassMessage(text: _message!, error: _error),
@@ -1153,13 +914,112 @@ class _CompanyRegistrationScreenState
           _navigation(),
           const SizedBox(height: 8),
           TextButton(
-            onPressed: _busy
-                ? null
-                : () => InsightFlowSupabaseAuthService.signOut(),
+            onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
             child: const Text('Cancel onboarding'),
           ),
         ],
       ],
     );
   }
+
+  Widget _companyBody() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassMessage(
+            text:
+                'Your authenticated email is already confirmed before this screen. There is no email OTP step here.',
+            error: false,
+          ),
+          const SizedBox(height: 12),
+          _field('Company / Organization Name', _organization),
+          const SizedBox(height: 10),
+          _field('Branch Name', _branch),
+          const SizedBox(height: 10),
+          _field(
+            'Unique Branch Identifier',
+            _branchIdentifier,
+            placeholder: 'e.g. TCS@Singur_1',
+            helper: 'Opaque business identifier. Special characters are allowed.',
+          ),
+        ],
+      );
+
+  Widget _stepIndicator() {
+    const labels = ['COMPANY', 'BRANCH HEAD', 'PHONE', 'REVIEW'];
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: List.generate(labels.length, (index) {
+        final active = index == _step;
+        final complete = index < _step;
+        return GlassContainer(
+          useOwnLayer: true,
+          quality: GlassQuality.minimal,
+          settings: LiquidGlassSettings(
+            thickness: 10,
+            blur: 4,
+            glassColor: active
+                ? const Color(0x433DDC97)
+                : const Color(0x17FFFFFF),
+            refractiveIndex: 1.05,
+          ),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+          child: Text(
+            (index + 1).toString() +
+                '  ' +
+                labels[index] +
+                (complete ? '  ✓' : ''),
+            style: TextStyle(
+              color: active || complete
+                  ? TechColors.textPrimary
+                  : TechColors.textMuted,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _navigation() => Row(
+        children: [
+          if (_step > 0)
+            Expanded(
+              child: TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _step -= 1;
+                          _message = null;
+                          _error = false;
+                        }),
+                child: const Text('Back'),
+              ),
+            ),
+          if (_step > 0) const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: GlassButton.custom(
+              onTap: _busy
+                  ? () {}
+                  : (_step == 3 ? _register : _next),
+              enabled: !_busy,
+              width: double.infinity,
+              height: 46,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: _step == 3
+                  ? (_busy ? 'Registering…' : 'Register Company')
+                  : 'Continue',
+              child: Text(
+                _step == 3
+                    ? (_busy ? 'Registering…' : 'Register Company')
+                    : 'Continue',
+              ),
+            ),
+          ),
+        ],
+      );
 }
