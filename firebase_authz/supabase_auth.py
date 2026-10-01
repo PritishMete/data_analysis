@@ -125,7 +125,11 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
     claims["uid"] = subject
     claims["provider"] = "supabase"
     if require_email_verified:
-        claims["email_verified"] = _confirmed_supabase_user(token, subject)
+        authoritative_user = _fetch_supabase_user(token, subject)
+        claims["email_verified"] = bool(authoritative_user.get("email_confirmed_at"))
+        claims["email_confirmed_at"] = authoritative_user.get("email_confirmed_at")
+        claims["phone"] = authoritative_user.get("phone")
+        claims["phone_confirmed_at"] = authoritative_user.get("phone_confirmed_at")
         if not claims["email_verified"]:
             raise AuthenticationRequired("Email verification required.")
     else:
