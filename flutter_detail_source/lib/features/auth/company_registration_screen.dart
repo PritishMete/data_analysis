@@ -520,7 +520,10 @@ class _CompanyRegistrationScreenState
 
       final workspaceId =
           decoded is Map ? decoded['workspace_id']?.toString() : null;
-      if (workspaceId == null || workspaceId.isEmpty) {
+      final assignedEmployeeId =
+          decoded is Map ? decoded['employee_id']?.toString().trim() : null;
+      if (workspaceId == null || workspaceId.isEmpty ||
+          assignedEmployeeId == null || assignedEmployeeId.isEmpty) {
         throw StateError(
           'InsightFlow could not create the organization. The server returned an incomplete response.',
         );
@@ -528,6 +531,9 @@ class _CompanyRegistrationScreenState
 
       await setInsightFlowWorkspaceId(user.id, workspaceId);
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Your Employee ID is $assignedEmployeeId')),
+      );
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const ManagementShell()),
       );
