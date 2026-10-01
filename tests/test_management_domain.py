@@ -60,7 +60,6 @@ def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
         name,
         "Main Branch",
         branch_id,
-        employee_id=f"OWNER-{suffix}",
         full_name=f"Owner {owner_uid}",
         phone="+919876543210",
         address_line1="1 InsightFlow Way",
