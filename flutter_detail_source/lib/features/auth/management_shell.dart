@@ -1463,17 +1463,6 @@ class _ManagementShellState extends State<ManagementShell> {
                 ? proofNumber
                 : ('X' * (proofNumber.length - 4)) +
                     proofNumber.substring(proofNumber.length - 4);
-            final address = [
-              profile['address_line1'],
-              profile['address_line2'],
-              profile['city'],
-              profile['state'],
-              profile['postal_code'],
-              profile['country'],
-            ]
-                .map((value) => value?.toString().trim() ?? '')
-                .where((value) => value.isNotEmpty)
-                .join(', ');
             return _ManagementGlassDialog(
               title: Text(fullName),
               content: Column(
@@ -1491,7 +1480,11 @@ class _ManagementShellState extends State<ManagementShell> {
                     'PHONE VERIFIED',
                     profile['phone_verified'] == true ? 'YES' : 'NO',
                   ),
-                  _profileDetailRow('ADDRESS', address, multiline: true),
+                  _profileDetailRow('ADDRESS LINE 1', profile['address_line1']?.toString(), multiline: true),
+                  _profileDetailRow('ADDRESS LINE 2', profile['address_line2']?.toString(), multiline: true),
+                  _profileDetailRow('STATE', profile['state']?.toString()),
+                  _profileDetailRow('COUNTRY', profile['country']?.toString()),
+                  _profileDetailRow('PIN / POSTAL CODE', profile['postal_code']?.toString()),
                   _profileDetailRow('ID PROOF TYPE', proofType),
                   _profileDetailRow(
                     'ID PROOF NUMBER',
