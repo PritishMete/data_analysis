@@ -20,6 +20,7 @@ from .management_domain import (
     create_location,
     create_section,
     list_assignments,
+    get_assignment_profile,
     list_audit_events,
     list_locations,
     list_people,
@@ -167,6 +168,20 @@ def assignments(
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     return {"assignments": _dispatch(list_assignments, _claims(authorization), _workspace(workspace_id))}
+
+
+@router.get("/assignments/{assignment_id}/profile")
+def assignment_profile(
+    assignment_id: str,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        get_assignment_profile,
+        _claims(authorization),
+        _workspace(workspace_id),
+        assignment_id,
+    )
 
 
 @router.post("/assignments/manager")
