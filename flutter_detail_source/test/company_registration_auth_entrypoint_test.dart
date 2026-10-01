@@ -88,7 +88,7 @@ void main() {
       'lib/features/auth/company_registration_screen.dart',
     ).readAsStringSync();
 
-    expect(source, contains('Your Google sign-in session could not be restored.'));
+    expect(source, contains('Your Supabase sign-in session could not be restored. Please sign in again.'));
     expect(source, contains('if (session == null || user == null)'));
   });
 
