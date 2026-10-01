@@ -49,6 +49,7 @@ Future<bool?> reconcileCachedWorkspaceWithRetry({
 }
 
 enum InsightFlowOnboardingState {
+  initializing,
   activeMember,
   pendingInvitation,
   noMembership,
