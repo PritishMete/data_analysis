@@ -1025,7 +1025,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final section = a['section_name']?.toString() ?? '—';
       final status = a['status']?.toString() ?? '—';
       final isActive = a['status'] == 'active';
-      final reporting = SizedBox(
+      final reportingAction = SizedBox(
         width: 132,
         child: _actionChip(
           'REPORTING',
@@ -1071,7 +1071,7 @@ class _ManagementShellState extends State<ManagementShell> {
             _assignmentRegistryMeta('SECTION', section),
             if (isActive) ...[
               const SizedBox(height: 10),
-              Align(alignment: Alignment.centerRight, child: reporting),
+              Align(alignment: Alignment.centerRight, child: reportingAction),
             ],
           ],
         );
@@ -1116,7 +1116,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
           if (isActive) ...[
             const SizedBox(width: 12),
-            reporting,
+            reportingAction,
           ],
         ],
       );
