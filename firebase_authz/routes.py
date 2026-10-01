@@ -50,8 +50,8 @@ class ProfileUpsertRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     full_name: str
     phone: str
-    phone_country_calling_code: str | None = None
-    phone_national_number: str | None = None
+    phone_country_calling_code: str
+    phone_national_number: str
     address_line1: str
     address_line2: str | None = ""
     country_code: str
@@ -301,6 +301,8 @@ def founder_organization_register(
                 "employee number": req.employee_id,
                 "full name": req.full_name,
                 "phone": req.phone,
+                "phone country calling code": req.phone_country_calling_code,
+                "phone national number": req.phone_national_number,
                 "address line 1": req.address_line1,
                 "state": req.state,
                 "state code": req.state_code,
