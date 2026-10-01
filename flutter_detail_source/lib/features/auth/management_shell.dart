@@ -643,114 +643,515 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget organizationView() {
     if (locations.isEmpty) {
-      return surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _eyebrow('Organization topology'), const SizedBox(height: 8),
-        const Text('No organizational structure is configured yet.', style: TextStyle(color: TechColors.textMuted)),
-      ]));
-    }
-    return Column(children: locations.map((l) {
-      final id = l['location_id'].toString();
-      final secs = sections.where((s) => s['location_id'].toString() == id).toList();
-      final asg = assignments.where((a) => a['location_id'].toString() == id && a['status'] == 'active').toList();
-      final managers = asg.where((a) => a['role_id'] == 'manager').toList();
-      return Padding(padding: const EdgeInsets.only(bottom: 10), child: GlassCard(
-        margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            const Icon(Icons.location_on_outlined, size: 17, color: TechColors.borderActive),
-            const SizedBox(width: 9),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(l['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700)),
-              Text(l['branch_identifier'].toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-            ])),
-            _statusDot(l['status']?.toString() ?? 'active'),
-          ]),
-          const SizedBox(height: 10),
-          _glassRow(child: Row(children: [
-            const Icon(Icons.manage_accounts_outlined, size: 15, color: TechColors.textMuted),
-            const SizedBox(width: 8),
-            const Text('MANAGER', style: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-            const Spacer(),
-            Text(managers.isEmpty ? 'UNASSIGNED' : managers.first['employee_id'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-          ])),
-          if (secs.isNotEmpty) ...[
-            const SizedBox(height: 10), _eyebrow('Sections'), const SizedBox(height: 7),
-            ...secs.map((s) {
-              final members = asg.where((a) => a['section_id']?.toString() == s['section_id']?.toString() && (a['role_id'] == 'team_lead' || a['role_id'] == 'employee')).toList();
-              return Padding(padding: const EdgeInsets.only(bottom: 6), child: _glassRow(child: Row(children: [
-                const Icon(Icons.account_tree_outlined, size: 14, color: TechColors.statusBlue),
-                const SizedBox(width: 8),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(s['name'].toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                  Text('${s['employee_count'] ?? 0} members', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-                ])),
-                if (members.isNotEmpty) Text('${members.length}', style: const TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 10)),
-              ])));
-            }),
+      return surface(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _eyebrow('Organization topology'),
+            const SizedBox(height: 8),
+            const Text(
+              'No organizational structure is configured yet.',
+              style: TextStyle(color: TechColors.textMuted),
+            ),
           ],
-        ]),
-      ));
-    }).toList());
-  }
+        ),
+      );
+    }
 
+    Widget leadershipRow(
+      String label,
+      IconData icon,
+      Map<String, dynamic>? person, {
+      required String emptyText,
+    }) {
+      final name = person?['full_name']?.toString().trim() ?? '';
+      final employeeId = person?['employee_id']?.toString().trim() ?? '';
+      final display = person == null
+          ? emptyText
+          : name.isEmpty
+              ? (employeeId.isEmpty ? 'Profile incomplete' : employeeId)
+              : name + (employeeId.isEmpty ? '' : ' · ' + employeeId);
+      return _glassRow(
+        child: Row(
+          children: [
+            Icon(icon, size: 15, color: TechColors.textMuted),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: TechColors.textMuted,
+                fontSize: 10,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                display,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: locations.map((l) {
+        final id = l['location_id'].toString();
+        final secs =
+            sections.where((s) => s['location_id'].toString() == id).toList();
+        final asg = assignments
+            .where(
+              (a) =>
+                  a['location_id'].toString() == id &&
+                  a['status'] == 'active',
+            )
+            .toList();
+        final managers =
+            asg.where((a) => a['role_id'] == 'manager').toList();
+        final branchHeads =
+            asg.where((a) => a['role_id'] == 'branch_head').toList();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: GlassCard(
+            margin: EdgeInsets.zero,
+            padding: const EdgeInsets.all(14),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 17,
+                      color: TechColors.borderActive,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l['name'].toString(),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            l['branch_identifier'].toString(),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: TechColors.textMuted,
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _statusDot(l['status']?.toString() ?? 'active'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                leadershipRow(
+                  'BRANCH HEAD',
+                  Icons.badge_outlined,
+                  branchHeads.isEmpty ? null : branchHeads.first,
+                  emptyText: 'No active Branch Head assignment',
+                ),
+                const SizedBox(height: 7),
+                leadershipRow(
+                  'MANAGER',
+                  Icons.manage_accounts_outlined,
+                  managers.isEmpty ? null : managers.first,
+                  emptyText: 'No separate manager assigned',
+                ),
+                if (secs.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _eyebrow('Sections'),
+                  const SizedBox(height: 7),
+                  ...secs.map((s) {
+                    final members = asg
+                        .where(
+                          (a) =>
+                              a['section_id']?.toString() ==
+                                  s['section_id']?.toString() &&
+                              (a['role_id'] == 'team_lead' ||
+                                  a['role_id'] == 'employee'),
+                        )
+                        .toList();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _glassRow(
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.account_tree_outlined,
+                              size: 14,
+                              color: TechColors.statusBlue,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s['name'].toString(),
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    (s['employee_count'] ?? 0).toString() +
+                                        ' members',
+                                    style: const TextStyle(
+                                      color: TechColors.textMuted,
+                                      fontSize: 10,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (members.isNotEmpty)
+                              Text(
+                                members.length.toString(),
+                                style: const TextStyle(
+                                  color: TechColors.textMuted,
+                                  fontFamily: 'monospace',
+                                  fontSize: 10,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
   Widget peopleView() {
     final q = search.trim().toLowerCase();
-    final list = people.where((p) => q.isEmpty || [p['employee_id'], p['role_id'], p['location_name'], p['section_name'], p['status']].any((v) => v?.toString().toLowerCase().contains(q) ?? false)).toList();
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GlassCard(
-        margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-        child: Row(children: [
-          const Icon(Icons.search, size: 16, color: TechColors.textMuted), const SizedBox(width: 8),
-          Expanded(child: TextField(
-            onChanged: (v) => setState(() => search = v),
-            style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              hintText: 'SEARCH PEOPLE / ROLE / LOCATION / SECTION',
-              hintStyle: TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
-              border: InputBorder.none, isDense: true,
+    final list = people.where((p) {
+      if (q.isEmpty) return true;
+      return [
+        p['employee_id'],
+        p['full_name'],
+        p['role_id'],
+        p['location_name'],
+        p['section_name'],
+        p['status'],
+      ].any(
+        (v) => v?.toString().toLowerCase().contains(q) ?? false,
+      );
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(14),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+          child: Row(
+            children: [
+              const Icon(Icons.search, size: 16, color: TechColors.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  onChanged: (v) => setState(() => search = v),
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                  decoration: const InputDecoration(
+                    hintText:
+                        'SEARCH NAME / EMPLOYEE / ROLE / LOCATION / SECTION',
+                    hintStyle: TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (list.isEmpty)
+          surface(
+            const Padding(
+              padding: EdgeInsets.all(28),
+              child: Center(
+                child: Text(
+                  'NO PEOPLE MATCH THIS QUERY',
+                  style: TextStyle(
+                    color: TechColors.textMuted,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  ),
+                ),
+              ),
             ),
-          )),
-        ]),
-      ),
-      const SizedBox(height: 10),
-      if (list.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO PEOPLE MATCH THIS QUERY', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
-      else Column(children: list.map((p) => Padding(padding: const EdgeInsets.only(bottom: 7), child: _glassRow(child: Row(children: [
-        const Icon(Icons.person_outline, size: 17, color: TechColors.borderActive), const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(p['employee_id']?.toString() ?? 'Person', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-          const SizedBox(height: 3),
-          Text('${p['role_id'] ?? '—'}  ·  ${p['location_name'] ?? 'Unassigned'}  ·  ${p['section_name'] ?? 'Unassigned'}', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-        ])),
-        _statusDot(p['status']?.toString() ?? ''), const SizedBox(width: 7),
-        Text(p['status']?.toString() ?? '—', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-      ])))).toList()),
-    ]);
+          )
+        else
+          Column(
+            children: list.map((p) {
+              final fullName = p['full_name']?.toString().trim() ?? '';
+              final employeeId = p['employee_id']?.toString() ?? '—';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: _glassRow(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.person_outline,
+                        size: 17,
+                        color: TechColors.borderActive,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              fullName.isEmpty ? 'Profile incomplete' : fullName,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              employeeId,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: TechColors.textMuted,
+                                fontSize: 9,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _roleLabel(p['role_id']?.toString() ?? '—') +
+                                  '  ·  ' +
+                                  (p['location_name']?.toString() ?? 'Unassigned') +
+                                  '  ·  ' +
+                                  (p['section_name']?.toString() ?? 'Unassigned'),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: TechColors.textMuted,
+                                fontSize: 10,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _verificationBadge(
+                            'EMAIL',
+                            p['email_verified'] == true,
+                          ),
+                          const SizedBox(height: 3),
+                          _verificationBadge(
+                            'PHONE',
+                            p['phone_verified'] == true,
+                          ),
+                          const SizedBox(height: 3),
+                          _statusDot(p['status']?.toString() ?? ''),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
   }
-
-  Widget locationsView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    Row(children: [
-      Expanded(child: _title('Locations', detail: 'BRANCH REGISTRY', icon: Icons.location_on_outlined)),
-      _actionChip('CREATE', Icons.add, createLocation, accent: true),
-    ]),
-    const SizedBox(height: 12),
-    if (locations.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO LOCATIONS YET', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
-    else ...locations.map((l) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _glassRow(child: InkWell(
-      onTap: () => setState(() => selectedLocation = l['location_id'].toString()),
-      borderRadius: BorderRadius.circular(12),
-      child: Row(children: [
-        const Icon(Icons.location_on_outlined, size: 17, color: TechColors.borderActive), const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(l['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-          const SizedBox(height: 3),
-          Text('${l['branch_identifier']}  ·  ${l['section_count'] ?? 0} sections  ·  ${l['employee_count'] ?? 0} employees', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-        ])),
-        Text(l['manager']?['employee_id']?.toString() ?? 'NO MANAGER', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-      ]),
-    )))),
-  ]);
-
+  Widget locationsView() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: _title(
+              'Locations',
+              detail: 'BRANCH REGISTRY',
+              icon: Icons.location_on_outlined,
+            ),
+          ),
+          _actionChip('CREATE', Icons.add, createLocation, accent: true),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (locations.isEmpty)
+        surface(
+          const Padding(
+            padding: EdgeInsets.all(28),
+            child: Center(
+              child: Text(
+                'NO LOCATIONS YET',
+                style: TextStyle(
+                  color: TechColors.textMuted,
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+        )
+      else
+        ...locations.map(
+          (l) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _glassRow(
+              child: InkWell(
+                onTap: () => setState(
+                  () => selectedLocation = l['location_id'].toString(),
+                ),
+                borderRadius: BorderRadius.circular(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 17,
+                      color: TechColors.borderActive,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l['name'].toString(),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            (l['branch_identifier'] ?? '—').toString() +
+                                '  ·  ' +
+                                (l['section_count'] ?? 0).toString() +
+                                ' sections  ·  ' +
+                                (l['employee_count'] ?? 0).toString() +
+                                ' employees',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: TechColors.textMuted,
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 150,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'BRANCH HEAD',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: TechColors.textMuted,
+                              fontSize: 8,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          Text(
+                            l['branch_head']?['employee_id']?.toString() ??
+                                'NO BRANCH HEAD',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'MANAGER  ' +
+                                (l['manager']?['employee_id']?.toString() ??
+                                    'NO SEPARATE MANAGER'),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: TechColors.textMuted,
+                              fontSize: 8,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
   Widget sectionsView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     Row(children: [
       Expanded(child: _title('Sections', detail: 'LOCATION → SECTION HIERARCHY', icon: Icons.account_tree_outlined)),
