@@ -102,6 +102,15 @@ class _CompanyRegistrationScreenState
       InsightFlowSupabaseAuthService.currentSupabaseUser?.emailConfirmedAt !=
       null;
 
+  void _fail(String message) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = true;
+      _message = message;
+    });
+  }
+
   String? _phoneE164() {
     final dial =
         _phoneCountry?.subtitle.replaceAll(RegExp(r'\s+'), '') ?? '';
