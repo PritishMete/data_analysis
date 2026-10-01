@@ -977,6 +977,228 @@ class _ManagementShellState extends State<ManagementShell> {
     ]),
   );
 
+  String _roleLabel(String value) {
+    switch (value) {
+      case 'branch_head':
+        return 'BRANCH HEAD';
+      case 'team_lead':
+        return 'TEAM LEAD';
+      case 'manager':
+        return 'MANAGER';
+      case 'employee':
+        return 'EMPLOYEE';
+      default:
+        return value.toUpperCase();
+    }
+  }
+
+  Widget _verificationBadge(String label, bool verified) => Text(
+        label.toUpperCase() + (verified ? ' ✓' : ' —'),
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: verified ? TechColors.statusGreen : TechColors.textMuted,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+        ),
+      );
+
+  Widget _assignmentPersonSummary(
+    Map<String, dynamic> assignment, {
+    double? width,
+  }) {
+    final name = assignment['full_name']?.toString().trim() ?? '';
+    final employeeId = assignment['employee_id']?.toString().trim() ?? '—';
+    final displayName = name.isEmpty ? 'Profile incomplete' : name;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          displayName,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          employeeId,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 9,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    );
+    return width == null ? content : SizedBox(width: width, child: content);
+  }
+
+  Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
+    final text = (value ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _glassRow(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 112,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text.isEmpty ? '—' : text,
+                maxLines: multiline ? 4 : 1,
+                softWrap: multiline,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAssignmentProfile(Map<String, dynamic> assignment) async {
+    final assignmentId = assignment['assignment_id']?.toString().trim() ?? '';
+    if (assignmentId.isEmpty) {
+      feedback(StateError('This assignment has no readable profile target.'));
+      return;
+    }
+    try {
+      final profile =
+          await request('/assignments/' + Uri.encodeComponent(assignmentId) + '/profile');
+      var showIdProof = false;
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final fullName =
+                profile['full_name']?.toString().trim().isEmpty == true
+                    ? 'Profile incomplete'
+                    : profile['full_name']?.toString().trim() ?? 'Profile incomplete';
+            final proofNumber = profile['id_proof_number']?.toString() ?? '';
+            final proofType = profile['id_proof_type']?.toString() ?? '';
+            final maskedProof = proofNumber.length <= 4
+                ? proofNumber
+                : ('X' * (proofNumber.length - 4)) +
+                    proofNumber.substring(proofNumber.length - 4);
+            final address = [
+              profile['address_line1'],
+              profile['address_line2'],
+              profile['city'],
+              profile['state'],
+              profile['postal_code'],
+              profile['country'],
+            ]
+                .map((value) => value?.toString().trim() ?? '')
+                .where((value) => value.isNotEmpty)
+                .join(', ');
+            return _ManagementGlassDialog(
+              title: Text(fullName),
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _profileDetailRow('EMPLOYEE NUMBER', profile['employee_id']?.toString()),
+                  _profileDetailRow('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
+                  _profileDetailRow('EMAIL', profile['email']?.toString()),
+                  _profileDetailRow(
+                    'EMAIL VERIFIED',
+                    profile['email_verified'] == true ? 'YES' : 'NO',
+                  ),
+                  _profileDetailRow('PHONE', profile['phone_e164']?.toString()),
+                  _profileDetailRow(
+                    'PHONE VERIFIED',
+                    profile['phone_verified'] == true ? 'YES' : 'NO',
+                  ),
+                  _profileDetailRow('ADDRESS', address, multiline: true),
+                  _profileDetailRow('ID PROOF TYPE', proofType),
+                  _profileDetailRow(
+                    'ID PROOF NUMBER',
+                    showIdProof ? proofNumber : maskedProof,
+                  ),
+                  if (proofNumber.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () =>
+                            setDialogState(() => showIdProof = !showIdProof),
+                        child: Text(showIdProof ? 'Mask ID proof' : 'Show ID proof'),
+                      ),
+                    ),
+                  _profileDetailRow('BRANCH', profile['location_name']?.toString()),
+                  _profileDetailRow('SECTION', profile['section_name']?.toString()),
+                  _profileDetailRow(
+                    'REPORTS TO',
+                    [
+                      profile['reports_to_employee_id'],
+                      profile['reports_to_role_id'] == null
+                          ? null
+                          : _roleLabel(profile['reports_to_role_id'].toString()),
+                    ]
+                        .where((value) => value != null && value.toString().isNotEmpty)
+                        .join(' · '),
+                  ),
+                  _profileDetailRow('ASSIGNMENT STATUS', profile['status']?.toString()),
+                  _profileDetailRow(
+                    'PROFILE COMPLETENESS',
+                    (profile['profile_completeness_percent']?.toString() ?? '0') + '%',
+                  ),
+                  _profileDetailRow(
+                    'CREATED',
+                    profile['profile_created_at']?.toString() ??
+                        profile['assignment_created_at']?.toString(),
+                  ),
+                  _profileDetailRow(
+                    'UPDATED',
+                    profile['profile_updated_at']?.toString() ??
+                        profile['assignment_updated_at']?.toString(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (error) {
+      feedback(error);
+    }
+  }
+
   Widget _assignmentRegistryValue(
     String value, {
     TextStyle style = const TextStyle(
@@ -1020,10 +1242,13 @@ class _ManagementShellState extends State<ManagementShell> {
     builder: (context, constraints) {
       final compact = constraints.maxWidth < 620;
       final employeeId = a['employee_id']?.toString() ?? '—';
+      final fullName = a['full_name']?.toString().trim() ?? '';
       final role = a['role_id']?.toString() ?? '—';
       final location = a['location_name']?.toString() ?? '—';
       final section = a['section_name']?.toString() ?? '—';
       final status = a['status']?.toString() ?? '—';
+      final emailVerified = a['email_verified'] == true;
+      final phoneVerified = a['phone_verified'] == true;
       final isActive = a['status'] == 'active';
       final reportingAction = SizedBox(
         width: 132,
@@ -1032,6 +1257,31 @@ class _ManagementShellState extends State<ManagementShell> {
           Icons.account_tree_outlined,
           () => reporting(a),
         ),
+      );
+
+      final person = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            fullName.isEmpty ? 'Profile incomplete' : fullName,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          _assignmentRegistryValue(
+            employeeId,
+            style: const TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 9,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
       );
 
       if (compact) {
@@ -1043,7 +1293,7 @@ class _ManagementShellState extends State<ManagementShell> {
               children: [
                 const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
                 const SizedBox(width: 8),
-                Expanded(child: _assignmentRegistryValue(employeeId)),
+                Expanded(child: person),
                 const SizedBox(width: 10),
                 SizedBox(
                   width: 72,
@@ -1064,11 +1314,47 @@ class _ManagementShellState extends State<ManagementShell> {
               ],
             ),
             const SizedBox(height: 9),
-            _assignmentRegistryMeta('ROLE', role),
+            _assignmentRegistryMeta('ROLE', _roleLabel(role)),
             const SizedBox(height: 6),
             _assignmentRegistryMeta('LOCATION', location),
             const SizedBox(height: 6),
             _assignmentRegistryMeta('SECTION', section),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(child: _verificationBadge('EMAIL', emailVerified)),
+                Expanded(child: _verificationBadge('PHONE', phoneVerified)),
+                if (a['id_proof_supplied'] == true)
+                  const Expanded(
+                    child: Text(
+                      'ID PROOF ✓',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: TechColors.statusGreen,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (a['profile_completeness_percent'] != null) ...[
+              const SizedBox(height: 5),
+              _assignmentRegistryMeta(
+                'PROFILE',
+                a['profile_completeness_percent'].toString() + '% complete',
+              ),
+            ],
+            if (a['reports_to_employee_id'] != null) ...[
+              const SizedBox(height: 5),
+              _assignmentRegistryMeta(
+                'REPORTS TO',
+                a['reports_to_employee_id'].toString(),
+              ),
+            ],
             if (isActive) ...[
               const SizedBox(height: 10),
               Align(alignment: Alignment.centerRight, child: reportingAction),
@@ -1082,9 +1368,9 @@ class _ManagementShellState extends State<ManagementShell> {
         children: [
           const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
           const SizedBox(width: 8),
-          SizedBox(width: 116, child: _assignmentRegistryValue(employeeId)),
+          SizedBox(width: 150, child: person),
           const SizedBox(width: 10),
-          SizedBox(width: 92, child: _assignmentRegistryValue(role)),
+          SizedBox(width: 92, child: _assignmentRegistryValue(_roleLabel(role))),
           const SizedBox(width: 10),
           Expanded(flex: 2, child: _assignmentRegistryValue(location, style: const TextStyle(
             color: TechColors.textMuted,
@@ -1097,6 +1383,18 @@ class _ManagementShellState extends State<ManagementShell> {
             fontSize: 10,
             fontFamily: 'monospace',
           ))),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 78,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _verificationBadge('EMAIL', emailVerified),
+                const SizedBox(height: 3),
+                _verificationBadge('PHONE', phoneVerified),
+              ],
+            ),
+          ),
           const SizedBox(width: 10),
           SizedBox(
             width: 72,
@@ -1137,7 +1435,16 @@ class _ManagementShellState extends State<ManagementShell> {
         ...assignments.map((a) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: _glassRow(child: _assignmentRegistryRow(a)),
+            child: _glassRow(
+              child: InkWell(
+                onTap: () => _showAssignmentProfile(a),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: _assignmentRegistryRow(a),
+                ),
+              ),
+            ),
           );
         }),
       ],
