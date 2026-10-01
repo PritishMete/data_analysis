@@ -16,6 +16,10 @@ def _claims(uid: str) -> dict:
         "uid": uid,
         "sub": uid,
         "email": f"{uid}@example.com",
+        "email_verified": True,
+        "email_confirmed_at": "2026-10-01T00:00:00Z",
+        "phone": "+15551234567",
+        "phone_confirmed_at": "2026-10-01T00:00:00Z",
         "firebase": {
             "sign_in_provider": "password",
             "identities": {"password": [uid]},
@@ -50,7 +54,23 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
 
 def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
-    return register_organization(_claims(owner_uid), name, "Main Branch", branch_id)
+    suffix = uuid.uuid4().hex[:10]
+    return register_organization(
+        _claims(owner_uid),
+        name,
+        "Main Branch",
+        branch_id,
+        employee_id=f"OWNER-{suffix}",
+        full_name=f"Owner {owner_uid}",
+        phone="+1555" + suffix,
+        address_line1="1 InsightFlow Way",
+        city="Test City",
+        state="Test State",
+        postal_code="00000",
+        country="Testland",
+        id_proof_type="Passport",
+        id_proof_number="TEST-" + suffix,
+    )
 
 
 def _cleanup(*organization_ids: str) -> None:
