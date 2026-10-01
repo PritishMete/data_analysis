@@ -15,7 +15,17 @@ def test_supabase_claims_are_normalized(monkeypatch):
 
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr(supabase_auth, "_jwks_client", lambda _: Client())
-    monkeypatch.setattr(supabase_auth, "_confirmed_supabase_user", lambda token, subject: True)
+    monkeypatch.setattr(
+        supabase_auth,
+        "_fetch_supabase_user",
+        lambda token, subject=None: {
+            "id": subject or "supabase-user",
+            "email": "user@example.com",
+            "email_confirmed_at": "2026-01-01T00:00:00Z",
+            "phone": "+15551234567",
+            "phone_confirmed_at": "2026-01-01T00:00:00Z",
+        },
+    )
     monkeypatch.setattr(
         jwt,
         "decode",
@@ -49,7 +59,17 @@ def test_supabase_timestamp_validation_uses_bounded_clock_skew(monkeypatch):
     captured = {}
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr(supabase_auth, "_jwks_client", lambda _: Client())
-    monkeypatch.setattr(supabase_auth, "_confirmed_supabase_user", lambda token, subject: True)
+    monkeypatch.setattr(
+        supabase_auth,
+        "_fetch_supabase_user",
+        lambda token, subject=None: {
+            "id": subject or "supabase-user",
+            "email": "user@example.com",
+            "email_confirmed_at": "2026-01-01T00:00:00Z",
+            "phone": "+15551234567",
+            "phone_confirmed_at": "2026-01-01T00:00:00Z",
+        },
+    )
 
     def decode(_token, _key, **kwargs):
         captured.update(kwargs)
