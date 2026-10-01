@@ -31,7 +31,7 @@ void main() {
       contains(r'$insightFlowBackendBaseUrl/v1/authz/organizations/register'),
     );
     expect(source, isNot(contains('/v1/authz/bootstrap-owner')));
-    expect(source, contains("'organization_name': name"));
+    expect(source, contains("'organization_name': _organizationController.text.trim()"));
     expect(source, contains('organizationServiceRequest('));
     expect(source, contains('employee_id'));
     expect(source, contains('full_name'));
