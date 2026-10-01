@@ -41,9 +41,9 @@ def test_required_profile_fields_and_optional_address2():
         postal_code="700001",
         id_proof_type="pan",
         id_proof_number="ABCDE1234F",
-        phone="+15551234567",
-        phone_country_calling_code="+1",
-        phone_national_number="5551234567",
+        phone="+919876543210",
+        phone_country_calling_code="+91",
+        phone_national_number="9876543210",
     )
     assert fields["address_line2"] == ""
 
@@ -59,9 +59,9 @@ def test_required_profile_fields_and_optional_address2():
             postal_code="700001",
             id_proof_type="pan",
             id_proof_number="ABCDE1234F",
-            phone="+15551234567",
-            phone_country_calling_code="+1",
-            phone_national_number="5551234567",
+            phone="+919876543210",
+            phone_country_calling_code="+91",
+            phone_national_number="9876543210",
         )
 
 
