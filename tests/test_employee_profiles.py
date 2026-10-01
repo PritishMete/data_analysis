@@ -346,3 +346,85 @@ def test_profile_migration_has_rls_and_no_public_data_api_grants():
     assert "ADD COLUMN IF NOT EXISTS country_code TEXT" in additive
     assert "ADD COLUMN IF NOT EXISTS state_code TEXT" in additive
     assert "idx_member_profiles_org_country_state" in additive
+
+
+def test_employee_ids_are_organization_scoped_and_monotonic_after_member_removal():
+    from firebase_authz.supabase_provider import _allocate_employee_id
+
+    suffix = uuid.uuid4().hex
+    org_a = _seed_registered(f"sequence-a-{suffix}")
+    org_b = _seed_registered(f"sequence-b-{suffix}")
+    try:
+        assert org_a["employee_id"] == "EMP001"
+        assert org_b["employee_id"] == "EMP001"
+        with SessionLocal.begin() as session:
+            removed_id = _allocate_employee_id(session, org_a["organization_id"])
+            assert removed_id == "EMP002"
+            removed_principal = _add_member(
+                session, org_a["organization_id"], f"removed-{suffix}", removed_id
+            )
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("""UPDATE organization_members SET status='removed'
+                        WHERE organization_id=:org AND principal_id=:principal"""),
+                {"org": org_a["organization_id"], "principal": removed_principal},
+            )
+        with SessionLocal.begin() as session:
+            next_id = _allocate_employee_id(session, org_a["organization_id"])
+        assert next_id == "EMP003"
+    finally:
+        _cleanup(org_a["organization_id"], org_b["organization_id"])
+
+
+def test_concurrent_employee_id_allocations_are_distinct():
+    from firebase_authz.supabase_provider import _allocate_employee_id
+
+    suffix = uuid.uuid4().hex
+    organization = _seed_registered(f"concurrent-{suffix}")
+    try:
+        def allocate():
+            with SessionLocal.begin() as session:
+                return _allocate_employee_id(session, organization["organization_id"])
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            issued = list(pool.map(lambda _: allocate(), range(2)))
+        assert sorted(issued) == ["EMP002", "EMP003"]
+    finally:
+        _cleanup(organization["organization_id"])
+
+
+def test_invitations_do_not_reserve_employee_ids_until_acceptance():
+    from firebase_authz.supabase_provider import accept_invitation, create_invitation
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"invite-owner-{suffix}"
+    organization = _seed_registered(owner_uid)
+    try:
+        invite_a = create_invitation(
+            _claims(owner_uid), organization["workspace_id"],
+            f"invite-a-{suffix}@example.com", "employee"
+        )
+        invite_b = create_invitation(
+            _claims(owner_uid), organization["workspace_id"],
+            f"invite-b-{suffix}@example.com", "employee"
+        )
+        with SessionLocal() as session:
+            last_issued = session.execute(
+                text("""SELECT last_issued FROM organization_employee_id_counters
+                        WHERE organization_id=:org"""),
+                {"org": organization["organization_id"]},
+            ).scalar_one()
+        assert last_issued == 1
+
+        accepted_a = accept_invitation(
+            _claims(f"invite-a-{suffix}"), organization["workspace_id"],
+            invite_a["invitation_id"]
+        )
+        accepted_b = accept_invitation(
+            _claims(f"invite-b-{suffix}"), organization["workspace_id"],
+            invite_b["invitation_id"]
+        )
+        assert accepted_a["employee_id"] == "EMP002"
+        assert accepted_b["employee_id"] == "EMP003"
+    finally:
+        _cleanup(organization["organization_id"])
