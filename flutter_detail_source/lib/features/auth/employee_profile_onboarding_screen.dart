@@ -596,7 +596,7 @@ class _EmployeeProfileOnboardingScreenState
             builder: (context, constraints) {
               final fields = <Widget>[
                 _field('Full Name', _fullName),
-                _readonly('Employee Number', _employeeId),
+                _readonly('Employee ID', _employeeId),
                 _readonly('Email', _email + '  •  CONFIRMED'),
                 _field('Address Line 1', _address1),
                 _field('Address Line 2', _address2, required: false),
@@ -730,7 +730,7 @@ class _EmployeeProfileOnboardingScreenState
           ),
           const SizedBox(height: 12),
           _review('FULL NAME', _fullName.text),
-          _review('EMPLOYEE NUMBER', _employeeId),
+          _review('EMPLOYEE ID', _employeeId),
           _review('EMAIL', _email + ' ✓'),
           _review('PHONE', (_phoneE164() ?? '—') + ' ✓'),
           _review('ADDRESS LINE 1', _address1.text),
