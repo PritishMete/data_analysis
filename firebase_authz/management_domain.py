@@ -145,12 +145,13 @@ def _profile_summary_sql(alias: str = "profile") -> str:
         {alias}.phone_verified_at IS NOT NULL AS phone_verified,
         ({alias}.id_proof_number IS NOT NULL AND {alias}.id_proof_number <> '') AS id_proof_supplied,
         (
-            CASE WHEN {alias}.full_name IS NOT NULL AND {alias}.full_name <> '' THEN 1 ELSE 0 END
-            + CASE WHEN {alias}.email IS NOT NULL AND {alias}.email <> '' THEN 1 ELSE 0 END
-            + CASE WHEN {alias}.phone_e164 IS NOT NULL AND {alias}.phone_e164 <> '' THEN 1 ELSE 0 END
+            CASE WHEN coalesce({alias}.full_name, '') <> '' THEN 1 ELSE 0 END
+            + CASE WHEN coalesce({alias}.email, '') <> ''
+                        AND {alias}.email_verified_at IS NOT NULL THEN 1 ELSE 0 END
+            + CASE WHEN coalesce({alias}.phone_e164, '') <> ''
+                        AND {alias}.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
             + CASE
                 WHEN coalesce({alias}.address_line1, '') <> ''
-                 AND coalesce({alias}.city, '') <> ''
                  AND coalesce({alias}.state, '') <> ''
                  AND coalesce({alias}.postal_code, '') <> ''
                  AND coalesce({alias}.country, '') <> ''
