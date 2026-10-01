@@ -77,8 +77,10 @@ def _completion_percent(profile: dict[str, Any], member: dict[str, Any]) -> int:
 
 def _mask(value: Any) -> str:
     compact = str(value or "").replace(" ", "")
+    if not compact:
+        return ""
     if len(compact) <= 4:
-        return compact
+        return "X" * len(compact)
     return ("X" * (len(compact) - 4)) + compact[-4:]
 
 
