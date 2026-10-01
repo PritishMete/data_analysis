@@ -180,7 +180,7 @@ def _profile_detail(db, organization_id: str, assignment_id: str) -> dict[str, A
                parent.role_id AS reports_to_role_id,
                profile.full_name, profile.email, profile.email_verified_at,
                profile.phone_e164, profile.phone_verified_at,
-               profile.address_line1, profile.address_line2, profile.city,
+               profile.address_line1, profile.address_line2,
                profile.state, profile.postal_code, profile.country,
                profile.id_proof_type, profile.id_proof_number,
                profile.id_proof_provided_at, profile.created_at AS profile_created_at,
@@ -488,10 +488,9 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' AND profile.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
-                            AND coalesce(profile.city, '') <> ''
                             AND coalesce(profile.state, '') <> ''
                             AND coalesce(profile.postal_code, '') <> ''
                             AND coalesce(profile.country, '') <> ''
@@ -540,10 +539,9 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' AND profile.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
-                            AND coalesce(profile.city, '') <> ''
                             AND coalesce(profile.state, '') <> ''
                             AND coalesce(profile.postal_code, '') <> ''
                             AND coalesce(profile.country, '') <> ''
