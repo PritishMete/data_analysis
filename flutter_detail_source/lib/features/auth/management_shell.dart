@@ -670,7 +670,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ? emptyText
           : name.isEmpty
               ? (employeeId.isEmpty ? 'Profile incomplete' : employeeId)
-              : name + (employeeId.isEmpty ? '' : ' · ' + employeeId);
+              : employeeId.isEmpty ? name : '$name · $employeeId';
       return _glassRow(
         child: Row(
           children: [
@@ -822,8 +822,7 @@ class _ManagementShellState extends State<ManagementShell> {
                                     ),
                                   ),
                                   Text(
-                                    (s['employee_count'] ?? 0).toString() +
-                                        ' members',
+                                    '${s['employee_count'] ?? 0} members',
                                     style: const TextStyle(
                                       color: TechColors.textMuted,
                                       fontSize: 10,
@@ -968,11 +967,7 @@ class _ManagementShellState extends State<ManagementShell> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _roleLabel(p['role_id']?.toString() ?? '—') +
-                                  '  ·  ' +
-                                  (p['location_name']?.toString() ?? 'Unassigned') +
-                                  '  ·  ' +
-                                  (p['section_name']?.toString() ?? 'Unassigned'),
+                              '${_roleLabel(p['role_id']?.toString() ?? '—')}  ·  ${p['location_name']?.toString() ?? 'Unassigned'}  ·  ${p['section_name']?.toString() ?? 'Unassigned'}',
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
@@ -1078,12 +1073,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            (l['branch_identifier'] ?? '—').toString() +
-                                '  ·  ' +
-                                (l['section_count'] ?? 0).toString() +
-                                ' sections  ·  ' +
-                                (l['employee_count'] ?? 0).toString() +
-                                ' employees',
+                            '${l['branch_identifier'] ?? '—'}  ·  ${l['section_count'] ?? 0} sections  ·  ${l['employee_count'] ?? 0} employees',
                             maxLines: 1,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
@@ -1128,9 +1118,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'MANAGER  ' +
-                                (l['manager']?['employee_id']?.toString() ??
-                                    'NO SEPARATE MANAGER'),
+                            'MANAGER  ${l['manager']?['employee_id']?.toString() ?? 'NO SEPARATE MANAGER'}',
                             maxLines: 1,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
@@ -1458,7 +1446,7 @@ class _ManagementShellState extends State<ManagementShell> {
     }
     try {
       final profile =
-          await request('/assignments/' + Uri.encodeComponent(assignmentId) + '/profile');
+          await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
       var showIdProof = false;
       if (!mounted) return;
       await showDialog<void>(
@@ -1534,7 +1522,7 @@ class _ManagementShellState extends State<ManagementShell> {
                   _profileDetailRow('ASSIGNMENT STATUS', profile['status']?.toString()),
                   _profileDetailRow(
                     'PROFILE COMPLETENESS',
-                    (profile['profile_completeness_percent']?.toString() ?? '0') + '%',
+                    '${profile['profile_completeness_percent']?.toString() ?? '0'}%',
                   ),
                   _profileDetailRow(
                     'CREATED',
@@ -1709,7 +1697,7 @@ class _ManagementShellState extends State<ManagementShell> {
               const SizedBox(height: 5),
               _assignmentRegistryMeta(
                 'PROFILE',
-                a['profile_completeness_percent'].toString() + '% complete',
+                '${a['profile_completeness_percent']}% complete',
               ),
             ],
             if (a['reports_to_employee_id'] != null) ...[
