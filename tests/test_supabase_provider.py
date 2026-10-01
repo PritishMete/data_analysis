@@ -204,7 +204,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     result = register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
     workspace = result["workspace_id"]
     try:
-        invitation = create_invitation(owner, workspace, guest["email"], "emp_guest", "employee")
+        invitation = create_invitation(owner, workspace, guest["email"], "employee")
         assert pending_invitations(guest)[0]["invitation_id"] == invitation["invitation_id"]
         accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
         assert accepted["accepted"] is True
@@ -248,7 +248,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
     workspace = result["workspace_id"]
     try:
         expired = create_invitation(
-            owner, workspace, guest["email"], "emp_expired", "employee",
+            owner, workspace, guest["email"], "employee",
             int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp() * 1000),
         )
         with SessionLocal.begin() as session:
@@ -260,7 +260,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
             accept_invitation(guest, workspace, expired["invitation_id"])
 
         revoked = create_invitation(
-            owner, workspace, guest["email"], "emp_revoked", "employee",
+            owner, workspace, guest["email"], "employee",
         )
         with SessionLocal.begin() as session:
             session.execute(
@@ -296,9 +296,9 @@ def test_supabase_invitation_rejects_cross_company_active_member():
              "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
     org_a = register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
     org_b = register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
-    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "emp_a", "employee")
-    accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
-    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "emp_b", "employee")
+    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "employee")
+    accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
+    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "employee")
     try:
         with pytest.raises(AuthzError):
             accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"])
@@ -306,7 +306,7 @@ def test_supabase_invitation_rejects_cross_company_active_member():
             rows = session.execute(
                 text("""SELECT organization_id, status FROM organization_members
                         WHERE employee_id=:employee ORDER BY organization_id"""),
-                {"employee": "emp_a"},
+                {"employee": accepted_a["employee_id"]},
             ).all()
         assert rows == [(org_a["organization_id"], "active")]
     finally:
@@ -333,9 +333,9 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
     result = register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
     workspace = result["workspace_id"]
     try:
-        invitation = create_invitation(owner, workspace, member["email"], "emp_member", "team_lead")
-        accept_invitation(member, workspace, invitation["invitation_id"])
-        assert set_approved_employee(owner, workspace, member_uid, "emp_member") is True
+        invitation = create_invitation(owner, workspace, member["email"], "team_lead")
+        accepted_member = accept_invitation(member, workspace, invitation["invitation_id"])
+        assert set_approved_employee(owner, workspace, member_uid, accepted_member["employee_id"]) is True
         delegation = set_delegation(owner, workspace, member_uid, [member_uid], [], ["dataset.share"], None)
         assert delegation["delegation_id"].startswith("dlg_")
         snapshot = management_snapshot(owner, workspace)
@@ -376,7 +376,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     claims = {"uid": uid, "sub": uid, "email": uid + "@example.com",
               "firebase": {"sign_in_provider": "password", "identities": {"password": [uid]}}}
     result = register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
-    invitation = create_invitation(owner, result["workspace_id"], claims["email"], "emp_cleanup", "employee")
+    invitation = create_invitation(owner, result["workspace_id"], claims["email"], "employee")
     accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
     try:
         assert cleanup_account(claims, uid) == {"revoked_workspaces": [result["workspace_id"]]}
