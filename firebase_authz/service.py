@@ -1042,16 +1042,41 @@ def _invitation_by_id(workspace: dict[str, Any], invitation_id: str):
         raise PermissionDenied("Invitation is not accessible.")
     return invitation
 
+def _next_firebase_employee_id(workspace_id: str) -> str:
+    """Allocate a workspace-scoped EMP### with an RTDB atomic transaction."""
+    initialize_firebase()
+    workspace = _workspace(workspace_id)
+    highest = 0
+    for member in (workspace.get("members") or {}).values():
+        if not isinstance(member, dict):
+            continue
+        value = str(member.get("employee_id") or "").strip().upper()
+        if value.startswith("EMP") and value[3:].isdigit():
+            highest = max(highest, int(value[3:]))
+
+    counter_ref = db.reference(
+        f"workspaces/{workspace_id}/employee_id_counter"
+    )
+
+    def increment(current):
+        try:
+            last_issued = int(current)
+        except (TypeError, ValueError):
+            last_issued = highest
+        return max(last_issued, highest) + 1
+
+    issued = counter_ref.transaction(increment)
+    return f"EMP{int(issued):03d}"
+
+
 def create_invitation(
     workspace_id: str,
     email: str,
-    employee_id: str,
     role_id: str,
     actor_token: str,
     expires_at: int | None = None,
 ):
     validate_id(workspace_id, "workspace ID")
-    validate_id(employee_id, "employee ID")
     validate_id(role_id, "role ID")
     email = email.strip().lower()
     if "@" not in email or len(email) > 320:
@@ -1072,7 +1097,6 @@ def create_invitation(
         "invitation_id": invitation_id,
         "organization_id": workspace_id,
         "email": email,
-        "employee_id": employee_id,
         "role_id": normalized_role,
         "status": "invited",
         "created_by": actor,
@@ -1109,7 +1133,7 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
     if invitation.get("email") != email:
         raise PermissionDenied("Invitation identity does not match the authenticated email.")
     member_ref = db.reference(f"workspaces/{workspace_id}/members/{actor}")
-    employee_id = invitation.get("employee_id") or f"emp_{actor}"
+    employee_id = _next_firebase_employee_id(workspace_id)
     member_ref.set({
         "employee_id": employee_id,
         "principal_id": employee_id,
@@ -1137,7 +1161,7 @@ def accept_invitation(workspace_id: str, invitation_id: str, actor_token: str):
         target_uid=actor,
         metadata={"role_id": invitation.get("role_id")},
     )
-    return {"accepted": True, "organization_id": workspace_id}
+    return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id}
 
 def management_snapshot(uid: str, workspace_id: str, claims: dict[str, Any]) -> dict[str, Any]:
     require_email_verified(claims)
@@ -1491,6 +1515,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
         ).strip()
         if not principal_id:
             principal_id = f"emp_{uuid.uuid4().hex}"
+        employee_id = "EMP001"
 
         now = int(time.time() * 1000)
         roles = {
@@ -1517,7 +1542,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
             "roles": roles,
             "members": {
                 owner_uid: {
-                    "employee_id": principal_id,
+                    "employee_id": employee_id,
                     "principal_id": principal_id,
                     "status": "active",
                     "roles": {"owner": True},
@@ -1538,7 +1563,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
         updated_user.update({
             "status": "active",
             "email": owner_email or str(existing_user.get("email") or "").strip().lower(),
-            "employee_id": principal_id,
+            "employee_id": employee_id,
             "principal_id": principal_id,
             "linked_member_uid": owner_uid,
             "identity_provider": provider,
@@ -1570,6 +1595,7 @@ def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticat
         "owner_uid": owner_uid,
         "organization_id": workspace_id,
         "workspace_id": workspace_id,
+        "employee_id": employee_id,
         "membership_status": "active",
         "role_ids": ["owner"],
     }
