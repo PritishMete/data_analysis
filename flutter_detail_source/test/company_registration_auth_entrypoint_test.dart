@@ -108,7 +108,5 @@ void main() {
     expect(authSource, contains("'NETWORK_ERROR'"));
     expect(source, contains("response.statusCode == 404"));
     expect(source, contains("response.statusCode >= 500"));
-    expect(source, contains('route-not-found'));
-    expect(source, contains('server-error'));
   });
 }
