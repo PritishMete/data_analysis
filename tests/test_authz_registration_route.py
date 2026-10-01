@@ -37,7 +37,6 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
                 organization_name="Second Organization",
                 branch_name="Second Branch",
                 branch_identifier="SECOND-ORG",
-                employee_id="EMP002",
                 full_name="Duplicate Route User",
                 phone="+919876543210",
                 phone_country_calling_code="+91",
@@ -114,7 +113,6 @@ def test_founder_registration_rejects_unverified_phone_before_provider_registrat
                 organization_name="Phone Company",
                 branch_name="Main Branch",
                 branch_identifier="PHONE-ORG",
-                employee_id="EMP001",
                 full_name="Phone User",
                 phone="+919876543210",
                 phone_country_calling_code="+91",
@@ -142,10 +140,29 @@ def test_founder_registration_rejects_client_phone_verified_field():
             organization_name="Company",
             branch_name="Branch",
             branch_identifier="BRANCH-1",
-            employee_id="EMP001",
             full_name="User",
             phone="+919876543210",
             phone_verified=True,
+        )
+
+
+def test_founder_registration_rejects_client_employee_id():
+    with pytest.raises(ValueError):
+        routes.FounderOrganizationRegistration(
+            organization_name="Company",
+            branch_name="Branch",
+            branch_identifier="BRANCH-1",
+            employee_id="CEO999",
+        )
+
+
+def test_invitation_request_rejects_client_employee_id():
+    with pytest.raises(ValueError):
+        routes.InvitationRequest(
+            workspace_id="org-test",
+            email="invitee@example.com",
+            employee_id="CEO999",
+            role_id="employee",
         )
 
 
