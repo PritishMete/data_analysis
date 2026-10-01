@@ -822,6 +822,29 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                     ], "role_ids": [], "permissions": []}
 
         selected = rows[0]
+        profile_row = db.execute(text("""
+            SELECT full_name, email, email_verified_at, phone_e164, phone_verified_at,
+                   address_line1, state, country, postal_code, id_proof_type, id_proof_number
+            FROM organization_member_profiles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {
+            "org": selected["organization_id"],
+            "principal": selected["principal_id"],
+        }).mappings().first()
+        profile_complete = bool(profile_row) and all([
+            str(profile_row["full_name"] or "").strip(),
+            str(selected["employee_id"] or "").strip(),
+            str(profile_row["email"] or "").strip(),
+            profile_row["email_verified_at"] is not None,
+            str(profile_row["phone_e164"] or "").strip(),
+            profile_row["phone_verified_at"] is not None,
+            str(profile_row["address_line1"] or "").strip(),
+            str(profile_row["state"] or "").strip(),
+            str(profile_row["country"] or "").strip(),
+            str(profile_row["postal_code"] or "").strip(),
+            str(profile_row["id_proof_type"] or "").strip(),
+            str(profile_row["id_proof_number"] or "").strip(),
+        ])
         roles = db.execute(text("""SELECT mr.role_id FROM member_roles mr
             WHERE mr.organization_id=:organization AND mr.principal_id=:principal"""),
                            {"organization": selected["organization_id"], "principal": selected["principal_id"]}).scalars().all()
@@ -843,6 +866,7 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             "organization_id": selected["organization_id"], "workspace_id": selected["workspace_id"],
             "employee_id": selected["employee_id"], "role_ids": list(roles),
             "permissions": list(permissions), "organization_name": selected["name"],
+            "profile_complete": profile_complete,
             "workspaces": workspaces}
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
