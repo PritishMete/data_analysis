@@ -114,8 +114,9 @@ def verify_profile_security(engine) -> None:
     required = {
         "organization_id", "principal_id", "full_name", "email",
         "email_verified_at", "phone_e164", "phone_verified_at",
-        "address_line1", "address_line2", "city", "state", "postal_code",
-        "country", "id_proof_type", "id_proof_number", "id_proof_provided_at",
+        "address_line1", "address_line2", "city", "state", "state_code",
+        "postal_code", "country", "country_code", "id_proof_type",
+        "id_proof_number", "id_proof_provided_at",
         "created_at", "updated_at",
     }
     actual = {
