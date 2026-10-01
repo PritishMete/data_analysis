@@ -165,6 +165,24 @@ class _EmployeeProfileOnboardingScreenState
         : ProfileGeoData.subdivisionOptions(_country!.value);
   }
 
+  void _fail(String message) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = true;
+      _message = message;
+    });
+  }
+
+  String? _phoneE164() {
+    final dial = _phoneCountry?.subtitle.replaceAll(RegExp(r'\s+'), '') ?? '';
+    final national = _phone.text.replaceAll(RegExp(r'\D'), '');
+    if (dial.isEmpty || national.length < 4 || national.length > 15) {
+      return null;
+    }
+    return dial + national;
+  }
+
   Future<void> _pickCountry() async {
     final choice = await showProfileOptionPicker(
       context,
@@ -223,6 +241,7 @@ class _EmployeeProfileOnboardingScreenState
       _fullName.text.trim().isNotEmpty &&
       _employeeId.isNotEmpty &&
       _email.isNotEmpty &&
+       _phoneE164() != null &&
       _address1.text.trim().isNotEmpty &&
       _postal.text.trim().isNotEmpty &&
       _country != null &&
