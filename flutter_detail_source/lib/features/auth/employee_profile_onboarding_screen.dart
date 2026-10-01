@@ -55,6 +55,7 @@ class _EmployeeProfileOnboardingScreenState
   int _cooldown = 0;
   Timer? _timer;
   String _employeeId = '';
+  String? _phoneIdentity;
   String _email = '';
   String? _message;
   bool _error = false;
@@ -62,12 +63,14 @@ class _EmployeeProfileOnboardingScreenState
   @override
   void initState() {
     super.initState();
+    _phone.addListener(_onPhoneChanged);
     _load();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _phone.removeListener(_onPhoneChanged);
     for (final controller in [
       _fullName,
       _phone,
@@ -145,6 +148,7 @@ class _EmployeeProfileOnboardingScreenState
         }
       }
       _phoneVerified = data['phone_verified'] == true;
+      if (_phoneVerified) _phoneIdentity = verifiedPhone;
 
       if (_email.isEmpty) {
         _email = InsightFlowSupabaseAuthService.currentSupabaseUser?.email ?? '';
@@ -175,6 +179,20 @@ class _EmployeeProfileOnboardingScreenState
     _states = _country == null
         ? const []
         : ProfileGeoData.subdivisionOptions(_country!.value);
+  }
+
+  void _onPhoneChanged() {
+    if (!_phoneVerified && !_otpSent && _phoneIdentity == null) return;
+    _timer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _phoneVerified = false;
+      _otpSent = false;
+      _phoneIdentity = null;
+      _cooldown = 0;
+      _otp.clear();
+      _message = null;
+    });
   }
 
   void _fail(String message) {
@@ -237,6 +255,7 @@ class _EmployeeProfileOnboardingScreenState
           setState(() {
             _busy = false;
             _phoneVerified = true;
+            _phoneIdentity = phone;
             _message = 'PHONE VERIFIED ✓';
           });
         }
@@ -244,6 +263,7 @@ class _EmployeeProfileOnboardingScreenState
       }
 
       await InsightFlowSupabaseAuthService.beginPhoneVerification(phone);
+      _phoneIdentity = phone;
       _otp.clear();
       _otpSent = true;
       _phoneVerified = false;
@@ -282,8 +302,8 @@ class _EmployeeProfileOnboardingScreenState
   }
 
   Future<void> _resendOtp() async {
-    final phone = _phoneE164();
-    if (phone == null || _busy || _cooldown > 0) return;
+    final phone = _phoneIdentity;
+    if (phone == null || phone != _phoneE164() || _busy || _cooldown > 0) return;
 
     setState(() {
       _busy = true;
@@ -308,9 +328,9 @@ class _EmployeeProfileOnboardingScreenState
   }
 
   Future<void> _verifyOtp() async {
-    final phone = _phoneE164();
+    final phone = _phoneIdentity;
     final token = _otp.text.trim();
-    if (phone == null) {
+    if (phone == null || phone != _phoneE164()) {
       _fail('Enter a valid phone number first.');
       return;
     }
@@ -355,6 +375,7 @@ class _EmployeeProfileOnboardingScreenState
           _busy = false;
           _phoneVerified = true;
           _otpSent = false;
+          _phoneIdentity = phone;
           _cooldown = 0;
           _message = 'PHONE VERIFIED ✓';
         });
@@ -411,11 +432,15 @@ class _EmployeeProfileOnboardingScreenState
           .toList(),
       selectedValue: _phoneCountry?.value,
     );
-    if (choice != null) {
+    if (choice != null && choice.value != _phoneCountry?.value) {
+      _timer?.cancel();
       setState(() {
         _phoneCountry = choice;
         _phoneVerified = false;
         _otpSent = false;
+        _phoneIdentity = null;
+        _cooldown = 0;
+        _otp.clear();
         _message = null;
       });
     }
