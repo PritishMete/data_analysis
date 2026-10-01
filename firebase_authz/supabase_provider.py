@@ -57,13 +57,30 @@ def _auth_timestamp(value: Any) -> datetime | None:
         return None
 
 
+def _allocate_employee_id(db, organization_id: str) -> str:
+    """Atomically issue the next organization-scoped Employee ID."""
+    issued = db.execute(
+        text(
+            """INSERT INTO organization_employee_id_counters
+                   (organization_id, last_issued)
+               VALUES (:organization, 1)
+               ON CONFLICT (organization_id) DO UPDATE
+                   SET last_issued =
+                       organization_employee_id_counters.last_issued + 1,
+                       updated_at = now()
+               RETURNING last_issued"""
+        ),
+        {"organization": organization_id},
+    ).scalar_one()
+    return f"EMP{int(issued):03d}"
+
+
 def register_organization(
     claims: dict[str, Any],
     organization_name: str,
     branch_name: str,
     branch_identifier: str,
     *,
-    employee_id: str,
     full_name: str,
     phone: str,
     address_line1: str,
@@ -91,7 +108,6 @@ def register_organization(
     if not branch_id:
         raise ValueError("Branch identifier is required.")
 
-    employee = _clean_profile_text(employee_id, "Employee number", 128)
     profile_name = _clean_profile_text(full_name, "Full name", 160)
     profile_fields = validate_profile_fields(
         full_name=profile_name,
@@ -204,20 +220,6 @@ def register_organization(
             )
         registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
 
-        duplicate_employee = db.execute(
-            text(
-                """SELECT 1
-                FROM organization_members
-                WHERE workspace_id=:workspace AND lower(employee_id)=lower(:employee)
-                LIMIT 1"""
-            ),
-            {"workspace": workspace_id, "employee": employee},
-        ).scalar_one_or_none()
-        if duplicate_employee:
-            raise OrganizationRegistrationConflict(
-                "Employee number is already in use in this organization."
-            )
-
         db.execute(
             text(
                 """INSERT INTO organizations(organization_id, name, created_by_principal_id)
@@ -258,6 +260,7 @@ def register_organization(
             },
         )
         registration_diagnostics.stage("LOCATION_CREATED")
+        employee = _allocate_employee_id(db, organization_id)
 
         db.execute(
             text(
@@ -435,7 +438,7 @@ def _permission_for_principal(db, organization_id: str, principal_id: str, permi
 
 
 def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
-                      employee_id: str, role_id: str, expires_at: int | None = None) -> dict[str, Any]:
+                      role_id: str, expires_at: int | None = None) -> dict[str, Any]:
     email = str(email or "").strip().lower()
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
@@ -451,11 +454,11 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
         db.execute(text("""INSERT INTO invitations
-            (invitation_id, organization_id, email, employee_id, role_id, status,
+            (invitation_id, organization_id, email, role_id, status,
              expires_at, created_by_principal_id)
-            VALUES (:id,:org,:email,:employee,:role,'invited',:expires,:creator)"""),
+            VALUES (:id,:org,:email,:role,'invited',:expires,:creator)"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
-                    "employee": employee_id, "role": role_id, "expires": expiry,
+                    "role": role_id, "expires": expiry,
                     "creator": actor["principal_id"]})
     return {"invitation_id": invitation_id, "status": "invited"}
 
@@ -514,18 +517,30 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: 
                 VALUES (:provider,:subject,:uid,:principal)"""),
                        {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
 
+        existing_member = db.execute(
+            text("""SELECT employee_id FROM organization_members
+                    WHERE organization_id=:org AND principal_id=:principal
+                    FOR UPDATE"""),
+            {"org": workspace_id, "principal": principal_id},
+        ).mappings().first()
+        employee_id = (
+            str(existing_member["employee_id"])
+            if existing_member and existing_member["employee_id"]
+            else _allocate_employee_id(db, workspace_id)
+        )
         db.execute(text("""INSERT INTO organization_members(organization_id, workspace_id, principal_id, employee_id, status)
             VALUES (:org,:workspace,:principal,:employee,'active')
-            ON CONFLICT (organization_id, principal_id) DO UPDATE SET employee_id=EXCLUDED.employee_id,status='active'"""),
+            ON CONFLICT (organization_id, principal_id) DO UPDATE
+              SET employee_id=EXCLUDED.employee_id,status='active'"""),
                    {"org": workspace_id, "workspace": workspace_id, "principal": principal_id,
-                    "employee": invitation["employee_id"]})
+                    "employee": employee_id})
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
             VALUES (:org,:principal,:role) ON CONFLICT DO NOTHING"""),
                    {"org": workspace_id, "principal": principal_id, "role": invitation["role_id"]})
         db.execute(text("""UPDATE invitations SET status='accepted', accepted_by_principal_id=:principal,
             accepted_at=now() WHERE invitation_id=:id"""),
                    {"id": invitation_id, "principal": principal_id})
-    return {"accepted": True, "organization_id": workspace_id}
+    return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id}
 
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
