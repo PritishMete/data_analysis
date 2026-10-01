@@ -60,12 +60,14 @@ class _CompanyRegistrationScreenState
   @override
   void initState() {
     super.initState();
+    _phone.addListener(_onPhoneChanged);
     _load();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _phone.removeListener(_onPhoneChanged);
     for (final controller in [
       _organization,
       _branch,
@@ -120,6 +122,20 @@ class _CompanyRegistrationScreenState
       return null;
     }
     return dial + national;
+  }
+
+  void _onPhoneChanged() {
+    if (!_phoneVerified && !_otpSent && _phoneIdentity == null) return;
+    _timer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _phoneVerified = false;
+      _otpSent = false;
+      _phoneIdentity = null;
+      _cooldown = 0;
+      _otp.clear();
+      _message = null;
+    });
   }
 
   void _fail(String message) {
@@ -343,12 +359,16 @@ class _CompanyRegistrationScreenState
       options: _countries.where((item) => item.subtitle.isNotEmpty).toList(),
       selectedValue: _phoneCountry?.value,
     );
-    if (choice != null) {
+    if (choice != null && choice.value != _phoneCountry?.value) {
+      _timer?.cancel();
       setState(() {
         _phoneCountry = choice;
         _phoneVerified = false;
         _otpSent = false;
         _phoneIdentity = null;
+        _cooldown = 0;
+        _otp.clear();
+        _message = null;
       });
     }
   }
