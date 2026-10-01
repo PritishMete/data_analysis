@@ -831,13 +831,19 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             "org": selected["organization_id"],
             "principal": selected["principal_id"],
         }).mappings().first()
+        authoritative_email_verified = bool(claims.get("email_verified"))
+        authoritative_phone = str(claims.get("phone") or "").strip()
+        authoritative_phone_verified = bool(claims.get("phone_confirmed_at"))
         profile_complete = bool(profile_row) and all([
             str(profile_row["full_name"] or "").strip(),
             str(selected["employee_id"] or "").strip(),
             str(profile_row["email"] or "").strip(),
             profile_row["email_verified_at"] is not None,
+            authoritative_email_verified,
             str(profile_row["phone_e164"] or "").strip(),
             profile_row["phone_verified_at"] is not None,
+            authoritative_phone_verified,
+            profile_row["phone_e164"] == authoritative_phone,
             str(profile_row["address_line1"] or "").strip(),
             str(profile_row["state"] or "").strip(),
             str(profile_row["country"] or "").strip(),
