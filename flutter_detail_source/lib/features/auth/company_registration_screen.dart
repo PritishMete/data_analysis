@@ -728,26 +728,50 @@ class _CompanyRegistrationScreenState
         },
       );
 
+  Widget _phoneInputRow(double width) {
+    final countryCode = ProfileSelectField(
+      label: 'COUNTRY CODE *',
+      value: _phoneCountry == null
+          ? null
+          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+      placeholder: 'Select calling code',
+      onTap: _busy ? null : _pickPhoneCountry,
+    );
+    final nationalNumber = _field(
+      'PHONE NUMBER',
+      _phone,
+      placeholder: 'Enter phone number',
+      type: TextInputType.phone,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.digitsOnly,
+      ],
+    );
+    if (width < 520) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          countryCode,
+          const SizedBox(height: 10),
+          nationalNumber,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 2, child: countryCode),
+        const SizedBox(width: 12),
+        Expanded(flex: 3, child: nationalNumber),
+      ],
+    );
+  }
+
   Widget _phoneStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ProfileSelectField(
-            label: 'Phone Country Code *',
-            value: _phoneCountry == null
-                ? null
-                : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
-            placeholder: 'Select country calling code',
-            onTap: _busy ? null : _pickPhoneCountry,
-          ),
-          const SizedBox(height: 10),
-          _field(
-            'Phone Number',
-            _phone,
-            placeholder: 'National / local number only',
-            type: TextInputType.phone,
-            inputFormatters: <TextInputFormatter>[
-              FilteringTextInputFormatter.digitsOnly,
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) =>
+                _phoneInputRow(constraints.maxWidth),
           ),
           const SizedBox(height: 6),
           const Text(
