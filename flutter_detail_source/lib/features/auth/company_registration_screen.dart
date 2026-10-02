@@ -351,6 +351,114 @@ class _CompanyRegistrationScreenState
     }
   }
 
+  Widget _profileStep() => LayoutBuilder(
+        builder: (context, constraints) {
+          final rows = <List<Widget>>[
+            [_field('Full Name', _fullName), _employeeIdInfo()],
+            [_emailField(), _phoneInputRow()],
+            [
+              _field('Address Line 1', _address1),
+              _field('Address Line 2', _address2, required: false),
+            ],
+            [
+              ProfileSelectField(
+                label: 'Country *',
+                value: _country?.label,
+                placeholder: _countries.isEmpty ? 'Loading countries…' : 'Select country',
+                onTap: _busy ? null : _pickCountry,
+              ),
+              _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
+            ],
+            [
+              ProfileSelectField(
+                label: 'State / Province / Region *',
+                value: _state?.label,
+                placeholder: _country == null
+                    ? 'Select country first'
+                    : _states.isEmpty
+                        ? 'Not applicable for this country'
+                        : 'Select state / province / region',
+                onTap: _busy || (_country != null && _states.isEmpty)
+                    ? null
+                    : _pickState,
+              ),
+              ProfileSelectField(
+                label: 'ID Proof Type *',
+                value: _proofType?.label,
+                placeholder: 'Select government document',
+                onTap: _busy ? null : _pickProof,
+              ),
+            ],
+            [_field('ID Proof Number', _proofNumber, placeholder: 'Government ID number'), const SizedBox.shrink()],
+          ];
+
+          if (constraints.maxWidth < 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final row in rows) ...[
+                  ...row.where((field) => field is! SizedBox || field != const SizedBox.shrink()),
+                  const SizedBox(height: 10),
+                ],
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final row in rows) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: row[0]),
+                    const SizedBox(width: 12),
+                    Expanded(child: row[1]),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          );
+        },
+      );
+
+  Widget _phoneInputRow() {
+    final countryCode = ProfileSelectField(
+      label: 'COUNTRY CODE *',
+      value: _phoneCountry == null
+          ? null
+          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+      placeholder: 'Select calling code',
+      onTap: _busy ? null : _pickPhoneCountry,
+    );
+    final nationalNumber = ProfileTextField(
+      controller: _phone,
+      label: 'Phone Number',
+      placeholder: 'Phone number',
+      enabled: !_busy,
+      keyboardType: TextInputType.phone,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.digitsOnly,
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthGlassFieldLabel('PHONE *'),
+        const SizedBox(height: 6),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 1, child: countryCode),
+            const SizedBox(width: 10),
+            Expanded(flex: 2, child: nationalNumber),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _field(
     String label,
     TextEditingController controller, {
