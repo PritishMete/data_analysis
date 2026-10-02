@@ -54,11 +54,12 @@ void main() {
       expect(screen, contains('Expanded(flex: 2, child: nationalNumber)'));
       expect(screen, contains("_field('Full Name'"));
       expect(screen, contains("_field('Address Line 1'"));
-      expect(screen, contains("_field('Address Line 2'"));
       expect(screen, contains("label: 'Country *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
       expect(screen, contains("_field(\n                'ID Proof Number'"));
+      expect(screen, isNot(contains("_field('Address Line 2'")));
+      expect(screen, isNot(contains("label: 'PHONE *'")));
       expect(screen, contains('Row('));
       expect(screen, contains('if (constraints.maxWidth < 760)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
@@ -72,7 +73,6 @@ void main() {
           : screen.indexOf("_readonly('Email'");
       final phoneIndex = screen.indexOf('_phoneInputRow()');
       final address1Index = screen.indexOf("_field('Address Line 1'");
-      final address2Index = screen.indexOf("_field('Address Line 2'");
       final countryIndex = screen.indexOf("label: 'Country *'");
       final postalIndex = screen.indexOf("_field('PIN / Postal Code'");
       final idTypeIndex = screen.indexOf("label: 'ID Proof Type *'");
@@ -82,8 +82,7 @@ void main() {
       expect(employeeIndex, lessThan(emailIndex));
       expect(emailIndex, lessThan(phoneIndex));
       expect(phoneIndex, lessThan(address1Index));
-      expect(address1Index, lessThan(address2Index));
-      expect(address2Index, lessThan(countryIndex));
+      expect(address1Index, lessThan(countryIndex));
       expect(countryIndex, lessThan(postalIndex));
       expect(postalIndex, lessThan(idTypeIndex));
       expect(idTypeIndex, lessThan(idNumberIndex));
@@ -158,11 +157,11 @@ void main() {
     }
   });
 
-  test('profile fields enforce optional address line 2 and ID-provided semantics', () {
+  test('profile UI omits address line 2 while preserving ID-provided semantics', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
-    expect(company, contains("'Address Line 2'"));
-    expect(company, contains('required: false'));
+    expect(company, isNot(contains("'Address Line 2'")));
+    expect(employee, isNot(contains("'Address Line 2'")));
     expect(employee, contains('ID PROOF • PROVIDED'));
     expect(company, isNot(contains('ID PROOF VERIFIED')));
     expect(employee, isNot(contains('ID PROOF VERIFIED')));
