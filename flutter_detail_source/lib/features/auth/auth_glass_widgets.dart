@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -28,15 +26,10 @@ class AuthGlassScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: kAppBackgroundColor,
       body: LiquidGlassScope(
         child: Stack(
           children: [
-            const Positioned.fill(
-              child: GlassBackgroundSource(
-                child: AnimatedLiquidAuthBackground(),
-              ),
-            ),
             Positioned.fill(
               child: SafeArea(
                 child: LayoutBuilder(
@@ -125,10 +118,7 @@ class AuthGlassScaffold extends StatelessWidget {
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: math.max(
-                            0.0,
-                            constraints.maxHeight - vertical * 2,
-                          ).toDouble(),
+                          minHeight: constraints.maxHeight - vertical * 2,
                         ),
                         child: Center(child: card),
                       ),
@@ -248,119 +238,3 @@ class AuthGlassMessage extends StatelessWidget {
 }
 
 /// Animated dark liquid background from the LiquidGlassUi auth experience.
-class AnimatedLiquidAuthBackground extends StatefulWidget {
-  const AnimatedLiquidAuthBackground({super.key});
-
-  @override
-  State<AnimatedLiquidAuthBackground> createState() =>
-      _AnimatedLiquidAuthBackgroundState();
-}
-
-class _AnimatedLiquidAuthBackgroundState
-    extends State<AnimatedLiquidAuthBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 18),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion =
-        GlassAccessibilityData.of(context).reduceMotion;
-
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF060607),
-            Color(0xFF0B0B0E),
-            Color(0xFF000000),
-          ],
-        ),
-      ),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          final t = reduceMotion
-              ? 0.0
-              : _controller.value * 2 * math.pi;
-          return CustomPaint(
-            painter: _AuthLiquidBlobPainter(t: t),
-            size: Size.infinite,
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _AuthLiquidBlobPainter extends CustomPainter {
-  const _AuthLiquidBlobPainter({required this.t});
-
-  final double t;
-
-  static Offset _blob0(Size s, double t) => Offset(
-        s.width * (0.25 + 0.08 * math.sin(t)),
-        s.height * (0.25 + 0.06 * math.cos(t)),
-      );
-
-  static Offset _blob1(Size s, double t) => Offset(
-        s.width * (0.80 + 0.06 * math.cos(t * 1.3)),
-        s.height * (0.70 + 0.08 * math.sin(t * 1.1)),
-      );
-
-  static Offset _blob2(Size s, double t) => Offset(
-        s.width * (0.50 + 0.10 * math.sin(t * 0.7 + 2.0)),
-        s.height * (0.85 + 0.05 * math.cos(t * 0.9)),
-      );
-
-  static const _blobs = <(
-    Color,
-    double,
-    Offset Function(Size, double)
-  )>[
-    (Color(0xFF3DDC97), 0.50, _blob0),
-    (Color(0xFF2E6FF2), 0.42, _blob1),
-    (Color(0xFF6E6E76), 0.38, _blob2),
-  ];
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final (color, radiusFactor, positionFn) in _blobs) {
-      final center = positionFn(size, t);
-      final radius = size.shortestSide * radiusFactor;
-
-      final paint = Paint()
-        ..shader = RadialGradient(
-          colors: [
-            color.withValues(alpha: 0.20),
-            color.withValues(alpha: 0.00),
-          ],
-        ).createShader(
-          Rect.fromCircle(center: center, radius: radius),
-        )
-        ..blendMode = BlendMode.plus;
-
-      canvas.drawCircle(center, radius, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _AuthLiquidBlobPainter oldDelegate) =>
-      oldDelegate.t != t;
-}
