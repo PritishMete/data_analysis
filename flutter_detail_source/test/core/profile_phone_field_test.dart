@@ -86,6 +86,7 @@ void main() {
 
     final row = tester.widget<Row>(find.byKey(const Key('phone-controls-row')));
     expect(row.children, hasLength(3));
+    expect(find.text('PHONE *'), findsNothing);
     expect(row.children.whereType<Expanded>(), hasLength(2));
     expect(find.byType(ProfileSelectField), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
