@@ -42,7 +42,9 @@ void main() {
 
   test('profile form keeps the requested two-column grid and phone ratio', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
-    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    final employee =
+        source('lib/features/auth/employee_profile_onboarding_screen.dart');
+
     for (final screen in [company, employee]) {
       expect(screen, contains('Widget _phoneInputRow()'));
       expect(screen, contains("label: 'COUNTRY CODE *'"));
@@ -54,14 +56,13 @@ void main() {
       expect(screen, contains("_field('Address Line 1'"));
       expect(screen, contains("_field('Address Line 2'"));
       expect(screen, contains("label: 'Country *'"));
-      expect(screen, contains('showOptionSubtitle: false'));
-      expect(screen, contains("label: 'State / Province / Region *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
       expect(screen, contains("_field(\n                'ID Proof Number'"));
       expect(screen, contains('Row('));
       expect(screen, contains('if (constraints.maxWidth < 760)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
+
       final nameIndex = screen.indexOf("_field('Full Name'");
       final employeeIndex = screen.indexOf('_employeeIdInfo()') >= 0
           ? screen.indexOf('_employeeIdInfo()')
@@ -76,6 +77,7 @@ void main() {
       final postalIndex = screen.indexOf("_field('PIN / Postal Code'");
       final idTypeIndex = screen.indexOf("label: 'ID Proof Type *'");
       final idNumberIndex = screen.indexOf("'ID Proof Number'");
+
       expect(nameIndex, lessThan(employeeIndex));
       expect(employeeIndex, lessThan(emailIndex));
       expect(emailIndex, lessThan(phoneIndex));
@@ -86,9 +88,45 @@ void main() {
       expect(postalIndex, lessThan(idTypeIndex));
       expect(idTypeIndex, lessThan(idNumberIndex));
     }
+
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
     expect(company, isNot(contains("'employee_id': _employeeId")));
+  });
+
+  test('address country is names-only while phone country code is separate', () {
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee =
+        source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    for (final screen in [company, employee]) {
+      expect(screen, contains("label: 'Country *'"));
+      expect(screen, contains("showOptionSubtitle: false"));
+      expect(screen, contains('Future<void> _pickPhoneCountry()'));
+      expect(screen, contains(
+        'options: _countries.where((item) => item.subtitle.isNotEmpty).toList()',
+      ));
+      expect(screen, contains('_country'));
+      expect(screen, contains('_phoneCountry'));
+      expect(screen, isNot(contains('_country = _phoneCountry')));
+      expect(screen, isNot(contains('_phoneCountry = _country')));
+    }
+  });
+
+  test('phone field stays static and shared field heights remain uniform', () {
+    final widgets = source('lib/core/profile/profile_form_widgets.dart');
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee =
+        source('lib/features/auth/employee_profile_onboarding_screen.dart');
+
+    expect(widgets, isNot(contains('ProfileFloatingLabelField')));
+    for (final screen in [company, employee]) {
+      expect(screen, contains('height: 46'));
+      expect(screen, contains("placeholder: 'Phone number'"));
+      expect(screen, isNot(contains('AnimatedPositioned')));
+      expect(screen, isNot(contains('AnimatedDefaultTextStyle')));
+      expect(screen, contains('Expanded(flex: 1, child: countryCode)'));
+      expect(screen, contains('Expanded(flex: 2, child: nationalNumber)'));
+    }
   });
 
 
