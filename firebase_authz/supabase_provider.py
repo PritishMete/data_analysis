@@ -147,7 +147,8 @@ def register_organization(
     if not authoritative_email or "@" not in authoritative_email:
         raise AuthzError("A verified authenticated email is required to create an organization.")
 
-    # Phone is validated from the submitted profile fields. No Supabase phone-auth claim is required.
+    # Phone is profile data only. Validate/store it in E.164 format, but do not
+    # require Supabase phone authentication or phone verification during onboarding.
     confirmed_phone_at = None
 
     firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
@@ -303,9 +304,6 @@ def register_organization(
         email_verified_at = _auth_timestamp(claims.get("email_confirmed_at"))
         if email_verified_at is None:
             email_verified_at = datetime.now(timezone.utc)
-        if confirmed_phone_at is None:
-            raise AuthzError("Verified phone state is required.")
-
         db.execute(
             text(
                 """INSERT INTO organization_member_profiles
