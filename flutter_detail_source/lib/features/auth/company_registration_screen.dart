@@ -365,7 +365,7 @@ class _CompanyRegistrationScreenState
       children: [
         AuthGlassFieldLabel(label + (required ? ' *' : '')),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: GlassTextField(
             controller: controller,
             placeholder: placeholder ?? label,
@@ -394,7 +394,7 @@ class _CompanyRegistrationScreenState
         children: [
           const AuthGlassFieldLabel('EMAIL *'),
           SizedBox(
-            height: 46,
+            height: kProfileFieldHeight,
             child: GlassContainer(
               useOwnLayer: true,
               quality: GlassQuality.minimal,
@@ -435,7 +435,7 @@ class _CompanyRegistrationScreenState
         children: [
           const AuthGlassFieldLabel('EMPLOYEE ID'),
           SizedBox(
-            height: 46,
+            height: kProfileFieldHeight,
             child: GlassContainer(
               useOwnLayer: true,
               quality: GlassQuality.minimal,
@@ -565,7 +565,7 @@ class _CompanyRegistrationScreenState
       children: [
         const AuthGlassFieldLabel('PHONE NUMBER *'),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: GlassTextField(
             controller: _phone,
             placeholder: 'Phone number',
@@ -833,7 +833,7 @@ class _CompanyRegistrationScreenState
                   : (_step == 2 ? _register : _next),
               enabled: !_busy,
               width: double.infinity,
-              height: 46,
+              height: kProfileFieldHeight,
               shape: const LiquidRoundedSuperellipse(borderRadius: 14),
               label: _step == 2
                    ? (_busy ? 'Registering…' : 'Register Company')
