@@ -46,22 +46,55 @@ void main() {
     for (final screen in [company, employee]) {
       expect(screen, contains('Widget _phoneInputRow(double width)'));
       expect(screen, contains("label: 'COUNTRY CODE *'"));
-      expect(screen, contains("'PHONE NUMBER'"));
+      expect(screen, contains('ProfileFloatingLabelField('));
+      expect(screen, contains("label: 'Phone number'"));
       expect(screen, contains("placeholder: 'Enter phone number'"));
       expect(screen, contains('national/local number only'));
-      expect(screen, contains('required: true'));
-      expect(screen, contains('if (width < 520)'));
-      expect(screen, contains('Expanded(flex: 2, child: countryCode)'));
-      expect(screen, contains('Expanded(flex: 3, child: nationalNumber)'));
-      expect(screen, contains('_phone.removeListener(_onPhoneChanged)'));
-      expect(screen, contains('_phoneVerified = false;'));
-      expect(screen, contains('_otpSent = false;'));
-      expect(screen, contains('_phoneIdentity = null;'));
-      expect(screen, contains('_otp.clear();'));
+      expect(screen, contains('if (width < 440)'));
+      expect(screen, contains('Expanded(\n            flex: 1'));
+      expect(screen, contains('Expanded(\n            flex: 3'));
+      expect(screen, contains('FilteringTextInputFormatter.digitsOnly'));
+      expect(screen, isNot(contains('Expanded(flex: 2, child: countryCode)')));
+      expect(screen, isNot(contains('Expanded(flex: 3, child: nationalNumber)')));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
     expect(company, isNot(contains("'employee_id': _employeeId")));
+  });
+
+  test('shared profile phone field owns the floating-label interaction', () {
+    final widgets = source('lib/core/profile/profile_form_widgets.dart');
+    expect(widgets, contains('class ProfileFloatingLabelField'));
+    expect(widgets, contains('AnimatedPositioned'));
+    expect(widgets, contains('AnimatedDefaultTextStyle'));
+    expect(widgets, contains('_focused || widget.controller.text.isNotEmpty'));
+    expect(widgets, contains('InputBorder.none'));
+    expect(widgets, contains('color: floated'));
+  });
+
+  test('phone payload and E.164 normalization remain unchanged', () {
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    for (final screen in [company, employee]) {
+      expect(screen, contains('_phoneCountry!.subtitle'));
+      expect(screen, contains('_phone.text.replaceAll(RegExp(r'\\D'), '')'));
+      expect(screen, contains("'phone_country_calling_code'"));
+      expect(screen, contains("'phone_national_number'"));
+      expect(screen, contains("'phone': phone"));
+      expect(screen, contains('return dial + national;'));
+    }
+  });
+
+  test('address country and phone calling code remain independent selectors', () {
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    for (final screen in [company, employee]) {
+      expect(screen, contains('ProfileSelectField(\n              label: \'Country *\''));
+      expect(screen, contains('Future<void> _pickPhoneCountry()'));
+      expect(screen, contains('options: _countries.where((item) => item.subtitle.isNotEmpty).toList()'));
+      expect(screen, isNot(contains('_country = _phoneCountry')));
+      expect(screen, isNot(contains('_phoneCountry = _country')));
+    }
   });
 
   test('profile fields enforce optional address line 2 and ID-provided semantics', () {
