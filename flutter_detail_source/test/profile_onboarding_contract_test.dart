@@ -60,7 +60,27 @@ void main() {
       expect(screen, contains("label: 'ID Proof Type *'"));
       expect(screen, contains("_field(\n                'ID Proof Number'"));
       expect(screen, contains('Row('));
+      expect(screen, contains('if (constraints.maxWidth < 760)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
+      final nameIndex = screen.indexOf("_field('Full Name'");
+      final employeeIndex = screen.indexOf('_employeeId');
+      final emailIndex = screen.indexOf('_emailField()');
+      final phoneIndex = screen.indexOf('_phoneInputRow()');
+      final address1Index = screen.indexOf("_field('Address Line 1'");
+      final address2Index = screen.indexOf("_field('Address Line 2'");
+      final countryIndex = screen.indexOf("label: 'Country *'");
+      final postalIndex = screen.indexOf("_field('PIN / Postal Code'");
+      final idTypeIndex = screen.indexOf("label: 'ID Proof Type *'");
+      final idNumberIndex = screen.indexOf("'ID Proof Number'");
+      expect(nameIndex, lessThan(employeeIndex));
+      expect(employeeIndex, lessThan(emailIndex));
+      expect(emailIndex, lessThan(phoneIndex));
+      expect(phoneIndex, lessThan(address1Index));
+      expect(address1Index, lessThan(address2Index));
+      expect(address2Index, lessThan(countryIndex));
+      expect(countryIndex, lessThan(postalIndex));
+      expect(postalIndex, lessThan(idTypeIndex));
+      expect(idTypeIndex, lessThan(idNumberIndex));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
