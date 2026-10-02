@@ -2175,7 +2175,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final month = ist.month.toString().padLeft(2, '0');
       final day = ist.day.toString().padLeft(2, '0');
       final minute = ist.minute.toString().padLeft(2, '0');
-      return '$month/$day/${ist.year}\\n$hour:$minute $period';
+      return '$month/$day/${ist.year}\n$hour:$minute $period';
     } catch (_) {
       return '—';
     }
