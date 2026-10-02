@@ -39,6 +39,7 @@ void main() {
               child: SizedBox(
                 width: 600,
                 child: Row(
+                  key: const Key('phone-controls-row'),
                   children: [
                     Expanded(
                       flex: 1,
@@ -83,6 +84,9 @@ void main() {
     );
     await tester.pump();
 
+    final row = tester.widget<Row>(find.byKey(const Key('phone-controls-row')));
+    expect(row.children, hasLength(3));
+    expect(row.children.whereType<Expanded>(), hasLength(2));
     expect(find.byType(ProfileSelectField), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.byType(ProfileFloatingLabelField), findsNothing);
