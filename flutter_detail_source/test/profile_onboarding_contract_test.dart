@@ -73,7 +73,7 @@ void main() {
       // The runtime rows list is the authoritative desktop/tablet field order:
       // exactly five two-item rows, with the phone group nested only in row 2.
       expect(
-        RegExp(r'\\n\\s*\\[\\n').allMatches(layout).length,
+        RegExp(r'\n\s*\[\n').allMatches(layout).length,
         5,
       );
 
