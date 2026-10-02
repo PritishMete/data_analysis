@@ -341,12 +341,12 @@ class _ProfileFloatingLabelFieldState extends State<ProfileFloatingLabelField> {
               ),
             ),
           ),
-          IgnorePointer(
-            child: AnimatedPositioned(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              left: floated ? 9 : 12,
-              top: floated ? -7 : 13,
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            left: floated ? 9 : 12,
+            top: floated ? -7 : 13,
+            child: IgnorePointer(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
                 curve: Curves.easeOutCubic,
