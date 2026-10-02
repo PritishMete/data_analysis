@@ -21,6 +21,7 @@ Future<ProfileOption?> showProfileOptionPicker(
   required String title,
   required List<ProfileOption> options,
   String? selectedValue,
+  bool showOptionSubtitle = true,
 }) async {
   final search = TextEditingController();
   try {
@@ -104,9 +105,9 @@ Future<ProfileOption?> showProfileOptionPicker(
                                 return ListTile(
                                   dense: true,
                                   title: Text(option.label),
-                                  subtitle: option.subtitle.isEmpty
-                                      ? null
-                                      : Text(option.subtitle),
+                                  subtitle: showOptionSubtitle && option.subtitle.isNotEmpty
+                                      ? Text(option.subtitle)
+                                      : null,
                                   trailing: option.value == selectedValue
                                       ? const Icon(
                                           Icons.check_circle,
@@ -163,41 +164,44 @@ class ProfileSelectField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: GlassContainer(
-            useOwnLayer: true,
-            quality: GlassQuality.minimal,
-            settings: const LiquidGlassSettings(
-              thickness: 10,
-              blur: 4,
-              glassColor: Color(0x14FFFFFF),
-              refractiveIndex: 1.05,
-            ),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    selected ? value! : placeholder,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: selected
-                          ? TechColors.textPrimary
-                          : TechColors.textMuted,
-                      fontSize: 11,
+        SizedBox(
+          height: 46,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: GlassQuality.minimal,
+              settings: const LiquidGlassSettings(
+                thickness: 10,
+                blur: 4,
+                glassColor: Color(0x14FFFFFF),
+                refractiveIndex: 1.05,
+              ),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selected ? value! : placeholder,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected
+                            ? TechColors.textPrimary
+                            : TechColors.textMuted,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
-                ),
-                const Icon(
-                  Icons.keyboard_arrow_down,
-                  size: 18,
-                  color: TechColors.textMuted,
-                ),
-              ],
+                  const Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: TechColors.textMuted,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
