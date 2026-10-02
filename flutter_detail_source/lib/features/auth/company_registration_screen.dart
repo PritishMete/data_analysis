@@ -127,6 +127,7 @@ class _CompanyRegistrationScreenState
       title: 'Country',
       options: _countries,
       selectedValue: _country?.value,
+      showOptionSubtitle: false,
     );
     if (choice == null) return;
     setState(() {
