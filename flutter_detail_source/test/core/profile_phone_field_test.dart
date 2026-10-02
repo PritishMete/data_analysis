@@ -126,4 +126,58 @@ void main() {
     expect(find.text('Phone number'), findsOneWidget);
     expect(find.byType(AnimatedPositioned), findsNothing);
   });
+  testWidgets('standard profile containers share the same control height', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      LiquidGlassWidgets.wrap(
+        theme: GlassThemeData(
+          brightness: Brightness.dark,
+          dark: const GlassThemeVariant(
+            settings: GlassThemeSettings(
+              glassColor: Color(0x1FFFFFFF),
+              thickness: 20,
+              blur: 14,
+              refractiveIndex: 0.9,
+              saturation: 1.2,
+              ambientStrength: 0.4,
+              lightIntensity: 0.8,
+            ),
+            quality: GlassQuality.minimal,
+          ),
+        ),
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: Scaffold(
+            body: Column(
+              children: [
+                ProfileTextField(controller: controller, label: 'Name'),
+                ProfileReadonlyField(label: 'Employee ID', value: 'AUTO-GENERATED'),
+                ProfileSelectField(
+                  label: 'Country',
+                  value: 'India',
+                  placeholder: 'Select country',
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final textBox = tester.renderObject<RenderBox>(find.byType(ProfileTextField));
+    final readonlyBox =
+        tester.renderObject<RenderBox>(find.byType(ProfileReadonlyField));
+    final selectBox =
+        tester.renderObject<RenderBox>(find.byType(ProfileSelectField));
+
+    expect(textBox.size.height, closeTo(readonlyBox.size.height, 0.1));
+    expect(textBox.size.height, closeTo(selectBox.size.height, 0.1));
+  });
+
 }
