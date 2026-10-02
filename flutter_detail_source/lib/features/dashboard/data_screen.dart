@@ -6373,15 +6373,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // one place source selection happens, and `_buildEmptyState()` below
   // already shows an uploaded-file badge, so this panel is just the title.
   Widget _buildGlassAppBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard,
-        settings: TechColors.panelGlass,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 0),
-        child: Row(
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard,
+      settings: TechColors.panelGlass,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 0),
+      child: Row(
           children: [
             const Icon(
               Icons.terminal,
@@ -6431,7 +6429,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               ),
             ),
           ],
-        ),
       ),
     );
   }

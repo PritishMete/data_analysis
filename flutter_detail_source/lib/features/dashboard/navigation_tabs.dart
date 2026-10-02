@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'data_screen.dart';
+import '../../core/interop/office_host.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 
 /// Same glass preset as `RecommendedGlassSettings.bottomBar` from the
@@ -38,7 +39,7 @@ class NavigationTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     return AdaptiveLiquidGlassLayer(
       settings: kInsightFlowNavigationGlassSettings,
-      quality: GlassQuality.minimal,
+      quality: isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.premium,
       child: Container(
         height: 56,
         padding: const EdgeInsets.symmetric(horizontal: 12),

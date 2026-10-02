@@ -66,6 +66,44 @@ void main() {
     expect(historicalBackground, contains('0.82 + 0.05 * math.cos(t * 1.1)'));
     expect(historicalBackground, contains('0.45 + 0.09 * math.sin(t * 0.6 + 1.5)'));
 
+    expect(dataScreen, contains('TechColors.panelGlass'));
+    expect(dataScreen, contains('shape: const LiquidRoundedSuperellipse(borderRadius: 0)'));
+    expect(dataScreen, contains('CORE // DATA-ENGINE'));
+
+    final techColors = File('lib/app_colors.dart').readAsStringSync();
+    for (final token in [
+      'bgBlack      = Color(0xFF0F111A)',
+      'panelBg      = Color(0xFF141824)',
+      'borderActive = Color(0xFF00E5FF)',
+      'borderMuted  = Color(0xFF22293A)',
+      'textPrimary  = Color(0xFFE3E6ED)',
+      'textMuted    = Color(0xFF67738C)',
+      'statusGreen  = Color(0xFF00FF66)',
+      'statusAmber  = Color(0xFFFFB300)',
+      'statusRed    = Color(0xFFFF3366)',
+      'statusBlue   = Color(0xFF3399FF)',
+      'thickness: 22',
+      'blur: 16',
+      'chromaticAberration: 0.12',
+      'lightIntensity: 0.45',
+      'refractiveIndex: 1.2',
+      'saturation: 1.1',
+      'glassColor: Color(0x1A00E5FF)',
+      'thickness: 14',
+      'blur: 8',
+      'glassColor: Color(0x0F00E5FF)',
+      'thickness: 10',
+      'blur: 4',
+      'glassColor: Color(0x0A00E5FF)',
+    ]) {
+      expect(techColors, contains(token));
+    }
+
+    final nav = File('lib/features/dashboard/navigation_tabs.dart').readAsStringSync();
+    expect(nav, contains('Color(0x26FFFFFF)'));
+    expect(nav, contains('CupertinoColors.activeGreen.withValues(alpha: 0.35)'));
+    expect(nav, contains('state.selectedView = id'));
+
     final scan = File('lib/features/dashboard/analyze_fab.dart').readAsStringSync();
     expect(scan, contains('static const double _size = 56;'));
     expect(scan, contains('state.analyzeData'));
