@@ -1464,76 +1464,210 @@ class _ManagementShellState extends State<ManagementShell> {
                 ? proofNumber
                 : ('X' * (proofNumber.length - 4)) +
                     proofNumber.substring(proofNumber.length - 4);
+            final completion = num.tryParse(
+                  profile['profile_completeness_percent']?.toString() ?? '',
+                ) ??
+                0;
+            final fullName = profile['full_name']?.toString().trim() ?? '';
+            final employeeId = profile['employee_id']?.toString() ?? '—';
+
+            Widget detail(String label, String? value, {bool multiline = false}) =>
+                _profileDetailRow(label, value, multiline: multiline);
+
+            Widget cell(Widget child) => Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: child,
+              ),
+            );
+
+            Widget row(Widget left, Widget right) => Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [cell(left), cell(right)],
+            );
+
+            Widget responsiveRows(List<Widget> items) => LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 460) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 5,
+                            ),
+                            child: item,
+                          ),
+                        )
+                        .toList(),
+                  );
+                }
+                final rows = <Widget>[];
+                for (var i = 0; i < items.length; i += 2) {
+                  rows.add(
+                    row(
+                      items[i],
+                      i + 1 < items.length
+                          ? items[i + 1]
+                          : const SizedBox.shrink(),
+                    ),
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: rows,
+                );
+              },
+            );
+
+            final mainDetails = <Widget>[
+              detail('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
+              detail('EMAIL', profile['email']?.toString()),
+              detail(
+                'EMAIL VERIFIED',
+                profile['email_verified'] == true ? 'YES' : 'NO',
+              ),
+              detail('PHONE', profile['phone_e164']?.toString()),
+              detail(
+                'PHONE VERIFIED',
+                profile['phone_verified'] == true ? 'YES' : 'NO',
+              ),
+              detail(
+                'ADDRESS LINE 1',
+                profile['address_line1']?.toString(),
+                multiline: true,
+              ),
+              detail(
+                'ADDRESS LINE 2',
+                profile['address_line2']?.toString(),
+                multiline: true,
+              ),
+              detail('STATE', profile['state']?.toString()),
+              detail('COUNTRY', profile['country']?.toString()),
+              detail('PIN / POSTAL CODE', profile['postal_code']?.toString()),
+              detail('ID PROOF TYPE', proofType),
+              detail(
+                'ID PROOF NUMBER',
+                showIdProof ? proofNumber : maskedProof,
+              ),
+            ];
+
+            final remainingDetails = <Widget>[
+              detail('BRANCH', profile['location_name']?.toString()),
+              detail('SECTION', profile['section_name']?.toString()),
+              detail(
+                'REPORTS TO',
+                [
+                  profile['reports_to_employee_id'],
+                  profile['reports_to_role_id'] == null
+                      ? null
+                      : _roleLabel(profile['reports_to_role_id'].toString()),
+                ]
+                    .where(
+                      (value) =>
+                          value != null && value.toString().isNotEmpty,
+                    )
+                    .join(' · '),
+              ),
+              detail('ASSIGNMENT STATUS', profile['status']?.toString()),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  detail(
+                    'CREATED',
+                    profile['profile_created_at']?.toString() ??
+                        profile['assignment_created_at']?.toString(),
+                  ),
+                  const SizedBox(height: 8),
+                  detail(
+                    'UPDATED',
+                    profile['profile_updated_at']?.toString() ??
+                        profile['assignment_updated_at']?.toString(),
+                  ),
+                ],
+              ),
+            ];
+
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _profileDetailRow('EMPLOYEE NUMBER', profile['employee_id']?.toString()),
-                _profileDetailRow('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
-                _profileDetailRow('EMAIL', profile['email']?.toString()),
-                _profileDetailRow(
-                  'EMAIL VERIFIED',
-                  profile['email_verified'] == true ? 'YES' : 'NO',
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fullName.isEmpty ? 'Profile incomplete' : fullName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: TechColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Flexible(
+                        child: Text(
+                          employeeId,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: TechColors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                _profileDetailRow('PHONE', profile['phone_e164']?.toString()),
-                _profileDetailRow(
-                  'PHONE VERIFIED',
-                  profile['phone_verified'] == true ? 'YES' : 'NO',
+                const SizedBox(height: 10),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: TechColors.textMuted.withValues(alpha: 0.22),
                 ),
-                _profileDetailRow(
-                  'ADDRESS LINE 1',
-                  profile['address_line1']?.toString(),
-                  multiline: true,
+                const SizedBox(height: 7),
+                responsiveRows(mainDetails),
+                const SizedBox(height: 8),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: TechColors.textMuted.withValues(alpha: 0.22),
                 ),
-                _profileDetailRow(
-                  'ADDRESS LINE 2',
-                  profile['address_line2']?.toString(),
-                  multiline: true,
-                ),
-                _profileDetailRow('STATE', profile['state']?.toString()),
-                _profileDetailRow('COUNTRY', profile['country']?.toString()),
-                _profileDetailRow('PIN / POSTAL CODE', profile['postal_code']?.toString()),
-                _profileDetailRow('ID PROOF TYPE', proofType),
-                _profileDetailRow(
-                  'ID PROOF NUMBER',
-                  showIdProof ? proofNumber : maskedProof,
-                ),
+                const SizedBox(height: 7),
+                responsiveRows(remainingDetails),
                 if (proofNumber.isNotEmpty)
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () =>
                           setDialogState(() => showIdProof = !showIdProof),
-                      child: Text(showIdProof ? 'Mask ID proof' : 'Show ID proof'),
+                      child: Text(
+                        showIdProof ? 'Mask ID proof' : 'Show ID proof',
+                      ),
                     ),
                   ),
-                _profileDetailRow('BRANCH', profile['location_name']?.toString()),
-                _profileDetailRow('SECTION', profile['section_name']?.toString()),
-                _profileDetailRow(
-                  'REPORTS TO',
-                  [
-                    profile['reports_to_employee_id'],
-                    profile['reports_to_role_id'] == null
-                        ? null
-                        : _roleLabel(profile['reports_to_role_id'].toString()),
-                  ]
-                      .where((value) => value != null && value.toString().isNotEmpty)
-                      .join(' · '),
-                ),
-                _profileDetailRow('ASSIGNMENT STATUS', profile['status']?.toString()),
-                _profileDetailRow(
-                  'PROFILE COMPLETENESS',
-                  '${profile['profile_completeness_percent']?.toString() ?? '0'}%',
-                ),
-                _profileDetailRow(
-                  'CREATED',
-                  profile['profile_created_at']?.toString() ??
-                      profile['assignment_created_at']?.toString(),
-                ),
-                _profileDetailRow(
-                  'UPDATED',
-                  profile['profile_updated_at']?.toString() ??
-                      profile['assignment_updated_at']?.toString(),
-                ),
+                if (completion < 100) ...[
+                  const SizedBox(height: 8),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: TechColors.textMuted.withValues(alpha: 0.22),
+                  ),
+                  const SizedBox(height: 8),
+                  detail(
+                    'PROFILE COMPLETENESS',
+                    '${completion.toStringAsFixed(0)}%',
+                  ),
+                ],
               ],
             );
           },
