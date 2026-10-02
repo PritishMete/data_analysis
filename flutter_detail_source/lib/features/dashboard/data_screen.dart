@@ -6305,7 +6305,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       SecureExcelLocalService.registerDialogContext(() => context);
     }
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: kAppBackgroundColor,
       extendBodyBehindAppBar: true,
       body: LiquidGlassScope(
         child: Stack(
