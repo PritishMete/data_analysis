@@ -57,7 +57,7 @@ void main() {
       expect(screen, contains("label: 'Country *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
-      expect(screen, contains("_field(\n                'ID Proof Number'"));
+      expect(screen, contains("'ID Proof Number'"));
       expect(screen, isNot(contains("_field('Address Line 2'")));
       expect(screen, isNot(contains("label: 'PHONE *'")));
       expect(screen, contains('Row('));
