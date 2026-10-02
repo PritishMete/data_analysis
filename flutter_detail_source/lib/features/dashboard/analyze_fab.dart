@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'data_screen.dart';
 import '../../widgets/shared/dock_glass_material.dart';
+import '../../app_colors.dart';
 
 /// Circular floating action button that triggers data analysis.
 ///
@@ -21,7 +22,7 @@ class ScanButton extends StatelessWidget {
   const ScanButton({super.key, required this.state});
 
   static const double _size = 56;
-  static const Color _accent = Color(0xFF22D3EE);
+  static const Color _accent = kAppBackgroundColor;
 
   bool get _hasSource {
     if (state.dataSourceMode == DataSourceMode.uploadedFile) {
