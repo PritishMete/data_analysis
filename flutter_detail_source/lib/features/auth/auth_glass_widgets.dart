@@ -141,22 +141,9 @@ class AuthGlassScaffold extends StatelessWidget {
 }
 
 /// LiquidGlassUi auth preset values.
-const kAuthPanelGlass = LiquidGlassSettings(
-  thickness: 28,
-  blur: 16,
-  chromaticAberration: 0.15,
-  lightIntensity: 0.55,
-  refractiveIndex: 1.35,
-  saturation: 1.15,
-  glassColor: Color(0x1FFFFFFF),
-);
+const kAuthPanelGlass = TechColors.panelGlass;
 
-const kAuthFieldGlass = LiquidGlassSettings(
-  thickness: 10,
-  blur: 4,
-  glassColor: Color(0x14FFFFFF),
-  refractiveIndex: 1.05,
-);
+const kAuthFieldGlass = TechColors.fieldGlass;
 
 const kAuthPanelShape =
     LiquidRoundedSuperellipse(borderRadius: 28);
