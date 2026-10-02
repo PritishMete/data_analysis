@@ -90,7 +90,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(employee, contains('State / Province / Region *'));
     expect(employee, contains("label: 'COUNTRY CODE *'"));
     expect(employee, isNot(contains('Email OTP')));
-    expect(employee, contains('required: false'));
+    expect(employee, isNot(contains("_field('Address Line 2'")));
     expect(geo, contains('subdivisionsForCountry'));
     expect(geo, contains('allCountries'));
     expect(geo, contains('idProofOptions'));
