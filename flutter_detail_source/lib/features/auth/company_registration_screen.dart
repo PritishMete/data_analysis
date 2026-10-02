@@ -127,7 +127,6 @@ class _CompanyRegistrationScreenState
       title: 'Country',
       options: _countries,
       selectedValue: _country?.value,
-      showOptionSubtitle: false,
     );
     if (choice == null) return;
     setState(() {
@@ -483,7 +482,6 @@ class _CompanyRegistrationScreenState
                     ? 'Loading countries…'
                     : 'Select country',
                 onTap: _busy ? null : _pickCountry,
-                showOptionSubtitle: false,
               ),
               _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
             ],

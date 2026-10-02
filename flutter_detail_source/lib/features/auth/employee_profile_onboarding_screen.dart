@@ -189,7 +189,6 @@ class _EmployeeProfileOnboardingScreenState
       title: 'Country',
       options: _countries,
       selectedValue: _country?.value,
-      showOptionSubtitle: false,
     );
     if (choice == null) return;
     setState(() {
@@ -388,7 +387,6 @@ class _EmployeeProfileOnboardingScreenState
                     value: _country?.label,
                     placeholder: 'Select country',
                     onTap: _busy ? null : _pickCountry,
-                    showOptionSubtitle: false,
                   ),
                   _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
                 ],
