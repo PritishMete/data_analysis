@@ -475,9 +475,11 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _glassRow({
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+    LiquidGlassSettings? settings,
   }) => GlassCard(
     margin: EdgeInsets.zero,
     padding: padding,
+    settings: settings,
     child: child,
   );
 
@@ -1394,50 +1396,65 @@ class _ManagementShellState extends State<ManagementShell> {
         ),
       );
 
-  Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
+  Widget _profileDetailRow(
+    String label,
+    String? value, {
+    bool multiline = false,
+    LiquidGlassSettings? settings,
+  }) {
     final text = (value ?? '').trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
-      child: _glassRow(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 112,
-              child: Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TechColors.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'monospace',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: TechColors.textMuted.withValues(alpha: 0.28),
+            width: 1,
+          ),
+        ),
+        child: _glassRow(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          settings: settings,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 112,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TechColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text.isEmpty ? '—' : text,
-                maxLines: multiline ? 4 : 2,
-                softWrap: multiline,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 12,
-                  fontFamily: 'monospace',
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  text.isEmpty ? '—' : text,
+                  maxLines: multiline ? 4 : 2,
+                  softWrap: multiline,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-
   static String _formatEmployeeTimestamp(dynamic value) {
     final raw = value?.toString().trim() ?? '';
     if (raw.isEmpty) return '—';
@@ -1477,6 +1494,15 @@ class _ManagementShellState extends State<ManagementShell> {
         context: context,
         barrierDismissible: false,
         builder: (dialogRouteContext) {
+          final noGlowSettings = LiquidGlassSettings.of(
+            dialogRouteContext,
+          ).copyWith(
+            glowIntensity: 0,
+            fresnelStrength: 0,
+            ambientRim: 0,
+            shadowElevation: 0,
+            shadow: const <BoxShadow>[],
+          );
           final maxDialogHeight =
               MediaQuery.sizeOf(dialogRouteContext).height * 0.85;
           // GlassDialog itself has no maxHeight. Constrain the actual
@@ -1497,6 +1523,7 @@ class _ManagementShellState extends State<ManagementShell> {
                     : profile['full_name']?.toString().trim() ??
                         'Profile incomplete',
                 maxWidth: 520,
+                settings: noGlowSettings,
                 content: StatefulBuilder(
                   builder: (dialogContext, setDialogState) {
                     final proofNumber =
@@ -1525,6 +1552,7 @@ class _ManagementShellState extends State<ManagementShell> {
                       label,
                       value,
                       multiline: multiline,
+                      settings: noGlowSettings,
                     );
 
                     Widget cell(Widget child) => Expanded(
@@ -1680,7 +1708,7 @@ class _ManagementShellState extends State<ManagementShell> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: TechColors.textPrimary,
-                                      fontSize: 15,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -1693,9 +1721,9 @@ class _ManagementShellState extends State<ManagementShell> {
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.right,
                                     style: const TextStyle(
-                                      color: TechColors.textMuted,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
+                                      color: TechColors.textPrimary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                       fontFamily: 'monospace',
                                     ),
                                   ),
