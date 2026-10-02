@@ -54,7 +54,7 @@ void main() {
     expect(source, contains('State / Province / Region *'));
     expect(source, contains('ID Proof Type *'));
     expect(source, contains("required: false"));
-    expect(source, contains('national/local number only'));
+    expect(source, contains('phone is stored in E.164 format and is not phone-verified during onboarding.'));
     expect(supabaseAuthSource, contains("emailRedirectTo: 'https://pritishmete.github.io/data_analysis/'"));
     expect(supabaseAuthSource, contains("type: OtpType.signup"));
     expect(source, isNot(contains('PHONE VERIFIED')));
