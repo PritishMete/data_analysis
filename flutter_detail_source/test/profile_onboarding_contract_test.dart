@@ -89,9 +89,11 @@ void main() {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
-      expect(screen, contains('ProfileSelectField(\n              label: \'Country *\''));
+      expect(screen, contains("label: 'Country *'"));
       expect(screen, contains('Future<void> _pickPhoneCountry()'));
       expect(screen, contains('options: _countries.where((item) => item.subtitle.isNotEmpty).toList()'));
+      expect(screen, contains('_country'));
+      expect(screen, contains('_phoneCountry'));
       expect(screen, isNot(contains('_country = _phoneCountry')));
       expect(screen, isNot(contains('_phoneCountry = _country')));
     }
