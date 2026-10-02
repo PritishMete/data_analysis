@@ -15,7 +15,7 @@ import '../auth/management_navigation.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import 'data_screen_tech_background.dart';
+import '../../tech_background.dart';
 import '../../core/services/ai_command_executor.dart';
 import '../../core/services/agentic_command_executor.dart';
 import '../../core/services/transformation_manager.dart';
@@ -6313,7 +6313,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // ── Animated cyberpunk background — captured for glass refraction
             Positioned.fill(
               child: GlassBackgroundSource(
-                child: const DataScreenTechBackground(),
+                child: const TechAnimatedBackground(),
               ),
             ),
 
