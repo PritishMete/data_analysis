@@ -15,7 +15,7 @@ import '../auth/management_navigation.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../tech_background.dart';
+import 'data_screen_tech_background.dart';
 import '../../core/services/ai_command_executor.dart';
 import '../../core/services/agentic_command_executor.dart';
 import '../../core/services/transformation_manager.dart';
@@ -6313,7 +6313,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // ── Animated cyberpunk background — captured for glass refraction
             Positioned.fill(
               child: GlassBackgroundSource(
-                child: const TechAnimatedBackground(),
+                child: const DataScreenTechBackground(),
               ),
             ),
 
@@ -6375,9 +6375,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   Widget _buildGlassAppBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: GlassCard(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard,
+        settings: TechColors.panelGlass,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 0),
         child: Row(
           children: [
             const Icon(
@@ -6387,7 +6390,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             ),
             const SizedBox(width: 10),
             const Text(
-              'InsightFlow',
+              'CORE // DATA-ENGINE',
               style: TextStyle(
                 color: TechColors.textPrimary,
                 fontSize: 14,
