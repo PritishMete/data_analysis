@@ -167,7 +167,7 @@ class ProfileSelectField extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(10),
