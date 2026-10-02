@@ -1470,9 +1470,7 @@ class _ManagementShellState extends State<ManagementShell> {
       return;
     }
     try {
-      final profile = await request(
-        '/assignments/${Uri.encodeComponent(assignmentId)}/profile',
-      );
+      final profile = await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
       if (!mounted) return;
       var showIdProof = false;
       await showCupertinoDialog<void>(
