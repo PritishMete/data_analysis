@@ -328,7 +328,7 @@ class _EmployeeProfileOnboardingScreenState
       children: [
         const AuthGlassFieldLabel('PHONE NUMBER *'),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: GlassTextField(
             controller: _phone,
             placeholder: 'Phone number',
@@ -486,7 +486,7 @@ class _EmployeeProfileOnboardingScreenState
             onTap: _busy ? () {} : _complete,
             enabled: !_busy,
             width: double.infinity,
-            height: 46,
+            height: kProfileFieldHeight,
             shape: const LiquidRoundedSuperellipse(borderRadius: 14),
             label: 'COMPLETE PROFILE',
             child: Text(
@@ -509,7 +509,7 @@ class _EmployeeProfileOnboardingScreenState
             onTap: _busy ? () {} : _next,
             enabled: !_busy,
             width: double.infinity,
-            height: 46,
+            height: kProfileFieldHeight,
             shape: const LiquidRoundedSuperellipse(borderRadius: 14),
             label: 'CONTINUE',
             child: const Text('CONTINUE'),
@@ -548,7 +548,7 @@ class _EmployeeProfileOnboardingScreenState
       children: [
         AuthGlassFieldLabel(label + (required ? ' *' : '')),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: GlassTextField(
             controller: controller,
             placeholder: placeholder ?? label,
@@ -567,7 +567,7 @@ class _EmployeeProfileOnboardingScreenState
       children: [
         AuthGlassFieldLabel(label),
         SizedBox(
-          height: 46,
+          height: kProfileFieldHeight,
           child: GlassContainer(
             useOwnLayer: true,
             quality: GlassQuality.minimal,
