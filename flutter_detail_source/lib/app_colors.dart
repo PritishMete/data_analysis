@@ -2,6 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+/// Single solid application background shared by ScanButton and all primary screens.
+const Color kAppBackgroundColor = Color(0xFF22D3EE);
+
 /// Cyberpunk design style color tokens utilized throughout the terminal shell.
 class TechColors {
   static const bgBlack      = Color(0xFF0F111A);
