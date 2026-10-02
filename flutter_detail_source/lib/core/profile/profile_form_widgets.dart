@@ -239,16 +239,46 @@ class ProfileTextField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AuthGlassFieldLabel(label + (required ? ' *' : '')),
+        Text(
+          (label + (required ? ' *' : '')).toUpperCase(),
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .5,
+          ),
+        ),
+        const SizedBox(height: 6),
         SizedBox(
           height: 46,
-          child: GlassTextField(
-            controller: controller,
-            placeholder: placeholder ?? label,
-            enabled: enabled,
-            keyboardType: keyboardType,
-            inputFormatters: inputFormatters,
-            onChanged: onChanged,
+          child: GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: const LiquidGlassSettings(
+              thickness: 10,
+              blur: 4,
+              glassColor: Color(0x14FFFFFF),
+              refractiveIndex: 1.05,
+            ),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+            padding: EdgeInsets.zero,
+            child: TextField(
+              controller: controller,
+              enabled: enabled,
+              keyboardType: keyboardType,
+              inputFormatters: inputFormatters,
+              onChanged: onChanged,
+              style: const TextStyle(color: TechColors.textPrimary, fontSize: 11),
+              cursorColor: TechColors.borderActive,
+              maxLines: 1,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                hintText: placeholder ?? label,
+                hintStyle: const TextStyle(color: TechColors.textMuted, fontSize: 11),
+              ),
+            ),
           ),
         ),
       ],
@@ -272,7 +302,16 @@ class ProfileReadonlyField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AuthGlassFieldLabel(label),
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .5,
+          ),
+        ),
+        const SizedBox(height: 6),
         SizedBox(
           height: 46,
           child: GlassContainer(
@@ -292,10 +331,7 @@ class ProfileReadonlyField extends StatelessWidget {
                 value.isEmpty ? '—' : value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: TechColors.textPrimary, fontSize: 11),
               ),
             ),
           ),
