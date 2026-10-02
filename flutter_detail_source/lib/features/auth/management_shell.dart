@@ -1627,7 +1627,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           profile['assignment_created_at'],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   detail(
                     'UPDATED',
                     _formatEmployeeTimestamp(
