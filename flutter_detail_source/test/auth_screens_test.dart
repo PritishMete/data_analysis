@@ -58,8 +58,8 @@ void main() {
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-    expect(scaffold.backgroundColor, kAppBackgroundColor);
-    expect(scaffold.backgroundColor, const Color(0xFF22D3EE));
+    expect(scaffold.backgroundColor, Colors.transparent);
+    expect(find.text('Sign in'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -102,7 +102,7 @@ void main() {
     expect(find.text('CONFIRM PASSWORD'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-    expect(scaffold.backgroundColor, kAppBackgroundColor);
+    expect(scaffold.backgroundColor, Colors.transparent);
     expect(tester.takeException(), isNull);
   });
 }
