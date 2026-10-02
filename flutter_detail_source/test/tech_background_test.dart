@@ -12,6 +12,18 @@ void main() {
     expect(kAppBackgroundColor, const Color(0xFF22D3EE));
     expect(find.byType(DecoratedBox), findsWidgets);
     expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
-    expect(find.byType(ColoredBox), findsNothing);
+    final historicalGradient = tester.widgetList<DecoratedBox>(
+      find.byType(DecoratedBox),
+    ).any((widget) {
+      final decoration = widget.decoration;
+      if (decoration is! BoxDecoration) return false;
+      final gradient = decoration.gradient;
+      return gradient is LinearGradient &&
+          gradient.colors.length == 3 &&
+          gradient.colors[0] == const Color(0xFF080B14) &&
+          gradient.colors[1] == const Color(0xFF0F111A) &&
+          gradient.colors[2] == const Color(0xFF0A0E1A);
+    });
+    expect(historicalGradient, isTrue);
   });
 }
