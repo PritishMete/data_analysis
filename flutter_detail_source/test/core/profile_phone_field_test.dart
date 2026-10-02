@@ -138,26 +138,24 @@ void main() {
   testWidgets('phone label starts inside the field', (tester) async {
     await pumpField(tester);
 
-    final field = find.byType(ProfileFloatingLabelField);
-    final label = find.text('Phone number');
-    expect(label, findsOneWidget);
-    final fieldTop = tester.getTopLeft(field).dy;
-    final labelTop = tester.getTopLeft(label).dy;
-    expect(labelTop, greaterThan(fieldTop + 8));
+    expect(find.text('Phone number'), findsOneWidget);
+    final labelPosition = tester.widget<AnimatedPositioned>(
+      find.byType(AnimatedPositioned),
+    );
+    expect(labelPosition.top, 13);
   });
 
   testWidgets('focus floats the phone label to the top border', (tester) async {
     await pumpField(tester);
 
     final field = find.byType(ProfileFloatingLabelField);
-    final label = find.text('Phone number');
-    final fieldTop = tester.getTopLeft(field).dy;
-
     await tester.tap(field);
     await tester.pump(const Duration(milliseconds: 180));
 
-    final labelTop = tester.getTopLeft(label).dy;
-    expect(labelTop, lessThan(fieldTop));
+    final labelPosition = tester.widget<AnimatedPositioned>(
+      find.byType(AnimatedPositioned),
+    );
+    expect(labelPosition.top, -7);
   });
 
   testWidgets('filled and unfocused phone field keeps the label floated', (
@@ -166,17 +164,16 @@ void main() {
     await pumpField(tester);
 
     final field = find.byType(ProfileFloatingLabelField);
-    final label = find.text('Phone number');
-
     await tester.tap(field);
     await tester.enterText(find.byType(TextField), '9876543210');
     await tester.pump(const Duration(milliseconds: 180));
     await tester.tapAt(const Offset(620, 220));
     await tester.pump(const Duration(milliseconds: 180));
 
-    final fieldTop = tester.getTopLeft(field).dy;
-    final labelTop = tester.getTopLeft(label).dy;
-    expect(labelTop, lessThan(fieldTop));
+    final labelPosition = tester.widget<AnimatedPositioned>(
+      find.byType(AnimatedPositioned),
+    );
+    expect(labelPosition.top, -7);
   });
 
   testWidgets('empty and unfocused phone field returns the label inside', (
@@ -185,15 +182,14 @@ void main() {
     await pumpField(tester);
 
     final field = find.byType(ProfileFloatingLabelField);
-    final label = find.text('Phone number');
-
     await tester.tap(field);
     await tester.pump(const Duration(milliseconds: 180));
     await tester.tapAt(const Offset(620, 220));
     await tester.pump(const Duration(milliseconds: 180));
 
-    final fieldTop = tester.getTopLeft(field).dy;
-    final labelTop = tester.getTopLeft(label).dy;
-    expect(labelTop, greaterThan(fieldTop + 8));
+    final labelPosition = tester.widget<AnimatedPositioned>(
+      find.byType(AnimatedPositioned),
+    );
+    expect(labelPosition.top, 13);
   });
 }
