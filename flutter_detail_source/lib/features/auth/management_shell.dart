@@ -1438,6 +1438,749 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  static String _formatEmployeeTimestamp(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return '—';
+
+    try {
+      final hasTimezone = RegExp(r'(Z|[+-]\\d{2}:?\\d{2})
+    final assignmentId = assignment['assignment_id']?.toString().trim() ?? '';
+    if (assignmentId.isEmpty) {
+      feedback(StateError('This assignment has no readable profile target.'));
+      return;
+    }
+    try {
+      final profile =
+          await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
+      if (!mounted) return;
+      var showIdProof = false;
+      await GlassDialog.show<void>(
+        context: context,
+        barrierDismissible: false,
+        title: profile['full_name']?.toString().trim().isEmpty == true
+            ? 'Profile incomplete'
+            : profile['full_name']?.toString().trim() ?? 'Profile incomplete',
+        maxWidth: 520,
+        content: StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final dialogContentHeight =
+                (MediaQuery.of(context).size.height * 0.85 - 150)
+                    .clamp(320.0, 900.0)
+                    .toDouble();
+            final proofNumber = profile['id_proof_number']?.toString() ?? '';
+            final proofType = profile['id_proof_type']?.toString() ?? '';
+            final maskedProof = proofNumber.length <= 4
+                ? proofNumber
+                : ('X' * (proofNumber.length - 4)) +
+                    proofNumber.substring(proofNumber.length - 4);
+            final completion = num.tryParse(
+                  profile['profile_completeness_percent']?.toString() ?? '',
+                ) ??
+                0;
+            final fullName = profile['full_name']?.toString().trim() ?? '';
+            final employeeId = profile['employee_id']?.toString() ?? '—';
+
+            Widget detail(String label, String? value, {bool multiline = false}) =>
+                _profileDetailRow(label, value, multiline: multiline);
+
+            Widget cell(Widget child) => Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: child,
+              ),
+            );
+
+            Widget row(Widget left, Widget right) => Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [cell(left), cell(right)],
+            );
+
+            Widget responsiveRows(List<Widget> items) => LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 460) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 5,
+                            ),
+                            child: item,
+                          ),
+                        )
+                        .toList(),
+                  );
+                }
+                final rows = <Widget>[];
+                for (var i = 0; i < items.length; i += 2) {
+                  rows.add(
+                    row(
+                      items[i],
+                      i + 1 < items.length
+                          ? items[i + 1]
+                          : const SizedBox.shrink(),
+                    ),
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: rows,
+                );
+              },
+            );
+
+            final mainDetails = <Widget>[
+              detail('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
+              detail('EMAIL', profile['email']?.toString()),
+              detail(
+                'EMAIL VERIFIED',
+                profile['email_verified'] == true ? 'YES' : 'NO',
+              ),
+              detail('PHONE', profile['phone_e164']?.toString()),
+              detail(
+                'PHONE VERIFIED',
+                profile['phone_verified'] == true ? 'YES' : 'NO',
+              ),
+              detail(
+                'ADDRESS LINE 1',
+                profile['address_line1']?.toString(),
+                multiline: true,
+              ),
+              detail(
+                'ADDRESS LINE 2',
+                profile['address_line2']?.toString(),
+                multiline: true,
+              ),
+              detail('STATE', profile['state']?.toString()),
+              detail('COUNTRY', profile['country']?.toString()),
+              detail('PIN / POSTAL CODE', profile['postal_code']?.toString()),
+              detail('ID PROOF TYPE', proofType),
+              detail(
+                'ID PROOF NUMBER',
+                showIdProof ? proofNumber : maskedProof,
+              ),
+            ];
+
+            final remainingDetails = <Widget>[
+              detail('BRANCH', profile['location_name']?.toString()),
+              detail('SECTION', profile['section_name']?.toString()),
+              detail(
+                'REPORTS TO',
+                [
+                  profile['reports_to_employee_id'],
+                  profile['reports_to_role_id'] == null
+                      ? null
+                      : _roleLabel(profile['reports_to_role_id'].toString()),
+                ]
+                    .where(
+                      (value) =>
+                          value != null && value.toString().isNotEmpty,
+                    )
+                    .join(' · '),
+              ),
+              detail('ASSIGNMENT STATUS', profile['status']?.toString()),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  detail(
+                    'CREATED',
+                    _formatEmployeeTimestamp(
+                      profile['profile_created_at'] ??
+                          profile['assignment_created_at'],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  detail(
+                    'UPDATED',
+                    _formatEmployeeTimestamp(
+                      profile['profile_updated_at'] ??
+                          profile['assignment_updated_at'],
+                    ),
+                  ),
+                ],
+              ),
+            ];
+
+            return SizedBox(
+              height: dialogContentHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fullName.isEmpty ? 'Profile incomplete' : fullName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: TechColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Flexible(
+                        child: Text(
+                          employeeId,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: TechColors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: TechColors.textMuted.withValues(alpha: 0.22),
+                ),
+                const SizedBox(height: 7),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        responsiveRows(mainDetails),
+                        const SizedBox(height: 4),
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: TechColors.textMuted.withValues(alpha: 0.22),
+                        ),
+                        const SizedBox(height: 4),
+                        responsiveRows(remainingDetails),
+                        if (proofNumber.isNotEmpty)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () =>
+                                  setDialogState(() => showIdProof = !showIdProof),
+                              child: Text(
+                                showIdProof ? 'Mask ID proof' : 'Show ID proof',
+                              ),
+                            ),
+                          ),
+                        if (completion < 100) ...[
+                          const SizedBox(height: 4),
+                          Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: TechColors.textMuted.withValues(alpha: 0.22),
+                          ),
+                          const SizedBox(height: 4),
+                          detail(
+                            'PROFILE COMPLETENESS',
+                            completion.toStringAsFixed(0) + '%',
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ], 
+            );
+          },
+        ),
+        actions: [
+          GlassDialogAction(
+            label: 'Close',
+            isPrimary: true,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      );
+    } catch (error) {
+      feedback(error);
+    }
+  }
+
+  Widget _assignmentRegistryValue(
+    String value, {
+    TextStyle style = const TextStyle(
+      color: TechColors.textPrimary,
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      fontFamily: 'monospace',
+    ),
+  }) => Text(
+    value,
+    style: style,
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.ellipsis,
+  );
+
+  Widget _assignmentRegistryMeta(String label, String value) => Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      SizedBox(
+        width: 76,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(child: _assignmentRegistryValue(value)),
+    ],
+  );
+
+  Widget _assignmentRegistryRow(Map<String, dynamic> a) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 620;
+      final employeeId = a['employee_id']?.toString() ?? '—';
+      final fullName = a['full_name']?.toString().trim() ?? '';
+      final role = a['role_id']?.toString() ?? '—';
+      final location = a['location_name']?.toString() ?? '—';
+      final section = a['section_name']?.toString() ?? '—';
+      final status = a['status']?.toString() ?? '—';
+      final emailVerified = a['email_verified'] == true;
+      final phoneVerified = a['phone_verified'] == true;
+      final isActive = a['status'] == 'active';
+      final reportingAction = SizedBox(
+        width: 132,
+        child: _actionChip(
+          'REPORTING',
+          Icons.account_tree_outlined,
+          () => reporting(a),
+        ),
+      );
+
+      final person = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            fullName.isEmpty ? 'Profile incomplete' : fullName,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          _assignmentRegistryValue(
+            employeeId,
+            style: const TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 9,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      );
+
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
+                const SizedBox(width: 8),
+                Expanded(child: person),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            _assignmentRegistryMeta('ROLE', _roleLabel(role)),
+            const SizedBox(height: 6),
+            _assignmentRegistryMeta('LOCATION', location),
+            const SizedBox(height: 6),
+            _assignmentRegistryMeta('SECTION', section),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(child: _verificationBadge('EMAIL', emailVerified)),
+                Expanded(child: _verificationBadge('PHONE', phoneVerified)),
+                if (a['id_proof_supplied'] == true)
+                  const Expanded(
+                    child: Text(
+                      'ID PROOF ✓',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: TechColors.statusGreen,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (a['profile_completeness_percent'] != null) ...[
+              const SizedBox(height: 5),
+              _assignmentRegistryMeta(
+                'PROFILE',
+                '${a['profile_completeness_percent']}% complete',
+              ),
+            ],
+            if (a['reports_to_employee_id'] != null) ...[
+              const SizedBox(height: 5),
+              _assignmentRegistryMeta(
+                'REPORTS TO',
+                a['reports_to_employee_id'].toString(),
+              ),
+            ],
+            if (isActive) ...[
+              const SizedBox(height: 10),
+              Align(alignment: Alignment.centerRight, child: reportingAction),
+            ],
+          ],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.link, size: 15, color: TechColors.statusBlue),
+          const SizedBox(width: 8),
+          SizedBox(width: 150, child: person),
+          const SizedBox(width: 10),
+          SizedBox(width: 92, child: _assignmentRegistryValue(_roleLabel(role))),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: _assignmentRegistryValue(location, style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+            fontFamily: 'monospace',
+          ))),
+          const SizedBox(width: 10),
+          Expanded(flex: 2, child: _assignmentRegistryValue(section, style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+            fontFamily: 'monospace',
+          ))),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 78,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _verificationBadge('EMAIL', emailVerified),
+                const SizedBox(height: 3),
+                _verificationBadge('PHONE', phoneVerified),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 72,
+            child: Text(
+              status,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: TechColors.textMuted,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          if (isActive) ...[
+            const SizedBox(width: 12),
+            reportingAction,
+          ],
+        ],
+      );
+    },
+  );
+
+  Widget assignmentList() => GlassCard(
+    margin: EdgeInsets.zero,
+    padding: const EdgeInsets.all(14),
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _eyebrow('Assignment registry'),
+        const SizedBox(height: 9),
+        if (assignments.isEmpty)
+          const Text('NO ASSIGNMENTS', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)),
+        ...assignments.map((a) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _glassRow(
+              child: InkWell(
+                onTap: () => _showAssignmentProfile(a),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: _assignmentRegistryRow(a),
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    ),
+  );
+
+  Widget _buildManagementHeader() {
+    // Mirrors DataScreen._buildGlassAppBar(): management is another
+    // InsightFlow workspace, not a separate admin theme.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 700;
+            final identity = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
+                const SizedBox(width: 10),
+                const Text('InsightFlow', style: TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                )),
+              ],
+            );
+            final workspace = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _eyebrow('ORGANIZATION / MANAGEMENT'),
+                const SizedBox(height: 3),
+                const Text('CONTROL PLANE', style: TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
+                )),
+              ],
+            );
+            final controls = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Refresh management data',
+                  onPressed: loadAll,
+                  icon: const Icon(Icons.refresh_rounded, size: 18, color: TechColors.textPrimary),
+                ),
+                IconButton(
+                  tooltip: 'Sign out',
+                  onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                  icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
+                ),
+              ],
+            );
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [identity, const Spacer(), controls]),
+                  const SizedBox(height: 7),
+                  workspace,
+                ],
+              );
+            }
+            return Row(children: [
+              identity,
+              const Spacer(),
+              workspace,
+              const SizedBox(width: 14),
+              controls,
+            ]);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManagementNavigation() {
+    const tabs = <MapEntry<ManagementSection, String>>[
+      MapEntry(ManagementSection.overview, 'OVERVIEW'),
+      MapEntry(ManagementSection.organization, 'ORGANIZATION'),
+      MapEntry(ManagementSection.people, 'PEOPLE'),
+      MapEntry(ManagementSection.locations, 'LOCATIONS'),
+      MapEntry(ManagementSection.sections, 'SECTIONS'),
+      MapEntry(ManagementSection.invitations, 'INVITATIONS'),
+      MapEntry(ManagementSection.dataAccess, 'DATA ACCESS'),
+      MapEntry(ManagementSection.audit, 'AUDIT LOG'),
+    ];
+    // Same geometry and glass settings as DataScreen.NavigationTabs.
+    return AdaptiveLiquidGlassLayer(
+      settings: kInsightFlowNavigationGlassSettings,
+      quality: GlassQuality.minimal,
+      child: Container(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: SafeArea(
+          top: false,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            itemCount: tabs.length + 1,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              if (index == tabs.length) return _managementAnalysisNavChip();
+              final tab = tabs[index];
+              final selected = section == tab.key;
+              return GlassChip(
+                label: tab.value,
+                selected: selected,
+                selectedColor: TechColors.borderActive.withValues(alpha: 0.18),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                labelStyle: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: selected ? TechColors.textPrimary : TechColors.textMuted,
+                ),
+                onTap: () => setState(() => section = tab.key),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _managementAnalysisNavChip() => GlassButton(
+    onTap: () => openInsightFlowAnalysis(context),
+    label: 'ANALYSIS',
+    icon: const Icon(
+      CupertinoIcons.chart_bar_fill,
+      size: 18,
+      color: CupertinoColors.white,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.transparent,
+    extendBodyBehindAppBar: true,
+    body: LiquidGlassScope(
+      child: Stack(
+        children: [
+          Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _buildManagementHeader(),
+                  _buildManagementNavigation(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1500),
+                          child: loading
+                              ? const Padding(
+                                  padding: EdgeInsets.only(top: 30),
+                                  child: Center(child: CircularProgressIndicator(color: TechColors.borderActive)),
+                                )
+                              : error != null
+                                  ? GlassCard(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.error_outline_rounded, color: TechColors.statusRed, size: 22),
+                                          const SizedBox(height: 8),
+                                          _eyebrow('MANAGEMENT SERVICE ERROR'),
+                                          const SizedBox(height: 6),
+                                          Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
+                                          const SizedBox(height: 14),
+                                          _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
+                                        ],
+                                      ),
+                                    )
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (section != ManagementSection.dataAccess) ...[
+                                          surface(_title(
+                                            _sectionLabel(section),
+                                            detail: _sectionDetail(section),
+                                            icon: _sectionIcon(section),
+                                          )),
+                                          const SizedBox(height: 12),
+                                        ],
+                                        body(),
+                                        if (section == ManagementSection.organization) ...[
+                                          const SizedBox(height: 16),
+                                          assignmentList(),
+                                        ],
+                                      ],
+                                    ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+).hasMatch(raw);
+      final parsed = DateTime.parse(hasTimezone ? raw : '${raw}Z');
+      final ist = parsed.toUtc().add(const Duration(hours: 5, minutes: 30));
+      final hour = ist.hour % 12 == 0 ? 12 : ist.hour % 12;
+      final period = ist.hour >= 12 ? 'PM' : 'AM';
+      final month = ist.month.toString().padLeft(2, '0');
+      final day = ist.day.toString().padLeft(2, '0');
+      final minute = ist.minute.toString().padLeft(2, '0');
+      return '$month/$day/${ist.year}\\n$hour:$minute $period';
+    } catch (_) {
+      return '—';
+    }
+  }
+
   Future<void> _showAssignmentProfile(Map<String, dynamic> assignment) async {
     final assignmentId = assignment['assignment_id']?.toString().trim() ?? '';
     if (assignmentId.isEmpty) {
