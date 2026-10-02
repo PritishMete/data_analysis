@@ -6305,7 +6305,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       SecureExcelLocalService.registerDialogContext(() => context);
     }
     return Scaffold(
-      backgroundColor: kAppBackgroundColor,
+      backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       body: LiquidGlassScope(
         child: Stack(
@@ -6313,7 +6313,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // ── Animated cyberpunk background — captured for glass refraction
             Positioned.fill(
               child: GlassBackgroundSource(
-                child: const TechAnimatedBackground(),
+                child: const DataScreenTechBackground(),
               ),
             ),
 
