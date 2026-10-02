@@ -64,26 +64,41 @@ void main() {
       expect(screen, contains('if (constraints.maxWidth < 760)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
 
-      final nameIndex = screen.indexOf("_field('Full Name'");
-      final employeeIndex = screen.indexOf('_employeeIdInfo()') >= 0
-          ? screen.indexOf('_employeeIdInfo()')
-          : screen.indexOf("_readonly('Employee ID'");
-      final emailIndex = screen.indexOf('_emailField()') >= 0
-          ? screen.indexOf('_emailField()')
-          : screen.indexOf("_readonly('Email'");
-      final phoneIndex = screen.indexOf('_phoneInputRow()');
-      final address1Index = screen.indexOf("_field('Address Line 1'");
-      final countryIndex = screen.indexOf("label: 'Country *'");
-      final postalIndex = screen.indexOf("_field('PIN / Postal Code'");
-      final idTypeIndex = screen.indexOf("label: 'ID Proof Type *'");
-      final idNumberIndex = screen.indexOf("'ID Proof Number'");
+      final layoutStart = screen.indexOf('final rows = <List<Widget>>[');
+      final layoutEnd = screen.indexOf('if (constraints.maxWidth < 760)');
+      expect(layoutStart, greaterThanOrEqualTo(0));
+      expect(layoutEnd, greaterThan(layoutStart));
+      final layout = screen.substring(layoutStart, layoutEnd);
+
+      // The runtime rows list is the authoritative desktop/tablet field order:
+      // exactly five two-item rows, with the phone group nested only in row 2.
+      expect(
+        RegExp(r'\\n\\s*\\[\\n').allMatches(layout).length,
+        5,
+      );
+
+      final nameIndex = layout.indexOf("_field('Full Name'");
+      final employeeIndex = layout.indexOf('_employeeIdInfo()') >= 0
+          ? layout.indexOf('_employeeIdInfo()')
+          : layout.indexOf("_readonly('Employee ID'");
+      final emailIndex = layout.indexOf('_emailField()') >= 0
+          ? layout.indexOf('_emailField()')
+          : layout.indexOf("_readonly('Email'");
+      final phoneIndex = layout.indexOf('_phoneInputRow()');
+      final address1Index = layout.indexOf("_field('Address Line 1'");
+      final countryIndex = layout.indexOf("label: 'Country *'");
+      final stateIndex = layout.indexOf("label: 'State / Province / Region *'");
+      final postalIndex = layout.indexOf("_field('PIN / Postal Code'");
+      final idTypeIndex = layout.indexOf("label: 'ID Proof Type *'");
+      final idNumberIndex = layout.indexOf("'ID Proof Number'");
 
       expect(nameIndex, lessThan(employeeIndex));
       expect(employeeIndex, lessThan(emailIndex));
       expect(emailIndex, lessThan(phoneIndex));
       expect(phoneIndex, lessThan(address1Index));
       expect(address1Index, lessThan(countryIndex));
-      expect(countryIndex, lessThan(postalIndex));
+      expect(countryIndex, lessThan(stateIndex));
+      expect(stateIndex, lessThan(postalIndex));
       expect(postalIndex, lessThan(idTypeIndex));
       expect(idTypeIndex, lessThan(idNumberIndex));
     }
