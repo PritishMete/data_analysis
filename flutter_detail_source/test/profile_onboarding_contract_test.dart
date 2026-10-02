@@ -58,8 +58,7 @@ void main() {
       expect(screen, contains("label: 'State / Province / Region *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
-      expect(screen, contains("_field(
-                'ID Proof Number'"));
+      expect(screen, contains("_field(\n                'ID Proof Number'"));
       expect(screen, contains('Row('));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
     }
