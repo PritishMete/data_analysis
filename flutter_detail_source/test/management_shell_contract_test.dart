@@ -24,6 +24,7 @@ void main() {
     expect(source, contains('LiquidGlassScope'));
     expect(source, contains('GlassBackgroundSource'));
     expect(source, contains('TechAnimatedBackground'));
+    expect(source, contains('backgroundColor: kAppBackgroundColor'));
     expect(source, contains('GlassCard'));
     expect(source, contains('GlassChip'));
     expect(source, contains('AdaptiveLiquidGlassLayer'));
