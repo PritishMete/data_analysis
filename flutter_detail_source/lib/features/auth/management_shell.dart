@@ -30,7 +30,7 @@ class _ManagementGlassDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: Colors.transparent,
+      backgroundColor: kAppBackgroundColor,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
       child: ConstrainedBox(
