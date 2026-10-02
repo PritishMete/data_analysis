@@ -554,6 +554,7 @@ class _CompanyRegistrationScreenState
                     ? 'Loading countries…'
                     : 'Select country',
                 onTap: _busy ? null : _pickCountry,
+                showOptionSubtitle: false,
               ),
               _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
             ],
@@ -621,6 +622,43 @@ class _CompanyRegistrationScreenState
           );
         },
       );
+
+  Widget _phoneInputRow() {
+    final countryCode = ProfileSelectField(
+      label: 'COUNTRY CODE *',
+      value: _phoneCountry == null
+          ? null
+          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+      placeholder: 'Select calling code',
+      onTap: _busy ? null : _pickPhoneCountry,
+    );
+    final nationalNumber = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthGlassFieldLabel('PHONE NUMBER *'),
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: _phone,
+            placeholder: 'Phone number',
+            enabled: !_busy,
+            keyboardType: TextInputType.phone,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+          ),
+        ),
+      ],
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 1, child: countryCode),
+        const SizedBox(width: 10),
+        Expanded(flex: 2, child: nationalNumber),
+      ],
+    );
+  }
 
   Widget _reviewStep() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
