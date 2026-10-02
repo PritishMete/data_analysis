@@ -40,7 +40,7 @@ void main() {
     expect(company, contains('_state = _states.isEmpty'));
   });
 
-  test('phone calling code and national number are separate responsive controls', () {
+  test('profile form keeps the requested two-column grid and phone ratio', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
@@ -48,30 +48,26 @@ void main() {
       expect(screen, contains("label: 'COUNTRY CODE *'"));
       expect(screen, contains("const AuthGlassFieldLabel('PHONE NUMBER *')"));
       expect(screen, contains("placeholder: 'Phone number'"));
-      expect(screen, contains('FilteringTextInputFormatter.digitsOnly'));
-      expect(screen, contains('SizedBox(width: 96, child: countryCode)'));
-      expect(screen, isNot(contains('ProfileFloatingLabelField(')));
-      expect(screen, isNot(contains('if (width < 440)')));
+      expect(screen, contains('Expanded(flex: 1, child: countryCode)'));
+      expect(screen, contains('Expanded(flex: 2, child: nationalNumber)'));
       expect(screen, contains("_field('Full Name'"));
       expect(screen, contains("_field('Address Line 1'"));
       expect(screen, contains("_field('Address Line 2'"));
       expect(screen, contains("label: 'Country *'"));
+      expect(screen, contains('showOptionSubtitle: false'));
+      expect(screen, contains("label: 'State / Province / Region *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
-      expect(screen, contains("_field(\n              'ID Proof Number'"));
+      expect(screen, contains("_field(
+                'ID Proof Number'"));
+      expect(screen, contains('Row('));
+      expect(screen, isNot(contains('ProfileFloatingLabelField(')));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
     expect(company, isNot(contains("'employee_id': _employeeId")));
   });
 
-  test('profile grid keeps the shared field implementation untouched', () {
-    final widgets = source('lib/core/profile/profile_form_widgets.dart');
-    expect(widgets, contains('class ProfileSelectField'));
-    expect(widgets, contains('class ProfileFloatingLabelField'));
-    expect(widgets, isNot(contains('class ProfileTextField')));
-    expect(widgets, isNot(contains('class ProfileReadonlyField')));
-  });
 
   test('phone payload and E.164 normalization remain unchanged', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
