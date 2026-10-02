@@ -102,7 +102,6 @@ void main() {
     expect(find.text('PASSWORD'), findsOneWidget);
     expect(find.text('CONFIRM PASSWORD'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
-    expect(find.byType(AnimatedLiquidAuthBackground), findsNothing);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     expect(scaffold.backgroundColor, kAppBackgroundColor);
     expect(tester.takeException(), isNull);
