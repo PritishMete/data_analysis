@@ -70,12 +70,22 @@ void main() {
       expect(layoutEnd, greaterThan(layoutStart));
       final layout = screen.substring(layoutStart, layoutEnd);
 
-      // The runtime rows list is the authoritative desktop/tablet field order:
-      // exactly five two-item rows, with the phone group nested only in row 2.
-      expect(
-        RegExp(r'\n\s*\[\n').allMatches(layout).length,
-        5,
-      );
+      // The runtime rows list is the authoritative desktop/tablet field order.
+      // Each of the five row starts must occur exactly once.
+      final rowStarts = <String>[
+        "final rows = <List<Widget>>[\n            [_field('Full Name'",
+        "            [_emailField(), _phoneInputRow()],",
+        "            [\n              _field('Address Line 1'",
+        "            [\n              ProfileSelectField(\n                label: 'State / Province / Region *'",
+        "            [\n              ProfileSelectField(\n                label: 'ID Proof Type *'",
+      ];
+      for (final rowStart in rowStarts) {
+        expect(
+          layout.split(rowStart).length - 1,
+          1,
+          reason: 'Expected exactly one desktop/tablet profile row start: $rowStart',
+        );
+      }
 
       final nameIndex = layout.indexOf("_field('Full Name'");
       final employeeIndex = layout.indexOf('_employeeIdInfo()') >= 0
