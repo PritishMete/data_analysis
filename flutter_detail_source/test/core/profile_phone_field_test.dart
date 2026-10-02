@@ -184,7 +184,7 @@ void main() {
     final field = find.byType(ProfileFloatingLabelField);
     await tester.tap(field);
     await tester.pump(const Duration(milliseconds: 180));
-    await tester.tapAt(const Offset(620, 220));
+    FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump(const Duration(milliseconds: 180));
 
     final labelPosition = tester.widget<AnimatedPositioned>(
