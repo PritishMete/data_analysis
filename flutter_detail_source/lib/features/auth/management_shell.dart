@@ -1397,9 +1397,9 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
     final text = (value ?? '').trim();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 2),
       child: _glassRow(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1443,11 +1443,15 @@ class _ManagementShellState extends State<ManagementShell> {
     if (raw.isEmpty) return '—';
 
     try {
-      final hasTimezone = raw.endsWith('Z') ||
-          raw.contains('+') ||
-          (raw.length > 10 && raw.substring(10).contains('-'));
-      final parsed = DateTime.parse(hasTimezone ? raw : raw + 'Z');
-      final ist = parsed.toUtc().add(const Duration(hours: 5, minutes: 30));
+      // API timestamps are stored as UTC/offset-aware ISO-8601 values. The
+      // display layer alone converts them to India Standard Time.
+      final normalized = raw.endsWith('Z') || raw.contains('+') ||
+              (raw.length > 10 && raw.substring(10).contains('-'))
+          ? raw
+          : raw + 'Z';
+      final ist = DateTime.parse(normalized)
+          .toUtc()
+          .add(const Duration(hours: 5, minutes: 30));
       final hour = ist.hour % 12 == 0 ? 12 : ist.hour % 12;
       final period = ist.hour >= 12 ? 'PM' : 'AM';
       final month = ist.month.toString().padLeft(2, '0');
@@ -1470,19 +1474,35 @@ class _ManagementShellState extends State<ManagementShell> {
           await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
       if (!mounted) return;
       var showIdProof = false;
-      await GlassDialog.show<void>(
+      await showCupertinoDialog<void>(
         context: context,
         barrierDismissible: false,
+        builder: (dialogRouteContext) {
+          final maxDialogHeight =
+              MediaQuery.sizeOf(dialogRouteContext).height * 0.85;
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 520,
+                maxHeight: maxDialogHeight,
+              ),
+              child: LayoutBuilder(
+                builder: (dialogContext, dialogConstraints) {
+                  // GlassDialog adds its own title/action/padding chrome.
+                  // Reserve that space inside the route-level 85% bound so
+                  // the complete visible dialog remains within the requested
+                  // viewport fraction.
+                  final contentHeight = (dialogConstraints.maxHeight - 136)
+                      .clamp(220.0, dialogConstraints.maxHeight)
+                      .toDouble();
+                  return GlassDialog(
         title: profile['full_name']?.toString().trim().isEmpty == true
             ? 'Profile incomplete'
             : profile['full_name']?.toString().trim() ?? 'Profile incomplete',
         maxWidth: 520,
         content: StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            final dialogContentHeight =
-                (MediaQuery.of(context).size.height * 0.85 - 150)
-                    .clamp(320.0, 900.0)
-                    .toDouble();
+            final dialogContentHeight = contentHeight;
             final proofNumber = profile['id_proof_number']?.toString() ?? '';
             final proofType = profile['id_proof_type']?.toString() ?? '';
             final maskedProof = proofNumber.length <= 4
@@ -1501,7 +1521,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
             Widget cell(Widget child) => Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: child,
               ),
             );
@@ -1521,7 +1541,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           (item) => Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
-                              vertical: 5,
+                              vertical: 2,
                             ),
                             child: item,
                           ),
@@ -1720,6 +1740,12 @@ class _ManagementShellState extends State<ManagementShell> {
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
+                  );
+                },
+              ),
+            ),
+          );
+        },
       );
     } catch (error) {
       feedback(error);
