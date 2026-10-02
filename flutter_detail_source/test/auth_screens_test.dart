@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:liquid_glass_widgets/app_colors.dart';
+import 'package:liquid_glass_widgets/features/auth/auth_glass_widgets.dart';
 
 import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
@@ -55,6 +57,10 @@ void main() {
     expect(find.text('PASSWORD'), findsOneWidget);
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
+    expect(find.byType(AnimatedLiquidAuthBackground), findsNothing);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, kAppBackgroundColor);
+    expect(scaffold.backgroundColor, const Color(0xFF22D3EE));
     expect(tester.takeException(), isNull);
   });
 
@@ -96,6 +102,9 @@ void main() {
     expect(find.text('PASSWORD'), findsOneWidget);
     expect(find.text('CONFIRM PASSWORD'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
+    expect(find.byType(AnimatedLiquidAuthBackground), findsNothing);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, kAppBackgroundColor);
     expect(tester.takeException(), isNull);
   });
 }
