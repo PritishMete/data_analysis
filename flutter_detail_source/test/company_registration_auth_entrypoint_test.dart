@@ -37,7 +37,8 @@ void main() {
     expect(source, isNot(contains("'employee_id':")));
     expect(source, contains('AUTO-GENERATED'));
     expect(source, contains("label: 'COUNTRY CODE *'"));
-    expect(source, contains("'PHONE NUMBER'"));
+    expect(source, contains('ProfileFloatingLabelField('));
+    expect(source, contains("label: 'Phone number'"));
     expect(source, contains('full_name'));
     expect(source, contains('address_line1'));
     expect(source, contains('id_proof_number'));
