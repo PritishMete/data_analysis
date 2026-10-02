@@ -127,6 +127,7 @@ class _CompanyRegistrationScreenState
       title: 'Country',
       options: _countries,
       selectedValue: _country?.value,
+      showOptionSubtitle: false,
     );
     if (choice == null) return;
     setState(() {
@@ -363,12 +364,15 @@ class _CompanyRegistrationScreenState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AuthGlassFieldLabel(label + (required ? ' *' : '')),
-        GlassTextField(
-          controller: controller,
-          placeholder: placeholder ?? label,
-          enabled: !_busy,
-          keyboardType: type,
-          inputFormatters: inputFormatters,
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: controller,
+            placeholder: placeholder ?? label,
+            enabled: !_busy,
+            keyboardType: type,
+            inputFormatters: inputFormatters,
+          ),
         ),
         if (helper != null) ...[
           const SizedBox(height: 4),
@@ -456,29 +460,92 @@ class _CompanyRegistrationScreenState
         ],
       );
 
+  Widget _emailField() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassFieldLabel('EMAIL *'),
+          SizedBox(
+            height: 46,
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: GlassQuality.minimal,
+              settings: const LiquidGlassSettings(
+                thickness: 10,
+                blur: 4,
+                glassColor: Color(0x15FFFFFF),
+                refractiveIndex: 1.05,
+              ),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  (_email ?? 'Missing authenticated email') +
+                      (_emailConfirmed
+                          ? '  •  EMAIL CONFIRMED'
+                          : '  •  EMAIL NOT CONFIRMED'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _emailConfirmed
+                        ? TechColors.statusGreen
+                        : TechColors.statusRed,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _employeeIdInfo() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassFieldLabel('EMPLOYEE ID'),
+          SizedBox(
+            height: 46,
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: GlassQuality.minimal,
+              settings: const LiquidGlassSettings(
+                thickness: 10,
+                blur: 4,
+                glassColor: Color(0x14FFFFFF),
+                refractiveIndex: 1.05,
+              ),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'AUTO-GENERATED',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+
   Widget _profileStep() => LayoutBuilder(
         builder: (context, constraints) {
           final fields = <Widget>[
             _field('Full Name', _fullName),
             _employeeIdInfo(),
             _emailField(),
-             LayoutBuilder(
-               builder: (context, constraints) =>
-                   _phoneInputRow(constraints.maxWidth),
-             ),
-             const SizedBox(height: 6),
-             const Text(
-               'Enter the national/local number only. The country calling code is added automatically.',
-               style: TextStyle(color: TechColors.textMuted, fontSize: 9),
-             ),
-             const SizedBox(height: 10),
+            _phoneInputRow(),
             _field('Address Line 1', _address1),
-            _field(
-              'Address Line 2',
-              _address2,
-              required: false,
-              helper: 'Optional',
-            ),
+            _field('Address Line 2', _address2, required: false),
             ProfileSelectField(
               label: 'Country *',
               value: _country?.label,
@@ -545,7 +612,7 @@ class _CompanyRegistrationScreenState
         },
       );
 
-  Widget _phoneInputRow(double width) {
+  Widget _phoneInputRow() {
     final countryCode = ProfileSelectField(
       label: 'COUNTRY CODE *',
       value: _phoneCountry == null
@@ -554,51 +621,31 @@ class _CompanyRegistrationScreenState
       placeholder: 'Select calling code',
       onTap: _busy ? null : _pickPhoneCountry,
     );
-    final nationalNumber = ProfileFloatingLabelField(
-      controller: _phone,
-      label: 'Phone number',
-      placeholder: 'Enter phone number',
-      enabled: !_busy,
-      keyboardType: TextInputType.phone,
-      inputFormatters: <TextInputFormatter>[
-        FilteringTextInputFormatter.digitsOnly,
+    final nationalNumber = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthGlassFieldLabel('PHONE NUMBER *'),
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: _phone,
+            placeholder: 'Phone number',
+            enabled: !_busy,
+            keyboardType: TextInputType.phone,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+          ),
+        ),
       ],
     );
-
-    // Keep both controls together until there is not enough room for a
-    // readable compact selector plus a usable national-number field.
-    if (width < 440) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          countryCode,
-          const SizedBox(height: 10),
-          nationalNumber,
-        ],
-      );
-    }
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 680),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 1,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: countryCode,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: nationalNumber,
-            ),
-          ),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 96, child: countryCode),
+        const SizedBox(width: 10),
+        Expanded(child: nationalNumber),
+      ],
     );
   }
 
