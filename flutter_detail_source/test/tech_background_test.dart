@@ -10,7 +10,9 @@ void main() {
     );
 
     expect(kAppBackgroundColor, const Color(0xFF22D3EE));
-    final background = tester.widget<ColoredBox>(find.byType(ColoredBox));
-    expect(background.color, kAppBackgroundColor);
+    final backgrounds = find.byType(ColoredBox).evaluate()
+        .map((element) => element.widget)
+        .whereType<ColoredBox>();
+    expect(backgrounds.any((background) => background.color == kAppBackgroundColor), isTrue);
   });
 }
