@@ -58,8 +58,7 @@ void main() {
       expect(screen, contains("label: 'Country *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
-      expect(screen, contains("_field(
-                  'ID Proof Number'"));
+      expect(screen, contains("_field(\n              'ID Proof Number'"));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
