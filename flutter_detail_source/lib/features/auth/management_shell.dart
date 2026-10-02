@@ -1397,9 +1397,9 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
     final text = (value ?? '').trim();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 4),
       child: _glassRow(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1412,7 +1412,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: TechColors.textMuted,
-                  fontSize: 9,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
                 ),
@@ -1422,12 +1422,12 @@ class _ManagementShellState extends State<ManagementShell> {
             Expanded(
               child: Text(
                 text.isEmpty ? '—' : text,
-                maxLines: multiline ? 4 : 1,
+                maxLines: multiline ? 4 : 2,
                 softWrap: multiline,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: TechColors.textPrimary,
-                  fontSize: 10,
+                  fontSize: 12,
                   fontFamily: 'monospace',
                 ),
               ),
