@@ -44,18 +44,22 @@ void main() {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
-      expect(screen, contains('Widget _phoneInputRow(double width)'));
+      expect(screen, contains('Widget _phoneInputRow()'));
       expect(screen, contains("label: 'COUNTRY CODE *'"));
-      expect(screen, contains('ProfileFloatingLabelField('));
-      expect(screen, contains("label: 'Phone number'"));
-      expect(screen, contains("placeholder: 'Enter phone number'"));
-      expect(screen, contains('national/local number only'));
-      expect(screen, contains('if (width < 440)'));
-      expect(screen, contains('Expanded(\n            flex: 1'));
-      expect(screen, contains('Expanded(\n            flex: 3'));
+      expect(screen, contains("const AuthGlassFieldLabel('PHONE NUMBER *')"));
+      expect(screen, contains("placeholder: 'Phone number'"));
       expect(screen, contains('FilteringTextInputFormatter.digitsOnly'));
-      expect(screen, isNot(contains('Expanded(flex: 2, child: countryCode)')));
-      expect(screen, isNot(contains('Expanded(flex: 3, child: nationalNumber)')));
+      expect(screen, contains('SizedBox(width: 96, child: countryCode)'));
+      expect(screen, isNot(contains('ProfileFloatingLabelField(')));
+      expect(screen, isNot(contains('if (width < 440)')));
+      expect(screen, contains("_field('Full Name'"));
+      expect(screen, contains("_field('Address Line 1'"));
+      expect(screen, contains("_field('Address Line 2'"));
+      expect(screen, contains("label: 'Country *'"));
+      expect(screen, contains("_field('PIN / Postal Code'"));
+      expect(screen, contains("label: 'ID Proof Type *'"));
+      expect(screen, contains("_field(
+                  'ID Proof Number'"));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
