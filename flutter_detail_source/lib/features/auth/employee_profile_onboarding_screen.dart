@@ -323,29 +323,30 @@ class _EmployeeProfileOnboardingScreenState
       placeholder: 'Select calling code',
       onTap: _busy ? null : _pickPhoneCountry,
     );
-    final nationalNumber = ProfileTextField(
-      controller: _phone,
-      label: 'Phone Number',
-      placeholder: 'Phone number',
-      enabled: !_busy,
-      keyboardType: TextInputType.phone,
-      inputFormatters: <TextInputFormatter>[
-        FilteringTextInputFormatter.digitsOnly,
-      ],
-    );
-    return Column(
+    final nationalNumber = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AuthGlassFieldLabel('PHONE *'),
-        const SizedBox(height: 6),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(flex: 1, child: countryCode),
-            const SizedBox(width: 10),
-            Expanded(flex: 2, child: nationalNumber),
-          ],
+        const AuthGlassFieldLabel('PHONE NUMBER *'),
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: _phone,
+            placeholder: 'Phone number',
+            enabled: !_busy,
+            keyboardType: TextInputType.phone,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+          ),
         ),
+      ],
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 1, child: countryCode),
+        const SizedBox(width: 10),
+        Expanded(flex: 2, child: nationalNumber),
       ],
     );
   }
@@ -375,14 +376,8 @@ class _EmployeeProfileOnboardingScreenState
           LayoutBuilder(
             builder: (context, constraints) {
               final rows = <List<Widget>>[
-                [
-                  _field('Full Name', _fullName),
-                  _readonly('Employee ID', _employeeId),
-                ],
-                [
-                  _readonly('Email', _email + '  •  CONFIRMED'),
-                  _phoneInputRow(),
-                ],
+                [_field('Full Name', _fullName), _readonly('Employee ID', _employeeId)],
+                [_readonly('Email', _email + '  •  CONFIRMED'), _phoneInputRow()],
                 [
                   _field('Address Line 1', _address1),
                   _field('Address Line 2', _address2, required: false),
@@ -393,6 +388,7 @@ class _EmployeeProfileOnboardingScreenState
                     value: _country?.label,
                     placeholder: 'Select country',
                     onTap: _busy ? null : _pickCountry,
+                    showOptionSubtitle: false,
                   ),
                   _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
                 ],
@@ -417,7 +413,11 @@ class _EmployeeProfileOnboardingScreenState
                   ),
                 ],
                 [
-                  _field('ID Proof Number', _proofNumber, placeholder: 'Government ID number'),
+                  _field(
+                    'ID Proof Number',
+                    _proofNumber,
+                    placeholder: 'Government ID number',
+                  ),
                   const SizedBox.shrink(),
                 ],
               ];
@@ -427,8 +427,12 @@ class _EmployeeProfileOnboardingScreenState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (final row in rows) ...[
-                      ...row,
+                      row[0],
                       const SizedBox(height: 10),
+                      if (row[1] is! SizedBox) ...[
+                        row[1],
+                        const SizedBox(height: 10),
+                      ],
                     ],
                   ],
                 );
@@ -540,19 +544,59 @@ class _EmployeeProfileOnboardingScreenState
     TextInputType type = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
   }) {
-    return ProfileTextField(
-      controller: controller,
-      label: label,
-      placeholder: placeholder,
-      required: required,
-      enabled: !_busy,
-      keyboardType: type,
-      inputFormatters: inputFormatters,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthGlassFieldLabel(label + (required ? ' *' : '')),
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: controller,
+            placeholder: placeholder ?? label,
+            enabled: !_busy,
+            keyboardType: type,
+            inputFormatters: inputFormatters,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _readonly(String label, String value) =>
-      ProfileReadonlyField(label: label, value: value);
+  Widget _readonly(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthGlassFieldLabel(label),
+        SizedBox(
+          height: 46,
+          child: GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: const LiquidGlassSettings(
+              thickness: 10,
+              blur: 4,
+              glassColor: Color(0x14FFFFFF),
+              refractiveIndex: 1.05,
+            ),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value.isEmpty ? '—' : value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _review(String label, String value) => Padding(
         padding: const EdgeInsets.only(bottom: 7),
