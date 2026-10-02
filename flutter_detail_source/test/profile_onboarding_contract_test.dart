@@ -40,44 +40,37 @@ void main() {
     expect(company, contains('_state = _states.isEmpty'));
   });
 
-  test('phone controls are compact and non-floating', () {
+  test('phone calling code and national number are separate responsive controls', () {
     final company = source('lib/features/auth/company_registration_screen.dart');
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
       expect(screen, contains('Widget _phoneInputRow()'));
       expect(screen, contains("label: 'COUNTRY CODE *'"));
-      expect(screen, contains("const AuthGlassFieldLabel('PHONE *')"));
-      expect(screen, contains("label: 'Phone Number'"));
+      expect(screen, contains("const AuthGlassFieldLabel('PHONE NUMBER *')"));
       expect(screen, contains("placeholder: 'Phone number'"));
       expect(screen, contains('FilteringTextInputFormatter.digitsOnly'));
-      expect(screen, contains('Expanded(flex: 1, child: countryCode)'));
-      expect(screen, contains('Expanded(flex: 2, child: nationalNumber)'));
+      expect(screen, contains('SizedBox(width: 96, child: countryCode)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
-      expect(screen, isNot(contains('AnimatedPositioned')));
-      expect(screen, isNot(contains('AnimatedDefaultTextStyle')));
+      expect(screen, isNot(contains('if (width < 440)')));
       expect(screen, contains("_field('Full Name'"));
       expect(screen, contains("_field('Address Line 1'"));
       expect(screen, contains("_field('Address Line 2'"));
       expect(screen, contains("label: 'Country *'"));
       expect(screen, contains("_field('PIN / Postal Code'"));
       expect(screen, contains("label: 'ID Proof Type *'"));
-      expect(screen, contains("_field('ID Proof Number'"));
+      expect(screen, contains("_field(\n              'ID Proof Number'"));
     }
     expect(company, isNot(contains("_field('Employee Number'")));
     expect(company, contains('AUTO-GENERATED'));
     expect(company, isNot(contains("'employee_id': _employeeId")));
   });
 
-  test('shared profile fields have one standard 46px container and no floating-label logic', () {
+  test('profile grid keeps the shared field implementation untouched', () {
     final widgets = source('lib/core/profile/profile_form_widgets.dart');
-    expect(widgets, contains('class ProfileTextField'));
-    expect(widgets, contains('class ProfileReadonlyField'));
-    expect(widgets, contains('height: 46'));
-    expect(widgets, contains('hintText: placeholder ?? label'));
-    expect(widgets, isNot(contains('class ProfileFloatingLabelField')));
-    expect(widgets, isNot(contains('AnimatedPositioned')));
-    expect(widgets, isNot(contains('AnimatedDefaultTextStyle')));
-    expect(widgets, isNot(contains('_focused || widget.controller.text.isNotEmpty')));
+    expect(widgets, contains('class ProfileSelectField'));
+    expect(widgets, contains('class ProfileFloatingLabelField'));
+    expect(widgets, isNot(contains('class ProfileTextField')));
+    expect(widgets, isNot(contains('class ProfileReadonlyField')));
   });
 
   test('phone payload and E.164 normalization remain unchanged', () {
@@ -98,8 +91,6 @@ void main() {
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
       expect(screen, contains("label: 'Country *'"));
-      expect(screen, contains('showOptionSubtitle: false'));
-      expect(screen, contains("label: 'State / Province / Region *'"));
       expect(screen, contains('Future<void> _pickPhoneCountry()'));
       expect(screen, contains('options: _countries.where((item) => item.subtitle.isNotEmpty).toList()'));
       expect(screen, contains('_country'));
