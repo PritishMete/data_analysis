@@ -5,17 +5,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../../app_colors.dart';
+import 'app_colors.dart';
 
 class TechAnimatedBackground extends StatefulWidget {
-  const DataScreenTechBackground({super.key});
+  const TechAnimatedBackground({super.key});
 
   @override
-  State<DataScreenTechBackground> createState() =>
-      _DataScreenTechBackgroundState();
+  State<TechAnimatedBackground> createState() =>
+      _TechAnimatedBackgroundState();
 }
 
-class _DataScreenTechBackgroundState extends State<DataScreenTechBackground>
+class _TechAnimatedBackgroundState extends State<TechAnimatedBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
@@ -35,7 +35,7 @@ class _DataScreenTechBackgroundState extends State<DataScreenTechBackground>
   }
 
   @override
-  void didUpdateWidget(covariant DataScreenTechBackground oldWidget) {
+  void didUpdateWidget(covariant TechAnimatedBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncMotionPreference();
   }
@@ -83,8 +83,8 @@ class _DataScreenTechBackgroundState extends State<DataScreenTechBackground>
   }
 }
 
-class _DataScreenHistoricalBlobPainter extends CustomPainter {
-  const _DataScreenHistoricalBlobPainter({required this.t});
+class _TechBlobPainter extends CustomPainter {
+  const _TechBlobPainter({required this.t});
 
   final double t;
 
@@ -127,6 +127,6 @@ class _DataScreenHistoricalBlobPainter extends CustomPainter {
       );
 
   @override
-  bool shouldRepaint(covariant _DataScreenHistoricalBlobPainter old) =>
+  bool shouldRepaint(covariant _TechBlobPainter old) =>
       old.t != t;
 }
