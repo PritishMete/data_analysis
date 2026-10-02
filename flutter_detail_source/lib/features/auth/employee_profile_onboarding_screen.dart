@@ -323,17 +323,20 @@ class _EmployeeProfileOnboardingScreenState
       placeholder: 'Select calling code',
       onTap: _busy ? null : _pickPhoneCountry,
     );
-    final nationalNumber = _field(
-      'PHONE NUMBER',
-      _phone,
-      required: true,
+    final nationalNumber = ProfileFloatingLabelField(
+      controller: _phone,
+      label: 'Phone number',
       placeholder: 'Enter phone number',
-      type: TextInputType.phone,
+      enabled: !_busy,
+      keyboardType: TextInputType.phone,
       inputFormatters: <TextInputFormatter>[
         FilteringTextInputFormatter.digitsOnly,
       ],
     );
-    if (width < 520) {
+
+    // Keep both controls together until there is not enough room for a
+    // readable compact selector plus a usable national-number field.
+    if (width < 440) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -343,13 +346,28 @@ class _EmployeeProfileOnboardingScreenState
         ],
       );
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: 2, child: countryCode),
-        const SizedBox(width: 12),
-        Expanded(flex: 3, child: nationalNumber),
-      ],
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 680),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: countryCode,
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: nationalNumber,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
