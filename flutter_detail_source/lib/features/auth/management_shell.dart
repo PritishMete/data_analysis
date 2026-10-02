@@ -1458,6 +1458,10 @@ class _ManagementShellState extends State<ManagementShell> {
         maxWidth: 520,
         content: StatefulBuilder(
           builder: (dialogContext, setDialogState) {
+            final dialogContentHeight =
+                (MediaQuery.of(context).size.height * 0.85 - 150)
+                    .clamp(320.0, 900.0)
+                    .toDouble();
             final proofNumber = profile['id_proof_number']?.toString() ?? '';
             final proofType = profile['id_proof_type']?.toString() ?? '';
             final maskedProof = proofNumber.length <= 4
@@ -1590,9 +1594,11 @@ class _ManagementShellState extends State<ManagementShell> {
               ),
             ];
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            return SizedBox(
+              height: dialogContentHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Row(
@@ -1635,40 +1641,50 @@ class _ManagementShellState extends State<ManagementShell> {
                   color: TechColors.textMuted.withValues(alpha: 0.22),
                 ),
                 const SizedBox(height: 7),
-                responsiveRows(mainDetails),
-                const SizedBox(height: 8),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: TechColors.textMuted.withValues(alpha: 0.22),
-                ),
-                const SizedBox(height: 7),
-                responsiveRows(remainingDetails),
-                if (proofNumber.isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () =>
-                          setDialogState(() => showIdProof = !showIdProof),
-                      child: Text(
-                        showIdProof ? 'Mask ID proof' : 'Show ID proof',
-                      ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        responsiveRows(mainDetails),
+                        const SizedBox(height: 4),
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: TechColors.textMuted.withValues(alpha: 0.22),
+                        ),
+                        const SizedBox(height: 4),
+                        responsiveRows(remainingDetails),
+                        if (proofNumber.isNotEmpty)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () =>
+                                  setDialogState(() => showIdProof = !showIdProof),
+                              child: Text(
+                                showIdProof ? 'Mask ID proof' : 'Show ID proof',
+                              ),
+                            ),
+                          ),
+                        if (completion < 100) ...[
+                          const SizedBox(height: 4),
+                          Divider(
+                            height: 1,
+                            thickness: 1,
+                            color: TechColors.textMuted.withValues(alpha: 0.22),
+                          ),
+                          const SizedBox(height: 4),
+                          detail(
+                            'PROFILE COMPLETENESS',
+                            completion.toStringAsFixed(0) + '%',
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                if (completion < 100) ...[
-                  const SizedBox(height: 8),
-                  Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: TechColors.textMuted.withValues(alpha: 0.22),
-                  ),
-                  const SizedBox(height: 8),
-                  detail(
-                    'PROFILE COMPLETENESS',
-                    '${completion.toStringAsFixed(0)}%',
-                  ),
-                ],
-              ],
+                ),
+              ], 
             );
           },
         ),
