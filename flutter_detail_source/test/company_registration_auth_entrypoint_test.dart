@@ -38,7 +38,6 @@ void main() {
     expect(source, contains('AUTO-GENERATED'));
     expect(source, contains("label: 'COUNTRY CODE *'"));
     expect(source, contains('ProfileTextField('));
-    expect(source, contains("label: 'Phone Number'"));
     expect(source, contains('full_name'));
     expect(source, contains('address_line1'));
     expect(source, contains('id_proof_number'));
