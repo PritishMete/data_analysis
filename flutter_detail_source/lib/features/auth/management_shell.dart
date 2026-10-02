@@ -1498,7 +1498,6 @@ class _ManagementShellState extends State<ManagementShell> {
             dialogRouteContext,
           ).copyWith(
             glowIntensity: 0,
-            fresnelStrength: 0,
             ambientRim: 0,
             shadowElevation: 0,
             shadow: const <BoxShadow>[],
@@ -2259,6 +2258,3 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
         ],
       ),
-    ),
-  );
-}
