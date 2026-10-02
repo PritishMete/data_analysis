@@ -211,19 +211,14 @@ class ProfileSelectField extends StatelessWidget {
 }
 
 
-/// Liquid Glass text input with an animated floating label.
-///
-/// The label begins inside the field, floats to the top border on focus or
-/// when text is present, and returns inside when the field is empty and
-/// unfocused. The widget is shared by profile/onboarding forms so the
-/// interaction stays visually consistent without depending on Material's
-/// default TextField styling.
-class ProfileFloatingLabelField extends StatefulWidget {
-  const ProfileFloatingLabelField({
+/// Standard Liquid Glass profile text input.
+class ProfileTextField extends StatelessWidget {
+  const ProfileTextField({
     super.key,
     required this.controller,
     required this.label,
     this.placeholder,
+    this.required = true,
     this.enabled = true,
     this.keyboardType,
     this.inputFormatters,
@@ -233,153 +228,79 @@ class ProfileFloatingLabelField extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final String? placeholder;
+  final bool required;
   final bool enabled;
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
   final ValueChanged<String>? onChanged;
 
   @override
-  State<ProfileFloatingLabelField> createState() =>
-      _ProfileFloatingLabelFieldState();
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthGlassFieldLabel(label + (required ? ' *' : '')),
+        SizedBox(
+          height: 46,
+          child: GlassTextField(
+            controller: controller,
+            placeholder: placeholder ?? label,
+            enabled: enabled,
+            keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _ProfileFloatingLabelFieldState extends State<ProfileFloatingLabelField> {
-  late final FocusNode _focusNode;
-  bool _focused = false;
+/// Standard Liquid Glass read-only profile field.
+class ProfileReadonlyField extends StatelessWidget {
+  const ProfileReadonlyField({
+    super.key,
+    required this.label,
+    required this.value,
+  });
 
-  bool get _floated => _focused || widget.controller.text.isNotEmpty;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = FocusNode()..addListener(_handleFocusChange);
-    widget.controller.addListener(_handleTextChange);
-  }
-
-  @override
-  void didUpdateWidget(covariant ProfileFloatingLabelField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_handleTextChange);
-      widget.controller.addListener(_handleTextChange);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_handleTextChange);
-    _focusNode
-      ..removeListener(_handleFocusChange)
-      ..dispose();
-    super.dispose();
-  }
-
-  void _handleFocusChange() {
-    if (mounted) setState(() => _focused = _focusNode.hasFocus);
-  }
-
-  void _handleTextChange() {
-    if (mounted) setState(() {});
-  }
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final floated = _floated;
-    final borderColor = _focused
-        ? TechColors.borderActive.withValues(alpha: .72)
-        : TechColors.borderActive.withValues(alpha: .28);
-
-    return Semantics(
-      textField: true,
-      label: widget.label,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: borderColor),
-              borderRadius: BorderRadius.circular(10),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthGlassFieldLabel(label),
+        SizedBox(
+          height: 46,
+          child: GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: const LiquidGlassSettings(
+              thickness: 10,
+              blur: 4,
+              glassColor: Color(0x14FFFFFF),
+              refractiveIndex: 1.05,
             ),
-            child: GlassContainer(
-              useOwnLayer: true,
-              quality: GlassQuality.minimal,
-              settings: const LiquidGlassSettings(
-                thickness: 10,
-                blur: 4,
-                glassColor: Color(0x14FFFFFF),
-                refractiveIndex: 1.05,
-              ),
-              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-              padding: const EdgeInsets.only(
-                left: 12,
-                right: 12,
-                top: 10,
-                bottom: 4,
-              ),
-              child: TextField(
-                controller: widget.controller,
-                focusNode: _focusNode,
-                enabled: widget.enabled,
-                keyboardType: widget.keyboardType,
-                inputFormatters: widget.inputFormatters,
-                onChanged: widget.onChanged,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value.isEmpty ? '—' : value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: TechColors.textPrimary,
                   fontSize: 11,
                 ),
-                cursorColor: TechColors.borderActive,
-                maxLines: 1,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.only(
-                    top: floated ? 10 : 2,
-                    bottom: 7,
-                  ),
-                  hintText: floated ? widget.placeholder : null,
-                  hintStyle: const TextStyle(
-                    color: TechColors.textMuted,
-                    fontSize: 11,
-                  ),
-                ),
               ),
             ),
           ),
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOutCubic,
-            left: floated ? 9 : 12,
-            top: floated ? -7 : 13,
-            child: IgnorePointer(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
-                padding: floated
-                    ? const EdgeInsets.symmetric(horizontal: 4)
-                    : EdgeInsets.zero,
-                color: floated
-                    ? const Color(0xFF10121A).withValues(alpha: .94)
-                    : Colors.transparent,
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  style: TextStyle(
-                    color: floated
-                        ? (_focused
-                            ? TechColors.textPrimary
-                            : TechColors.textMuted)
-                        : TechColors.textMuted,
-                    fontSize: floated ? 9 : 11,
-                    fontWeight:
-                        floated ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                  child: Text(widget.label),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
