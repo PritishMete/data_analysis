@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import '../../tech_background.dart';
 
 import '../../app_colors.dart';
 
@@ -26,10 +27,15 @@ class AuthGlassScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kAppBackgroundColor,
+      backgroundColor: Colors.transparent,
       body: LiquidGlassScope(
         child: Stack(
           children: [
+            const Positioned.fill(
+              child: GlassBackgroundSource(
+                child: TechAnimatedBackground(),
+              ),
+            ),
             Positioned.fill(
               child: SafeArea(
                 child: LayoutBuilder(

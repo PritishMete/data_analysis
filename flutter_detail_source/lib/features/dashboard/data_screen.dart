@@ -6313,7 +6313,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // ── Animated cyberpunk background — captured for glass refraction
             Positioned.fill(
               child: GlassBackgroundSource(
-                child: const DataScreenTechBackground(),
+                child: const TechAnimatedBackground(),
               ),
             ),
 
