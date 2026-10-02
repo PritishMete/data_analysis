@@ -1470,8 +1470,9 @@ class _ManagementShellState extends State<ManagementShell> {
       return;
     }
     try {
-      final profile =
-          await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
+      final profile = await request(
+        '/assignments/${Uri.encodeComponent(assignmentId)}/profile',
+      );
       if (!mounted) return;
       var showIdProof = false;
       await showCupertinoDialog<void>(
@@ -1480,268 +1481,295 @@ class _ManagementShellState extends State<ManagementShell> {
         builder: (dialogRouteContext) {
           final maxDialogHeight =
               MediaQuery.sizeOf(dialogRouteContext).height * 0.85;
+          // GlassDialog itself has no maxHeight. Constrain the actual
+          // dialog widget at the route level so title, content, actions,
+          // padding, and the Close button all share the same 85% ceiling.
+          final contentHeight = (maxDialogHeight - 136)
+              .clamp(220.0, maxDialogHeight)
+              .toDouble();
           return Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 520,
                 maxHeight: maxDialogHeight,
               ),
-              child: LayoutBuilder(
-                builder: (dialogContext, dialogConstraints) {
-                  // GlassDialog adds its own title/action/padding chrome.
-                  // Reserve that space inside the route-level 85% bound so
-                  // the complete visible dialog remains within the requested
-                  // viewport fraction.
-                  final contentHeight = (dialogConstraints.maxHeight - 136)
-                      .clamp(220.0, dialogConstraints.maxHeight)
-                      .toDouble();
-                  return GlassDialog(
-        title: profile['full_name']?.toString().trim().isEmpty == true
-            ? 'Profile incomplete'
-            : profile['full_name']?.toString().trim() ?? 'Profile incomplete',
-        maxWidth: 520,
-        content: StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            final dialogContentHeight = contentHeight;
-            final proofNumber = profile['id_proof_number']?.toString() ?? '';
-            final proofType = profile['id_proof_type']?.toString() ?? '';
-            final maskedProof = proofNumber.length <= 4
-                ? proofNumber
-                : ('X' * (proofNumber.length - 4)) +
-                    proofNumber.substring(proofNumber.length - 4);
-            final completion = num.tryParse(
-                  profile['profile_completeness_percent']?.toString() ?? '',
-                ) ??
-                0;
-            final fullName = profile['full_name']?.toString().trim() ?? '';
-            final employeeId = profile['employee_id']?.toString() ?? '—';
+              child: GlassDialog(
+                title: profile['full_name']?.toString().trim().isEmpty == true
+                    ? 'Profile incomplete'
+                    : profile['full_name']?.toString().trim() ??
+                        'Profile incomplete',
+                maxWidth: 520,
+                content: StatefulBuilder(
+                  builder: (dialogContext, setDialogState) {
+                    final proofNumber =
+                        profile['id_proof_number']?.toString() ?? '';
+                    final proofType =
+                        profile['id_proof_type']?.toString() ?? '';
+                    final maskedProof = proofNumber.length <= 4
+                        ? proofNumber
+                        : ('X' * (proofNumber.length - 4)) +
+                            proofNumber.substring(proofNumber.length - 4);
+                    final completion = num.tryParse(
+                          profile['profile_completeness_percent']?.toString() ??
+                              '',
+                        ) ??
+                        0;
+                    final fullName =
+                        profile['full_name']?.toString().trim() ?? '';
+                    final employeeId =
+                        profile['employee_id']?.toString() ?? '—';
 
-            Widget detail(String label, String? value, {bool multiline = false}) =>
-                _profileDetailRow(label, value, multiline: multiline);
+                    Widget detail(
+                      String label,
+                      String? value, {
+                      bool multiline = false,
+                    }) => _profileDetailRow(
+                      label,
+                      value,
+                      multiline: multiline,
+                    );
 
-            Widget cell(Widget child) => Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: child,
-              ),
-            );
+                    Widget cell(Widget child) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: child,
+                      ),
+                    );
 
-            Widget row(Widget left, Widget right) => Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [cell(left), cell(right)],
-            );
+                    Widget row(Widget left, Widget right) => Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [cell(left), cell(right)],
+                    );
 
-            Widget responsiveRows(List<Widget> items) => LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth < 460) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: items
-                        .map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                    Widget responsiveRows(List<Widget> items) => LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 460) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: items
+                                .map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    child: item,
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        }
+                        final rows = <Widget>[];
+                        for (var i = 0; i < items.length; i += 2) {
+                          rows.add(
+                            row(
+                              items[i],
+                              i + 1 < items.length
+                                  ? items[i + 1]
+                                  : const SizedBox.shrink(),
                             ),
-                            child: item,
-                          ),
-                        )
-                        .toList(),
-                  );
-                }
-                final rows = <Widget>[];
-                for (var i = 0; i < items.length; i += 2) {
-                  rows.add(
-                    row(
-                      items[i],
-                      i + 1 < items.length
-                          ? items[i + 1]
-                          : const SizedBox.shrink(),
-                    ),
-                  );
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: rows,
-                );
-              },
-            );
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: rows,
+                        );
+                      },
+                    );
 
-            final mainDetails = <Widget>[
-              detail('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
-              detail('EMAIL', profile['email']?.toString()),
-              detail(
-                'EMAIL VERIFIED',
-                profile['email_verified'] == true ? 'YES' : 'NO',
-              ),
-              detail('PHONE', profile['phone_e164']?.toString()),
-              detail(
-                'PHONE VERIFIED',
-                profile['phone_verified'] == true ? 'YES' : 'NO',
-              ),
-              detail(
-                'ADDRESS LINE 1',
-                profile['address_line1']?.toString(),
-                multiline: true,
-              ),
-              detail(
-                'ADDRESS LINE 2',
-                profile['address_line2']?.toString(),
-                multiline: true,
-              ),
-              detail('STATE', profile['state']?.toString()),
-              detail('COUNTRY', profile['country']?.toString()),
-              detail('PIN / POSTAL CODE', profile['postal_code']?.toString()),
-              detail('ID PROOF TYPE', proofType),
-              detail(
-                'ID PROOF NUMBER',
-                showIdProof ? proofNumber : maskedProof,
-              ),
-            ];
-
-            final remainingDetails = <Widget>[
-              detail('BRANCH', profile['location_name']?.toString()),
-              detail('SECTION', profile['section_name']?.toString()),
-              detail(
-                'REPORTS TO',
-                [
-                  profile['reports_to_employee_id'],
-                  profile['reports_to_role_id'] == null
-                      ? null
-                      : _roleLabel(profile['reports_to_role_id'].toString()),
-                ]
-                    .where(
-                      (value) =>
-                          value != null && value.toString().isNotEmpty,
-                    )
-                    .join(' · '),
-              ),
-              detail('ASSIGNMENT STATUS', profile['status']?.toString()),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  detail(
-                    'CREATED',
-                    _formatEmployeeTimestamp(
-                      profile['profile_created_at'] ??
-                          profile['assignment_created_at'],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  detail(
-                    'UPDATED',
-                    _formatEmployeeTimestamp(
-                      profile['profile_updated_at'] ??
-                          profile['assignment_updated_at'],
-                    ),
-                  ),
-                ],
-              ),
-            ];
-
-            return SizedBox(
-              height: dialogContentHeight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          fullName.isEmpty ? 'Profile incomplete' : fullName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: TechColors.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                    final mainDetails = <Widget>[
+                      detail(
+                        'ROLE',
+                        _roleLabel(profile['role_id']?.toString() ?? '—'),
                       ),
-                      const SizedBox(width: 16),
-                      Flexible(
-                        child: Text(
-                          employeeId,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            color: TechColors.textMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
+                      detail('EMAIL', profile['email']?.toString()),
+                      detail(
+                        'EMAIL VERIFIED',
+                        profile['email_verified'] == true ? 'YES' : 'NO',
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: TechColors.textMuted.withValues(alpha: 0.22),
-                ),
-                const SizedBox(height: 7),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        responsiveRows(mainDetails),
-                        const SizedBox(height: 4),
-                        Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: TechColors.textMuted.withValues(alpha: 0.22),
-                        ),
-                        const SizedBox(height: 4),
-                        responsiveRows(remainingDetails),
-                        if (proofNumber.isNotEmpty)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () =>
-                                  setDialogState(() => showIdProof = !showIdProof),
-                              child: Text(
-                                showIdProof ? 'Mask ID proof' : 'Show ID proof',
-                              ),
+                      detail('PHONE', profile['phone_e164']?.toString()),
+                      detail(
+                        'PHONE VERIFIED',
+                        profile['phone_verified'] == true ? 'YES' : 'NO',
+                      ),
+                      detail(
+                        'ADDRESS LINE 1',
+                        profile['address_line1']?.toString(),
+                        multiline: true,
+                      ),
+                      detail(
+                        'ADDRESS LINE 2',
+                        profile['address_line2']?.toString(),
+                        multiline: true,
+                      ),
+                      detail('STATE', profile['state']?.toString()),
+                      detail('COUNTRY', profile['country']?.toString()),
+                      detail(
+                        'PIN / POSTAL CODE',
+                        profile['postal_code']?.toString(),
+                      ),
+                      detail('ID PROOF TYPE', proofType),
+                      detail(
+                        'ID PROOF NUMBER',
+                        showIdProof ? proofNumber : maskedProof,
+                      ),
+                    ];
+
+                    final remainingDetails = <Widget>[
+                      detail('BRANCH', profile['location_name']?.toString()),
+                      detail('SECTION', profile['section_name']?.toString()),
+                      detail(
+                        'REPORTS TO',
+                        [
+                          profile['reports_to_employee_id'],
+                          profile['reports_to_role_id'] == null
+                              ? null
+                              : _roleLabel(
+                                  profile['reports_to_role_id'].toString(),
+                                ),
+                        ]
+                            .where(
+                              (value) =>
+                                  value != null && value.toString().isNotEmpty,
+                            )
+                            .join(' · '),
+                      ),
+                      detail(
+                        'ASSIGNMENT STATUS',
+                        profile['status']?.toString(),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          detail(
+                            'CREATED',
+                            _formatEmployeeTimestamp(
+                              profile['profile_created_at'] ??
+                                  profile['assignment_created_at'],
                             ),
                           ),
-                        if (completion < 100) ...[
                           const SizedBox(height: 4),
+                          detail(
+                            'UPDATED',
+                            _formatEmployeeTimestamp(
+                              profile['profile_updated_at'] ??
+                                  profile['assignment_updated_at'],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ];
+
+                    return SizedBox(
+                      height: contentHeight,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    fullName.isEmpty
+                                        ? 'Profile incomplete'
+                                        : fullName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: TechColors.textPrimary,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Flexible(
+                                  child: Text(
+                                    employeeId,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(
+                                      color: TechColors.textMuted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
                           Divider(
                             height: 1,
                             thickness: 1,
                             color: TechColors.textMuted.withValues(alpha: 0.22),
                           ),
-                          const SizedBox(height: 4),
-                          detail(
-                            'PROFILE COMPLETENESS',
-                            completion.toStringAsFixed(0) + '%',
+                          const SizedBox(height: 7),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  responsiveRows(mainDetails),
+                                  const SizedBox(height: 4),
+                                  Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: TechColors.textMuted.withValues(alpha: 0.22),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  responsiveRows(remainingDetails),
+                                  if (proofNumber.isNotEmpty)
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: () => setDialogState(
+                                          () => showIdProof = !showIdProof,
+                                        ),
+                                        child: Text(
+                                          showIdProof
+                                              ? 'Mask ID proof'
+                                              : 'Show ID proof',
+                                        ),
+                                      ),
+                                    ),
+                                  if (completion < 100) ...[
+                                    const SizedBox(height: 4),
+                                    Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: TechColors.textMuted.withValues(alpha: 0.22),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    detail(
+                                      'PROFILE COMPLETENESS',
+                                      completion.toStringAsFixed(0) + '%',
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ],
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
-              ], 
-            );
-          },
-        ),
-        actions: [
-          GlassDialogAction(
-            label: 'Close',
-            isPrimary: true,
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-                  );
-                },
+                actions: [
+                  GlassDialogAction(
+                    label: 'Close',
+                    isPrimary: true,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
             ),
           );
@@ -1751,7 +1779,6 @@ class _ManagementShellState extends State<ManagementShell> {
       feedback(error);
     }
   }
-
   Widget _assignmentRegistryValue(
     String value, {
     TextStyle style = const TextStyle(
