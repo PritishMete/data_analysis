@@ -313,7 +313,6 @@ class _EmployeeProfileOnboardingScreenState
     }
   }
 
-  @override
   Widget _phoneInputRow(double width) {
     final countryCode = ProfileSelectField(
       label: 'COUNTRY CODE *',
