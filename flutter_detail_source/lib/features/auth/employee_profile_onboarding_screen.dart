@@ -565,12 +565,7 @@ class _EmployeeProfileOnboardingScreenState
           child: GlassContainer(
             useOwnLayer: true,
             quality: GlassQuality.minimal,
-            settings: const LiquidGlassSettings(
-              thickness: 10,
-              blur: 4,
-              glassColor: Color(0x14FFFFFF),
-              refractiveIndex: 1.05,
-            ),
+            settings: TechColors.fieldGlass,
             shape: const LiquidRoundedSuperellipse(borderRadius: 10),
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Align(
@@ -596,12 +591,7 @@ class _EmployeeProfileOnboardingScreenState
         child: GlassContainer(
           useOwnLayer: true,
           quality: GlassQuality.minimal,
-          settings: const LiquidGlassSettings(
-            thickness: 10,
-            blur: 4,
-            glassColor: Color(0x15FFFFFF),
-            refractiveIndex: 1.05,
-          ),
+          settings: TechColors.fieldGlass,
           shape: const LiquidRoundedSuperellipse(borderRadius: 10),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
