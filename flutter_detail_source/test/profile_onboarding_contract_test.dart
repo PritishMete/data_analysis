@@ -63,8 +63,12 @@ void main() {
       expect(screen, contains('if (constraints.maxWidth < 760)'));
       expect(screen, isNot(contains('ProfileFloatingLabelField(')));
       final nameIndex = screen.indexOf("_field('Full Name'");
-      final employeeIndex = screen.indexOf('_employeeId');
-      final emailIndex = screen.indexOf('_emailField()');
+      final employeeIndex = screen.indexOf('_employeeIdInfo()') >= 0
+          ? screen.indexOf('_employeeIdInfo()')
+          : screen.indexOf("_readonly('Employee ID'");
+      final emailIndex = screen.indexOf('_emailField()') >= 0
+          ? screen.indexOf('_emailField()')
+          : screen.indexOf("_readonly('Email'");
       final phoneIndex = screen.indexOf('_phoneInputRow()');
       final address1Index = screen.indexOf("_field('Address Line 1'");
       final address2Index = screen.indexOf("_field('Address Line 2'");
