@@ -3,6 +3,9 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 
+/// Shared profile control height so editable fields and selectors use one visual size.
+const double kProfileFieldHeight = 46.0;
+
 class ProfileOption {
   const ProfileOption({
     required this.value,
