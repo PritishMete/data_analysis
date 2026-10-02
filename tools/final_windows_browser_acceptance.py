@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
-from playwright.sync_api import sync_playwright
 
 QUERIES = [
     ("detail_analysis", "give me detail analysis", ["observed fact", "inference", "assumption"]),
@@ -435,6 +434,8 @@ def click_semantic_button(page, index: int) -> None:
 
 
 def main() -> int:
+    from playwright.sync_api import sync_playwright
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", required=True)
     ap.add_argument("--artifacts", required=True)
