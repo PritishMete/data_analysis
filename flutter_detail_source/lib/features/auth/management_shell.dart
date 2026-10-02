@@ -1447,97 +1447,104 @@ class _ManagementShellState extends State<ManagementShell> {
     try {
       final profile =
           await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
-      var showIdProof = false;
       if (!mounted) return;
-      await showDialog<void>(
+      var showIdProof = false;
+      await GlassDialog.show<void>(
         context: context,
-        builder: (dialogContext) => StatefulBuilder(
+        barrierDismissible: false,
+        title: profile['full_name']?.toString().trim().isEmpty == true
+            ? 'Profile incomplete'
+            : profile['full_name']?.toString().trim() ?? 'Profile incomplete',
+        maxWidth: 520,
+        content: StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            final fullName =
-                profile['full_name']?.toString().trim().isEmpty == true
-                    ? 'Profile incomplete'
-                    : profile['full_name']?.toString().trim() ?? 'Profile incomplete';
             final proofNumber = profile['id_proof_number']?.toString() ?? '';
             final proofType = profile['id_proof_type']?.toString() ?? '';
             final maskedProof = proofNumber.length <= 4
                 ? proofNumber
                 : ('X' * (proofNumber.length - 4)) +
                     proofNumber.substring(proofNumber.length - 4);
-            return _ManagementGlassDialog(
-              title: Text(fullName),
-              content: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _profileDetailRow('EMPLOYEE NUMBER', profile['employee_id']?.toString()),
-                  _profileDetailRow('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
-                  _profileDetailRow('EMAIL', profile['email']?.toString()),
-                  _profileDetailRow(
-                    'EMAIL VERIFIED',
-                    profile['email_verified'] == true ? 'YES' : 'NO',
-                  ),
-                  _profileDetailRow('PHONE', profile['phone_e164']?.toString()),
-                  _profileDetailRow(
-                    'PHONE VERIFIED',
-                    profile['phone_verified'] == true ? 'YES' : 'NO',
-                  ),
-                  _profileDetailRow('ADDRESS LINE 1', profile['address_line1']?.toString(), multiline: true),
-                  _profileDetailRow('ADDRESS LINE 2', profile['address_line2']?.toString(), multiline: true),
-                  _profileDetailRow('STATE', profile['state']?.toString()),
-                  _profileDetailRow('COUNTRY', profile['country']?.toString()),
-                  _profileDetailRow('PIN / POSTAL CODE', profile['postal_code']?.toString()),
-                  _profileDetailRow('ID PROOF TYPE', proofType),
-                  _profileDetailRow(
-                    'ID PROOF NUMBER',
-                    showIdProof ? proofNumber : maskedProof,
-                  ),
-                  if (proofNumber.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () =>
-                            setDialogState(() => showIdProof = !showIdProof),
-                        child: Text(showIdProof ? 'Mask ID proof' : 'Show ID proof'),
-                      ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _profileDetailRow('EMPLOYEE NUMBER', profile['employee_id']?.toString()),
+                _profileDetailRow('ROLE', _roleLabel(profile['role_id']?.toString() ?? '—')),
+                _profileDetailRow('EMAIL', profile['email']?.toString()),
+                _profileDetailRow(
+                  'EMAIL VERIFIED',
+                  profile['email_verified'] == true ? 'YES' : 'NO',
+                ),
+                _profileDetailRow('PHONE', profile['phone_e164']?.toString()),
+                _profileDetailRow(
+                  'PHONE VERIFIED',
+                  profile['phone_verified'] == true ? 'YES' : 'NO',
+                ),
+                _profileDetailRow(
+                  'ADDRESS LINE 1',
+                  profile['address_line1']?.toString(),
+                  multiline: true,
+                ),
+                _profileDetailRow(
+                  'ADDRESS LINE 2',
+                  profile['address_line2']?.toString(),
+                  multiline: true,
+                ),
+                _profileDetailRow('STATE', profile['state']?.toString()),
+                _profileDetailRow('COUNTRY', profile['country']?.toString()),
+                _profileDetailRow('PIN / POSTAL CODE', profile['postal_code']?.toString()),
+                _profileDetailRow('ID PROOF TYPE', proofType),
+                _profileDetailRow(
+                  'ID PROOF NUMBER',
+                  showIdProof ? proofNumber : maskedProof,
+                ),
+                if (proofNumber.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () =>
+                          setDialogState(() => showIdProof = !showIdProof),
+                      child: Text(showIdProof ? 'Mask ID proof' : 'Show ID proof'),
                     ),
-                  _profileDetailRow('BRANCH', profile['location_name']?.toString()),
-                  _profileDetailRow('SECTION', profile['section_name']?.toString()),
-                  _profileDetailRow(
-                    'REPORTS TO',
-                    [
-                      profile['reports_to_employee_id'],
-                      profile['reports_to_role_id'] == null
-                          ? null
-                          : _roleLabel(profile['reports_to_role_id'].toString()),
-                    ]
-                        .where((value) => value != null && value.toString().isNotEmpty)
-                        .join(' · '),
                   ),
-                  _profileDetailRow('ASSIGNMENT STATUS', profile['status']?.toString()),
-                  _profileDetailRow(
-                    'PROFILE COMPLETENESS',
-                    '${profile['profile_completeness_percent']?.toString() ?? '0'}%',
-                  ),
-                  _profileDetailRow(
-                    'CREATED',
-                    profile['profile_created_at']?.toString() ??
-                        profile['assignment_created_at']?.toString(),
-                  ),
-                  _profileDetailRow(
-                    'UPDATED',
-                    profile['profile_updated_at']?.toString() ??
-                        profile['assignment_updated_at']?.toString(),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Close'),
+                _profileDetailRow('BRANCH', profile['location_name']?.toString()),
+                _profileDetailRow('SECTION', profile['section_name']?.toString()),
+                _profileDetailRow(
+                  'REPORTS TO',
+                  [
+                    profile['reports_to_employee_id'],
+                    profile['reports_to_role_id'] == null
+                        ? null
+                        : _roleLabel(profile['reports_to_role_id'].toString()),
+                  ]
+                      .where((value) => value != null && value.toString().isNotEmpty)
+                      .join(' · '),
+                ),
+                _profileDetailRow('ASSIGNMENT STATUS', profile['status']?.toString()),
+                _profileDetailRow(
+                  'PROFILE COMPLETENESS',
+                  '${profile['profile_completeness_percent']?.toString() ?? '0'}%',
+                ),
+                _profileDetailRow(
+                  'CREATED',
+                  profile['profile_created_at']?.toString() ??
+                      profile['assignment_created_at']?.toString(),
+                ),
+                _profileDetailRow(
+                  'UPDATED',
+                  profile['profile_updated_at']?.toString() ??
+                      profile['assignment_updated_at']?.toString(),
                 ),
               ],
             );
           },
         ),
+        actions: [
+          GlassDialogAction(
+            label: 'Close',
+            isPrimary: true,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
       );
     } catch (error) {
       feedback(error);
