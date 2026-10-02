@@ -4,15 +4,14 @@ import 'package:liquid_glass_widgets/app_colors.dart';
 import 'package:liquid_glass_widgets/tech_background.dart';
 
 void main() {
-  testWidgets('shared background is an exact solid ScanButton cyan', (tester) async {
+  testWidgets('shared background uses the historical animated navy treatment', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: TechAnimatedBackground()),
     );
 
     expect(kAppBackgroundColor, const Color(0xFF22D3EE));
-    final backgrounds = find.byType(ColoredBox).evaluate()
-        .map((element) => element.widget)
-        .whereType<ColoredBox>();
-    expect(backgrounds.any((background) => background.color == kAppBackgroundColor), isTrue);
+    expect(find.byType(DecoratedBox), findsWidgets);
+    expect(find.byType(CustomPaint), findsOneWidget);
+    expect(find.byType(ColoredBox), findsNothing);
   });
 }

@@ -16,7 +16,9 @@ void main() {
     expect(colors, contains('const Color kAppBackgroundColor = Color(0xFF22D3EE);'));
 
     final authShell = File('lib/features/auth/auth_glass_widgets.dart').readAsStringSync();
-    expect(authShell, contains('backgroundColor: kAppBackgroundColor'));
+    expect(authShell, contains('backgroundColor: Colors.transparent'));
+    expect(authShell, contains('GlassBackgroundSource'));
+    expect(authShell, contains('TechAnimatedBackground'));
     expect(authShell, isNot(contains('AnimatedLiquidAuthBackground')));
     expect(authShell, isNot(contains('RadialGradient')));
     expect(authShell, isNot(contains('canvas.drawCircle')));
@@ -28,20 +30,20 @@ void main() {
           entry.key == 'company registration') {
         expect(entry.value, contains('AuthGlassScaffold'), reason: entry.key);
       } else {
-        expect(
-          entry.value,
-          contains('backgroundColor: kAppBackgroundColor'),
-          reason: entry.key,
-        );
+        expect(entry.value, contains('TechAnimatedBackground'), reason: entry.key);
       }
     }
 
     final techBackground = File('lib/tech_background.dart').readAsStringSync();
-    expect(techBackground, contains('ColoredBox(color: kAppBackgroundColor)'));
+    expect(techBackground, contains('class TechAnimatedBackground extends StatefulWidget'));
+    expect(techBackground, contains('RadialGradient'));
+    expect(techBackground, contains('BlendMode.plus'));
+    expect(techBackground, isNot(contains('ColoredBox(color: kAppBackgroundColor)')));
 
     final dataScreen = File('lib/features/dashboard/data_screen.dart').readAsStringSync();
     expect(dataScreen, contains('backgroundColor: Colors.transparent'));
-    expect(dataScreen, contains('DataScreenTechBackground'));
+    expect(dataScreen, contains('TechAnimatedBackground'));
+    expect(dataScreen, isNot(contains('DataScreenTechBackground')));
     expect(techBackground, contains('Color(0xFF080B14)'));
     expect(techBackground, contains('Color(0xFF0F111A)'));
     expect(techBackground, contains('Color(0xFF0A0E1A)'));
