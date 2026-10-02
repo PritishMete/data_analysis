@@ -77,7 +77,7 @@ void main() {
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
       expect(screen, contains('_phoneCountry!.subtitle'));
-      expect(screen, contains('_phone.text.replaceAll(RegExp(r'\\D'), '')'));
+      expect(screen, contains("_phone.text.replaceAll(RegExp(r'\\D'), '')"));
       expect(screen, contains("'phone_country_calling_code'"));
       expect(screen, contains("'phone_national_number'"));
       expect(screen, contains("'phone': phone"));
