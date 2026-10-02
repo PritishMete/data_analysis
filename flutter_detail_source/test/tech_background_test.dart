@@ -1,24 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/app_colors.dart';
 import 'package:liquid_glass_widgets/tech_background.dart';
 
 void main() {
-  testWidgets('reduced motion stops the decorative background ticker', (
-    tester,
-  ) async {
+  testWidgets('shared background is an exact solid ScanButton cyan', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: MediaQuery(
-          data: MediaQueryData(disableAnimations: true),
-          child: TechAnimatedBackground(),
-        ),
-      ),
+      const MaterialApp(home: TechAnimatedBackground()),
     );
 
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 16),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 1),
-    );
+    expect(kAppBackgroundColor, const Color(0xFF22D3EE));
+    final background = tester.widget<ColoredBox>(find.byType(ColoredBox));
+    expect(background.color, kAppBackgroundColor);
   });
 }
