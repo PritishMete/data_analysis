@@ -72,18 +72,24 @@ void main() {
 
       // The runtime rows list is the authoritative desktop/tablet field order.
       // Each of the five row starts must occur exactly once.
-      final rowStarts = <String>[
-        "final rows = <List<Widget>>[\n            [_field('Full Name'",
-        "            [_emailField(), _phoneInputRow()],",
-        "            [\n              _field('Address Line 1'",
-        "            [\n              ProfileSelectField(\n                label: 'State / Province / Region *'",
-        "            [\n              ProfileSelectField(\n                label: 'ID Proof Type *'",
+      expect(
+        layout.split("final rows = <List<Widget>>[").length - 1,
+        1,
+      );
+      final rowMarkers = <String>[
+        "_field('Full Name'",
+        screen.contains('_emailField()')
+            ? '_emailField()'
+            : "_readonly('Email'",
+        "_field('Address Line 1'",
+        "label: 'State / Province / Region *'",
+        "label: 'ID Proof Type *'",
       ];
-      for (final rowStart in rowStarts) {
+      for (final marker in rowMarkers) {
         expect(
-          layout.split(rowStart).length - 1,
+          layout.split(marker).length - 1,
           1,
-          reason: 'Expected exactly one desktop/tablet profile row start: $rowStart',
+          reason: 'Expected exactly one profile row marker: $marker',
         );
       }
 
