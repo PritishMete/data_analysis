@@ -98,6 +98,8 @@ void main() {
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
     for (final screen in [company, employee]) {
       expect(screen, contains("label: 'Country *'"));
+      expect(screen, contains('showOptionSubtitle: false'));
+      expect(screen, contains("label: 'State / Province / Region *'"));
       expect(screen, contains('Future<void> _pickPhoneCountry()'));
       expect(screen, contains('options: _countries.where((item) => item.subtitle.isNotEmpty).toList()'));
       expect(screen, contains('_country'));
