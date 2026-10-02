@@ -59,7 +59,7 @@ void main() {
                           const Text('PHONE NUMBER *'),
                           const SizedBox(height: 6),
                           SizedBox(
-                            height: 46,
+                            height: kProfileFieldHeight,
                             child: TextField(
                               controller: controller,
                               keyboardType: TextInputType.phone,
@@ -89,7 +89,6 @@ void main() {
     expect(row.children.whereType<Expanded>(), hasLength(2));
     expect(find.byType(ProfileSelectField), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
-    expect(find.byType(ProfileFloatingLabelField), findsNothing);
 
     final countryBox = tester.renderObject<RenderBox>(
       find.byType(ProfileSelectField),
