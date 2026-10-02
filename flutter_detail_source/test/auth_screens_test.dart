@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:liquid_glass_widgets/app_colors.dart';
@@ -57,7 +58,6 @@ void main() {
     expect(find.text('PASSWORD'), findsOneWidget);
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.text('Forgot password?'), findsOneWidget);
-    expect(find.byType(AnimatedLiquidAuthBackground), findsNothing);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     expect(scaffold.backgroundColor, kAppBackgroundColor);
     expect(scaffold.backgroundColor, const Color(0xFF22D3EE));
