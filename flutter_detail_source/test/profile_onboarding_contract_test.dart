@@ -119,8 +119,9 @@ void main() {
         source('lib/features/auth/employee_profile_onboarding_screen.dart');
 
     expect(widgets, isNot(contains('ProfileFloatingLabelField')));
+    expect(widgets, contains('kProfileFieldHeight'));
     for (final screen in [company, employee]) {
-      expect(screen, contains('height: 46'));
+      expect(screen, contains('height: kProfileFieldHeight'));
       expect(screen, contains("placeholder: 'Phone number'"));
       expect(screen, isNot(contains('AnimatedPositioned')));
       expect(screen, isNot(contains('AnimatedDefaultTextStyle')));
