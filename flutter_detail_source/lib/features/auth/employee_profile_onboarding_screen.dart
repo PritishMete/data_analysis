@@ -398,12 +398,27 @@ class _EmployeeProfileOnboardingScreenState
                 ],
                 [
                   ProfileSelectField(
+                    label: 'State / Province / Region *',
+                    value: _state?.label,
+                    placeholder: _country == null
+                        ? 'Select country first'
+                        : _states.isEmpty
+                            ? 'Not applicable for this country'
+                            : 'Select state / province / region',
+                    onTap: _busy || (_country != null && _states.isEmpty)
+                        ? null
+                        : _pickState,
+                  ),
+                  ProfileSelectField(
                     label: 'ID Proof Type *',
                     value: _proofType?.label,
                     placeholder: 'Select government document',
                     onTap: _busy ? null : _pickProof,
                   ),
+                ],
+                [
                   _field('ID Proof Number', _proofNumber, placeholder: 'Government ID number'),
+                  const SizedBox.shrink(),
                 ],
               ];
 
