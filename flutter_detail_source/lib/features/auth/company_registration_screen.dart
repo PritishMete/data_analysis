@@ -473,9 +473,6 @@ class _CompanyRegistrationScreenState
             [_emailField(), _phoneInputRow()],
             [
               _field('Address Line 1', _address1),
-              _field('Address Line 2', _address2, required: false),
-            ],
-            [
               ProfileSelectField(
                 label: 'Country *',
                 value: _country?.label,
@@ -484,7 +481,6 @@ class _CompanyRegistrationScreenState
                     : 'Select country',
                 onTap: _busy ? null : _pickCountry,
               ),
-              _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
             ],
             [
               ProfileSelectField(
@@ -499,20 +495,20 @@ class _CompanyRegistrationScreenState
                     ? null
                     : _pickState,
               ),
+              _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
+            ],
+            [
               ProfileSelectField(
                 label: 'ID Proof Type *',
                 value: _proofType?.label,
                 placeholder: 'Select government document',
                 onTap: _busy ? null : _pickProof,
               ),
-            ],
-            [
               _field(
                 'ID Proof Number',
                 _proofNumber,
                 placeholder: 'Government ID number',
               ),
-              const SizedBox.shrink(),
             ],
           ];
 
@@ -605,8 +601,6 @@ class _CompanyRegistrationScreenState
           _review('EMAIL', (_email ?? '—') + '  ✓'),
           _review('PHONE', _phoneE164() ?? '—'),
           _review('ADDRESS LINE 1', _address1.text.trim()),
-          if (_address2.text.trim().isNotEmpty)
-            _review('ADDRESS LINE 2', _address2.text.trim()),
           _review('STATE', _state?.label ?? ''),
           _review('COUNTRY', _country?.label ?? ''),
           _review('PIN / POSTAL CODE', _postal.text.trim()),
