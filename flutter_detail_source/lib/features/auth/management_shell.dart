@@ -1727,13 +1727,11 @@ Widget auditView() => Column(
       final raw = item['expires_at']?.toString();
       if (raw == null || raw.isEmpty) return false;
       final expiry = DateTime.tryParse(raw);
-      return expiry != null && expiry.isBefore(DateTime.now()) &&
-          (item['status']?.toString().toLowerCase() ?? '') == 'invited';
+      final status = item['status']?.toString().toLowerCase() ?? '';
+      return status == 'expired' ||
+          (expiry != null && expiry.isBefore(now) && status == 'invited');
     }).length;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Manage invitations sent to people in your organization and review their current status.',
-        style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
-      const SizedBox(height: 14),
       LayoutBuilder(builder: (context, constraints) {
         final cards = <(String, int, IconData)>[
           ('Total', invitations.length, Icons.mail_outline),
