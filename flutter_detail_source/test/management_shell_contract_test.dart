@@ -331,11 +331,11 @@ void main() {
     expect(brand, contains('anchorStretch: false'));
     expect(brand, contains('TechColors.borderActive.withValues(alpha: 0.16)'));
 
-    final navigationStart = source.indexOf('Widget _buildManagementNavigation()');
-    final navigationEnd = source.indexOf('@override\n  Widget build', navigationStart);
-    expect(navigationStart, greaterThanOrEqualTo(0));
-    expect(navigationEnd, greaterThan(navigationStart));
-    final navigationAfter = source.substring(navigationStart, navigationEnd);
+    final managementNavStart = source.indexOf('Widget _buildManagementNavigation()');
+    final managementNavEnd = source.indexOf('@override\n  Widget build', managementNavStart);
+    expect(managementNavStart, greaterThanOrEqualTo(0));
+    expect(managementNavEnd, greaterThan(managementNavStart));
+    final navigationAfter = source.substring(managementNavStart, managementNavEnd);
     expect(navigationAfter, contains('settings: kInsightFlowNavigationGlassSettings'));
     expect(navigationAfter, contains('GlassChip'));
     expect(navigationAfter, contains('height: 56'));
