@@ -1086,7 +1086,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget auditView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _title('Audit Log', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
+      _title('Audit', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
       const SizedBox(height: 12),
       if (audit.isEmpty)
         surface(
