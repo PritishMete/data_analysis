@@ -1777,7 +1777,7 @@ Widget auditView() => Column(
             )),
           SizedBox(width: constraints.maxWidth >= 520 ? 190 : constraints.maxWidth,
             child: DropdownButtonFormField<String>(
-              value: invitationStatus,
+              initialValue: invitationStatus,
               decoration: input('Status'),
               dropdownColor: TechColors.panelBg,
               items: [
