@@ -115,6 +115,8 @@ class _ManagementShellState extends State<ManagementShell> {
   List<Map<String, dynamic>> assignments = [];
   List<Map<String, dynamic>> audit = [];
   List<Map<String, dynamic>> invitations = [];
+  String auditSearch = '';
+  String? auditCategory;
   String invitationSearch = '';
   String? invitationStatus;
   String search = '';
@@ -1558,106 +1560,56 @@ class _ManagementShellState extends State<ManagementShell> {
     });
   }
 
-Widget auditView() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _title('Audit', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
-      const SizedBox(height: 12),
-      if (audit.isEmpty)
-        surface(
-          const Padding(
-            padding: EdgeInsets.all(28),
-            child: Text(
-              'NO AUDIT EVENTS ARE AVAILABLE.',
-              style: TextStyle(
-                color: TechColors.textMuted,
-                fontFamily: 'monospace',
-                fontSize: 11,
-              ),
-            ),
-          ),
-        )
-      else
-        GlassCard(
-          margin: EdgeInsets.zero,
-          padding: const EdgeInsets.all(10),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-          child: Column(
-            children: audit.map((e) {
-              final timestamp = e['created_at']?.toString() ?? '—';
-              final action = e['action']?.toString() ?? 'EVENT';
-              final outcome = e['outcome']?.toString() ?? '—';
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: _glassRow(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 520;
-                      final event = Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(action, style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'monospace',
-                            )),
-                            const SizedBox(height: 3),
-                            Text(outcome, style: const TextStyle(
-                              color: TechColors.textMuted,
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                            )),
-                          ],
-                        ),
-                      );
-                      return compact
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(timestamp, style: const TextStyle(
-                                        color: TechColors.textMuted,
-                                        fontSize: 9,
-                                        fontFamily: 'monospace',
-                                      )),
-                                    ),
-                                    _statusDot(outcome),
-                                  ],
-                                ),
-                                const SizedBox(height: 7),
-                                event,
-                              ],
-                            )
-                          : Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 120,
-                                  child: Text(timestamp, style: const TextStyle(
-                                    color: TechColors.textMuted,
-                                    fontSize: 9,
-                                    fontFamily: 'monospace',
-                                  )),
-                                ),
-                                const SizedBox(width: 10),
-                                event,
-                                const SizedBox(width: 10),
-                                _statusDot(outcome),
-                              ],
-                            );
-                    },
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-    ],
-  );
+  String _auditActionLabel(String raw) {
+    const labels = <String, String>{'management.location.created':'Location created','management.section.created':'Section created','management.manager.assigned':'Manager assigned','management.manager.changed':'Manager changed','management.team_lead.assigned':'Team Lead assigned','management.assignment.changed':'Assignment changed'};
+    return labels[raw] ?? raw.replaceAll(RegExp(r'[._-]+'), ' ').split(RegExp(r'\s+')).where((part)=>part.isNotEmpty).map((part)=>part[0].toUpperCase()+part.substring(1)).join(' ');
+  }
+  String _auditActor(Map<String,dynamic> event) {
+    final id=event['actor_principal_id']?.toString().trim()??'';
+    for(final person in people){if((person['principal_id']?.toString().trim()??'')==id){final name=person['full_name']?.toString().trim()??'';final emp=person['employee_id']?.toString().trim()??'';if(name.isNotEmpty)return name;if(emp.isNotEmpty)return emp;}}
+    return id.isEmpty?'Organization activity':'Organization member';
+  }
+  String _auditContext(Map<String,dynamic> event) {
+    final metadata=event['metadata'];if(metadata is! Map)return '';
+    final parts=<String>[];
+    for(final key in ['employee_id','branch_identifier']){final v=metadata[key]?.toString().trim()??'';if(v.isNotEmpty)parts.add(v);}
+    for(final key in ['location_id','section_id','assignment_id','principal_id']){
+      final v=metadata[key]?.toString().trim()??'';if(v.isEmpty)continue;
+      final collection=key=='location_id'?locations:key=='section_id'?sections:key=='assignment_id'?assignments:people;
+      final idKey=key=='location_id'?'location_id':key=='section_id'?'section_id':key=='assignment_id'?'assignment_id':'principal_id';
+      Map<String,dynamic>? match;for(final item in collection){if(item[idKey]?.toString()==v){match=item;break;}}
+      final label=match==null?'':(match['name']??match['full_name']??match['employee_id'])?.toString()??'';
+      parts.add(label.isNotEmpty?label:key.replaceAll('_id','').replaceAll('_',' '));
+    }
+    return parts.toSet().join(' · ');
+  }
+  String _auditTimestamp(dynamic value){final raw=value?.toString().trim()??'';if(raw.isEmpty)return 'Time unavailable';final formatted=_formatEmployeeTimestamp(raw);return formatted=='—'?raw:formatted.replaceFirst('\n',' · ');}
+  String _auditCategory(Map<String,dynamic> event){
+    final a=event['action']?.toString().toLowerCase()??'';
+    if(a.contains('location')||a.contains('section'))return 'Organization';
+    if(a.contains('member')||a.contains('assignment')||a.contains('manager')||a.contains('team_lead'))return 'People';
+    if(a.contains('access')||a.contains('permission'))return 'Access';
+    if(a.contains('invitation'))return 'Invitations';if(a.contains('dataset'))return 'Data';return 'Other';
+  }
+  Widget auditView(){
+    final categories=audit.map(_auditCategory).toSet().toList()..sort();final query=auditSearch.trim().toLowerCase();
+    final filtered=audit.where((e){if(auditCategory!=null&&_auditCategory(e)!=auditCategory)return false;if(query.isEmpty)return true;return [_auditActionLabel(e['action']?.toString()??'Activity'),_auditActor(e),_auditContext(e),e['outcome']?.toString()??'',e['action']?.toString()??''].join(' ').toLowerCase().contains(query);}).toList();
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      _title('Audit',detail:'Review recent organization activity and understand who performed important management actions.',icon:Icons.history_rounded),const SizedBox(height:12),
+      LayoutBuilder(builder:(context,c){final search=TextField(key:const ValueKey('audit-search'),onChanged:(v)=>setState(()=>auditSearch=v),decoration:input('Search activity').copyWith(prefixIcon:const Icon(Icons.search_rounded,color:TechColors.textMuted),suffixIcon:auditSearch.isEmpty?null:IconButton(tooltip:'Clear search',onPressed:()=>setState(()=>auditSearch=''),icon:const Icon(Icons.close_rounded))));final filter=DropdownButtonFormField<String?>(key:ValueKey('audit-category-$auditCategory'),initialValue:auditCategory,decoration:input('Activity area'),items:[const DropdownMenuItem<String?>(value:null,child:Text('All activity')),...categories.map((v)=>DropdownMenuItem<String?>(value:v,child:Text(v)))],onChanged:(v)=>setState(()=>auditCategory=v));return c.maxWidth<560?Column(children:[search,const SizedBox(height:10),filter]):Row(children:[Expanded(flex:3,child:search),const SizedBox(width:10),Expanded(flex:2,child:filter)]);}),
+      if(auditSearch.isNotEmpty||auditCategory!=null)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(()=>{auditSearch='',auditCategory=null}),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))),
+      const SizedBox(height:8),
+      if(audit.isEmpty)surface(const Padding(padding:EdgeInsets.symmetric(vertical:22,horizontal:12),child:Column(children:[Icon(Icons.history_toggle_off_rounded,color:TechColors.textMuted,size:30),SizedBox(height:10),Text('No activity to show yet',style:TextStyle(color:TechColors.textPrimary,fontWeight:FontWeight.w700)),SizedBox(height:5),Text('Important organization activity will appear here when available.',textAlign:TextAlign.center,style:TextStyle(color:TechColors.textMuted,fontSize:12))])))
+      else if(filtered.isEmpty)surface(Padding(padding:const EdgeInsets.all(22),child:Column(children:[const Text('No activity matches your search or filters.',textAlign:TextAlign.center,style:TextStyle(color:TechColors.textMuted)),TextButton(onPressed:()=>setState(()=>{auditSearch='',auditCategory=null}),child:const Text('Clear search and filters'))])))
+      else Column(children:filtered.map((e){final action=e['action']?.toString()??'Activity';final outcome=e['outcome']?.toString().trim()??'';final contextLabel=_auditContext(e);return Padding(padding:const EdgeInsets.only(bottom:9),child:Material(color:Colors.transparent,child:InkWell(borderRadius:BorderRadius.circular(15),onTap:()=>_showAuditDetails(e),child:_glassRow(padding:const EdgeInsets.all(14),child:LayoutBuilder(builder:(context,c){final primary=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(_auditActionLabel(action),style:const TextStyle(color:TechColors.textPrimary,fontSize:14,fontWeight:FontWeight.w700)),const SizedBox(height:6),Text('By \${_auditActor(e)}',style:const TextStyle(color:TechColors.textMuted,fontSize:12)),if(contextLabel.isNotEmpty)...[const SizedBox(height:4),Text(contextLabel,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(color:TechColors.textMuted,fontSize:11))]]);final time=Text(_auditTimestamp(e['created_at']),style:const TextStyle(color:TechColors.textMuted,fontSize:11));final result=Text(outcome.isEmpty?'Result unavailable':_auditActionLabel(outcome),style:TextStyle(color:outcome.toLowerCase()=='succeeded'?TechColors.statusGreen:TechColors.textMuted,fontSize:11,fontWeight:FontWeight.w600));return c.maxWidth<480?Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[primary,const SizedBox(height:9),time,const SizedBox(height:4),result,const SizedBox(height:5),const Align(alignment:Alignment.centerRight,child:Icon(Icons.chevron_right_rounded,color:TechColors.textMuted))]):Row(children:[Expanded(child:primary),const SizedBox(width:14),SizedBox(width:145,child:Column(crossAxisAlignment:CrossAxisAlignment.end,children:[time,const SizedBox(height:5),result]))]);})))));}).toList()),
+      const SizedBox(height:4),Text('\${filtered.length} of \${audit.length} activities',textAlign:TextAlign.end,style:const TextStyle(color:TechColors.textMuted,fontSize:10)),
+    ]);
+  }
+  void _showAuditDetails(Map<String,dynamic> event){
+    final metadata=event['metadata'];final eventId=event['event_id']?.toString()??'';
+    showDialog<void>(context:context,builder:(context)=>_ManagementGlassDialog(title:const Text('Activity details'),content:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[Text(_auditActionLabel(event['action']?.toString()??'Activity'),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),const SizedBox(height:12),_detailLine('Actor',_auditActor(event)),_detailLine('When',_auditTimestamp(event['created_at'])),_detailLine('Result',event['outcome']?.toString()??'—'),if(_auditContext(event).isNotEmpty)_detailLine('Context',_auditContext(event)),const SizedBox(height:8),const Text('Reference details',style:TextStyle(color:TechColors.textMuted,fontSize:11,fontWeight:FontWeight.w700)),if(eventId.isNotEmpty)_detailLine('Event reference',eventId),if(event['actor_principal_id']!=null)_detailLine('Actor reference',event['actor_principal_id'].toString()),if(metadata is Map)...metadata.entries.where((e)=>e.value!=null&&e.value.toString().trim().isNotEmpty).take(8).map((e)=>_detailLine(e.key.toString().replaceAll('_',' '),e.value.toString()))]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Close'))]));
+  }
+  Widget _detailLine(String label,String value)=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[SizedBox(width:112,child:Text(label,style:const TextStyle(color:TechColors.textMuted,fontSize:11))),Expanded(child:SelectableText(value,style:const TextStyle(color:TechColors.textPrimary,fontSize:12)))]));
 
   Widget legacyView(String title, String text, {String actionLabel = 'OPEN LEGACY TOOLS'}) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _eyebrow(title), const SizedBox(height: 7),
@@ -2023,7 +1975,7 @@ Widget auditView() => Column(
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
     ManagementSection.invitations => 'Manage invitations sent to people in your organization and review their current status.',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
-    ManagementSection.audit => 'SYSTEM EVENT STREAM',
+    ManagementSection.audit => 'Review recent organization activity and understand who performed important management actions.',
   };
 
   IconData _sectionIcon(ManagementSection value) => switch (value) {
@@ -2032,7 +1984,7 @@ Widget auditView() => Column(
     ManagementSection.people => Icons.people_outline,
     ManagementSection.invitations => Icons.mail_outline,
     ManagementSection.dataAccess => Icons.lock_outline,
-    ManagementSection.audit => Icons.terminal,
+    ManagementSection.audit => Icons.history_rounded,
   };
 
   Widget body() {
