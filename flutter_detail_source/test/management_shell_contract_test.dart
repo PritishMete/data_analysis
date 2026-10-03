@@ -330,6 +330,24 @@ void main() {
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 
+    expect(header, contains("tooltip: 'Profile'"));
+    expect(header, contains('onPressed: _showCurrentUserProfile'));
+    expect(source, contains('Future<Map<String, dynamic>> _loadCurrentUserProfile()'));
+    expect(source, contains("getSelf('/me')"));
+    expect(source, contains("getSelf('/profile/me')"));
+    expect(source, contains("'organization_name': contextData['organization_name']"));
+    expect(source, contains("'principal_id': principalId"));
+    expect(source, contains("profile['id_proof_number_masked']"));
+    expect(source, contains('bool _isCurrentUserProfile = false'));
+    expect(source, contains('Future<void> _confirmSignOut() async'));
+    expect(source, contains("title: const Text('Sign out?')"));
+    expect(source, contains("content: const Text('Are you sure you want to sign out?')"));
+    expect(source, contains("child: const Text('Cancel')"));
+    expect(source, contains("child: const Text('Sign Out')"));
+    expect(source, contains('if (confirmed == true)'));
+    expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
+    expect(header, contains('onPressed: _confirmSignOut'));
+
     expect(header, contains('Icons.auto_awesome_rounded'));
     expect(header, isNot(contains('Icons.terminal')));
 
