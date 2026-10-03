@@ -1758,7 +1758,7 @@ class _ManagementShellState extends State<ManagementShell> {
                               crossAxisCount: 2,
                               crossAxisSpacing: 8,
                               mainAxisSpacing: 8,
-                              childAspectRatio: 4.8,
+                              mainAxisExtent: _profileFieldHeight,
                               children: gridChildren,
                             ),
                           );

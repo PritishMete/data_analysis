@@ -83,6 +83,49 @@ void main() {
     expect(source, contains('final reportingAction = SizedBox('));
     expect(source, contains('width: 132'));
     expect(source, contains('_assignmentRegistryRow(a)'));
+    expect(source, contains("_profileFieldHeight = 72"));
+    expect(source, contains("height: dialogHeight"));
+    expect(source, contains("MediaQuery.sizeOf(context).height * 0.85"));
+    expect(source, contains("constraints.maxWidth >= 560"));
+    expect(source, contains("crossAxisCount: 2"));
+    expect(source, contains("mainAxisExtent: _profileFieldHeight"));
+    expect(source, contains("'EMPLOYEE ID'"));
+    expect(source, contains("glowIntensity: 0"));
+    expect(source, contains("shadowElevation: 0"));
+    expect(source, contains("glowColor: Colors.transparent"));
+    expect(source, contains("if (completion != 100)"));
+    expect(source, contains("month + '/' + day + '/' + ist.year.toString()"));
+    expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
+    expect(source, isNot(contains("fontSize: 8")));
+
+    final fieldOrder = [
+      'ROLE',
+      'EMAIL',
+      'EMAIL VERIFIED',
+      'PHONE',
+      'PHONE VERIFIED',
+      'ADDRESS LINE 1',
+      'ADDRESS LINE 2',
+      'STATE',
+      'COUNTRY',
+      'PIN / POSTAL CODE',
+      'ID PROOF TYPE',
+      'ID PROOF NUMBER',
+      'BRANCH',
+      'SECTION',
+      'REPORTS TO',
+      'ASSIGNMENT STATUS',
+      'CREATED',
+      'UPDATED',
+      'PROFILE COMPLETENESS',
+    ];
+    var previous = -1;
+    for (final field in fieldOrder) {
+      final index = source.indexOf("detail('$field'");
+      expect(index, greaterThan(previous), reason: 'Field order changed at $field');
+      previous = index;
+    }
+
     expect(source, contains("a['employee_id']"));
     expect(source, contains("a['role_id']"));
     expect(source, contains("a['location_name']"));
