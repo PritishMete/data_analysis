@@ -126,6 +126,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Map<String, dynamic>? _selectedAssignmentProfile;
   Future<Map<String, dynamic>>? _assignmentProfileFuture;
   bool _showIdProof = false;
+  bool _isCurrentUserProfile = false;
 
   @override
   void initState() { super.initState(); loadAll(); }
@@ -2115,7 +2116,133 @@ class _ManagementShellState extends State<ManagementShell> {
       _selectedAssignmentProfile = Map<String, dynamic>.from(assignment);
       _assignmentProfileFuture = future;
       _showIdProof = false;
+      _isCurrentUserProfile = false;
     });
+  }
+
+  Future<Map<String, dynamic>> _loadCurrentUserProfile() async {
+    final session = await InsightFlowSupabaseAuthService.ensureSession(
+      timeout: const Duration(seconds: 8),
+    );
+    if (session == null || session.accessToken.isEmpty) {
+      throw StateError('Your authenticated session could not be restored. Please retry.');
+    }
+    final headers = <String, String>{
+      'Authorization': 'Bearer ${session.accessToken}',
+      if (insightFlowWorkspaceId.isNotEmpty)
+        'X-InsightFlow-Workspace-ID': insightFlowWorkspaceId,
+    };
+
+    Future<Map<String, dynamic>> getSelf(String path) async {
+      final response = await _sendManagementRequest(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz$path'),
+        headers,
+        method: 'GET',
+      );
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {}
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Your profile could not be loaded.',
+        );
+      }
+      if (decoded is! Map) {
+        throw StateError('Profile service returned an invalid response.');
+      }
+      return Map<String, dynamic>.from(decoded);
+    }
+
+    final values = await Future.wait([
+      getSelf('/me'),
+      getSelf('/profile/me'),
+    ]);
+    final contextData = values[0];
+    final profile = values[1];
+    final principalId =
+        (profile['principal_id'] ?? contextData['principal_id'])?.toString() ?? '';
+    final ownAssignments = assignments.where(
+      (item) => item['principal_id']?.toString() == principalId,
+    ).toList();
+    ownAssignments.sort((a, b) {
+      final aActive = a['status'] == 'active' ? 0 : 1;
+      final bActive = b['status'] == 'active' ? 0 : 1;
+      return aActive.compareTo(bActive);
+    });
+    final assignment = ownAssignments.isEmpty ? <String, dynamic>{} : ownAssignments.first;
+    final person = people.where(
+      (item) => item['principal_id']?.toString() == principalId,
+    ).firstOrNull;
+    final roleIds = contextData['role_ids'] is List
+        ? (contextData['role_ids'] as List).map((value) => value.toString()).toList()
+        : <String>[];
+    final role = roleIds.contains('organization_owner')
+        ? 'organization_owner'
+        : (assignment['role_id'] ??
+              person?['role_id'] ??
+              (roleIds.isEmpty ? null : roleIds.first));
+    final parent = assignments.where(
+      (item) => item['assignment_id']?.toString() ==
+          assignment['reports_to_assignment_id']?.toString(),
+    ).firstOrNull;
+
+    return <String, dynamic>{
+      ...profile,
+      'principal_id': principalId,
+      'employee_id': profile['employee_id'] ?? contextData['employee_id'],
+      'email': profile['email'] ?? contextData['email'],
+      'role_id': role,
+      'organization_name': contextData['organization_name'] ??
+          overview['organization']?['name'],
+      'location_name': assignment['location_name'],
+      'section_name': assignment['section_name'],
+      'status': assignment['status'],
+      'reports_to_employee_id': assignment['reports_to_employee_id'] ??
+          parent?['employee_id'],
+      'reports_to_role_id': assignment['reports_to_role_id'] ??
+          parent?['role_id'],
+      'profile_created_at': profile['created_at'],
+      'profile_updated_at': profile['updated_at'],
+    };
+  }
+
+  void _showCurrentUserProfile() {
+    setState(() {
+      _selectedAssignmentProfile = <String, dynamic>{
+        'full_name': InsightFlowSupabaseAuthService.currentSupabaseUser
+                ?.userMetadata?['display_name'] ??
+            '',
+      };
+      _assignmentProfileFuture = _loadCurrentUserProfile();
+      _showIdProof = false;
+      _isCurrentUserProfile = true;
+    });
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _ManagementGlassDialog(
+        title: const Text('Sign out?'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await InsightFlowSupabaseAuthService.signOut();
+    }
   }
 
   void _closeAssignmentProfile() {
@@ -2124,6 +2251,7 @@ class _ManagementShellState extends State<ManagementShell> {
       _selectedAssignmentProfile = null;
       _assignmentProfileFuture = null;
       _showIdProof = false;
+      _isCurrentUserProfile = false;
     });
   }
 
@@ -2286,9 +2414,11 @@ class _ManagementShellState extends State<ManagementShell> {
                                 TextButton.icon(
                                   onPressed: _selectedAssignmentProfile == null
                                       ? null
-                                      : () => _showAssignmentProfile(
-                                            _selectedAssignmentProfile!,
-                                          ),
+                                      : (_isCurrentUserProfile
+                                          ? _showCurrentUserProfile
+                                          : () => _showAssignmentProfile(
+                                                _selectedAssignmentProfile!,
+                                              )),
                                   icon: const Icon(Icons.refresh_rounded),
                                   label: const Text('Retry profile'),
                                 ),
@@ -2303,9 +2433,9 @@ class _ManagementShellState extends State<ManagementShell> {
                       final proofType =
                           profile['id_proof_type']?.toString().trim() ?? '';
                       final maskedProof = proofNumber.isEmpty
-                          ? ''
+                          ? (profile['id_proof_number_masked']?.toString() ?? '')
                           : proofNumber.length <= 4
-                              ? proofNumber
+                              ? 'X' * proofNumber.length
                               : ('X' * (proofNumber.length - 4)) +
                                   proofNumber.substring(proofNumber.length - 4);
                       final completion = num.tryParse(
@@ -2347,6 +2477,8 @@ class _ManagementShellState extends State<ManagementShell> {
                         detail('ROLE', _roleLabel(
                           profile['role_id']?.toString().trim() ?? '—',
                         )),
+                        detail('ORGANIZATION', profile['organization_name']?.toString(), multiline: true),
+                        detail('PRINCIPAL ID', profile['principal_id']?.toString(), multiline: true),
                         detail('EMAIL', profile['email']?.toString()),
                         detail(
                           'EMAIL VERIFIED',
@@ -2380,7 +2512,9 @@ class _ManagementShellState extends State<ManagementShell> {
                         detail('ID PROOF TYPE', proofType),
                         detail(
                           'ID PROOF NUMBER',
-                          _showIdProof ? proofNumber : maskedProof,
+                          !_isCurrentUserProfile && _showIdProof
+                              ? proofNumber
+                              : maskedProof,
                         ),
                         detail(
                           'BRANCH',
@@ -2875,13 +3009,18 @@ class _ManagementShellState extends State<ManagementShell> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
+                  tooltip: 'Profile',
+                  onPressed: _showCurrentUserProfile,
+                  icon: const Icon(Icons.person_outline_rounded, size: 18, color: TechColors.textPrimary),
+                ),
+                IconButton(
                   tooltip: 'Refresh management data',
                   onPressed: loadAll,
                   icon: const Icon(Icons.refresh_rounded, size: 18, color: TechColors.textPrimary),
                 ),
                 IconButton(
                   tooltip: 'Sign out',
-                  onPressed: () => InsightFlowSupabaseAuthService.signOut(),
+                  onPressed: _confirmSignOut,
                   icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
                 ),
               ],
