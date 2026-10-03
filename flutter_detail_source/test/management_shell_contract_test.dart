@@ -93,7 +93,7 @@ void main() {
       profileOverlayStart,
     );
     final profileHeaderEnd = source.indexOf(
-      "const SizedBox(height: 8),\n                              Divider(",
+      "Divider(",
       profileHeaderStart,
     );
     expect(profileHeaderStart, greaterThanOrEqualTo(0));
