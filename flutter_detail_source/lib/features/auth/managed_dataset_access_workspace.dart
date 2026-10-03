@@ -188,21 +188,39 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   @override Widget build(BuildContext context) {
-    if (loading) return _surface(const SizedBox(height: 240, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive))));
-    if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('DATA ACCESS / ERROR'), const SizedBox(height: 8), Text(error!, style: const TextStyle(color: TechColors.textPrimary)), const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true)]));
+    if (loading) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(height: 22, width: 150, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
+        const SizedBox(height: 10),
+        Container(height: 13, width: 270, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
+      ])),
+      const SizedBox(height: 12),
+      _surface(Column(children: [
+        for (var i = 0; i < 3; i++) Padding(padding: const EdgeInsets.only(bottom: 9), child: Container(height: 48, decoration: BoxDecoration(color: TechColors.panelBg.withValues(alpha: .6), borderRadius: BorderRadius.circular(12)))),
+      ])),
+    ]);
+    if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Access is temporarily unavailable', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+      const SizedBox(height: 7),
+      const Text('We could not load the current access information. Please retry; no access settings were changed.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+      const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
+    ]));
     final q = (search ?? '').trim().toLowerCase();
     final canManage = roles.contains('organization_owner') || roles.contains('branch_head') || roles.contains('manager');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        _eye('MANAGED DATA / AUTHORIZED WORKSPACE'),
+        const Text('Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
+        const Text('Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: const InputDecoration(hintText: 'SEARCH DATASETS...', prefixIcon: Icon(Icons.search, size: 16), isDense: true))),
         _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _eye(filtered.length.toString() + ' AUTHORIZED DATASETS'), const SizedBox(height: 8),
-        if (filtered.isEmpty) Text(q.isEmpty ? 'NO MANAGED DATASETS IN THIS SCOPE' : 'NO DATASETS MATCH "' + (search ?? '') + '"', style: const TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 10)),
+        Text(filtered.length.toString() + (filtered.length == 1 ? ' managed resource' : ' managed resources'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 8),
+        if (filtered.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(q.isEmpty ? 'No managed resources are available in this scope yet.' : 'No resources match your search. Clear the search or try another term.', textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4))),
         ...filtered.map((d) {
           final sel = d['dataset_id']?.toString() == selected?['dataset_id']?.toString();
           return Padding(padding: const EdgeInsets.only(bottom: 6), child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 13), padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9), child: InkWell(onTap: () => _select(d), borderRadius: BorderRadius.circular(13), child: Row(children: [
@@ -264,12 +282,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _stat(String label, String value) => GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye(label), const SizedBox(height: 2), Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    _eye('DATASET ACCESS'), const SizedBox(height: 5), const Text('Existing authorization controls; backend remains the source of truth.', style: TextStyle(color: TechColors.textMuted, fontSize: 9)), const SizedBox(height: 7),
+    const Text('People and dataset access', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)), const SizedBox(height: 5), const Text('Choose an existing access level for a person on this dataset. Current workspace rules remain in effect.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)), const SizedBox(height: 10),
     ...members.where((m) => m['status']?.toString() != 'removed').map((m) {
       final uid = m['uid']?.toString() ?? '';
       return Padding(padding: const EdgeInsets.only(bottom: 5), child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Wrap(spacing: 6, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center, children: [
         SizedBox(width: 170, child: Text(m['employee_id']?.toString() ?? uid, style: const TextStyle(color: TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700))),
-        Text((m['role_ids'] as List? ?? const []).join(', '), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+        Text((m['role_ids'] as List? ?? const []).map((r) => r.toString().replaceAll('_', ' ')).join(' · '), style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
         _action('VIEWER', Icons.visibility, () => _grant(uid, const ['dataset.view_original'])),
         _action('EDITOR', Icons.edit, () => _grant(uid, const ['dataset.view_original', 'dataset.create_working_copy', 'dataset.edit_working_copy'])),
         _action('REVOKE', Icons.block, () => _grant(uid, const [])),
