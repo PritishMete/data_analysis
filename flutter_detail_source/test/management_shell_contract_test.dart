@@ -240,7 +240,10 @@ void main() {
     expect(source, contains("Total people"));
     expect(source, contains("Active members"));
     expect(source, contains("Assigned"));
-    expect(source, contains("View details"));
+    expect(source, contains("View profile"));
+    expect(source, contains("final assignmentId = p['assignment_id']?.toString() ?? '';"));
+    expect(source, contains("a['assignment_id']?.toString() == assignmentId"));
+    expect(source, contains("_showAssignmentProfile(target)"));
     expect(source, contains("selectedLocation"));
     expect(source, contains("selectedSection"));
     expect(source, contains("constraints.maxWidth < 680"));
