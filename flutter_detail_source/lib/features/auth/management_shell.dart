@@ -1704,30 +1704,119 @@ Widget auditView() => Column(
   ]));
 
 
+  Map<String, dynamic>? _invitationPerson(Map<String, dynamic> invitation) {
+    final employeeId = invitation['employee_id']?.toString().trim() ?? '';
+    if (employeeId.isEmpty) return null;
+    for (final person in people) {
+      if ((person['employee_id']?.toString().trim() ?? '') == employeeId) return person;
+    }
+    return null;
+  }
+
+  String _invitationStatusLabel(String rawStatus, {bool expiredByDate = false}) {
+    final status = rawStatus.trim().toLowerCase();
+    if (expiredByDate) return 'Expired';
+    if (status.isEmpty) return 'Unknown';
+    if (status == 'invited') return 'Pending';
+    return status.split(RegExp(r'[_\\-\\s]+')).where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1)).join(' ');
+  }
+
+  String _formatInvitationExpiry(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return '—';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    final local = parsed.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return month + '/' + day + '/' + local.year.toString() + ' · ' + hour.toString() + ':' + minute + ' ' + period;
+  }
+
+  Widget _invitationStatusChip(String label, String rawStatus) {
+    final normalized = rawStatus.trim().toLowerCase();
+    final foreground = normalized == 'accepted'
+        ? TechColors.statusGreen
+        : normalized == 'invited'
+            ? TechColors.statusBlue
+            : normalized == 'expired' || normalized == 'revoked'
+                ? TechColors.statusRed
+                : TechColors.textPrimary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.28)),
+      ),
+      child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: foreground, fontSize: 10, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _invitationSkeleton() {
+    Widget block({double height = 18, double width = double.infinity}) => Container(
+      height: height, width: width,
+      decoration: BoxDecoration(
+        color: TechColors.textMuted.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+      ),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Wrap(spacing: 8, runSpacing: 8, children: List.generate(4, (_) => SizedBox(
+        width: 180,
+        child: surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          block(width: 62, height: 10), const SizedBox(height: 10), block(width: 42, height: 20),
+        ])),
+      ))),
+      const SizedBox(height: 12),
+      surface(Row(children: [
+        Expanded(child: block(height: 46)), const SizedBox(width: 10),
+        SizedBox(width: 180, child: block(height: 46)),
+      ])),
+      const SizedBox(height: 12),
+      ...List.generate(3, (_) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: surface(Row(children: [
+          Expanded(flex: 3, child: block(width: 220)), const SizedBox(width: 18),
+          Expanded(flex: 2, child: block(width: 100)), const SizedBox(width: 18),
+          Expanded(flex: 2, child: block(width: 120)),
+        ])),
+      )),
+    ]);
+  }
+
   void _showInvitationDetails(Map<String, dynamic> item) {
+    final person = _invitationPerson(item);
+    final rawStatus = item['status']?.toString() ?? '';
+    final expiry = item['expires_at']?.toString() ?? '';
+    final expiryDate = DateTime.tryParse(expiry);
+    final expiredByDate = rawStatus.trim().toLowerCase() == 'invited' &&
+        expiryDate != null && expiryDate.isBefore(DateTime.now());
     showDialog<void>(
       context: context,
       builder: (dialogContext) => _ManagementGlassDialog(
         title: const Text('Invitation details'),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _profileDetailRow('EMAIL', item['email']?.toString()),
-            _profileDetailRow('STATUS', item['status']?.toString()),
-            _profileDetailRow('EXPIRY', item['expires_at']?.toString()),
-            if ((item['employee_id']?.toString() ?? '').isNotEmpty)
-              _profileDetailRow('EMPLOYEE ID', item['employee_id']?.toString()),
-            if ((item['role_id']?.toString() ?? '').isNotEmpty)
-              _profileDetailRow('ROLE ID', item['role_id']?.toString()),
-            if ((item['invitation_id']?.toString() ?? '').isNotEmpty)
-              _profileDetailRow('INVITATION ID', item['invitation_id']?.toString()),
-          ],
-        ),
+        content: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _profileDetailRow('EMAIL', item['email']?.toString()),
+          if ((person?['full_name']?.toString().trim() ?? '').isNotEmpty)
+            _profileDetailRow('INVITEE', person!['full_name']?.toString()),
+          _profileDetailRow('STATUS', _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate)),
+          _profileDetailRow('EXPIRY', _formatInvitationExpiry(expiry)),
+          if ((person?['role_id']?.toString().trim() ?? '').isNotEmpty)
+            _profileDetailRow('ROLE', _roleLabel(person!['role_id']!.toString())),
+          if ((item['employee_id']?.toString() ?? '').isNotEmpty)
+            _profileDetailRow('EMPLOYEE ID', item['employee_id']?.toString()),
+          if ((item['role_id']?.toString() ?? '').isNotEmpty)
+            _profileDetailRow('ROLE ID', item['role_id']?.toString()),
+          if ((item['invitation_id']?.toString() ?? '').isNotEmpty)
+            _profileDetailRow('INVITATION ID', item['invitation_id']?.toString()),
+        ]),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
         ],
       ),
     );
@@ -1735,101 +1824,98 @@ Widget auditView() => Column(
 
   Widget invitationView() {
     final query = invitationSearch.trim().toLowerCase();
-    final filtered = invitations.where((item) {
-      final status = (item['status']?.toString() ?? '').toLowerCase();
-      if (invitationStatus != null && status != invitationStatus) return false;
-      final searchable = [
-        item['email'], item['employee_id'], item['role_id'], item['status'],
-      ].whereType<Object>().join(' ').toLowerCase();
-      return query.isEmpty || searchable.contains(query);
-    }).toList();
     final now = DateTime.now();
-    final observedStatuses = invitations.map((item) => item['status']?.toString().trim().toLowerCase() ?? '').where((value) => value.isNotEmpty).toSet();
+    final observedStatuses = invitations.map((item) => item['status']?.toString().trim().toLowerCase() ?? '')
+        .where((value) => value.isNotEmpty).toSet();
+
     final pending = invitations.where((item) {
-      if ((item['status']?.toString().toLowerCase() ?? '') != 'invited') return false;
+      final status = item['status']?.toString().trim().toLowerCase() ?? '';
+      if (status != 'invited') return false;
       final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
       return expiry == null || !expiry.isBefore(now);
     }).length;
-    final accepted = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'accepted').length;
-    final revoked = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'revoked').length;
+    final accepted = invitations.where((item) => item['status']?.toString().trim().toLowerCase() == 'accepted').length;
     final expired = invitations.where((item) {
-      final raw = item['expires_at']?.toString();
-      if (raw == null || raw.isEmpty) return false;
-      final expiry = DateTime.tryParse(raw);
-      final status = item['status']?.toString().toLowerCase() ?? '';
-      return status == 'expired' ||
-          (expiry != null && expiry.isBefore(now) && status == 'invited');
+      final status = item['status']?.toString().trim().toLowerCase() ?? '';
+      if (status == 'expired') return true;
+      if (status != 'invited') return false;
+      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
+      return expiry != null && expiry.isBefore(now);
     }).length;
+    final revoked = invitations.where((item) => item['status']?.toString().trim().toLowerCase() == 'revoked').length;
+
+    final filtered = invitations.where((item) {
+      final rawStatus = item['status']?.toString() ?? '';
+      final status = rawStatus.trim().toLowerCase();
+      if (invitationStatus != null && status != invitationStatus) return false;
+      final person = _invitationPerson(item);
+      final roleId = item['role_id']?.toString() ?? '';
+      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
+      final expiredByDate = status == 'invited' && expiry != null && expiry.isBefore(now);
+      final searchable = [
+        item['email'], person?['full_name'], item['employee_id'], roleId,
+        _roleLabel(roleId), _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate),
+      ].whereType<Object>().join(' ').toLowerCase();
+      return query.isEmpty || searchable.contains(query);
+    }).toList();
+
+    final cards = <(String, int, IconData)>[
+      ('Total', invitations.length, Icons.mail_outline),
+      if (observedStatuses.contains('invited')) ('Pending', pending, Icons.schedule_outlined),
+      if (observedStatuses.contains('accepted')) ('Accepted', accepted, Icons.check_circle_outline),
+      if (observedStatuses.contains('expired') || expired > 0) ('Expired', expired, Icons.timer_off_outlined),
+      if (observedStatuses.contains('revoked')) ('Revoked', revoked, Icons.block_outlined),
+    ];
+
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       LayoutBuilder(builder: (context, constraints) {
-        final cards = <(String, int, IconData)>[
-          ('Total', invitations.length, Icons.mail_outline),
-          if (observedStatuses.contains('invited'))
-            ('Pending', pending, Icons.schedule_outlined),
-          if (observedStatuses.contains('accepted'))
-            ('Accepted', accepted, Icons.check_circle_outline),
-          if (observedStatuses.contains('expired') ||
-              observedStatuses.contains('invited') && expired > 0)
-            ('Expired', expired, Icons.timer_off_outlined),
-          if (observedStatuses.contains('revoked'))
-            ('Revoked', revoked, Icons.block_outlined),
-        ];
-        final width = constraints.maxWidth;
-        final count = width >= 850 ? 5 : width >= 520 ? 3 : 2;
-        final itemWidth = (width - (count - 1) * 8) / count;
-        return Wrap(spacing: 8, runSpacing: 8, children: cards.map((m) =>
-          SizedBox(width: itemWidth, child: surface(Row(children: [
-            Icon(m.$3, size: 16, color: TechColors.textMuted),
-            const SizedBox(width: 8),
+        final count = constraints.maxWidth >= 900 ? cards.length.clamp(1, 5)
+            : constraints.maxWidth >= 560 ? 3 : 2;
+        final itemWidth = (constraints.maxWidth - (count - 1) * 8) / count;
+        return Wrap(spacing: 8, runSpacing: 8, children: cards.map((metric) => SizedBox(
+          width: itemWidth,
+          child: surface(Row(children: [
+            Icon(metric.$3, size: 16, color: TechColors.textMuted), const SizedBox(width: 8),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(m.$1, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-              Text('${m.$2}', style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
+              Text(metric.$1, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+              Text(metric.$2.toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
             ])),
-          ])))
-        ).toList());
+          ])),
+        )).toList());
       }),
       const SizedBox(height: 12),
       LayoutBuilder(builder: (context, constraints) => Wrap(
         spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(width: constraints.maxWidth >= 520 ? 320 : constraints.maxWidth,
-            child: TextField(
-              onChanged: (value) => setState(() => invitationSearch = value),
-              decoration: input('Search invitations').copyWith(
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: invitationSearch.isEmpty ? null : IconButton(
-                  tooltip: 'Clear search',
-                  onPressed: () => setState(() => invitationSearch = ''),
-                  icon: const Icon(Icons.close),
-                ),
+          SizedBox(width: constraints.maxWidth >= 520 ? 320 : constraints.maxWidth, child: TextField(
+            onChanged: (value) => setState(() => invitationSearch = value),
+            decoration: input('Search invitations').copyWith(
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: invitationSearch.isEmpty ? null : IconButton(
+                tooltip: 'Clear search',
+                onPressed: () => setState(() => invitationSearch = ''),
+                icon: const Icon(Icons.close),
               ),
-            )),
+            ),
+          )),
           SizedBox(width: constraints.maxWidth >= 520 ? 190 : constraints.maxWidth,
             child: DropdownButtonFormField<String>(
-              initialValue: invitationStatus,
-              decoration: input('Status'),
+              initialValue: invitationStatus, decoration: input('Status'),
               dropdownColor: TechColors.panelBg,
               items: [
-                const DropdownMenuItem(value: null, child: Text('All statuses')),
-                ...invitations
-                    .map((item) => item['status']?.toString().trim() ?? '')
-                    .where((value) => value.isNotEmpty)
-                    .toSet()
-                    .toList()
-                    .map((value) => DropdownMenuItem(
-                      value: value.toLowerCase(),
-                      child: Text(value.toLowerCase() == 'invited'
-                          ? 'Pending'
-                          : value[0].toUpperCase() + value.substring(1)),
-                    )),
+                const DropdownMenuItem<String?>(value: null, child: Text('All statuses')),
+                ...invitations.map((item) => item['status']?.toString().trim() ?? '')
+                  .where((value) => value.isNotEmpty).toSet()
+                  .map((value) => DropdownMenuItem<String>(
+                    value: value.toLowerCase(), child: Text(_invitationStatusLabel(value)),
+                  )),
               ],
               onChanged: (value) => setState(() => invitationStatus = value),
             )),
           if (invitationSearch.isNotEmpty || invitationStatus != null)
             TextButton.icon(
               onPressed: () => setState(() { invitationSearch = ''; invitationStatus = null; }),
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Clear filters'),
+              icon: const Icon(Icons.refresh, size: 16), label: const Text('Clear filters'),
             ),
         ],
       )),
@@ -1840,70 +1926,80 @@ Widget auditView() => Column(
           child: Column(children: [
             Icon(Icons.mail_outline, size: 30, color: TechColors.textMuted),
             SizedBox(height: 10),
-            Text('No invitation records are available to display',
-              textAlign: TextAlign.center,
+            Text('No invitations', textAlign: TextAlign.center,
               style: TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
             SizedBox(height: 6),
-            Text('Invitation information is not currently available in this management view.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: TechColors.textMuted, height: 1.4)),
+            Text('There are currently no invitations available to display.',
+              textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, height: 1.4)),
           ]),
         ))
       else if (filtered.isEmpty)
         surface(Padding(
           padding: const EdgeInsets.all(22),
           child: Column(children: [
-            const Icon(Icons.search_off, color: TechColors.textMuted),
-            const SizedBox(height: 8),
-            Text(invitationSearch.isNotEmpty
-              ? 'No invitations match your search'
-              : 'No invitations match the selected status',
+            const Icon(Icons.search_off, color: TechColors.textMuted), const SizedBox(height: 8),
+            Text(invitationSearch.isNotEmpty ? 'No invitations match your search'
+                : 'No invitations match the selected status',
               textAlign: TextAlign.center,
               style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w600)),
+            if (invitationSearch.isNotEmpty || invitationStatus != null) ...[
+              const SizedBox(height: 10),
+              TextButton(onPressed: () => setState(() { invitationSearch = ''; invitationStatus = null; }),
+                child: const Text('Clear search and filters')),
+            ],
           ]),
         ))
       else
         ...filtered.map((item) {
-          final status = item['status']?.toString().toLowerCase() ?? 'unknown';
-          final expiry = item['expires_at']?.toString();
-          final expiryDate = expiry == null ? null : DateTime.tryParse(expiry);
+          final rawStatus = item['status']?.toString() ?? '';
+          final status = rawStatus.trim().toLowerCase();
+          final expiry = item['expires_at']?.toString() ?? '';
+          final expiryDate = DateTime.tryParse(expiry);
           final expiredByDate = status == 'invited' && expiryDate != null && expiryDate.isBefore(now);
-          final label = expiredByDate ? 'Expired' : status == 'invited' ? 'Pending' :
-            status.isEmpty ? 'Unknown' : status[0].toUpperCase() + status.substring(1);
+          final label = _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate);
+          final person = _invitationPerson(item);
+          final fullName = person?['full_name']?.toString().trim() ?? '';
+          final role = item['role_id']?.toString() ?? '';
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: surface(LayoutBuilder(builder: (context, constraints) {
-              final compact = constraints.maxWidth < 480;
+              final compact = constraints.maxWidth < 620;
               final identity = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(item['email']?.toString() ?? 'Invitee email unavailable',
-                  style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w600),
-                  softWrap: true),
-                if ((item['employee_id']?.toString() ?? '').isNotEmpty)
-                  Text('Employee ID · ${item['employee_id']}',
-                    style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
+                Text(fullName.isEmpty ? (item['email']?.toString() ?? 'Invitee email unavailable') : fullName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text(item['email']?.toString() ?? 'Email unavailable', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
               ]);
-              final meta = Wrap(spacing: 8, runSpacing: 6, children: [
-                Chip(label: Text(label), visualDensity: VisualDensity.compact),
-                Text((item['role_id']?.toString() ?? 'Role unavailable').replaceAll('_', ' '),
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
-                if (expiry != null && expiry.isNotEmpty)
-                  Text('Expires ${expiryDate == null ? expiry : expiryDate.toLocal().toString().split(' ').first}',
-                    style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-                Tooltip(
-                  message: 'View invitation details',
-                  child: TextButton.icon(
-                    onPressed: () => _showInvitationDetails(item),
-                    icon: const Icon(Icons.info_outline, size: 15),
-                    label: const Text('Details'),
-                  ),
-                ),
+              if (compact) {
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  identity, const SizedBox(height: 10),
+                  Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    _invitationStatusChip(label, rawStatus),
+                    Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role),
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
+                    Text('Expires ' + _formatInvitationExpiry(expiry),
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                    TextButton.icon(onPressed: () => _showInvitationDetails(item),
+                      icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details')),
+                  ]),
+                ]);
+              }
+              final details = Row(mainAxisSize: MainAxisSize.min, children: [
+                _invitationStatusChip(label, rawStatus), const SizedBox(width: 10),
+                Flexible(child: Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role), maxLines: 1,
+                  overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace'))),
+                const SizedBox(width: 10),
+                Flexible(child: Text('Expires ' + _formatInvitationExpiry(expiry), maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11))),
+                const SizedBox(width: 4),
+                TextButton.icon(onPressed: () => _showInvitationDetails(item),
+                  icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details')),
               ]);
-              return compact ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                identity, const SizedBox(height: 9), meta,
-              ]) : Row(children: [
-                Expanded(flex: 3, child: identity),
-                const SizedBox(width: 12),
-                Expanded(flex: 4, child: meta),
+              return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Expanded(flex: 3, child: identity), const SizedBox(width: 18),
+                Expanded(flex: 4, child: details),
               ]);
             })),
           );
@@ -2863,7 +2959,9 @@ Widget auditView() => Column(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1500),
                           child: loading
-                              ? _overviewSkeleton()
+                              ? (section == ManagementSection.invitations
+                                  ? _invitationSkeleton()
+                                  : _overviewSkeleton())
                               : error != null
                                   ? GlassCard(
                                       padding: const EdgeInsets.all(16),
