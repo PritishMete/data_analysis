@@ -117,6 +117,9 @@ class _ManagementShellState extends State<ManagementShell> {
   int pendingInvitations = 0;
   String search = '';
   String? selectedLocation;
+  Map<String, dynamic>? _selectedAssignmentProfile;
+  Future<Map<String, dynamic>>? _assignmentProfileFuture;
+  bool _showIdProof = false;
 
   @override
   void initState() { super.initState(); loadAll(); }
@@ -1460,8 +1463,6 @@ class _ManagementShellState extends State<ManagementShell> {
     if (raw.isEmpty) return '—';
 
     try {
-      // API timestamps are stored as UTC/offset-aware ISO-8601 values. The
-      // display layer alone converts them to India Standard Time.
       final normalized = raw.endsWith('Z') || raw.contains('+') ||
               (raw.length > 10 && raw.substring(10).contains('-'))
           ? raw
@@ -1471,322 +1472,409 @@ class _ManagementShellState extends State<ManagementShell> {
           .add(const Duration(hours: 5, minutes: 30));
       final hour = ist.hour % 12 == 0 ? 12 : ist.hour % 12;
       final period = ist.hour >= 12 ? 'PM' : 'AM';
-      final month = ist.month.toString().padLeft(2, '0');
-      final day = ist.day.toString().padLeft(2, '0');
       final minute = ist.minute.toString().padLeft(2, '0');
-      return month + '/' + day + '/' + ist.year.toString() + '\n' +
-          hour.toString() + ':' + minute + ' ' + period;
+      final day = ist.day.toString().padLeft(2, '0');
+      final month = ist.month.toString().padLeft(2, '0');
+      return hour.toString() + ':' + minute + ' ' + period + '\n' +
+          day + '/' + month + '/' + ist.year.toString();
     } catch (_) {
       return '—';
     }
   }
-  Future<void> _showAssignmentProfile(Map<String, dynamic> assignment) async {
+
+  void _showAssignmentProfile(Map<String, dynamic> assignment) {
     final assignmentId = assignment['assignment_id']?.toString().trim() ?? '';
     if (assignmentId.isEmpty) {
       feedback(StateError('This assignment has no readable profile target.'));
       return;
     }
-    try {
-      final profile = await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
-      if (!mounted) return;
-      var showIdProof = false;
-      // Resolve the active glass settings before pushing the modal route.
-      // A route builder has a different BuildContext from the calling shell.
-      final noGlowSettings = LiquidGlassSettings.of(context).copyWith(
-        glowIntensity: 0,
-        shadowElevation: 0,
-        shadow: const <BoxShadow>[],
-      );
-      final maxDialogHeight = MediaQuery.sizeOf(context).height * 0.85;
-      final contentHeight = (maxDialogHeight - 136)
-          .clamp(220.0, maxDialogHeight)
-          .toDouble();
-      await GlassDialog.show<void>(
-        context: context,
-        barrierDismissible: false,
-        title: profile['full_name']?.toString().trim().isEmpty == true
-            ? 'Profile incomplete'
-            : profile['full_name']?.toString().trim() ??
-                'Profile incomplete',
-        maxWidth: 520,
-        settings: noGlowSettings,
-        content: StatefulBuilder(
-                  builder: (dialogContext, setDialogState) {
-                    final proofNumber =
-                        profile['id_proof_number']?.toString() ?? '';
-                    final proofType =
-                        profile['id_proof_type']?.toString() ?? '';
-                    final maskedProof = proofNumber.length <= 4
-                        ? proofNumber
-                        : ('X' * (proofNumber.length - 4)) +
-                            proofNumber.substring(proofNumber.length - 4);
-                    final completion = num.tryParse(
-                          profile['profile_completeness_percent']?.toString() ??
-                              '',
-                        ) ??
-                        0;
-                    final fullName =
-                        profile['full_name']?.toString().trim() ?? '';
-                    final employeeId =
-                        profile['employee_id']?.toString() ?? '—';
 
-                    Widget detail(
-                      String label,
-                      String? value, {
-                      bool multiline = false,
-                    }) => _profileDetailRow(
-                      label,
-                      value,
-                      multiline: multiline,
-                      settings: noGlowSettings,
-                    );
+    final future =
+        request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
+    setState(() {
+      _selectedAssignmentProfile = Map<String, dynamic>.from(assignment);
+      _assignmentProfileFuture = future;
+      _showIdProof = false;
+    });
+  }
 
-                    Widget cell(Widget child) => Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        child: child,
-                      ),
-                    );
+  void _closeAssignmentProfile() {
+    if (!mounted) return;
+    setState(() {
+      _selectedAssignmentProfile = null;
+      _assignmentProfileFuture = null;
+      _showIdProof = false;
+    });
+  }
 
-                    Widget row(Widget left, Widget right) => Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [cell(left), cell(right)],
-                    );
+  Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
+    final text = (value ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: _glassRow(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 112,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text.isEmpty ? '—' : text,
+                maxLines: multiline ? 4 : 2,
+                softWrap: multiline,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                    Widget responsiveRows(List<Widget> items) => LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth < 460) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: items
-                                .map(
-                                  (item) => Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    child: item,
-                                  ),
-                                )
-                                .toList(),
-                          );
-                        }
-                        final rows = <Widget>[];
-                        for (var i = 0; i < items.length; i += 2) {
-                          rows.add(
-                            row(
-                              items[i],
-                              i + 1 < items.length
-                                  ? items[i + 1]
-                                  : const SizedBox.shrink(),
-                            ),
-                          );
-                        }
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: rows,
-                        );
-                      },
-                    );
+  Widget _buildAssignmentProfileOverlay() {
+    final future = _assignmentProfileFuture;
+    if (_selectedAssignmentProfile == null || future == null) {
+      return const SizedBox.shrink();
+    }
 
-                    final mainDetails = <Widget>[
-                      detail(
-                        'ROLE',
-                        _roleLabel(profile['role_id']?.toString() ?? '—'),
-                      ),
-                      detail('EMAIL', profile['email']?.toString()),
-                      detail(
-                        'EMAIL VERIFIED',
-                        profile['email_verified'] == true ? 'YES' : 'NO',
-                      ),
-                      detail('PHONE', profile['phone_e164']?.toString()),
-                      detail(
-                        'PHONE VERIFIED',
-                        profile['phone_verified'] == true ? 'YES' : 'NO',
-                      ),
-                      detail(
-                        'ADDRESS LINE 1',
-                        profile['address_line1']?.toString(),
-                        multiline: true,
-                      ),
-                      detail(
-                        'ADDRESS LINE 2',
-                        profile['address_line2']?.toString(),
-                        multiline: true,
-                      ),
-                      detail('STATE', profile['state']?.toString()),
-                      detail('COUNTRY', profile['country']?.toString()),
-                      detail(
-                        'PIN / POSTAL CODE',
-                        profile['postal_code']?.toString(),
-                      ),
-                      detail('ID PROOF TYPE', proofType),
-                      detail(
-                        'ID PROOF NUMBER',
-                        showIdProof ? proofNumber : maskedProof,
-                      ),
-                    ];
+    return Positioned.fill(
+      child: Material(
+        type: MaterialType.transparency,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _closeAssignmentProfile,
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.38),
+                ),
+              ),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: FutureBuilder<Map<String, dynamic>>(
+                  future: future,
+                  builder: (context, snapshot) {
+                    final maxHeight =
+                        (MediaQuery.sizeOf(context).height * 0.84)
+                            .clamp(320.0, 900.0)
+                            .toDouble();
+                    final profile = snapshot.data;
+                    final loading = snapshot.connectionState ==
+                        ConnectionState.waiting;
+                    final profileError = snapshot.hasError
+                        ? snapshot.error.toString().replaceFirst('Bad state: ', '')
+                        : null;
+                    final source =
+                        profile ?? _selectedAssignmentProfile ?? const <String, dynamic>{};
+                    final fullName = source['full_name']?.toString().trim() ?? '';
+                    final employeeId = source['employee_id']?.toString().trim() ??
+                        _selectedAssignmentProfile?['employee_id']?.toString().trim() ??
+                        '—';
 
-                    final remainingDetails = <Widget>[
-                      detail('BRANCH', profile['location_name']?.toString()),
-                      detail('SECTION', profile['section_name']?.toString()),
-                      detail(
-                        'REPORTS TO',
-                        [
-                          profile['reports_to_employee_id'],
-                          profile['reports_to_role_id'] == null
-                              ? null
-                              : _roleLabel(
-                                  profile['reports_to_role_id'].toString(),
+                    Widget body() {
+                      if (loading) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 36),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: TechColors.borderActive,
                                 ),
-                        ]
-                            .where(
-                              (value) =>
-                                  value != null && value.toString().isNotEmpty,
-                            )
-                            .join(' · '),
-                      ),
-                      detail(
-                        'ASSIGNMENT STATUS',
-                        profile['status']?.toString(),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          detail(
-                            'CREATED',
-                            _formatEmployeeTimestamp(
-                              profile['profile_created_at'] ??
-                                  profile['assignment_created_at'],
-                            ),
+                              ),
+                              SizedBox(height: 14),
+                              Text(
+                                'Loading profile…',
+                                style: TextStyle(
+                                  color: TechColors.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          detail(
-                            'UPDATED',
-                            _formatEmployeeTimestamp(
-                              profile['profile_updated_at'] ??
-                                  profile['assignment_updated_at'],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ];
+                        );
+                      }
 
-                    return SizedBox(
-                      height: contentHeight,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            child: Row(
+                      if (profileError != null || profile == null) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 30),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                color: TechColors.statusRed,
+                                size: 24,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                profileError ?? 'Profile data is unavailable.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: TechColors.textPrimary,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      final proofNumber =
+                          profile['id_proof_number']?.toString().trim() ?? '';
+                      final proofType =
+                          profile['id_proof_type']?.toString().trim() ?? '';
+                      final maskedProof = proofNumber.isEmpty
+                          ? ''
+                          : proofNumber.length <= 4
+                              ? proofNumber
+                              : ('X' * (proofNumber.length - 4)) +
+                                  proofNumber.substring(proofNumber.length - 4);
+                      final completion =
+                          num.tryParse(profile['profile_completeness_percent']?.toString() ?? '');
+                      final reportsToParts = <String>[];
+                      final reportsEmployee =
+                          profile['reports_to_employee_id']?.toString().trim() ?? '';
+                      final reportsRole =
+                          profile['reports_to_role_id']?.toString().trim() ?? '';
+                      if (reportsEmployee.isNotEmpty) {
+                        reportsToParts.add(reportsEmployee);
+                      }
+                      if (reportsRole.isNotEmpty) {
+                        reportsToParts.add(_roleLabel(reportsRole));
+                      }
+
+                      Widget detail(String label, String? value,
+                              {bool multiline = false}) =>
+                          _profileDetailRow(label, value, multiline: multiline);
+
+                      final details = <Widget>[
+                        detail('ROLE', _roleLabel(profile['role_id']?.toString().trim() ?? '—')),
+                        detail('EMAIL', profile['email']?.toString()),
+                        detail('EMAIL VERIFIED',
+                            profile['email_verified'] == true ? 'YES' : 'NO'),
+                        detail('PHONE', profile['phone_e164']?.toString()),
+                        detail('PHONE VERIFIED',
+                            profile['phone_verified'] == true ? 'YES' : 'NO'),
+                        detail('ADDRESS LINE 1', profile['address_line1']?.toString(),
+                            multiline: true),
+                        detail('ADDRESS LINE 2', profile['address_line2']?.toString(),
+                            multiline: true),
+                        detail('STATE', profile['state']?.toString()),
+                        detail('COUNTRY', profile['country']?.toString()),
+                        detail('PIN / POSTAL CODE', profile['postal_code']?.toString()),
+                        detail('ID PROOF TYPE', proofType),
+                        detail(
+                          'ID PROOF NUMBER',
+                          _showIdProof ? proofNumber : maskedProof,
+                        ),
+                        detail('BRANCH', profile['location_name']?.toString()),
+                        detail('SECTION', profile['section_name']?.toString()),
+                        detail(
+                          'REPORTS TO',
+                          reportsToParts.isEmpty ? null : reportsToParts.join(' · '),
+                        ),
+                        detail('ASSIGNMENT STATUS', profile['status']?.toString()),
+                        detail(
+                          'CREATED',
+                          _formatEmployeeTimestamp(
+                            profile['profile_created_at'] ??
+                                profile['assignment_created_at'],
+                          ),
+                        ),
+                        detail(
+                          'UPDATED',
+                          _formatEmployeeTimestamp(
+                            profile['profile_updated_at'] ??
+                                profile['assignment_updated_at'],
+                          ),
+                        ),
+                        detail(
+                          'PROFILE COMPLETENESS',
+                          completion == null ? null : completion.toStringAsFixed(0) + '%',
+                        ),
+                      ];
+
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          final narrow = constraints.maxWidth < 500;
+                          final children = <Widget>[];
+                          for (var i = 0; i < details.length; i += narrow ? 1 : 2) {
+                            if (narrow) {
+                              children.add(details[i]);
+                            } else {
+                              children.add(
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                                      child: details[i],
+                                    )),
+                                    Expanded(child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                                      child: i + 1 < details.length
+                                          ? details[i + 1]
+                                          : const SizedBox.shrink(),
+                                    )),
+                                  ],
+                                ),
+                              );
+                            }
+                          }
+
+                          return SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ...children,
+                                if (proofNumber.isNotEmpty)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: () => setState(
+                                        () => _showIdProof = !_showIdProof,
+                                      ),
+                                      child: Text(
+                                        _showIdProof
+                                            ? 'Mask ID proof'
+                                            : 'Show ID proof',
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    }
+
+                    return ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: 760,
+                        maxHeight: maxHeight,
+                      ),
+                      child: GlassContainer(
+                        useOwnLayer: true,
+                        quality: GlassQuality.standard,
+                        settings: TechColors.panelGlass.copyWith(
+                          glowIntensity: 0,
+                          shadowElevation: 0,
+                          shadow: const <BoxShadow>[],
+                        ),
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    fullName.isEmpty
-                                        ? 'Profile incomplete'
-                                        : fullName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: TechColors.textPrimary,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        fullName.isEmpty ? 'Profile incomplete' : fullName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: TechColors.textPrimary,
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        employeeId.isEmpty ? '—' : employeeId,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: TechColors.textMuted,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 16),
-                                Flexible(
-                                  child: Text(
-                                    employeeId,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
-                                    style: const TextStyle(
-                                      color: TechColors.textPrimary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      fontFamily: 'monospace',
-                                    ),
+                                IconButton(
+                                  tooltip: 'Close',
+                                  onPressed: _closeAssignmentProfile,
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    color: TechColors.textPrimary,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: TechColors.textMuted.withValues(alpha: 0.22),
-                          ),
-                          const SizedBox(height: 7),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              padding: EdgeInsets.zero,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  responsiveRows(mainDetails),
-                                  const SizedBox(height: 4),
-                                  Divider(
-                                    height: 1,
-                                    thickness: 1,
-                                    color: TechColors.textMuted.withValues(alpha: 0.22),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  responsiveRows(remainingDetails),
-                                  if (proofNumber.isNotEmpty)
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
-                                        onPressed: () => setDialogState(
-                                          () => showIdProof = !showIdProof,
-                                        ),
-                                        child: Text(
-                                          showIdProof
-                                              ? 'Mask ID proof'
-                                              : 'Show ID proof',
-                                        ),
-                                      ),
-                                    ),
-                                  if (completion < 100) ...[
-                                    const SizedBox(height: 4),
-                                    Divider(
-                                      height: 1,
-                                      thickness: 1,
-                                      color: TechColors.textMuted.withValues(alpha: 0.22),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    detail(
-                                      'PROFILE COMPLETENESS',
-                                      completion.toStringAsFixed(0) + '%',
-                                    ),
-                                  ],
-                                ],
+                            const SizedBox(height: 10),
+                            Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: TechColors.textMuted.withValues(alpha: 0.22),
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(child: body()),
+                            const SizedBox(height: 10),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: GlassButton(
+                                onTap: _closeAssignmentProfile,
+                                label: 'Close',
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  size: 16,
+                                  color: CupertinoColors.white,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   },
+                ),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          GlassDialogAction(
-            label: 'Close',
-            isPrimary: true,
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-      );
-    } catch (error) {
-      feedback(error);
-    }
+      ),
+    );
   }
+
   Widget _assignmentRegistryValue(
     String value, {
     TextStyle style = const TextStyle(
@@ -2180,6 +2268,7 @@ class _ManagementShellState extends State<ManagementShell> {
       child: Stack(
         children: [
           Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
+          if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
           Positioned.fill(
             child: SafeArea(
               child: Column(
