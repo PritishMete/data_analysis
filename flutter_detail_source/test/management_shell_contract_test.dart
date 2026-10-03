@@ -95,6 +95,11 @@ void main() {
     expect(source, contains("return '\$month/\$day/\${ist.year}"));
     expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
 
+    final detailsStart = source.indexOf('final details = <Widget>[');
+    final detailsEnd = source.indexOf('return LayoutBuilder', detailsStart);
+    expect(detailsStart, greaterThanOrEqualTo(0));
+    expect(detailsEnd, greaterThan(detailsStart));
+    final detailsBlock = source.substring(detailsStart, detailsEnd);
     final fieldOrder = [
       'ROLE',
       'EMAIL',
@@ -118,7 +123,7 @@ void main() {
     ];
     var previous = -1;
     for (final field in fieldOrder) {
-      final index = source.indexOf("detail('$field'");
+      final index = detailsBlock.indexOf("'$field'");
       expect(index, greaterThan(previous), reason: 'Field order changed at $field');
       previous = index;
     }
