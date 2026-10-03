@@ -1779,11 +1779,9 @@ class _ManagementShellState extends State<ManagementShell> {
                       );
                     }
 
-                    return ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: 760,
-                        maxHeight: maxHeight,
-                      ),
+                    return SizedBox(
+                      width: 760,
+                      height: maxHeight.clamp(320.0, 760.0).toDouble(),
                       child: GlassContainer(
                         useOwnLayer: true,
                         quality: GlassQuality.standard,
@@ -2268,7 +2266,6 @@ class _ManagementShellState extends State<ManagementShell> {
       child: Stack(
         children: [
           Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
-          if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
           Positioned.fill(
             child: SafeArea(
               child: Column(
@@ -2327,6 +2324,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 ],
               ),
             ),
+          if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
           ),
         ],
       ),
