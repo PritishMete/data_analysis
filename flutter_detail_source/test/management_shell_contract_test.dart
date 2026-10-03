@@ -340,10 +340,12 @@ void main() {
     expect(source, contains("profile['id_proof_number_masked']"));
     expect(source, contains('bool _isCurrentUserProfile = false'));
     expect(source, contains('Future<void> _confirmSignOut() async'));
-    expect(source, contains("title: const Text('Sign out?')"));
-    expect(source, contains("content: const Text('Are you sure you want to sign out?')"));
-    expect(source, contains("child: const Text('Cancel')"));
-    expect(source, contains("child: const Text('Sign Out')"));
+    expect(source, contains('final confirmed = await GlassDialog.show<bool>('));
+    expect(source, contains("title: 'Sign out?'"));
+    expect(source, contains("message: 'Are you sure you want to sign out?'"));
+    expect(source, contains("label: 'Cancel'"));
+    expect(source, contains("label: 'Sign Out'"));
+    expect(source, contains('isPrimary: true'));
     expect(source, contains('if (confirmed == true)'));
     expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
     expect(header, contains('onPressed: _confirmSignOut'));
