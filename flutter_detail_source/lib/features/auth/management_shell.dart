@@ -1716,14 +1716,16 @@ class _ManagementShellState extends State<ManagementShell> {
                           ),
                           multiline: true,
                         ),
-                        if (completion != 100)
-                          detail(
-                            'PROFILE COMPLETENESS',
-                            completion == null
-                                ? null
-                                : '${completion.toStringAsFixed(0)}%',
-                          ),
                       ];
+
+                      final profileCompletion = completion != 100
+                          ? detail(
+                              'PROFILE COMPLETENESS',
+                              completion == null
+                                  ? null
+                                  : '${completion.toStringAsFixed(0)}%',
+                            )
+                          : null;
 
                       return LayoutBuilder(
                         builder: (context, constraints) {
@@ -1751,14 +1753,23 @@ class _ManagementShellState extends State<ManagementShell> {
 
                           return SingleChildScrollView(
                             padding: const EdgeInsets.only(bottom: 2),
-                            child: GridView.count(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                              mainAxisExtent: _profileFieldHeight,
-                              children: gridChildren,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                GridView.count(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                  mainAxisExtent: _profileFieldHeight,
+                                  children: gridChildren,
+                                ),
+                                if (profileCompletion != null) ...[
+                                  const SizedBox(height: 8),
+                                  profileCompletion,
+                                ],
+                              ],
                             ),
                           );
                         },
@@ -1802,44 +1813,17 @@ class _ManagementShellState extends State<ManagementShell> {
                                   ),
                                   const Spacer(),
                                   Flexible(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        const Text(
-                                          'EMPLOYEE ID',
-                                          maxLines: 1,
-                                          softWrap: false,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: TechColors.textPrimary,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            fontFamily: 'monospace',
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          employeeId.isEmpty ? '—' : employeeId,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          textAlign: TextAlign.right,
-                                          style: const TextStyle(
-                                            color: TechColors.textPrimary,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            fontFamily: 'monospace',
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    tooltip: 'Close',
-                                    onPressed: _closeAssignmentProfile,
-                                    icon: const Icon(
-                                      Icons.close_rounded,
-                                      color: TechColors.textPrimary,
+                                    child: Text(
+                                      employeeId.isEmpty ? '—' : employeeId,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(
+                                        color: TechColors.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        fontFamily: 'monospace',
+                                      ),
                                     ),
                                   ),
                                 ],
