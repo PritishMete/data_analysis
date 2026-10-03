@@ -2597,13 +2597,16 @@ Widget auditView() => Column(
         ...assignments.map((a) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: _glassRow(
-              child: InkWell(
-                onTap: () => _showAssignmentProfile(a),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: _assignmentRegistryRow(a),
+            child: Tooltip(
+              message: 'View details',
+              child: _glassRow(
+                child: InkWell(
+                  onTap: () => _showAssignmentProfile(a),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: _assignmentRegistryRow(a),
+                  ),
                 ),
               ),
             ),
