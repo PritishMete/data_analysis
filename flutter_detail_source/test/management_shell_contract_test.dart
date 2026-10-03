@@ -228,7 +228,7 @@ void main() {
     expect(access, contains('No managed resources are available in this scope yet.'));
     expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
-    expect(access, contains('_action(''RETRY'''));
+    expect(access, contains("_action('RETRY'"));
     expect(access, contains('People and dataset access'));
     expect(access, contains("['dataset.view_original']"));
     expect(access, contains("'dataset.create_working_copy'"));
