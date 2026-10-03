@@ -1317,158 +1317,230 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
   Widget peopleView() {
-    final q = search.trim().toLowerCase();
-    final list = people.where((p) {
-      if (q.isEmpty) return true;
-      return [
-        p['employee_id'],
-        p['full_name'],
-        p['role_id'],
-        p['location_name'],
-        p['section_name'],
-        p['status'],
-      ].any(
-        (v) => v?.toString().toLowerCase().contains(q) ?? false,
-      );
+    final query = search.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+    final roleOptions = people.map((p) => p['role_id']?.toString() ?? '')
+        .where((v) => v.isNotEmpty).toSet().toList()..sort();
+    final locationOptions = people.map((p) => p['location_name']?.toString() ?? '')
+        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
+    final sectionOptions = people.map((p) => p['section_name']?.toString() ?? '')
+        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
+    final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final assignedCount = people.where((p) {
+      final loc = p['location_name']?.toString() ?? '';
+      final sec = p['section_name']?.toString() ?? '';
+      return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
+          sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
+    }).length;
+    final filtered = people.where((p) {
+      final fields = [p['full_name'], p['email'], p['employee_id'], p['role_id'],
+        p['location_name'], p['section_name'], p['status']]
+        .whereType<Object>().map((v) => v.toString().toLowerCase().trim());
+      if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
+      if (selectedLocation != null && p['location_name']?.toString() != selectedLocation) return false;
+      if (selectedSection != null && p['section_name']?.toString() != selectedSection) return false;
+      return true;
     }).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassCard(
-          margin: EdgeInsets.zero,
-          padding: const EdgeInsets.all(14),
+    final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null;
+    Widget metric(String label, int value, IconData icon) => Expanded(
+      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
+        Icon(icon, size: 17, color: TechColors.borderActive),
+        const SizedBox(width: 9),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
+        ])),
+      ])),
+    );
+    Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
+      final name = p['full_name']?.toString().trim() ?? '';
+      final employeeId = p['employee_id']?.toString().trim() ?? '';
+      final role = _roleLabel(p['role_id']?.toString() ?? '—');
+      final location = p['location_name']?.toString() ?? 'Unassigned';
+      final subsection = p['section_name']?.toString() ?? 'Unassigned';
+      final status = p['status']?.toString() ?? 'Unknown';
+      final target = assignments.where((a) =>
+        (a['employee_id']?.toString().isNotEmpty ?? false) &&
+        a['employee_id']?.toString() == employeeId).firstOrNull;
+      return _glassRow(padding: const EdgeInsets.all(14), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(width: 38, height: 38, alignment: Alignment.center,
+              decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.person_outline, color: TechColors.borderActive, size: 19)),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name.isEmpty ? 'Profile incomplete' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              if (p['email']?.toString().isNotEmpty ?? false) ...[
+                const SizedBox(height: 3),
+                Text(p['email'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: TechColors.textMuted)),
+              ],
+              if (employeeId.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(employeeId, style: const TextStyle(fontSize: 10, color: TechColors.textMuted, fontFamily: 'monospace')),
+              ],
+            ])),
+            const SizedBox(width: 8),
+            _statusDot(status),
+          ]),
+          const SizedBox(height: 12),
+          Wrap(spacing: 7, runSpacing: 7, children: [
+            _verificationBadge(role, true),
+            _verificationBadge(status, status.toLowerCase() == 'active'),
+          ]),
+          const SizedBox(height: 9),
+          Row(children: [
+            const Icon(Icons.location_on_outlined, size: 14, color: TechColors.textMuted),
+            const SizedBox(width: 5),
+            Expanded(child: Text(location, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: [
+            const Icon(Icons.account_tree_outlined, size: 14, color: TechColors.textMuted),
+            const SizedBox(width: 5),
+            Expanded(child: Text(subsection, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
+          ]),
+          if (target != null) ...[
+            const SizedBox(height: 10),
+            Align(alignment: Alignment.centerRight, child: TextButton.icon(
+              onPressed: () => _showAssignmentProfile(target),
+              icon: const Icon(Icons.open_in_new, size: 15),
+              label: const Text('View details'),
+            )),
+          ],
+        ],
+      ));
+    }
+    return LayoutBuilder(builder: (context, constraints) {
+      final narrow = constraints.maxWidth < 680;
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _title('People', detail: 'View and manage the people in your organization', icon: Icons.people_outline),
+        const SizedBox(height: 12),
+        if (people.isNotEmpty) ...[
+          if (narrow) ...[
+            metric('Total people', people.length, Icons.people_outline),
+            const SizedBox(height: 7),
+            metric('Active members', activeCount, Icons.verified_user_outlined),
+            const SizedBox(height: 7),
+            metric('Assigned', assignedCount, Icons.account_tree_outlined),
+          ] else Row(children: [
+            metric('Total people', people.length, Icons.people_outline),
+            const SizedBox(width: 9),
+            metric('Active members', activeCount, Icons.verified_user_outlined),
+            const SizedBox(width: 9),
+            metric('Assigned', assignedCount, Icons.account_tree_outlined),
+          ]),
+          const SizedBox(height: 12),
+        ],
+        GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(12),
           shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-          child: Row(
-            children: [
-              const Icon(Icons.search, size: 16, color: TechColors.textMuted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  onChanged: (v) => setState(() => search = v),
-                  style: const TextStyle(
-                    color: TechColors.textPrimary,
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                  ),
-                  decoration: const InputDecoration(
-                    hintText:
-                        'SEARCH NAME / EMPLOYEE / ROLE / LOCATION / SECTION',
-                    hintStyle: TextStyle(
-                      color: TechColors.textMuted,
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                    ),
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextField(
+              onChanged: (v) => setState(() => search = v),
+              style: const TextStyle(color: TechColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search people',
+                prefixIcon: const Icon(Icons.search, size: 19),
+                suffixIcon: search.isEmpty ? null : IconButton(
+                  tooltip: 'Clear search', icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setState(() => search = ''),
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        if (list.isEmpty)
-          surface(
-            const Padding(
-              padding: EdgeInsets.all(28),
-              child: Center(
-                child: Text(
-                  'NO PEOPLE MATCH THIS QUERY',
-                  style: TextStyle(
-                    color: TechColors.textMuted,
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                  ),
-                ),
+                isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-          )
+            const SizedBox(height: 9),
+            if (narrow) ...[
+              DropdownButtonFormField<String>(
+                value: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All locations')),
+                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedLocation = v),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All sections')),
+                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedSection = v),
+              ),
+            ] else Row(children: [
+              Expanded(child: DropdownButtonFormField<String>(
+                value: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All locations')),
+                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedLocation = v),
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: DropdownButtonFormField<String>(
+                value: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All sections')),
+                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedSection = v),
+              )),
+              if (hasFilters) IconButton(tooltip: 'Clear filters', onPressed: () => setState(() {
+                search = ''; selectedLocation = null; selectedSection = null;
+              }), icon: const Icon(Icons.filter_alt_off)),
+            ]),
+            if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
+              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+              child: const Text('Clear filters'),
+            )),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        if (people.isEmpty)
+          surface(const Padding(padding: EdgeInsets.all(28), child: Column(children: [
+            Icon(Icons.people_outline, size: 30, color: TechColors.textMuted),
+            SizedBox(height: 9),
+            Text('No people yet', style: TextStyle(fontWeight: FontWeight.w700)),
+            SizedBox(height: 5),
+            Text('People added to your organization will appear here.', textAlign: TextAlign.center,
+              style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
+          ])))
+        else if (filtered.isEmpty)
+          surface(Padding(padding: const EdgeInsets.all(28), child: Column(children: [
+            const Icon(Icons.search_off, size: 28, color: TechColors.textMuted),
+            const SizedBox(height: 9),
+            Text(query.isNotEmpty ? 'No people match your search' : 'No people match these filters',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 5),
+            const Text('Try changing your search or clearing the selected filters.',
+              textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
+            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+              child: const Text('Clear search and filters')),
+          ])))
+        else if (narrow)
+          Column(children: filtered.map((p) => Padding(
+            padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
+          )).toList())
         else
-          Column(
-            children: list.map((p) {
-              final fullName = p['full_name']?.toString().trim() ?? '';
-              final employeeId = p['employee_id']?.toString() ?? '—';
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: _glassRow(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.person_outline,
-                        size: 17,
-                        color: TechColors.borderActive,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              fullName.isEmpty ? 'Profile incomplete' : fullName,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              employeeId,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: TechColors.textMuted,
-                                fontSize: 9,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${_roleLabel(p['role_id']?.toString() ?? '—')}  ·  ${p['location_name']?.toString() ?? 'Unassigned'}  ·  ${p['section_name']?.toString() ?? 'Unassigned'}',
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: TechColors.textMuted,
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _verificationBadge(
-                            'EMAIL',
-                            p['email_verified'] == true,
-                          ),
-                          const SizedBox(height: 3),
-                          _verificationBadge(
-                            'PHONE',
-                            p['phone_verified'] == true,
-                          ),
-                          const SizedBox(height: 3),
-                          _statusDot(p['status']?.toString() ?? ''),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+            child: Column(children: [
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                child: Row(children: const [
+                  Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                  Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                  Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                  SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                ]),
+              ),
+              const Divider(height: 1),
+              ...filtered.map((p) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: personCard(p),
+              )),
+            ]),
           ),
-      ],
-    );
+      ]);
+    });
   }
-  Widget auditView() => Column(
+
+Widget auditView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _title('Audit', detail: 'SYSTEM EVENT STREAM', icon: Icons.terminal),
