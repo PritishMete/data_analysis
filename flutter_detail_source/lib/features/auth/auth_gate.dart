@@ -456,6 +456,11 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
         break;
     }
+    // ManagementShell provides its own InsightFlow header branding.
+    // Keep the floating brand on the other authenticated app surfaces.
+    if (_onboardingState == InsightFlowOnboardingState.activeMember) {
+      return authenticatedChild;
+    }
     return AuthenticatedBrandShell(child: authenticatedChild);
   }
 }
