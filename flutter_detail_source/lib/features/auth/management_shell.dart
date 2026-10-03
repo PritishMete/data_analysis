@@ -1407,7 +1407,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final normalized = raw.endsWith('Z') || raw.contains('+') ||
               (raw.length > 10 && raw.substring(10).contains('-'))
           ? raw
-          : raw + 'Z';
+          : '${raw}Z';
       final ist = DateTime.parse(normalized)
           .toUtc()
           .add(const Duration(hours: 5, minutes: 30));
@@ -1416,8 +1416,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final minute = ist.minute.toString().padLeft(2, '0');
       final month = ist.month.toString().padLeft(2, '0');
       final day = ist.day.toString().padLeft(2, '0');
-      return month + '/' + day + '/' + ist.year.toString() + '\n' +
-          hour.toString() + ':' + minute + ' ' + period;
+      return '${month}/${day}/${ist.year}\n${hour}:${minute} $period';
     } catch (_) {
       return '—';
     }
@@ -1722,7 +1721,7 @@ class _ManagementShellState extends State<ManagementShell> {
                             'PROFILE COMPLETENESS',
                             completion == null
                                 ? null
-                                : completion.toStringAsFixed(0) + '%',
+                                : '${completion.toStringAsFixed(0)}%',
                           ),
                       ];
 
