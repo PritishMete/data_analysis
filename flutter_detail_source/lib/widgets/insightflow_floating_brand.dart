@@ -3,14 +3,6 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../app_colors.dart';
 
-/// Floating authenticated-app brand.
-///
-/// The glass treatment intentionally mirrors Lockr's floating/sign-out
-/// control: the same LiquidGlassSettings, standalone layer, and standard
-/// quality are used instead of a painted/tinted BoxDecoration.
-class InsightFlowFloatingBrand extends StatelessWidget {
-  const InsightFlowFloatingBrand({super.key});
-
 /// Shared glass material used by the floating InsightFlow brand and
 /// the ManagementShell header. Keep these physical settings as the source
 /// of truth; the two surfaces intentionally retain different geometries.
@@ -20,6 +12,14 @@ const kInsightFlowFloatingBrandGlassSettings = LiquidGlassSettings(
   glassColor: Color(0x0FFFFFFF),
   refractiveIndex: 1.05,
 );
+
+/// Floating authenticated-app brand.
+///
+/// The glass treatment intentionally mirrors Lockr's floating/sign-out
+/// control: the same LiquidGlassSettings, standalone layer, and standard
+/// quality are used instead of a painted/tinted BoxDecoration.
+class InsightFlowFloatingBrand extends StatelessWidget {
+  const InsightFlowFloatingBrand({super.key});
 
   @override
   Widget build(BuildContext context) {
