@@ -1605,9 +1605,40 @@ class _ManagementShellState extends State<ManagementShell> {
       const SizedBox(height:4),Text('\${filtered.length} of \${audit.length} activities',textAlign:TextAlign.end,style:const TextStyle(color:TechColors.textMuted,fontSize:10)),
     ]);
   }
+  Widget _auditSkeleton() {
+    Widget block({double height = 16, double? width}) => Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: TechColors.textMuted.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
+      ),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        block(width: 150, height: 22),
+        const SizedBox(height: 9),
+        block(width: 290, height: 12),
+      ])),
+      const SizedBox(height: 12),
+      surface(block(height: 46)),
+      const SizedBox(height: 12),
+      ...List.generate(4, (_) => Padding(
+        padding: const EdgeInsets.only(bottom: 9),
+        child: surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          block(width: 190, height: 17),
+          const SizedBox(height: 10),
+          block(width: 130, height: 12),
+          const SizedBox(height: 8),
+          block(width: 220, height: 11),
+        ])),
+      )),
+    ]);
+  }
+
   void _showAuditDetails(Map<String,dynamic> event){
     final metadata=event['metadata'];final eventId=event['event_id']?.toString()??'';
-    showDialog<void>(context:context,builder:(context)=>_ManagementGlassDialog(title:const Text('Activity details'),content:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[Text(_auditActionLabel(event['action']?.toString()??'Activity'),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),const SizedBox(height:12),_detailLine('Actor',_auditActor(event)),_detailLine('When',_auditTimestamp(event['created_at'])),_detailLine('Result',event['outcome']?.toString()??'—'),if(_auditContext(event).isNotEmpty)_detailLine('Context',_auditContext(event)),const SizedBox(height:8),const Text('Reference details',style:TextStyle(color:TechColors.textMuted,fontSize:11,fontWeight:FontWeight.w700)),if(eventId.isNotEmpty)_detailLine('Event reference',eventId),if(event['actor_principal_id']!=null)_detailLine('Actor reference',event['actor_principal_id'].toString()),if(metadata is Map)...metadata.entries.where((e)=>e.value!=null&&e.value.toString().trim().isNotEmpty).take(8).map((e)=>_detailLine(e.key.toString().replaceAll('_',' '),e.value.toString()))]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Close'))]));
+    showDialog<void>(context:context,builder:(context)=>_ManagementGlassDialog(title:const Text('Activity details'),content:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[Text(_auditActionLabel(event['action']?.toString()??'Activity'),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),const SizedBox(height:12),_detailLine('Actor',_auditActor(event)),_detailLine('When',_auditTimestamp(event['created_at'])),_detailLine('Result',event['outcome']?.toString()??'—'),if(_auditContext(event).isNotEmpty)_detailLine('Context',_auditContext(event)),const SizedBox(height:8),const Text('Reference details',style:TextStyle(color:TechColors.textMuted,fontSize:11,fontWeight:FontWeight.w700)),if(eventId.isNotEmpty)_detailLine('Event reference',eventId),if(event['actor_principal_id']!=null)_detailLine('Actor reference',event['actor_principal_id'].toString()),]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Close'))]));
   }
   Widget _detailLine(String label,String value)=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[SizedBox(width:112,child:Text(label,style:const TextStyle(color:TechColors.textMuted,fontSize:11))),Expanded(child:SelectableText(value,style:const TextStyle(color:TechColors.textPrimary,fontSize:12)))]));
 
@@ -2914,7 +2945,9 @@ class _ManagementShellState extends State<ManagementShell> {
                           child: loading
                               ? (section == ManagementSection.invitations
                                   ? _invitationSkeleton()
-                                  : _overviewSkeleton())
+                                  : section == ManagementSection.audit
+                                      ? _auditSkeleton()
+                                      : _overviewSkeleton())
                               : error != null
                                   ? GlassCard(
                                       padding: const EdgeInsets.all(16),
