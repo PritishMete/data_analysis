@@ -2562,10 +2562,7 @@ class _ManagementShellState extends State<ManagementShell> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1500),
                           child: loading
-                              ? const Padding(
-                                  padding: EdgeInsets.only(top: 30),
-                                  child: Center(child: CircularProgressIndicator(color: TechColors.borderActive)),
-                                )
+                              ? _overviewSkeleton()
                               : error != null
                                   ? GlassCard(
                                       padding: const EdgeInsets.all(16),
