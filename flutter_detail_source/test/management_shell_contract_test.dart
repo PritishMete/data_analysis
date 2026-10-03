@@ -232,7 +232,9 @@ void main() {
     expect(invitationStart, greaterThanOrEqualTo(0));
     expect(invitationEnd, greaterThan(invitationStart));
     final invitationUi = source.substring(invitationStart, invitationEnd);
-    expect(invitationUi, contains('showDialog<void>'));
+    expect(source, contains('void _showInvitationDetails('));
+    expect(source, contains('showDialog<void>'));
+    expect(invitationUi, contains('_showInvitationDetails(item)'));
     expect(invitationUi, contains('Search invitations'));
     expect(invitationUi, contains('Clear filters'));
     expect(invitationUi, isNot(contains('Resend')));
