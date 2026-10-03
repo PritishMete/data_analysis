@@ -446,7 +446,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget _eyebrow(String text) => Text(
     text.toUpperCase(),
-    style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, fontFamily: 'monospace'),
+    style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.0),
   );
 
   Widget _title(String text, {String? detail, IconData? icon}) => Row(
@@ -460,7 +460,7 @@ class _ManagementShellState extends State<ManagementShell> {
         Text(text, style: const TextStyle(color: TechColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
         if (detail != null) ...[
           const SizedBox(height: 4),
-          Text(detail, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
+          Text(detail, style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.4)), 
         ],
       ])),
     ],
@@ -2906,7 +2906,7 @@ class _ManagementShellState extends State<ManagementShell> {
               return GlassChip(
                 label: tab.value,
                 selected: selected,
-                selectedColor: TechColors.borderActive.withValues(alpha: 0.18),
+                selectedColor: TechColors.borderActive.withValues(alpha: 0.22),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 labelStyle: TextStyle(
                   fontSize: 13,
