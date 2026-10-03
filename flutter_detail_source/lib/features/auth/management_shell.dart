@@ -1964,9 +1964,10 @@ Widget auditView() => Column(
             padding: const EdgeInsets.only(bottom: 8),
             child: surface(LayoutBuilder(builder: (context, constraints) {
               final compact = constraints.maxWidth < 620;
+              final narrow = constraints.maxWidth < 480;
               final identity = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(fullName.isEmpty ? (item['email']?.toString() ?? 'Invitee email unavailable') : fullName,
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  maxLines: narrow ? 2 : 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
                 Text(item['email']?.toString() ?? 'Email unavailable', maxLines: 1, overflow: TextOverflow.ellipsis,
