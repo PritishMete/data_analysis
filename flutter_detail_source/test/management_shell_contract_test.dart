@@ -87,7 +87,18 @@ void main() {
     expect(source, contains("constraints.maxWidth >= 560"));
     expect(source, contains("crossAxisCount: 2"));
     expect(source, contains("mainAxisExtent: _profileFieldHeight"));
-    expect(source, contains("'EMPLOYEE ID'"));
+    expect(source, contains("employeeId.isEmpty ? '—' : employeeId"));
+    expect(source, contains("textAlign: TextAlign.right"));
+    expect(source, contains("const Spacer()"));
+    expect(source, isNot(contains("'EMPLOYEE ID'")));
+    expect(source, isNot(contains("Icons.close_rounded")));
+    expect(source, isNot(contains("tooltip: 'Close'")));
+    expect(source, contains("final profileCompletion = completion != 100"));
+    expect(source, contains("if (profileCompletion != null)"));
+    expect(source, contains("profileCompletion,"));
+    expect(source, contains("GridView.count("));
+    expect(source, contains("children: gridChildren"));
+
     expect(source, contains("glowIntensity: 0"));
     expect(source, contains("shadowElevation: 0"));
     expect(source, contains("glowColor: Colors.transparent"));
