@@ -1399,65 +1399,6 @@ class _ManagementShellState extends State<ManagementShell> {
         ),
       );
 
-  Widget _profileDetailRow(
-    String label,
-    String? value, {
-    bool multiline = false,
-    LiquidGlassSettings? settings,
-  }) {
-    final text = (value ?? '').trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: TechColors.textMuted.withValues(alpha: 0.28),
-            width: 1,
-          ),
-        ),
-        child: _glassRow(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-          settings: settings,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 112,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: TechColors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  text.isEmpty ? '—' : text,
-                  maxLines: multiline ? 4 : 2,
-                  softWrap: multiline,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: TechColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
   static String _formatEmployeeTimestamp(dynamic value) {
     final raw = value?.toString().trim() ?? '';
     if (raw.isEmpty) return '—';
