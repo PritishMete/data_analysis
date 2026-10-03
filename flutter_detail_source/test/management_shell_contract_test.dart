@@ -87,12 +87,25 @@ void main() {
     expect(source, contains("constraints.maxWidth >= 560"));
     expect(source, contains("crossAxisCount: 2"));
     expect(source, contains("mainAxisExtent: _profileFieldHeight"));
-    expect(source, contains("employeeId.isEmpty ? '—' : employeeId"));
-    expect(source, contains("textAlign: TextAlign.right"));
-    expect(source, contains("const Spacer()"));
-    expect(source, isNot(contains("'EMPLOYEE ID'")));
-    expect(source, isNot(contains("Icons.close_rounded")));
-    expect(source, isNot(contains("tooltip: 'Close'")));
+    final profileHeaderStart = source.indexOf(
+      "fullName.isEmpty ? 'Profile incomplete' : fullName",
+    );
+    final profileHeaderEnd = source.indexOf(
+      "const SizedBox(height: 8),\\n                              Divider(",
+      profileHeaderStart,
+    );
+    expect(profileHeaderStart, greaterThanOrEqualTo(0));
+    expect(profileHeaderEnd, greaterThan(profileHeaderStart));
+    final profileHeader = source.substring(
+      profileHeaderStart,
+      profileHeaderEnd,
+    );
+    expect(profileHeader, contains("employeeId.isEmpty ? '—' : employeeId"));
+    expect(profileHeader, contains("textAlign: TextAlign.right"));
+    expect(profileHeader, contains("const Spacer()"));
+    expect(profileHeader, isNot(contains("'EMPLOYEE ID'")));
+    expect(profileHeader, isNot(contains("Icons.close_rounded")));
+    expect(profileHeader, isNot(contains("tooltip: 'Close'")));
     expect(source, contains("final profileCompletion = completion != 100"));
     expect(source, contains("if (profileCompletion != null)"));
     expect(source, contains("profileCompletion,"));
