@@ -1478,17 +1478,24 @@ class _ManagementShellState extends State<ManagementShell> {
               ),
             ] else Row(children: [
               Expanded(child: DropdownButtonFormField<String>(
-                value: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
+                initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All locations')),
                   ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedLocation = v),
               )),
               const SizedBox(width: 10),
               Expanded(child: DropdownButtonFormField<String>(
-                value: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
+                initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All sections')),
                   ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedSection = v),
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: DropdownButtonFormField<String>(
+                initialValue: selectedRole, isExpanded: true, decoration: const InputDecoration(labelText: 'Role', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All roles')),
+                  ...roleOptions.map((v) => DropdownMenuItem(value: v, child: Text(_roleLabel(v), overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedRole = v),
               )),
               if (hasFilters) IconButton(tooltip: 'Clear filters', onPressed: () => setState(() {
                 search = ''; selectedLocation = null; selectedSection = null; selectedRole = null;
