@@ -53,7 +53,24 @@ void main() {
     expect(source, contains("a['phone_verified']"));
     expect(source, contains("a['id_proof_supplied']"));
     expect(source, contains('_showAssignmentProfile(a)'));
-    expect(source, contains("await request('/assignments/\${Uri.encodeComponent(assignmentId)}/profile');"));
+    expect(source, contains("request('/assignments/\${Uri.encodeComponent(assignmentId)}/profile')"));
+    expect(source, contains('FutureBuilder<Map<String, dynamic>>'));
+    expect(source, contains("'Loading profile…'"));
+    expect(source, contains('_assignmentProfileFuture'));
+    expect(source, contains('_selectedAssignmentProfile'));
+    expect(source, contains('GestureDetector'));
+    expect(source, contains('onTap: _closeAssignmentProfile'));
+    expect(source, contains("label: 'Close'"));
+    expect(source, isNot(contains('barrierDismissible: false')));
+    expect(source, isNot(contains('profile[\'full_name\']!')));
+    expect(source, isNot(contains('profile[\'employee_id\']!')));
+    expect(source, contains("fontSize: 11"));
+    expect(source, contains("fontSize: 12"));
+    expect(source, contains("fontSize: 19"));
+    expect(source, contains("day + '/' + month + '/' + ist.year.toString()"));
+    expect(source, contains("hour.toString() + ':' + minute + ' ' + period"));
+    expect(source, isNot(contains("month + '/' + day + '/' + ist.year.toString()")));
+    expect(source, contains("'PROFILE COMPLETENESS'"));
     expect(source, contains('BRANCH HEAD'));
     expect(source, contains('No separate manager assigned'));
     // Assignment Registry layout contract: keep compact identifiers intact,
