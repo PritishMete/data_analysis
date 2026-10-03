@@ -87,9 +87,7 @@ void main() {
     expect(source, contains("constraints.maxWidth >= 560"));
     expect(source, contains("crossAxisCount: 2"));
     expect(source, contains("mainAxisExtent: _profileFieldHeight"));
-    final profileHeaderStart = source.lastIndexOf(
-      "fullName.isEmpty ? 'Profile incomplete' : fullName",
-    );
+    final profileHeaderStart = source.lastIndexOf("final employeeId =");
     final profileHeaderEnd = source.indexOf(
       "const SizedBox(height: 8),\n                              Divider(",
       profileHeaderStart,
