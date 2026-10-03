@@ -1640,7 +1640,12 @@ Widget auditView() => Column(
       ].whereType<Object>().join(' ').toLowerCase();
       return query.isEmpty || searchable.contains(query);
     }).toList();
-    final pending = invitations.where((item) {\n      if ((item['status']?.toString().toLowerCase() ?? '') != 'invited') return false;\n      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');\n      return expiry == null || !expiry.isBefore(DateTime.now());\n    }).length;
+    final now = DateTime.now();
+    final pending = invitations.where((item) {
+      if ((item['status']?.toString().toLowerCase() ?? '') != 'invited') return false;
+      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
+      return expiry == null || !expiry.isBefore(now);
+    }).length;
     final accepted = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'accepted').length;
     final revoked = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'revoked').length;
     final expired = invitations.where((item) {
@@ -1709,11 +1714,17 @@ Widget auditView() => Column(
               dropdownColor: TechColors.panelBg,
               items: [
                 const DropdownMenuItem(value: null, child: Text('All statuses')),
-                ...['invited', 'accepted', 'revoked'].where((v) =>
-                  invitations.any((item) => item['status']?.toString().toLowerCase() == v)
-                ).map((v) => DropdownMenuItem(value: v, child: Text(
-                  v == 'invited' ? 'Pending' : v[0].toUpperCase() + v.substring(1)
-                ))),
+                ...invitations
+                    .map((item) => item['status']?.toString().trim() ?? '')
+                    .where((value) => value.isNotEmpty)
+                    .toSet()
+                    .toList()
+                    .map((value) => DropdownMenuItem(
+                      value: value.toLowerCase(),
+                      child: Text(value.toLowerCase() == 'invited'
+                          ? 'Pending'
+                          : value[0].toUpperCase() + value.substring(1)),
+                    )),
               ],
               onChanged: (value) => setState(() => invitationStatus = value),
             )),
