@@ -1637,7 +1637,7 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   void _showAuditDetails(Map<String,dynamic> event){
-    final metadata=event['metadata'];final eventId=event['event_id']?.toString()??'';
+    final eventId=event['event_id']?.toString()??'';
     showDialog<void>(context:context,builder:(context)=>_ManagementGlassDialog(title:const Text('Activity details'),content:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[Text(_auditActionLabel(event['action']?.toString()??'Activity'),style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700)),const SizedBox(height:12),_detailLine('Actor',_auditActor(event)),_detailLine('When',_auditTimestamp(event['created_at'])),_detailLine('Result',event['outcome']?.toString()??'—'),if(_auditContext(event).isNotEmpty)_detailLine('Context',_auditContext(event)),const SizedBox(height:8),const Text('Reference details',style:TextStyle(color:TechColors.textMuted,fontSize:11,fontWeight:FontWeight.w700)),if(eventId.isNotEmpty)_detailLine('Event reference',eventId),if(event['actor_principal_id']!=null)_detailLine('Actor reference',event['actor_principal_id'].toString()),]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Close'))]));
   }
   Widget _detailLine(String label,String value)=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[SizedBox(width:112,child:Text(label,style:const TextStyle(color:TechColors.textMuted,fontSize:11))),Expanded(child:SelectableText(value,style:const TextStyle(color:TechColors.textPrimary,fontSize:12)))]));
