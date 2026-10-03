@@ -132,6 +132,48 @@ import '../../theme/glass_theme_helpers.dart';
 ///   ],
 /// );
 /// ```
+/// Reusable material surface extracted from the pivot-placement GlassDialog.
+/// Keeps the same GlassCard + adaptive glass-layer composition for custom
+/// application surfaces while allowing each surface to size its own content.
+class InsightFlowDialogSurface extends StatelessWidget {
+  const InsightFlowDialogSurface({
+    required this.child,
+    this.padding = const EdgeInsets.all(20),
+    this.settings,
+    this.quality = GlassQuality.standard,
+    this.maxWidth,
+    super.key,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final LiquidGlassSettings? settings;
+  final GlassQuality quality;
+  final double? maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = GlassCard(
+      useOwnLayer: true,
+      settings: settings,
+      quality: quality,
+      padding: padding,
+      child: AdaptiveLiquidGlassLayer(
+        settings: settings ?? const LiquidGlassSettings(),
+        quality: quality,
+        child: child,
+      ),
+    );
+    if (maxWidth == null) return surface;
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth!),
+        child: surface,
+      ),
+    );
+  }
+}
+
 class GlassDialog extends StatelessWidget {
   /// Creates a glass dialog widget.
   ///
@@ -291,63 +333,47 @@ class GlassDialog extends StatelessWidget {
       widgetQuality: quality,
     );
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: GlassCard(
-          useOwnLayer: true,
-          settings: settings,
-          quality: effectiveQuality,
-          padding: const EdgeInsets.all(20),
-          child: AdaptiveLiquidGlassLayer(
-            settings: settings ?? const LiquidGlassSettings(),
-            quality: effectiveQuality,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Title
-                if (title != null) ...[
-                  Text(
-                    title!,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: CupertinoColors.label.resolveFrom(context),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-
-                // Message
-                if (message != null) ...[
-                  Text(
-                    message!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color:
-                          CupertinoColors.secondaryLabel.resolveFrom(context),
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-
-                // Custom content
-                if (content != null) ...[
-                  content!,
-                  const SizedBox(height: 8),
-                ],
-
-                const SizedBox(height: 12),
-
-                // Actions
-                _buildActions(context),
-              ],
+    return InsightFlowDialogSurface(
+      maxWidth: maxWidth,
+      settings: settings,
+      quality: effectiveQuality,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Title
+          if (title != null) ...[
+            Text(
+              title!,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+              textAlign: TextAlign.center,
             ),
-          ),
-        ),
+            const SizedBox(height: 8),
+          ],
+          // Message
+          if (message != null) ...[
+            Text(
+              message!,
+              style: TextStyle(
+                fontSize: 14,
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (content != null) ...[
+            content!,
+            const SizedBox(height: 8),
+          ],
+          const SizedBox(height: 12),
+          _buildActions(context),
+        ],
       ),
     );
   }
