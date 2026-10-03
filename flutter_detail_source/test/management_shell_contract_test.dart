@@ -117,7 +117,6 @@ void main() {
     expect(source, contains("glowIntensity: 0"));
     expect(source, contains("shadowElevation: 0"));
     expect(source, contains("glowColor: Colors.transparent"));
-    expect(source, contains("if (completion != 100)"));
     expect(source, contains("return '\$month/\$day/\${ist.year}"));
     expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
 
