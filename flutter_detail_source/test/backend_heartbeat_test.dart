@@ -56,10 +56,20 @@ void main() {
     test('does not overlap an in-flight request', () async {
       final firstRequest = Completer<void>();
       var calls = 0;
+      var activeRequests = 0;
+      var maxConcurrentRequests = 0;
       final controller = BackendHeartbeatController(
-        send: () {
+        send: () async {
           calls++;
-          return firstRequest.future;
+          activeRequests++;
+          if (activeRequests > maxConcurrentRequests) {
+            maxConcurrentRequests = activeRequests;
+          }
+          try {
+            if (calls == 1) await firstRequest.future;
+          } finally {
+            activeRequests--;
+          }
         },
         interval: const Duration(milliseconds: 15),
       );
@@ -70,8 +80,9 @@ void main() {
       expect(controller.isInFlight, isTrue);
 
       firstRequest.complete();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-      expect(calls, 2);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(calls, greaterThanOrEqualTo(2));
+      expect(maxConcurrentRequests, 1);
       controller.dispose();
     });
 
