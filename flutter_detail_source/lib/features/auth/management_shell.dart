@@ -629,10 +629,10 @@ class _ManagementShellState extends State<ManagementShell> {
     if (timestamp == null) return '';
     final difference = DateTime.now().difference(timestamp);
     if (difference.isNegative || difference.inMinutes < 1) return 'Just now';
-    if (difference.inMinutes < 60) return difference.inMinutes.toString() + ' min ago';
-    if (difference.inHours < 24) return difference.inHours.toString() + ' hr ago';
-    if (difference.inDays < 7) return difference.inDays.toString() + ' days ago';
-    return timestamp.day.toString() + '/' + timestamp.month.toString() + '/' + timestamp.year.toString();
+    if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
+    if (difference.inHours < 24) return '${difference.inHours} hr ago';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
+    return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
   }
 
   Widget _overviewSummaryCard(
@@ -721,7 +721,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final timestamp = event['created_at']?.toString() ?? '';
     final actor = event['actor_name']?.toString().trim();
     final description = actor != null && actor.isNotEmpty
-        ? actor + ' · ' + _humanizeAuditAction(action)
+        ? '$actor · ${_humanizeAuditAction(action)}'
         : _humanizeAuditAction(action);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -815,7 +815,7 @@ class _ManagementShellState extends State<ManagementShell> {
                     const Text('People without an active assignment', style: TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 3),
                     Text(
-                      unassignedPeople.length.toString() + ' people may need a location or section assignment.',
+                      '${unassignedPeople.length} people may need a location or section assignment.',
                       style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35),
                     ),
                   ],
@@ -867,7 +867,7 @@ class _ManagementShellState extends State<ManagementShell> {
               final organizationStatus = org['status']?.toString().trim();
               final subtitle = organizationStatus == null || organizationStatus.isEmpty
                   ? 'Manage your organization, people, access and activity from one place.'
-                  : 'Manage your organization, people, access and activity from one place. Status: ' + organizationStatus + '.';
+                  : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.';
               final content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -981,11 +981,11 @@ class _ManagementShellState extends State<ManagementShell> {
                   const SizedBox(height: 14),
                   _overviewStructureStep('Organization', _overviewOrganizationName(), Icons.business_outlined),
                   _overviewStructureConnector(),
-                  _overviewStructureStep('Branches / Locations', locationCount.toString() + ' locations', Icons.location_on_outlined),
+                  _overviewStructureStep('Branches / Locations', '$locationCount locations', Icons.location_on_outlined),
                   _overviewStructureConnector(),
-                  _overviewStructureStep('Sections', sectionCount.toString() + ' sections', Icons.account_tree_outlined),
+                  _overviewStructureStep('Sections', '$sectionCount sections', Icons.account_tree_outlined),
                   _overviewStructureConnector(),
-                  _overviewStructureStep('People', peopleCount.toString() + ' people', Icons.people_outline),
+                  _overviewStructureStep('People', '$peopleCount people', Icons.people_outline),
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
