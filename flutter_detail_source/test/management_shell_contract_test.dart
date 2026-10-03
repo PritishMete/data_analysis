@@ -64,6 +64,10 @@ void main() {
     expect(source, contains('TechAnimatedBackground'));
     expect(source, contains('backgroundColor: kAppBackgroundColor'));
     expect(source, contains('GlassCard'));
+    expect(source, contains('child: Wrap('));
+    expect(source, contains('runSpacing: 8'));
+    expect(source, contains('labelText: label,'));
+    expect(source, isNot(contains('labelText: label.toUpperCase()')));
     expect(source, contains('fontSize: 12, height: 1.4'));
     expect(source, contains('fontWeight: selected ? FontWeight.w700 : FontWeight.w500'));
     expect(source, contains('selectedColor: TechColors.borderActive.withValues(alpha: 0.22)'));
