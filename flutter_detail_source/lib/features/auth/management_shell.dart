@@ -1481,7 +1481,6 @@ class _ManagementShellState extends State<ManagementShell> {
             ]),
           ),
       ]);
-    });
   }
 
 Widget auditView() => Column(
