@@ -1813,7 +1813,8 @@ class _ManagementShellState extends State<ManagementShell> {
                           ],
                         ),
                       ),
-                    );
+                    ),
+                  );
                   },
                 ),
               ),
