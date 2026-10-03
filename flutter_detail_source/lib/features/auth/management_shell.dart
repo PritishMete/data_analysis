@@ -648,22 +648,6 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget organizationView() {
-    if (locations.isEmpty) {
-      return surface(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _eyebrow('Organization topology'),
-            const SizedBox(height: 8),
-            const Text(
-              'No organizational structure is configured yet.',
-              style: TextStyle(color: TechColors.textMuted),
-            ),
-          ],
-        ),
-      );
-    }
-
     Widget leadershipRow(
       String label,
       IconData icon,
@@ -788,10 +772,16 @@ class _ManagementShellState extends State<ManagementShell> {
             margin: EdgeInsets.zero,
             padding: const EdgeInsets.all(14),
             shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => setState(() {
+                selectedLocation = id;
+                selectedSection = null;
+              }),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                   children: [
                     const Icon(
                       Icons.location_on_outlined,
@@ -825,6 +815,15 @@ class _ManagementShellState extends State<ManagementShell> {
                         ],
                       ),
                     ),
+                    if (selectedLocation == id)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(
+                          Icons.check_circle_outline,
+                          size: 15,
+                          color: TechColors.borderActive,
+                        ),
+                      ),
                     _statusDot(l['status']?.toString() ?? 'active'),
                   ],
                 ),
@@ -856,11 +855,19 @@ class _ManagementShellState extends State<ManagementShell> {
                                   a['role_id'] == 'employee'),
                         )
                         .toList();
+                    final sectionId = s['section_id']?.toString() ?? '';
+                    final sectionSelected = selectedSection == sectionId;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: _glassRow(
-                        child: Row(
-                          children: [
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(() {
+                            selectedLocation = id;
+                            selectedSection = sectionId;
+                          }),
+                          child: Row(
+                            children: [
                             const Icon(
                               Icons.account_tree_outlined,
                               size: 14,
@@ -892,6 +899,15 @@ class _ManagementShellState extends State<ManagementShell> {
                                 ],
                               ),
                             ),
+                            if (sectionSelected)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  Icons.check_circle_outline,
+                                  size: 15,
+                                  color: TechColors.borderActive,
+                                ),
+                              ),
                             if (members.isNotEmpty)
                               Text(
                                 members.length.toString(),
