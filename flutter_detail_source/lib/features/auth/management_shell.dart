@@ -1733,7 +1733,7 @@ Widget auditView() => Column(
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     final period = local.hour >= 12 ? 'PM' : 'AM';
-    return '$month/$day/${local.year} · $hour:$minute $period;
+    return '$month/$day/${local.year} · $hour:$minute $period';
   }
 
   Widget _invitationStatusChip(String label, String rawStatus) {
@@ -1979,7 +1979,7 @@ Widget auditView() => Column(
                     _invitationStatusChip(label, rawStatus),
                     Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role),
                       style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
-                    Text('Expires ${_formatInvitationExpiry(expiry)},
+                    Text('Expires ${_formatInvitationExpiry(expiry)}',
                       style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
                     TextButton.icon(onPressed: () => _showInvitationDetails(item),
                       icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details')),
@@ -1991,7 +1991,7 @@ Widget auditView() => Column(
                 Flexible(child: Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role), maxLines: 1,
                   overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace'))),
                 const SizedBox(width: 10),
-                Flexible(child: Text('Expires ' + _formatInvitationExpiry(expiry), maxLines: 1, overflow: TextOverflow.ellipsis,
+                Flexible(child: Text('Expires ${_formatInvitationExpiry(expiry)}', maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: TechColors.textMuted, fontSize: 11))),
                 const SizedBox(width: 4),
                 TextButton.icon(onPressed: () => _showInvitationDetails(item),
