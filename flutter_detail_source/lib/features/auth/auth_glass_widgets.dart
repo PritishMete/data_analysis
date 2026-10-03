@@ -4,7 +4,6 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../tech_background.dart';
 
 import '../../app_colors.dart';
-import '../../widgets/overlays/glass_dialog.dart';
 
 /// Authentication shell adapted directly from the LiquidGlassUi auth pattern.
 ///
