@@ -87,7 +87,7 @@ void main() {
     expect(source, contains("constraints.maxWidth >= 560"));
     expect(source, contains("crossAxisCount: 2"));
     expect(source, contains("mainAxisExtent: _profileFieldHeight"));
-    final profileHeaderStart = source.indexOf(
+    final profileHeaderStart = source.lastIndexOf(
       "fullName.isEmpty ? 'Profile incomplete' : fullName",
     );
     final profileHeaderEnd = source.indexOf(
