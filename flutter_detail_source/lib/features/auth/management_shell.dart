@@ -1681,11 +1681,19 @@ class _ManagementShellState extends State<ManagementShell> {
                       final details = <Widget>[
                         detail('ROLE', _roleLabel(profile['role_id']?.toString().trim() ?? '—')),
                         detail('EMAIL', profile['email']?.toString()),
-                        detail('EMAIL VERIFIED',
-                            profile['email_verified'] == true ? 'YES' : 'NO'),
+                        detail(
+                          'EMAIL VERIFIED',
+                          profile['email_verified'] == null
+                              ? null
+                              : (profile['email_verified'] == true ? 'YES' : 'NO'),
+                        ),
                         detail('PHONE', profile['phone_e164']?.toString()),
-                        detail('PHONE VERIFIED',
-                            profile['phone_verified'] == true ? 'YES' : 'NO'),
+                        detail(
+                          'PHONE VERIFIED',
+                          profile['phone_verified'] == null
+                              ? null
+                              : (profile['phone_verified'] == true ? 'YES' : 'NO'),
+                        ),
                         detail('ADDRESS LINE 1', profile['address_line1']?.toString(),
                             multiline: true),
                         detail('ADDRESS LINE 2', profile['address_line2']?.toString(),
