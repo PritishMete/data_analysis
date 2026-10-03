@@ -115,6 +115,9 @@ class _ManagementShellState extends State<ManagementShell> {
   List<Map<String, dynamic>> assignments = [];
   List<Map<String, dynamic>> audit = [];
   int pendingInvitations = 0;
+  List<Map<String, dynamic>> invitations = [];
+  String invitationSearch = '';
+  String? invitationStatus;
   String search = '';
   String? selectedLocation;
   String? selectedSection;
@@ -230,7 +233,7 @@ class _ManagementShellState extends State<ManagementShell> {
     try {
       final r = await Future.wait([
         request('/overview'), request('/locations'), request('/sections'),
-        request('/people'), request('/assignments'), request('/audit?limit=100'),
+        request('/people'), request('/assignments'), request('/audit?limit=100'), request(''),
       ]);
       if (!mounted) return;
       setState(() {
@@ -240,7 +243,8 @@ class _ManagementShellState extends State<ManagementShell> {
         people = maps(r[3]['people']);
         assignments = maps(r[4]['assignments']);
         audit = maps(r[5]['audit']);
-        pendingInvitations = 0;
+        invitations = maps(r[6]['invitations']);
+        pendingInvitations = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'invited').length;
         loading = false;
       });
     } catch (e) {
@@ -1701,6 +1705,171 @@ Widget auditView() => Column(
     ),
   ]));
 
+
+  Widget invitationView() {
+    final query = invitationSearch.trim().toLowerCase();
+    final filtered = invitations.where((item) {
+      final status = (item['status']?.toString() ?? '').toLowerCase();
+      if (invitationStatus != null && status != invitationStatus) return false;
+      final searchable = [
+        item['email'], item['employee_id'], item['role_id'], item['status'],
+      ].whereType<Object>().join(' ').toLowerCase();
+      return query.isEmpty || searchable.contains(query);
+    }).toList();
+    final pending = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'invited').length;
+    final accepted = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'accepted').length;
+    final revoked = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'revoked').length;
+    final expired = invitations.where((item) {
+      final raw = item['expires_at']?.toString();
+      if (raw == null || raw.isEmpty) return false;
+      final expiry = DateTime.tryParse(raw);
+      return expiry != null && expiry.isBefore(DateTime.now()) &&
+          (item['status']?.toString().toLowerCase() ?? '') == 'invited';
+    }).length;
+    Widget metric(String label, int value, IconData icon) => Expanded(
+      child: surface(Row(children: [
+        Icon(icon, color: TechColors.textMuted, size: 17),
+        const SizedBox(width: 9),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+          Text('$value', style: const TextStyle(color: TechColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
+        ])),
+      ])),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('Manage invitations sent to people in your organization and review their current status.',
+        style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, constraints) {
+        final cards = [
+          ('Total', invitations.length, Icons.mail_outline),
+          ('Pending', pending, Icons.schedule_outlined),
+          ('Accepted', accepted, Icons.check_circle_outline),
+          ('Expired', expired, Icons.timer_off_outlined),
+          ('Revoked', revoked, Icons.block_outlined),
+        ];
+        final width = constraints.maxWidth;
+        final count = width >= 850 ? 5 : width >= 520 ? 3 : 2;
+        final itemWidth = (width - (count - 1) * 8) / count;
+        return Wrap(spacing: 8, runSpacing: 8, children: cards.map((m) =>
+          SizedBox(width: itemWidth, child: surface(Row(children: [
+            Icon(m.$3, size: 16, color: TechColors.textMuted),
+            const SizedBox(width: 8),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(m.$1, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+              Text('${m.$2}', style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
+            ])),
+          ])))
+        ).toList());
+      }),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, constraints) => Wrap(
+        spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(width: constraints.maxWidth >= 520 ? 320 : constraints.maxWidth,
+            child: TextField(
+              onChanged: (value) => setState(() => invitationSearch = value),
+              decoration: input('Search invitations').copyWith(
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: invitationSearch.isEmpty ? null : IconButton(
+                  tooltip: 'Clear search',
+                  onPressed: () => setState(() => invitationSearch = ''),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+            )),
+          SizedBox(width: constraints.maxWidth >= 520 ? 190 : constraints.maxWidth,
+            child: DropdownButtonFormField<String>(
+              value: invitationStatus,
+              decoration: input('Status'),
+              dropdownColor: TechColors.panel,
+              items: [
+                const DropdownMenuItem(value: null, child: Text('All statuses')),
+                ...['invited', 'accepted', 'revoked'].where((v) =>
+                  invitations.any((item) => item['status']?.toString().toLowerCase() == v)
+                ).map((v) => DropdownMenuItem(value: v, child: Text(
+                  v == 'invited' ? 'Pending' : v[0].toUpperCase() + v.substring(1)
+                ))),
+              ],
+              onChanged: (value) => setState(() => invitationStatus = value),
+            )),
+          if (invitationSearch.isNotEmpty || invitationStatus != null)
+            TextButton.icon(
+              onPressed: () => setState(() { invitationSearch = ''; invitationStatus = null; }),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Clear filters'),
+            ),
+        ],
+      )),
+      const SizedBox(height: 12),
+      if (invitations.isEmpty)
+        surface(const Padding(
+          padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+          child: Column(children: [
+            Icon(Icons.mail_outline, size: 30, color: TechColors.textMuted),
+            SizedBox(height: 10),
+            Text('No invitation records are available to display',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
+            SizedBox(height: 6),
+            Text('Invitation information is not currently available in this management view.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TechColors.textMuted, height: 1.4)),
+          ]),
+        ))
+      else if (filtered.isEmpty)
+        surface(Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(children: [
+            const Icon(Icons.search_off, color: TechColors.textMuted),
+            const SizedBox(height: 8),
+            Text(invitationSearch.isNotEmpty
+              ? 'No invitations match your search'
+              : 'No invitations match the selected status',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w600)),
+          ]),
+        ))
+      else
+        ...filtered.map((item) {
+          final status = item['status']?.toString().toLowerCase() ?? 'unknown';
+          final label = status == 'invited' ? 'Pending' :
+            status.isEmpty ? 'Unknown' : status[0].toUpperCase() + status.substring(1);
+          final expiry = item['expires_at']?.toString();
+          final expiryDate = expiry == null ? null : DateTime.tryParse(expiry);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: surface(LayoutBuilder(builder: (context, constraints) {
+              final compact = constraints.maxWidth < 480;
+              final identity = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item['email']?.toString() ?? 'Invitee email unavailable',
+                  style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w600),
+                  softWrap: true),
+                if ((item['employee_id']?.toString() ?? '').isNotEmpty)
+                  Text('Employee ID · ${item['employee_id']}',
+                    style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
+              ]);
+              final meta = Wrap(spacing: 8, runSpacing: 6, children: [
+                Chip(label: Text(label), visualDensity: VisualDensity.compact),
+                Text((item['role_id']?.toString() ?? 'Role unavailable').replaceAll('_', ' '),
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
+                if (expiryDate != null)
+                  Text('Expires ${expiryDate.toLocal().toString().split(' ').first}',
+                    style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+              ]);
+              return compact ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                identity, const SizedBox(height: 9), meta,
+              ]) : Row(children: [
+                Expanded(flex: 3, child: identity),
+                const SizedBox(width: 12),
+                Expanded(flex: 4, child: meta),
+              ]);
+            })),
+          );
+        }),
+    ]);
+  }
+
   String _sectionLabel(ManagementSection value) => switch (value) {
     ManagementSection.overview => 'Management Overview',
     ManagementSection.organization => 'Organization',
@@ -1714,7 +1883,7 @@ Widget auditView() => Column(
     ManagementSection.overview => 'ORGANIZATION OVERVIEW',
     ManagementSection.organization => 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
-    ManagementSection.invitations => 'INVITATION CONTROL',
+    ManagementSection.invitations => 'Manage invitations sent to people in your organization and review their current status.',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
     ManagementSection.audit => 'SYSTEM EVENT STREAM',
   };
@@ -1733,7 +1902,7 @@ Widget auditView() => Column(
       case ManagementSection.overview: return overviewView();
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
-      case ManagementSection.invitations: return legacyView('Invitations', 'Existing invitation creation and acceptance behavior is preserved.');
+      case ManagementSection.invitations: return invitationView();
       case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
       case ManagementSection.audit: return auditView();
     }
