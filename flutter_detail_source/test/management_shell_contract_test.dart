@@ -217,6 +217,20 @@ void main() {
     expect(source, contains("selectedLocation"));
     expect(source, contains("selectedSection"));
     expect(source, contains("constraints.maxWidth < 680"));
+    expect(source, contains("request('')"));
+    expect(source, contains("maps(r[6]['invitations'])"));
+    expect(source, contains('Widget invitationView()'));
+    expect(source, contains('Search invitations'));
+    expect(source, contains("tooltip: 'Clear search'"));
+    expect(source, contains('Clear filters'));
+    expect(source, contains('No invitation records are available to display'));
+    expect(source, contains('No invitations match your search'));
+    expect(source, contains('No invitations match the selected status'));
+    expect(source, contains("item['expires_at']"));
+    expect(source, contains("item['role_id']"));
+    expect(source, contains('constraints.maxWidth < 480'));
+    expect(source, contains('Manage invitations sent to people in your organization'));
+    expect(source, isNot(contains('INVITATION CONTROL')));
     expect(source, isNot(contains('CONTROL PLANE')));
 
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
