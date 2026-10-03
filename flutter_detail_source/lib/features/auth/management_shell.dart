@@ -499,9 +499,9 @@ class _ManagementShellState extends State<ManagementShell> {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.black.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 5),
+            color: CupertinoColors.black.withValues(alpha: 0.24),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -537,9 +537,8 @@ class _ManagementShellState extends State<ManagementShell> {
                     const SizedBox(width: 8),
                     Text(label, style: const TextStyle(
                       color: CupertinoColors.white,
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      fontFamily: 'monospace',
                     )),
                   ],
                 ),
@@ -579,9 +578,8 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 5),
             Text((value ?? 0).toString(), style: const TextStyle(
               color: TechColors.textPrimary,
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
             )),
           ],
         )),
@@ -2910,7 +2908,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 labelStyle: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   color: selected ? TechColors.textPrimary : TechColors.textMuted,
                 ),
                 onTap: () => setState(() => section = tab.key),
