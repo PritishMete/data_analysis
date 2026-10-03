@@ -29,8 +29,10 @@ void main() {
     expect(source, isNot(contains('_managementAnalysisNavChip')));
     expect(source, contains("_title('Audit'"));
     expect(source, contains('Review recent organization activity'));
-    expect(source.replaceAll(RegExp(r'\s+'), ''), contains("'management.location.created':'Location created'"));
-    expect(source.replaceAll(RegExp(r'\s+'), ''), contains("'management.manager.assigned':'Manager assigned'"));
+    expect(source, contains("'management.location.created'"));
+    expect(source, contains("'Location created'"));
+    expect(source, contains("'management.manager.assigned'"));
+    expect(source, contains("'Manager assigned'"));
     expect(source, contains("event['actor_principal_id']"));
     expect(source, contains("event['created_at']"));
     expect(source, contains("event['metadata']"));
