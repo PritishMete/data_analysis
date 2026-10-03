@@ -65,8 +65,8 @@ void main() {
     expect(source, contains('backgroundColor: kAppBackgroundColor'));
     expect(source, contains('GlassCard'));
     expect(source, contains('fontSize: 12, height: 1.4'));
+    expect(source, contains('fontWeight: selected ? FontWeight.w700 : FontWeight.w500'));
     expect(source, contains('selectedColor: TechColors.borderActive.withValues(alpha: 0.22)'));
-    expect(source, isNot(contains("fontFamily: 'monospace'")));
     expect(source, contains('GlassChip'));
     expect(source, contains('AdaptiveLiquidGlassLayer'));
     expect(source, isNot(contains('_managementAnalysisNavChip')));
