@@ -25,6 +25,9 @@ void main() {
     expect(navigation, isNot(contains('SECTIONS')));
     expect(navigation, isNot(contains('DATA ACCESS')));
     expect(navigation, isNot(contains('AUDIT LOG')));
+    expect(navigation, isNot(contains('ANALYSIS')));
+    expect(source, isNot(contains('_managementAnalysisNavChip')));
+    expect(source, contains("_title('Audit', detail: 'SYSTEM EVENT STREAM'"));
     expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
     expect(source, isNot(contains('ManagementSection.locations')));
     expect(source, isNot(contains('ManagementSection.sections')));
