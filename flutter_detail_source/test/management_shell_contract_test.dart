@@ -304,5 +304,42 @@ void main() {
     expect(access, isNot(contains('ORGANIZATION CONTROL PLANE')));
 
 
+    final headerStart = source.indexOf('Widget _buildManagementHeader()');
+    final headerEnd = source.indexOf('Widget _buildManagementNavigation()', headerStart);
+    expect(headerStart, greaterThanOrEqualTo(0));
+    expect(headerEnd, greaterThan(headerStart));
+    final header = source.substring(headerStart, headerEnd);
+    expect(header, contains('GlassContainer('));
+    expect(header, contains('useOwnLayer: true'));
+    expect(header, contains('quality: GlassQuality.standard'));
+    expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
+    expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
+    expect(header, contains('InsightFlow'));
+    expect(header, contains('ORGANIZATION / MANAGEMENT'));
+    expect(header, contains('MANAGEMENT WORKSPACE'));
+    expect(header, contains('Refresh management data'));
+    expect(header, contains('Sign out'));
+
+    final brand = File('lib/widgets/insightflow_floating_brand.dart').readAsStringSync();
+    expect(brand, contains('thickness: 14'));
+    expect(brand, contains('blur: 8'));
+    expect(brand, contains('glassColor: Color(0x0FFFFFFF)'));
+    expect(brand, contains('refractiveIndex: 1.05'));
+    expect(brand, contains('quality: GlassQuality.standard'));
+    expect(brand, contains('interactionScale: 1.0'));
+    expect(brand, contains('stretch: 0.0'));
+    expect(brand, contains('anchorStretch: false'));
+    expect(brand, contains('TechColors.borderActive.withValues(alpha: 0.16)'));
+
+    final navigationStart = source.indexOf('Widget _buildManagementNavigation()');
+    final navigationEnd = source.indexOf('@override\n  Widget build', navigationStart);
+    expect(navigationStart, greaterThanOrEqualTo(0));
+    expect(navigationEnd, greaterThan(navigationStart));
+    final navigationAfter = source.substring(navigationStart, navigationEnd);
+    expect(navigationAfter, contains('settings: kInsightFlowNavigationGlassSettings'));
+    expect(navigationAfter, contains('GlassChip'));
+    expect(navigationAfter, contains('height: 56'));
+
+
   });
 }
