@@ -1838,11 +1838,11 @@ Widget auditView() => Column(
       else
         ...filtered.map((item) {
           final status = item['status']?.toString().toLowerCase() ?? 'unknown';
+          final expiry = item['expires_at']?.toString();
+          final expiryDate = expiry == null ? null : DateTime.tryParse(expiry);
           final expiredByDate = status == 'invited' && expiryDate != null && expiryDate.isBefore(now);
           final label = expiredByDate ? 'Expired' : status == 'invited' ? 'Pending' :
             status.isEmpty ? 'Unknown' : status[0].toUpperCase() + status.substring(1);
-          final expiry = item['expires_at']?.toString();
-          final expiryDate = expiry == null ? null : DateTime.tryParse(expiry);
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: surface(LayoutBuilder(builder: (context, constraints) {
