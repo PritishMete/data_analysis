@@ -10,6 +10,7 @@ import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import '../../widgets/insightflow_floating_brand.dart';
+import '../../widgets/overlays/glass_dialog.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
@@ -2223,22 +2224,21 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Future<void> _confirmSignOut() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await GlassDialog.show<bool>(
       context: context,
-      builder: (dialogContext) => _ManagementGlassDialog(
-        title: const Text('Sign out?'),
-        content: const Text('Are you sure you want to sign out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
+      title: 'Sign out?',
+      message: 'Are you sure you want to sign out?',
+      actions: [
+        GlassDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        GlassDialogAction(
+          label: 'Sign Out',
+          isPrimary: true,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
     if (confirmed == true) {
       await InsightFlowSupabaseAuthService.signOut();
@@ -2615,15 +2615,7 @@ class _ManagementShellState extends State<ManagementShell> {
                       child: SizedBox(
                         width: double.infinity,
                         height: dialogHeight,
-                        child: GlassContainer(
-                          useOwnLayer: true,
-                          quality: GlassQuality.standard,
-                          settings: TechColors.panelGlass.copyWith(
-                            glowIntensity: 0,
-                            shadowElevation: 0,
-                            shadow: const <BoxShadow>[],
-                          ),
-                          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+                        child: InsightFlowDialogSurface(
                           padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
