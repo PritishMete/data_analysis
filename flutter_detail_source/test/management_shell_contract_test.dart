@@ -179,5 +179,31 @@ void main() {
     expect(source, contains("a['location_name']"));
     expect(source, contains("a['section_name']"));
     expect(source, contains("a['status']"));
+    expect(source, contains('Widget _overviewSummaryCard('));
+    expect(source, contains('Widget _overviewQuickAction('));
+    expect(source, contains('Widget _overviewActivityItem('));
+    expect(source, contains('Widget _overviewStructureStep('));
+    expect(source, contains('Widget _overviewSkeleton()'));
+    expect(source, contains('Organization overview'));
+    expect(source, contains('Organization summary'));
+    expect(source, contains('Quick actions'));
+    expect(source, contains('Management attention'));
+    expect(source, contains('Recent activity'));
+    expect(source, contains('Organization structure'));
+    expect(source, contains('Manage organization'));
+    expect(source, contains('Review invitations'));
+    expect(source, contains('Manage access'));
+    expect(source, contains('View audit'));
+    expect(source, contains('View organization'));
+    expect(source, contains('ManagementSection.organization'));
+    expect(source, contains('ManagementSection.people'));
+    expect(source, contains('ManagementSection.invitations'));
+    expect(source, contains('ManagementSection.dataAccess'));
+    expect(source, contains('ManagementSection.audit'));
+    expect(source, contains('_unassignedPeople()'));
+    expect(source, contains('audit.take(5)'));
+    expect(source, contains('_overviewSkeleton()'));
+    expect(source, isNot(contains('CONTROL PLANE')));
+
   });
 }

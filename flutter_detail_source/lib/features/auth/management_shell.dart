@@ -585,9 +585,273 @@ class _ManagementShellState extends State<ManagementShell> {
     ),
   );
 
+  String _overviewOrganizationName() {
+    final org = overview['organization'];
+    if (org is Map && org['name'] != null) {
+      final name = org['name'].toString().trim();
+      if (name.isNotEmpty) return name;
+    }
+    return 'Your organization';
+  }
+
+  int _overviewCount(dynamic summaryValue, int fallback) {
+    if (summaryValue is num) return summaryValue.toInt();
+    final parsed = int.tryParse(summaryValue?.toString() ?? '');
+    return parsed ?? fallback;
+  }
+
+  List<Map<String, dynamic>> _unassignedPeople() {
+    final assignedPrincipalIds = assignments
+        .where((a) => a['status'] == 'active')
+        .map((a) => a['principal_id']?.toString())
+        .whereType<String>()
+        .toSet();
+    return people.where((p) {
+      final principalId = p['principal_id']?.toString();
+      return principalId == null ||
+          principalId.isEmpty ||
+          !assignedPrincipalIds.contains(principalId);
+    }).toList();
+  }
+
+  String _humanizeAuditAction(String action) {
+    final normalized = action
+        .replaceAll(RegExp(r'^[A-Z_]+\\.'), '')
+        .replaceAll('_', ' ')
+        .trim()
+        .toLowerCase();
+    if (normalized.isEmpty) return 'Management activity';
+    return normalized[0].toUpperCase() + normalized.substring(1);
+  }
+
+  String _relativeActivityTime(String value) {
+    final timestamp = DateTime.tryParse(value)?.toLocal();
+    if (timestamp == null) return '';
+    final difference = DateTime.now().difference(timestamp);
+    if (difference.isNegative || difference.inMinutes < 1) return 'Just now';
+    if (difference.inMinutes < 60) return difference.inMinutes.toString() + ' min ago';
+    if (difference.inHours < 24) return difference.inHours.toString() + ' hr ago';
+    if (difference.inDays < 7) return difference.inDays.toString() + ' days ago';
+    return timestamp.day.toString() + '/' + timestamp.month.toString() + '/' + timestamp.year.toString();
+  }
+
+  Widget _overviewSummaryCard(
+    String label,
+    String value,
+    String detail,
+    IconData icon,
+  ) {
+    return GlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: TechColors.borderActive.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: TechColors.borderActive.withValues(alpha: 0.18),
+              ),
+            ),
+            child: Icon(icon, size: 19, color: TechColors.borderActive),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overviewQuickAction(
+    String label,
+    String detail,
+    IconData icon,
+    ManagementSection destination,
+  ) {
+    return GlassCard(
+      margin: EdgeInsets.zero,
+      padding: EdgeInsets.zero,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => setState(() => section = destination),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: TechColors.borderActive),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 3),
+                    Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: TechColors.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _overviewActivityItem(Map<String, dynamic> event) {
+    final action = event['action']?.toString() ?? '';
+    final outcome = event['outcome']?.toString() ?? '';
+    final timestamp = event['created_at']?.toString() ?? '';
+    final actor = event['actor_name']?.toString().trim();
+    final description = actor != null && actor.isNotEmpty
+        ? actor + ' · ' + _humanizeAuditAction(action)
+        : _humanizeAuditAction(action);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _glassRow(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        child: Row(
+          children: [
+            _statusDot(outcome),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(description, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 3),
+                  Text(outcome.isEmpty ? 'Management activity' : outcome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(_relativeActivityTime(timestamp), style: const TextStyle(color: TechColors.textMuted, fontSize: 9)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _overviewSkeleton() {
+    Widget block(double height, {double? width}) => Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: TechColors.panelBg.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: TechColors.textMuted.withValues(alpha: 0.10)),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        block(126),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 620 ? 2 : 4;
+            final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: List.generate(4, (_) => block(118, width: width)),
+            );
+          },
+        ),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 820 ? 1 : 2;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: List.generate(4, (_) => block(88, width: width)),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
+    final locationCount = _overviewCount(sum['location_count'], locations.length);
+    final sectionCount = _overviewCount(sum['section_count'], sections.length);
+    final peopleCount = _overviewCount(sum['people_count'], people.length);
+    final activeAssignments = assignments.where((a) => a['status'] == 'active').length;
+    final unassignedPeople = _unassignedPeople();
+    final attentionItems = <Widget>[];
+
+    if (unassignedPeople.isNotEmpty) {
+      attentionItems.add(
+        _glassRow(
+          child: Row(
+            children: [
+              const Icon(Icons.person_off_outlined, size: 18, color: TechColors.statusAmber),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('People without an active assignment', style: TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 3),
+                    Text(
+                      unassignedPeople.length.toString() + ' people may need a location or section assignment.',
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(onPressed: () => setState(() => section = ManagementSection.people), child: const Text('Review')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (attentionItems.isEmpty) {
+      attentionItems.add(
+        _glassRow(
+          child: const Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 18, color: TechColors.statusGreen),
+              SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("You're all caught up", style: TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 3),
+                    Text('There are no outstanding management actions right now.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final recentActivity = audit.take(5).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -595,57 +859,176 @@ class _ManagementShellState extends State<ManagementShell> {
           useOwnLayer: true,
           quality: GlassQuality.minimal,
           settings: TechColors.sectionGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 620;
-              final identity = Row(
+              final organizationStatus = org['status']?.toString().trim();
+              final subtitle = organizationStatus == null || organizationStatus.isEmpty
+                  ? 'Manage your organization, people, access and activity from one place.'
+                  : 'Manage your organization, people, access and activity from one place. Status: ' + organizationStatus + '.';
+              final content = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _statusDot(org['status']?.toString() ?? ''),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _eyebrow('ORGANIZATION CONTROL'),
-                      const SizedBox(height: 5),
-                      Text(org['name']?.toString() ?? 'Organization', style: const TextStyle(
-                        color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700,
-                      )),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${org['status'] ?? '—'}  ·  WORKSPACE ${insightFlowWorkspaceId.isEmpty ? '—' : insightFlowWorkspaceId}',
-                        style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
-                      ),
-                    ],
-                  )),
+                  _eyebrow('Organization overview'),
+                  const SizedBox(height: 7),
+                  Text(_overviewOrganizationName(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 7),
+                  Text(subtitle, style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.45)),
                 ],
               );
-              if (compact) return identity;
-              return Row(children: [
-                Expanded(child: identity),
-                const SizedBox(width: 24),
-                _eyebrow('STATUS'),
-                const SizedBox(width: 8),
-                _statusDot(org['status']?.toString() ?? ''),
-              ]);
+              if (compact) return content;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(child: content),
+                  const SizedBox(width: 20),
+                  _statusDot(organizationStatus ?? 'active'),
+                ],
+              );
             },
           ),
         ),
-        const SizedBox(height: 12),
-        LayoutBuilder(builder: (context, c) {
-          final width = c.maxWidth < 680 ? (c.maxWidth - 10) / 2 : (c.maxWidth - 40) / 5;
-          return Wrap(spacing: 10, runSpacing: 10, children: [
-            SizedBox(width: width, child: metric('LOCATIONS', sum['location_count'], icon: Icons.location_on_outlined)),
-            SizedBox(width: width, child: metric('MANAGERS', sum['manager_count'], icon: Icons.manage_accounts_outlined)),
-            SizedBox(width: width, child: metric('TEAM LEADS', sum['team_lead_count'], icon: Icons.supervisor_account_outlined)),
-            SizedBox(width: width, child: metric('EMPLOYEES', sum['employee_count'], icon: Icons.people_outline)),
-            SizedBox(width: width, child: metric('PENDING INVITES', pendingInvitations, icon: Icons.mail_outline)),
-          ]);
-        }),
+        const SizedBox(height: 14),
+        _eyebrow('Organization summary'),
+        const SizedBox(height: 9),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 620 ? 2 : 4;
+            final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SizedBox(width: width, child: _overviewSummaryCard('People', peopleCount.toString(), 'People across your organization', Icons.people_outline)),
+                SizedBox(width: width, child: _overviewSummaryCard('Locations', locationCount.toString(), 'Branches and locations', Icons.location_on_outlined)),
+                SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), 'Sections across your locations', Icons.account_tree_outlined)),
+                SizedBox(width: width, child: _overviewSummaryCard('Active assignments', activeAssignments.toString(), 'Current role and reporting assignments', Icons.assignment_ind_outlined)),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        _eyebrow('Quick actions'),
+        const SizedBox(height: 9),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 820 ? 1 : 2;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final actions = [
+              ('Add person', 'Review and manage people', Icons.person_add_alt_1_outlined, ManagementSection.people),
+              ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
+              ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
+              ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
+              ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
+            ];
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: actions.map((action) => SizedBox(
+                width: width,
+                child: _overviewQuickAction(action.$1, action.$2, action.$3, action.$4),
+              )).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        _eyebrow('Management attention'),
+        const SizedBox(height: 9),
+        Column(
+          children: attentionItems.map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: item,
+          )).toList(),
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            final activity = GlassCard(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(15),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _title('Recent activity', detail: 'Recent management events', icon: Icons.history_rounded)),
+                      TextButton(onPressed: () => setState(() => section = ManagementSection.audit), child: const Text('View audit')),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (recentActivity.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: Text('No recent activity is available.', style: TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                    )
+                  else
+                    ...recentActivity.map(_overviewActivityItem),
+                ],
+              ),
+            );
+            final structure = GlassCard(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(15),
+              shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _title('Organization structure', detail: 'A quick view of how your organization is arranged', icon: Icons.account_tree_outlined),
+                  const SizedBox(height: 14),
+                  _overviewStructureStep('Organization', _overviewOrganizationName(), Icons.business_outlined),
+                  _overviewStructureConnector(),
+                  _overviewStructureStep('Branches / Locations', locationCount.toString() + ' locations', Icons.location_on_outlined),
+                  _overviewStructureConnector(),
+                  _overviewStructureStep('Sections', sectionCount.toString() + ' sections', Icons.account_tree_outlined),
+                  _overviewStructureConnector(),
+                  _overviewStructureStep('People', peopleCount.toString() + ' people', Icons.people_outline),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => section = ManagementSection.organization),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                      label: const Text('View organization'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+            return wide
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [Expanded(child: activity), const SizedBox(width: 12), Expanded(child: structure)],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [activity, const SizedBox(height: 12), structure],
+                  );
+          },
+        ),
       ],
     );
   }
+
+  Widget _overviewStructureStep(String label, String detail, IconData icon) => _glassRow(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    child: Row(
+      children: [
+        Icon(icon, size: 16, color: TechColors.borderActive),
+        const SizedBox(width: 9),
+        Expanded(child: Text(label, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700))),
+        Text(detail, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+      ],
+    ),
+  );
+
+  Widget _overviewStructureConnector() => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 3),
+    child: Center(child: Icon(Icons.arrow_downward_rounded, size: 13, color: TechColors.textMuted)),
+  );
 
   Widget organizationView() {
     Widget leadershipRow(
@@ -2067,7 +2450,7 @@ class _ManagementShellState extends State<ManagementShell> {
               children: [
                 _eyebrow('ORGANIZATION / MANAGEMENT'),
                 const SizedBox(height: 3),
-                const Text('CONTROL PLANE', style: TextStyle(
+                const Text('MANAGEMENT WORKSPACE', style: TextStyle(
                   color: TechColors.textMuted,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
