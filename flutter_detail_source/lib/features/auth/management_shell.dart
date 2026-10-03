@@ -1347,83 +1347,7 @@ class _ManagementShellState extends State<ManagementShell> {
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    Widget metric(String label, int value, IconData icon) => Expanded(
-      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
-        Icon(icon, size: 17, color: TechColors.borderActive),
-        const SizedBox(width: 9),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-        ])),
-      ])),
-    );
-    Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
-      final name = p['full_name']?.toString().trim() ?? '';
-      final employeeId = p['employee_id']?.toString().trim() ?? '';
-      final role = _roleLabel(p['role_id']?.toString() ?? '—');
-      final location = p['location_name']?.toString() ?? 'Unassigned';
-      final subsection = p['section_name']?.toString() ?? 'Unassigned';
-      final status = p['status']?.toString() ?? 'Unknown';
-      final target = assignments.where((a) =>
-        (a['employee_id']?.toString().isNotEmpty ?? false) &&
-        a['employee_id']?.toString() == employeeId).firstOrNull;
-      return _glassRow(padding: const EdgeInsets.all(14), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(width: 38, height: 38, alignment: Alignment.center,
-              decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)),
-              child: const Icon(Icons.person_outline, color: TechColors.borderActive, size: 19)),
-            const SizedBox(width: 11),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name.isEmpty ? 'Profile incomplete' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              if (p['email']?.toString().isNotEmpty ?? false) ...[
-                const SizedBox(height: 3),
-                Text(p['email'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: TechColors.textMuted)),
-              ],
-              if (employeeId.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(employeeId, style: const TextStyle(fontSize: 10, color: TechColors.textMuted, fontFamily: 'monospace')),
-              ],
-            ])),
-            const SizedBox(width: 8),
-            _statusDot(status),
-          ]),
-          const SizedBox(height: 12),
-          Wrap(spacing: 7, runSpacing: 7, children: [
-            _verificationBadge(role, true),
-            _verificationBadge(status, status.toLowerCase() == 'active'),
-          ]),
-          const SizedBox(height: 9),
-          Row(children: [
-            const Icon(Icons.location_on_outlined, size: 14, color: TechColors.textMuted),
-            const SizedBox(width: 5),
-            Expanded(child: Text(location, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            const Icon(Icons.account_tree_outlined, size: 14, color: TechColors.textMuted),
-            const SizedBox(width: 5),
-            Expanded(child: Text(subsection, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
-          ]),
-          if (target != null) ...[
-            const SizedBox(height: 10),
-            Align(alignment: Alignment.centerRight, child: TextButton.icon(
-              onPressed: () => _showAssignmentProfile(target),
-              icon: const Icon(Icons.open_in_new, size: 15),
-              label: const Text('View details'),
-            )),
-          ],
-        ],
-      ));
-    }
-    return LayoutBuilder(builder: (context, constraints) {
-      final narrow = constraints.maxWidth < 680;
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _title('People', detail: 'View and manage the people in your organization', icon: Icons.people_outline),
         const SizedBox(height: 12),
         if (people.isNotEmpty) ...[
@@ -1716,7 +1640,7 @@ Widget auditView() => Column(
       ].whereType<Object>().join(' ').toLowerCase();
       return query.isEmpty || searchable.contains(query);
     }).toList();
-    final pending = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'invited').length;
+    final pending = invitations.where((item) {\n      if ((item['status']?.toString().toLowerCase() ?? '') != 'invited') return false;\n      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');\n      return expiry == null || !expiry.isBefore(DateTime.now());\n    }).length;
     final accepted = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'accepted').length;
     final revoked = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'revoked').length;
     final expired = invitations.where((item) {
@@ -1782,7 +1706,7 @@ Widget auditView() => Column(
             child: DropdownButtonFormField<String>(
               value: invitationStatus,
               decoration: input('Status'),
-              dropdownColor: TechColors.panel,
+              dropdownColor: TechColors.panelBg,
               items: [
                 const DropdownMenuItem(value: null, child: Text('All statuses')),
                 ...['invited', 'accepted', 'revoked'].where((v) =>
