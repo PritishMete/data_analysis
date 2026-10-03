@@ -91,7 +91,7 @@ void main() {
       "fullName.isEmpty ? 'Profile incomplete' : fullName",
     );
     final profileHeaderEnd = source.indexOf(
-      "const SizedBox(height: 8),\\n                              Divider(",
+      "const SizedBox(height: 8),\n                              Divider(",
       profileHeaderStart,
     );
     expect(profileHeaderStart, greaterThanOrEqualTo(0));
