@@ -1414,15 +1414,14 @@ class _ManagementShellState extends State<ManagementShell> {
       final hour = ist.hour % 12 == 0 ? 12 : ist.hour % 12;
       final period = ist.hour >= 12 ? 'PM' : 'AM';
       final minute = ist.minute.toString().padLeft(2, '0');
-      final day = ist.day.toString().padLeft(2, '0');
       final month = ist.month.toString().padLeft(2, '0');
-      return hour.toString() + ':' + minute + ' ' + period + '\n' +
-          day + '/' + month + '/' + ist.year.toString();
+      final day = ist.day.toString().padLeft(2, '0');
+      return month + '/' + day + '/' + ist.year.toString() + '\n' +
+          hour.toString() + ':' + minute + ' ' + period;
     } catch (_) {
       return '—';
     }
   }
-
   void _showAssignmentProfile(Map<String, dynamic> assignment) {
     final assignmentId = assignment['assignment_id']?.toString().trim() ?? '';
     if (assignmentId.isEmpty) {
@@ -1448,41 +1447,54 @@ class _ManagementShellState extends State<ManagementShell> {
     });
   }
 
+  static const double _profileFieldHeight = 72;
+
   Widget _profileDetailRow(String label, String? value, {bool multiline = false}) {
     final text = (value ?? '').trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: _glassRow(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-        child: Row(
+    final settings = TechColors.panelGlass.copyWith(
+      glowIntensity: 0,
+      shadowElevation: 0,
+      shadow: const <BoxShadow>[],
+    );
+    return SizedBox(
+      height: _profileFieldHeight,
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.standard,
+        settings: settings,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
-              width: 112,
-              child: Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'monospace',
-                ),
+            Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: TechColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(height: 5),
             Expanded(
-              child: Text(
-                text.isEmpty ? '—' : text,
-                maxLines: multiline ? 4 : 2,
-                softWrap: multiline,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 12,
-                  fontFamily: 'monospace',
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  text.isEmpty ? '—' : text,
+                  maxLines: multiline ? 3 : 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
                 ),
               ),
             ),
@@ -1518,9 +1530,9 @@ class _ManagementShellState extends State<ManagementShell> {
                 child: FutureBuilder<Map<String, dynamic>>(
                   future: future,
                   builder: (context, snapshot) {
-                    final maxHeight =
-                        (MediaQuery.sizeOf(context).height * 0.84)
-                            .clamp(320.0, 900.0)
+                    final dialogHeight =
+                        (MediaQuery.sizeOf(context).height * 0.85)
+                            .clamp(360.0, 1000.0)
                             .toDouble();
                     final profile = snapshot.data;
                     final loading = snapshot.connectionState ==
@@ -1528,65 +1540,70 @@ class _ManagementShellState extends State<ManagementShell> {
                     final profileError = snapshot.hasError
                         ? snapshot.error.toString().replaceFirst('Bad state: ', '')
                         : null;
-                    final source =
-                        profile ?? _selectedAssignmentProfile ?? const <String, dynamic>{};
-                    final fullName = source['full_name']?.toString().trim() ?? '';
-                    final employeeId = source['employee_id']?.toString().trim() ??
-                        _selectedAssignmentProfile?['employee_id']?.toString().trim() ??
-                        '—';
+                    final source = profile ??
+                        _selectedAssignmentProfile ??
+                        const <String, dynamic>{};
+                    final fullName =
+                        source['full_name']?.toString().trim() ?? '';
+                    final employeeId =
+                        source['employee_id']?.toString().trim() ?? '';
 
                     Widget body() {
                       if (loading) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 36),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: TechColors.borderActive,
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 36),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: TechColors.borderActive,
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 14),
-                              Text(
-                                'Loading profile…',
-                                style: TextStyle(
-                                  color: TechColors.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  fontFamily: 'monospace',
+                                SizedBox(height: 14),
+                                Text(
+                                  'Loading profile…',
+                                  style: TextStyle(
+                                    color: TechColors.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       }
 
                       if (profileError != null || profile == null) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 30),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                color: TechColors.statusRed,
-                                size: 24,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                profileError ?? 'Profile data is unavailable.',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: TechColors.textPrimary,
-                                  fontSize: 12,
-                                  height: 1.4,
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 30),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  color: TechColors.statusRed,
+                                  size: 24,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 10),
+                                Text(
+                                  profileError ?? 'Profile data is unavailable.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: TechColors.textPrimary,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       }
@@ -1601,8 +1618,9 @@ class _ManagementShellState extends State<ManagementShell> {
                               ? proofNumber
                               : ('X' * (proofNumber.length - 4)) +
                                   proofNumber.substring(proofNumber.length - 4);
-                      final completion =
-                          num.tryParse(profile['profile_completeness_percent']?.toString() ?? '');
+                      final completion = num.tryParse(
+                        profile['profile_completeness_percent']?.toString() ?? '',
+                      );
                       final reportsToParts = <String>[];
                       final reportsEmployee =
                           profile['reports_to_employee_id']?.toString().trim() ?? '';
@@ -1615,12 +1633,21 @@ class _ManagementShellState extends State<ManagementShell> {
                         reportsToParts.add(_roleLabel(reportsRole));
                       }
 
-                      Widget detail(String label, String? value,
-                              {bool multiline = false}) =>
-                          _profileDetailRow(label, value, multiline: multiline);
+                      Widget detail(
+                        String label,
+                        String? value, {
+                        bool multiline = false,
+                      }) =>
+                          _profileDetailRow(
+                            label,
+                            value,
+                            multiline: multiline,
+                          );
 
                       final details = <Widget>[
-                        detail('ROLE', _roleLabel(profile['role_id']?.toString().trim() ?? '—')),
+                        detail('ROLE', _roleLabel(
+                          profile['role_id']?.toString().trim() ?? '—',
+                        )),
                         detail('EMAIL', profile['email']?.toString()),
                         detail(
                           'EMAIL VERIFIED',
@@ -1635,31 +1662,52 @@ class _ManagementShellState extends State<ManagementShell> {
                               ? null
                               : (profile['phone_verified'] == true ? 'YES' : 'NO'),
                         ),
-                        detail('ADDRESS LINE 1', profile['address_line1']?.toString(),
-                            multiline: true),
-                        detail('ADDRESS LINE 2', profile['address_line2']?.toString(),
-                            multiline: true),
+                        detail(
+                          'ADDRESS LINE 1',
+                          profile['address_line1']?.toString(),
+                          multiline: true,
+                        ),
+                        detail(
+                          'ADDRESS LINE 2',
+                          profile['address_line2']?.toString(),
+                          multiline: true,
+                        ),
                         detail('STATE', profile['state']?.toString()),
                         detail('COUNTRY', profile['country']?.toString()),
-                        detail('PIN / POSTAL CODE', profile['postal_code']?.toString()),
+                        detail(
+                          'PIN / POSTAL CODE',
+                          profile['postal_code']?.toString(),
+                        ),
                         detail('ID PROOF TYPE', proofType),
                         detail(
                           'ID PROOF NUMBER',
                           _showIdProof ? proofNumber : maskedProof,
                         ),
-                        detail('BRANCH', profile['location_name']?.toString()),
-                        detail('SECTION', profile['section_name']?.toString()),
+                        detail(
+                          'BRANCH',
+                          profile['location_name']?.toString(),
+                        ),
+                        detail(
+                          'SECTION',
+                          profile['section_name']?.toString(),
+                        ),
                         detail(
                           'REPORTS TO',
-                          reportsToParts.isEmpty ? null : reportsToParts.join(' · '),
+                          reportsToParts.isEmpty
+                              ? null
+                              : reportsToParts.join(' · '),
                         ),
-                        detail('ASSIGNMENT STATUS', profile['status']?.toString()),
+                        detail(
+                          'ASSIGNMENT STATUS',
+                          profile['status']?.toString(),
+                        ),
                         detail(
                           'CREATED',
                           _formatEmployeeTimestamp(
                             profile['profile_created_at'] ??
                                 profile['assignment_created_at'],
                           ),
+                          multiline: true,
                         ),
                         detail(
                           'UPDATED',
@@ -1667,61 +1715,51 @@ class _ManagementShellState extends State<ManagementShell> {
                             profile['profile_updated_at'] ??
                                 profile['assignment_updated_at'],
                           ),
+                          multiline: true,
                         ),
-                        detail(
-                          'PROFILE COMPLETENESS',
-                          completion == null ? null : completion.toStringAsFixed(0) + '%',
-                        ),
+                        if (completion != 100)
+                          detail(
+                            'PROFILE COMPLETENESS',
+                            completion == null
+                                ? null
+                                : completion.toStringAsFixed(0) + '%',
+                          ),
                       ];
 
                       return LayoutBuilder(
                         builder: (context, constraints) {
-                          final narrow = constraints.maxWidth < 500;
-                          final children = <Widget>[];
-                          for (var i = 0; i < details.length; i += narrow ? 1 : 2) {
-                            if (narrow) {
-                              children.add(details[i]);
-                            } else {
-                              children.add(
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                                      child: details[i],
-                                    )),
-                                    Expanded(child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                                      child: i + 1 < details.length
-                                          ? details[i + 1]
-                                          : const SizedBox.shrink(),
-                                    )),
+                          final twoColumns = constraints.maxWidth >= 560;
+                          final gridChildren = <Widget>[...details];
+                          if (twoColumns && gridChildren.length.isOdd) {
+                            gridChildren.add(const SizedBox.shrink());
+                          }
+
+                          if (!twoColumns) {
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (var i = 0; i < gridChildren.length; i++) ...[
+                                    gridChildren[i],
+                                    if (i + 1 < gridChildren.length)
+                                      const SizedBox(height: 8),
                                   ],
-                                ),
-                              );
-                            }
+                                ],
+                              ),
+                            );
                           }
 
                           return SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                ...children,
-                                if (proofNumber.isNotEmpty)
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: () => setState(
-                                        () => _showIdProof = !_showIdProof,
-                                      ),
-                                      child: Text(
-                                        _showIdProof
-                                            ? 'Mask ID proof'
-                                            : 'Show ID proof',
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: GridView.count(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 4.8,
+                              children: gridChildren,
                             ),
                           );
                         },
@@ -1732,89 +1770,119 @@ class _ManagementShellState extends State<ManagementShell> {
                       constraints: const BoxConstraints(maxWidth: 760),
                       child: SizedBox(
                         width: double.infinity,
-                        height: maxHeight.clamp(320.0, 760.0).toDouble(),
+                        height: dialogHeight,
                         child: GlassContainer(
-                        useOwnLayer: true,
-                        quality: GlassQuality.standard,
-                        settings: TechColors.panelGlass.copyWith(
-                          glowIntensity: 0,
-                          shadowElevation: 0,
-                          shadow: const <BoxShadow>[],
-                        ),
-                        shape: const LiquidRoundedSuperellipse(borderRadius: 20),
-                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        fullName.isEmpty ? 'Profile incomplete' : fullName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: TechColors.textPrimary,
-                                          fontSize: 19,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                          useOwnLayer: true,
+                          quality: GlassQuality.standard,
+                          settings: TechColors.panelGlass.copyWith(
+                            glowIntensity: 0,
+                            shadowElevation: 0,
+                            shadow: const <BoxShadow>[],
+                          ),
+                          shape: const LiquidRoundedSuperellipse(borderRadius: 20),
+                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      fullName.isEmpty
+                                          ? 'Profile incomplete'
+                                          : fullName,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: TechColors.textPrimary,
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        employeeId.isEmpty ? '—' : employeeId,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: TechColors.textMuted,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Flexible(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        const Text(
+                                          'EMPLOYEE ID',
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: TechColors.textPrimary,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            fontFamily: 'monospace',
+                                          ),
                                         ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          employeeId.isEmpty ? '—' : employeeId,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.right,
+                                          style: const TextStyle(
+                                            color: TechColors.textPrimary,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    tooltip: 'Close',
+                                    onPressed: _closeAssignmentProfile,
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      color: TechColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: TechColors.textMuted.withValues(alpha: 0.22),
+                              ),
+                              const SizedBox(height: 8),
+                              Expanded(child: body()),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: GlassButton.custom(
+                                  onTap: _closeAssignmentProfile,
+                                  height: 42,
+                                  shape: const LiquidRoundedSuperellipse(
+                                    borderRadius: 14,
+                                  ),
+                                  glowColor: Colors.transparent,
+                                  glowRadius: 0,
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text(
+                                      'Close',
+                                      style: TextStyle(
+                                        color: CupertinoColors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        fontFamily: 'monospace',
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Close',
-                                  onPressed: _closeAssignmentProfile,
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    color: TechColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: TechColors.textMuted.withValues(alpha: 0.22),
-                            ),
-                            const SizedBox(height: 10),
-                            Expanded(child: body()),
-                            const SizedBox(height: 10),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: GlassButton(
-                                onTap: _closeAssignmentProfile,
-                                label: 'Close',
-                                icon: const Icon(
-                                  Icons.close_rounded,
-                                  size: 16,
-                                  color: CupertinoColors.white,
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
+                    );
                   },
                 ),
               ),
