@@ -92,8 +92,7 @@ void main() {
     expect(source, contains("shadowElevation: 0"));
     expect(source, contains("glowColor: Colors.transparent"));
     expect(source, contains("if (completion != 100)"));
-    expect(source, contains("month + '/' + day + '/' + ist.year.toString()"));
-    expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
+    expect(source, contains("return '\$month/\$day/\${ist.year}"));\n    expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
     expect(source, isNot(contains("fontSize: 8")));
 
     final fieldOrder = [
