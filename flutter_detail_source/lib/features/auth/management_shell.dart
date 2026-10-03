@@ -1362,9 +1362,14 @@ class _ManagementShellState extends State<ManagementShell> {
       final location = p['location_name']?.toString() ?? 'Unassigned';
       final subsection = p['section_name']?.toString() ?? 'Unassigned';
       final status = p['status']?.toString() ?? 'Unknown';
+      final assignmentId = p['assignment_id']?.toString() ?? '';
       final target = assignments.where((a) =>
-        (a['employee_id']?.toString().isNotEmpty ?? false) &&
-        a['employee_id']?.toString() == employeeId).firstOrNull;
+        assignmentId.isNotEmpty &&
+        a['assignment_id']?.toString() == assignmentId).firstOrNull ??
+        assignments.where((a) =>
+          employeeId.isNotEmpty &&
+          a['employee_id']?.toString() == employeeId).firstOrNull ??
+        (assignmentId.isNotEmpty ? p : null);
       return _glassRow(padding: const EdgeInsets.all(14), child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1412,8 +1417,8 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 10),
             Align(alignment: Alignment.centerRight, child: TextButton.icon(
               onPressed: () => _showAssignmentProfile(target),
-              icon: const Icon(Icons.open_in_new, size: 15),
-              label: const Text('View details'),
+              icon: const Icon(Icons.person_search_outlined, size: 16),
+              label: const Text('View profile'),
             )),
           ],
         ],
