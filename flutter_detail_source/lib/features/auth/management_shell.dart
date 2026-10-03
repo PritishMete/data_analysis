@@ -10,7 +10,6 @@ import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import '../../widgets/insightflow_floating_brand.dart';
-import '../../widgets/overlays/glass_dialog.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
