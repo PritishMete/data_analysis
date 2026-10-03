@@ -10,6 +10,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'features/dashboard/data_screen.dart';
 import 'core/interop/office_host.dart';
+import 'core/services/backend_heartbeat.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {}
@@ -181,7 +182,9 @@ class ElectricAIApp extends StatelessWidget {
           // any ScaffoldMessenger.of(context).showSnackBar(...) call
           // (e.g. showError/showNotification in data_screen.dart) throws
           // "No ScaffoldMessenger widget found".
-          child: ScaffoldMessenger(child: child!),
+          child: ScaffoldMessenger(
+            child: BackendHeartbeatHost(child: child!),
+          ),
         ),
         home: firebaseInitError == null
             ? const AuthGate()
