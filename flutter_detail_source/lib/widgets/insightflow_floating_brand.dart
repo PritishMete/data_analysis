@@ -11,12 +11,15 @@ import '../app_colors.dart';
 class InsightFlowFloatingBrand extends StatelessWidget {
   const InsightFlowFloatingBrand({super.key});
 
-  static const _lockrFloatingSettings = LiquidGlassSettings(
-    thickness: 14,
-    blur: 8,
-    glassColor: Color(0x0FFFFFFF),
-    refractiveIndex: 1.05,
-  );
+/// Shared glass material used by the floating InsightFlow brand and
+/// the ManagementShell header. Keep these physical settings as the source
+/// of truth; the two surfaces intentionally retain different geometries.
+const kInsightFlowFloatingBrandGlassSettings = LiquidGlassSettings(
+  thickness: 14,
+  blur: 8,
+  glassColor: Color(0x0FFFFFFF),
+  refractiveIndex: 1.05,
+);
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +30,7 @@ class InsightFlowFloatingBrand extends StatelessWidget {
       height: 56,
       shape: const LiquidRoundedSuperellipse(borderRadius: 999),
       useOwnLayer: true,
-      settings: _lockrFloatingSettings,
+      settings: kInsightFlowFloatingBrandGlassSettings,
       quality: GlassQuality.standard,
       interactionScale: 1.0,
       stretch: 0.0,
