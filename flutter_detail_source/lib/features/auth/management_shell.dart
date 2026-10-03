@@ -1490,39 +1490,27 @@ class _ManagementShellState extends State<ManagementShell> {
       final profile = await request('/assignments/${Uri.encodeComponent(assignmentId)}/profile');
       if (!mounted) return;
       var showIdProof = false;
-      await showCupertinoDialog<void>(
+      // Resolve the active glass settings before pushing the modal route.
+      // A route builder has a different BuildContext from the calling shell.
+      final noGlowSettings = LiquidGlassSettings.of(context).copyWith(
+        glowIntensity: 0,
+        shadowElevation: 0,
+        shadow: const <BoxShadow>[],
+      );
+      final maxDialogHeight = MediaQuery.sizeOf(context).height * 0.85;
+      final contentHeight = (maxDialogHeight - 136)
+          .clamp(220.0, maxDialogHeight)
+          .toDouble();
+      await GlassDialog.show<void>(
         context: context,
         barrierDismissible: false,
-        builder: (dialogRouteContext) {
-          final noGlowSettings = LiquidGlassSettings.of(
-            dialogRouteContext,
-          ).copyWith(
-            glowIntensity: 0,
-            shadowElevation: 0,
-            shadow: const <BoxShadow>[],
-          );
-          final maxDialogHeight =
-              MediaQuery.sizeOf(dialogRouteContext).height * 0.85;
-          // GlassDialog itself has no maxHeight. Constrain the actual
-          // dialog widget at the route level so title, content, actions,
-          // padding, and the Close button all share the same 85% ceiling.
-          final contentHeight = (maxDialogHeight - 136)
-              .clamp(220.0, maxDialogHeight)
-              .toDouble();
-          return Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 520,
-                maxHeight: maxDialogHeight,
-              ),
-              child: GlassDialog(
-                title: profile['full_name']?.toString().trim().isEmpty == true
-                    ? 'Profile incomplete'
-                    : profile['full_name']?.toString().trim() ??
-                        'Profile incomplete',
-                maxWidth: 520,
-                settings: noGlowSettings,
-                content: StatefulBuilder(
+        title: profile['full_name']?.toString().trim().isEmpty == true
+            ? 'Profile incomplete'
+            : profile['full_name']?.toString().trim() ??
+                'Profile incomplete',
+        maxWidth: 520,
+        settings: noGlowSettings,
+        content: StatefulBuilder(
                   builder: (dialogContext, setDialogState) {
                     final proofNumber =
                         profile['id_proof_number']?.toString() ?? '';
@@ -1786,18 +1774,14 @@ class _ManagementShellState extends State<ManagementShell> {
                       ),
                     );
                   },
-                ),
-                actions: [
-                  GlassDialogAction(
-                    label: 'Close',
-                    isPrimary: true,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+        ),
+        actions: [
+          GlassDialogAction(
+            label: 'Close',
+            isPrimary: true,
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
       );
     } catch (error) {
       feedback(error);
