@@ -4,6 +4,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../tech_background.dart';
 
 import '../../app_colors.dart';
+import '../../widgets/overlays/glass_dialog.dart';
 
 /// Authentication shell adapted directly from the LiquidGlassUi auth pattern.
 ///
@@ -49,11 +50,7 @@ class AuthGlassScaffold extends StatelessWidget {
                       constraints: BoxConstraints(
                         maxWidth: wideContent ? 1280 : 420,
                       ),
-                      child: GlassCard(
-                        useOwnLayer: true,
-                        settings: kAuthPanelGlass,
-                        quality: GlassQuality.standard,
-                        shape: kAuthPanelShape,
+                      child: InsightFlowDialogSurface(
                         padding: EdgeInsets.all(narrow ? 20 : 28),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
