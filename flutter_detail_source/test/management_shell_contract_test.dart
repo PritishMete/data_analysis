@@ -39,7 +39,7 @@ void main() {
     expect(source, contains('Clear search and filters'));
     expect(source, contains('No activity to show yet'));
     expect(source, contains('No activity matches your search or filters.'));
-    expect(source, contains('_showAuditDetails(event)'));
+    expect(source, contains('_showAuditDetails(e)'));
     expect(source, contains('constraints.maxWidth < 480'));
     expect(source, contains("request('/audit?limit=100')"));
     expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
