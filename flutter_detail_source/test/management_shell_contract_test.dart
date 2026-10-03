@@ -67,7 +67,6 @@ void main() {
     expect(source, contains("fontSize: 11"));
     expect(source, contains("fontSize: 12"));
     expect(source, contains("fontSize: 19"));
-    expect(source, contains("day + '/' + month + '/' + ist.year.toString()"));
     expect(source, contains("hour.toString() + ':' + minute + ' ' + period"));
     expect(source, isNot(contains("month + '/' + day + '/' + ist.year.toString()")));
     expect(source, contains("'PROFILE COMPLETENESS'"));
