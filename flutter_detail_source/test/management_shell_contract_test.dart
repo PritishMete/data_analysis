@@ -320,6 +320,14 @@ void main() {
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 
+    expect(header, contains('Icons.auto_awesome_rounded'));
+    expect(header, isNot(contains('Icons.terminal')));
+
+    final authGate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    expect(authGate, contains('if (_onboardingState == InsightFlowOnboardingState.activeMember)'));
+    expect(authGate, contains('return authenticatedChild;'));
+    expect(authGate, contains('return AuthenticatedBrandShell(child: authenticatedChild);'));
+
     final brand = File('lib/widgets/insightflow_floating_brand.dart').readAsStringSync();
     expect(brand, contains('thickness: 14'));
     expect(brand, contains('blur: 8'));
