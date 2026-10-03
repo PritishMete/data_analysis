@@ -2046,17 +2046,24 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   String _roleLabel(String value) {
-    switch (value) {
+    final normalized = value.trim().toLowerCase();
+    switch (normalized) {
+      case 'organization_owner':
+        return 'Organization Owner';
       case 'branch_head':
-        return 'BRANCH HEAD';
+        return 'Branch Head';
       case 'team_lead':
-        return 'TEAM LEAD';
+        return 'Team Lead';
       case 'manager':
-        return 'MANAGER';
+        return 'Manager';
       case 'employee':
-        return 'EMPLOYEE';
+        return 'Employee';
       default:
-        return value.toUpperCase();
+        return normalized
+            .split(RegExp(r'[._-]+'))
+            .where((part) => part.isNotEmpty)
+            .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+            .join(' ');
     }
   }
 
@@ -2147,10 +2154,10 @@ class _ManagementShellState extends State<ManagementShell> {
               softWrap: false,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: TechColors.textPrimary,
-                fontSize: 12,
+                color: TechColors.textMuted,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
+                letterSpacing: 0.2,
               ),
             ),
             const SizedBox(height: 5),
@@ -2204,8 +2211,8 @@ class _ManagementShellState extends State<ManagementShell> {
                   future: future,
                   builder: (context, snapshot) {
                     final dialogHeight =
-                        (MediaQuery.sizeOf(context).height * 0.85)
-                            .clamp(360.0, 1000.0)
+                        (MediaQuery.sizeOf(context).height - 48)
+                            .clamp(220.0, 1000.0)
                             .toDouble();
                     final profile = snapshot.data;
                     final loading = snapshot.connectionState ==
@@ -2275,6 +2282,16 @@ class _ManagementShellState extends State<ManagementShell> {
                                     height: 1.4,
                                   ),
                                 ),
+                                const SizedBox(height: 12),
+                                TextButton.icon(
+                                  onPressed: _selectedAssignmentProfile == null
+                                      ? null
+                                      : () => _showAssignmentProfile(
+                                            _selectedAssignmentProfile!,
+                                          ),
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: const Text('Retry profile'),
+                                ),
                               ],
                             ),
                           ),
@@ -2299,6 +2316,15 @@ class _ManagementShellState extends State<ManagementShell> {
                           profile['reports_to_employee_id']?.toString().trim() ?? '';
                       final reportsRole =
                           profile['reports_to_role_id']?.toString().trim() ?? '';
+                      final reportsPerson = people.where((person) =>
+                        reportsEmployee.isNotEmpty &&
+                        person['employee_id']?.toString() == reportsEmployee,
+                      ).firstOrNull;
+                      final reportsName =
+                          reportsPerson?['full_name']?.toString().trim() ?? '';
+                      if (reportsName.isNotEmpty) {
+                        reportsToParts.add(reportsName);
+                      }
                       if (reportsEmployee.isNotEmpty) {
                         reportsToParts.add(reportsEmployee);
                       }
