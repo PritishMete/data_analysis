@@ -224,6 +224,12 @@ void main() {
     expect(source, isNot(contains('pendingInvitations = 0')));
     expect(source, contains('observedStatuses'));
     expect(source, contains('View invitation details'));
+    expect(source, contains('_invitationPerson(item)'));
+    expect(source, contains('full_name'));
+    expect(source, contains('_invitationStatusChip'));
+    expect(source, contains('_formatInvitationExpiry'));
+    expect(source, contains('_invitationSkeleton()'));
+    expect(source, contains("section == ManagementSection.invitations"));
     expect(source, contains('Invitation details'));
     expect(source, contains("item['invitation_id']"));
     expect(source, contains("item['expires_at']"));
@@ -243,7 +249,7 @@ void main() {
     expect(source, contains('Search invitations'));
     expect(source, contains("tooltip: 'Clear search'"));
     expect(source, contains('Clear filters'));
-    expect(source, contains('No invitation records are available to display'));
+    expect(source, contains('No invitations'));
     expect(source, contains('No invitations match your search'));
     expect(source, contains('No invitations match the selected status'));
     expect(source, contains("item['expires_at']"));
