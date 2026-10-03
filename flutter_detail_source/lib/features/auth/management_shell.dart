@@ -917,11 +917,14 @@ class _ManagementShellState extends State<ManagementShell> {
                                   fontSize: 10,
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    );
+                    ),
+                  ),
                   }),
+
                 ],
               ],
             ),
