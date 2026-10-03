@@ -9,6 +9,7 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
+import '../../widgets/insightflow_floating_brand.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
@@ -2804,7 +2805,10 @@ class _ManagementShellState extends State<ManagementShell> {
     // InsightFlow workspace, not a separate admin theme.
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: GlassCard(
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.standard,
+        settings: kInsightFlowFloatingBrandGlassSettings,
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
