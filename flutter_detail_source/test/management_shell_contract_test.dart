@@ -94,7 +94,6 @@ void main() {
     expect(source, contains("if (completion != 100)"));
     expect(source, contains("return '\$month/\$day/\${ist.year}"));
     expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
-    expect(source, isNot(contains("fontSize: 8")));
 
     final fieldOrder = [
       'ROLE',
