@@ -114,7 +114,6 @@ class _ManagementShellState extends State<ManagementShell> {
   List<Map<String, dynamic>> people = [];
   List<Map<String, dynamic>> assignments = [];
   List<Map<String, dynamic>> audit = [];
-  int pendingInvitations = 0;
   List<Map<String, dynamic>> invitations = [];
   String invitationSearch = '';
   String? invitationStatus;
@@ -244,7 +243,6 @@ class _ManagementShellState extends State<ManagementShell> {
         assignments = maps(r[4]['assignments']);
         audit = maps(r[5]['audit']);
         invitations = maps(r[6]['invitations']);
-        pendingInvitations = invitations.where((item) => (item['status']?.toString().toLowerCase() ?? '') == 'invited').length;
         loading = false;
       });
     } catch (e) {
@@ -1717,6 +1715,7 @@ Widget auditView() => Column(
       return query.isEmpty || searchable.contains(query);
     }).toList();
     final now = DateTime.now();
+    final observedStatuses = invitations.map((item) => item['status']?.toString().trim().toLowerCase() ?? '').where((value) => value.isNotEmpty).toSet();
     final pending = invitations.where((item) {
       if ((item['status']?.toString().toLowerCase() ?? '') != 'invited') return false;
       final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
@@ -1731,27 +1730,22 @@ Widget auditView() => Column(
       return expiry != null && expiry.isBefore(DateTime.now()) &&
           (item['status']?.toString().toLowerCase() ?? '') == 'invited';
     }).length;
-    Widget metric(String label, int value, IconData icon) => Expanded(
-      child: surface(Row(children: [
-        Icon(icon, color: TechColors.textMuted, size: 17),
-        const SizedBox(width: 9),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-          Text('$value', style: const TextStyle(color: TechColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
-        ])),
-      ])),
-    );
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Manage invitations sent to people in your organization and review their current status.',
         style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
       const SizedBox(height: 14),
       LayoutBuilder(builder: (context, constraints) {
-        final cards = [
+        final cards = <(String, int, IconData)>[
           ('Total', invitations.length, Icons.mail_outline),
-          ('Pending', pending, Icons.schedule_outlined),
-          ('Accepted', accepted, Icons.check_circle_outline),
-          ('Expired', expired, Icons.timer_off_outlined),
-          ('Revoked', revoked, Icons.block_outlined),
+          if (observedStatuses.contains('invited'))
+            ('Pending', pending, Icons.schedule_outlined),
+          if (observedStatuses.contains('accepted'))
+            ('Accepted', accepted, Icons.check_circle_outline),
+          if (observedStatuses.contains('expired') ||
+              observedStatuses.contains('invited') && expired > 0)
+            ('Expired', expired, Icons.timer_off_outlined),
+          if (observedStatuses.contains('revoked'))
+            ('Revoked', revoked, Icons.block_outlined),
         ];
         final width = constraints.maxWidth;
         final count = width >= 850 ? 5 : width >= 520 ? 3 : 2;
@@ -1844,7 +1838,8 @@ Widget auditView() => Column(
       else
         ...filtered.map((item) {
           final status = item['status']?.toString().toLowerCase() ?? 'unknown';
-          final label = status == 'invited' ? 'Pending' :
+          final expiredByDate = status == 'invited' && expiryDate != null && expiryDate.isBefore(now);
+          final label = expiredByDate ? 'Expired' : status == 'invited' ? 'Pending' :
             status.isEmpty ? 'Unknown' : status[0].toUpperCase() + status.substring(1);
           final expiry = item['expires_at']?.toString();
           final expiryDate = expiry == null ? null : DateTime.tryParse(expiry);
@@ -1864,8 +1859,8 @@ Widget auditView() => Column(
                 Chip(label: Text(label), visualDensity: VisualDensity.compact),
                 Text((item['role_id']?.toString() ?? 'Role unavailable').replaceAll('_', ' '),
                   style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
-                if (expiryDate != null)
-                  Text('Expires ${expiryDate.toLocal().toString().split(' ').first}',
+                if (expiry != null && expiry.isNotEmpty)
+                  Text('Expires ${expiryDate == null ? expiry : expiryDate.toLocal().toString().split(' ').first}',
                     style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
               ]);
               return compact ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
