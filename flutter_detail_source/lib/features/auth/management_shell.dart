@@ -1704,6 +1704,35 @@ Widget auditView() => Column(
   ]));
 
 
+  void _showInvitationDetails(Map<String, dynamic> item) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _ManagementGlassDialog(
+        title: const Text('Invitation details'),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _profileDetailRow('EMAIL', item['email']?.toString()),
+            _profileDetailRow('STATUS', item['status']?.toString()),
+            _profileDetailRow('EXPIRY', item['expires_at']?.toString()),
+            if ((item['employee_id']?.toString() ?? '').isNotEmpty)
+              _profileDetailRow('EMPLOYEE ID', item['employee_id']?.toString()),
+            if ((item['role_id']?.toString() ?? '').isNotEmpty)
+              _profileDetailRow('ROLE ID', item['role_id']?.toString()),
+            if ((item['invitation_id']?.toString() ?? '').isNotEmpty)
+              _profileDetailRow('INVITATION ID', item['invitation_id']?.toString()),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget invitationView() {
     final query = invitationSearch.trim().toLowerCase();
     final filtered = invitations.where((item) {
@@ -1860,6 +1889,14 @@ Widget auditView() => Column(
                 if (expiry != null && expiry.isNotEmpty)
                   Text('Expires ${expiryDate == null ? expiry : expiryDate.toLocal().toString().split(' ').first}',
                     style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                Tooltip(
+                  message: 'View invitation details',
+                  child: TextButton.icon(
+                    onPressed: () => _showInvitationDetails(item),
+                    icon: const Icon(Icons.info_outline, size: 15),
+                    label: const Text('Details'),
+                  ),
+                ),
               ]);
               return compact ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 identity, const SizedBox(height: 9), meta,
