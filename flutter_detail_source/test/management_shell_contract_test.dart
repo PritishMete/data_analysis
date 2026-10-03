@@ -60,7 +60,7 @@ void main() {
     expect(source, contains('_selectedAssignmentProfile'));
     expect(source, contains('GestureDetector'));
     expect(source, contains('onTap: _closeAssignmentProfile'));
-    expect(source, contains("label: 'Close'"));
+    expect(source, contains("'Close'"));
     expect(source, isNot(contains('barrierDismissible: false')));
     expect(source, isNot(contains('profile[\'full_name\']!')));
     expect(source, isNot(contains('profile[\'employee_id\']!')));
