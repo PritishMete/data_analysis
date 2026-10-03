@@ -14,7 +14,7 @@ import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSetti
 import 'authorization_management_screen.dart';
 import 'managed_dataset_access_workspace.dart';
 
-enum ManagementSection { overview, organization, people, locations, sections, invitations, dataAccess, audit }
+enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }
 
 class _ManagementGlassDialog extends StatelessWidget {
   const _ManagementGlassDialog({
@@ -117,6 +117,7 @@ class _ManagementShellState extends State<ManagementShell> {
   int pendingInvitations = 0;
   String search = '';
   String? selectedLocation;
+  String? selectedSection;
   Map<String, dynamic>? _selectedAssignmentProfile;
   Future<Map<String, dynamic>>? _assignmentProfileFuture;
   bool _showIdProof = false;
@@ -371,7 +372,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final active = people.where((p) => p['status'] == 'active').toList();
     if (locations.isEmpty || sections.isEmpty || active.isEmpty) { feedback(StateError('An active location, section, and person are required.')); return; }
     var location = selectedLocation ?? locations.first['location_id'].toString();
-    var sectionId = sections.first['section_id'].toString();
+    var sectionId = selectedSection ?? sections.first['section_id'].toString();
     var principal = active.first['principal_id'].toString();
     final ok = await showDialog<bool>(context: context, builder: (c) => StatefulBuilder(builder: (c, set) {
       final matching = sections.where((x) => x['location_id'].toString() == location).toList();
@@ -712,7 +713,61 @@ class _ManagementShellState extends State<ManagementShell> {
     }
 
     return Column(
-      children: locations.map((l) {
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 760;
+            final controls = Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                _actionChip(
+                  'CREATE LOCATION',
+                  Icons.add_location_alt_outlined,
+                  createLocation,
+                ),
+                _actionChip(
+                  'CREATE SECTION',
+                  Icons.account_tree_outlined,
+                  createSection,
+                  accent: true,
+                ),
+              ],
+            );
+            return compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _eyebrow('Organization structure'),
+                      const SizedBox(height: 8),
+                      controls,
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(child: _eyebrow('Organization structure')),
+                      controls,
+                    ],
+                  );
+          },
+        ),
+        const SizedBox(height: 12),
+        if (locations.isEmpty)
+          surface(
+            const Padding(
+              padding: EdgeInsets.all(28),
+              child: Center(
+                child: Text(
+                  'No organizational structure is configured yet.',
+                  style: TextStyle(color: TechColors.textMuted),
+                ),
+              ),
+            ),
+          ),
+        ...locations.map((l) {
         final id = l['location_id'].toString();
         final secs =
             sections.where((s) => s['location_id'].toString() == id).toList();
@@ -857,6 +912,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
         );
       }).toList(),
+      ],
     );
   }
   Widget peopleView() {
@@ -1011,162 +1067,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ],
     );
   }
-  Widget locationsView() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: _title(
-              'Locations',
-              detail: 'BRANCH REGISTRY',
-              icon: Icons.location_on_outlined,
-            ),
-          ),
-          _actionChip('CREATE', Icons.add, createLocation, accent: true),
-        ],
-      ),
-      const SizedBox(height: 12),
-      if (locations.isEmpty)
-        surface(
-          const Padding(
-            padding: EdgeInsets.all(28),
-            child: Center(
-              child: Text(
-                'NO LOCATIONS YET',
-                style: TextStyle(
-                  color: TechColors.textMuted,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ),
-        )
-      else
-        ...locations.map(
-          (l) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _glassRow(
-              child: InkWell(
-                onTap: () => setState(
-                  () => selectedLocation = l['location_id'].toString(),
-                ),
-                borderRadius: BorderRadius.circular(12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      size: 17,
-                      color: TechColors.borderActive,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l['name'].toString(),
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '${l['branch_identifier'] ?? '—'}  ·  ${l['section_count'] ?? 0} sections  ·  ${l['employee_count'] ?? 0} employees',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: TechColors.textMuted,
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 150,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            'BRANCH HEAD',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: TechColors.textMuted,
-                              fontSize: 8,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                          Text(
-                            l['branch_head']?['employee_id']?.toString() ??
-                                'NO BRANCH HEAD',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'MANAGER  ${l['manager']?['employee_id']?.toString() ?? 'NO SEPARATE MANAGER'}',
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              color: TechColors.textMuted,
-                              fontSize: 8,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-    ],
-  );
-  Widget sectionsView() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    Row(children: [
-      Expanded(child: _title('Sections', detail: 'LOCATION → SECTION HIERARCHY', icon: Icons.account_tree_outlined)),
-      _actionChip('CREATE', Icons.add, createSection, accent: true),
-    ]),
-    const SizedBox(height: 12),
-    if (sections.isEmpty) surface(const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('NO SECTIONS YET', style: TextStyle(color: TechColors.textMuted, fontFamily: 'monospace', fontSize: 11)))))
-    else ...sections.map((s) {
-      final loc = locations.firstWhere((l) => l['location_id']?.toString() == s['location_id']?.toString(), orElse: () => const {'name': 'Unknown location'});
-      final leads = maps(s['team_leads']);
-      return Padding(padding: const EdgeInsets.only(bottom: 8), child: _glassRow(child: Row(children: [
-        const Icon(Icons.subdirectory_arrow_right, size: 16, color: TechColors.statusBlue), const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(s['name'].toString(), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-          const SizedBox(height: 3),
-          Text('${loc['name']}  ·  ${s['employee_count'] ?? 0} employees', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-        ])),
-        Text(leads.isEmpty ? 'NO TEAM LEAD' : leads.map((x) => x['employee_id'].toString()).join(', '), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace')),
-      ])));
-    }),
-  ]);
-
   Widget auditView() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1314,21 +1214,17 @@ class _ManagementShellState extends State<ManagementShell> {
 
   String _sectionLabel(ManagementSection value) => switch (value) {
     ManagementSection.overview => 'Management Overview',
-    ManagementSection.organization => 'Organization Topology',
+    ManagementSection.organization => 'Organization',
     ManagementSection.people => 'People Registry',
-    ManagementSection.locations => 'Location Registry',
-    ManagementSection.sections => 'Section Hierarchy',
     ManagementSection.invitations => 'Invitations',
-    ManagementSection.dataAccess => 'Data Access',
-    ManagementSection.audit => 'Audit Log',
+    ManagementSection.dataAccess => 'Access',
+    ManagementSection.audit => 'Audit',
   };
 
   String _sectionDetail(ManagementSection value) => switch (value) {
     ManagementSection.overview => 'ORGANIZATION CONTROL PLANE',
-    ManagementSection.organization => 'LOCATION → SECTION → ASSIGNMENT',
+    ManagementSection.organization => 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
-    ManagementSection.locations => 'BRANCH REGISTRY',
-    ManagementSection.sections => 'LOCATION → SECTION HIERARCHY',
     ManagementSection.invitations => 'INVITATION CONTROL',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
     ManagementSection.audit => 'SYSTEM EVENT STREAM',
@@ -1338,8 +1234,6 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.overview => Icons.dashboard_outlined,
     ManagementSection.organization => Icons.account_tree_outlined,
     ManagementSection.people => Icons.people_outline,
-    ManagementSection.locations => Icons.location_on_outlined,
-    ManagementSection.sections => Icons.account_tree_outlined,
     ManagementSection.invitations => Icons.mail_outline,
     ManagementSection.dataAccess => Icons.lock_outline,
     ManagementSection.audit => Icons.terminal,
@@ -1350,8 +1244,6 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.overview: return overviewView();
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
-      case ManagementSection.locations: return locationsView();
-      case ManagementSection.sections: return sectionsView();
       case ManagementSection.invitations: return legacyView('Invitations', 'Existing invitation creation and acceptance behavior is preserved.');
       case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
       case ManagementSection.audit: return auditView();
@@ -2208,11 +2100,9 @@ class _ManagementShellState extends State<ManagementShell> {
       MapEntry(ManagementSection.overview, 'OVERVIEW'),
       MapEntry(ManagementSection.organization, 'ORGANIZATION'),
       MapEntry(ManagementSection.people, 'PEOPLE'),
-      MapEntry(ManagementSection.locations, 'LOCATIONS'),
-      MapEntry(ManagementSection.sections, 'SECTIONS'),
+      MapEntry(ManagementSection.dataAccess, 'ACCESS'),
       MapEntry(ManagementSection.invitations, 'INVITATIONS'),
-      MapEntry(ManagementSection.dataAccess, 'DATA ACCESS'),
-      MapEntry(ManagementSection.audit, 'AUDIT LOG'),
+      MapEntry(ManagementSection.audit, 'AUDIT'),
     ];
     // Same geometry and glass settings as DataScreen.NavigationTabs.
     return AdaptiveLiquidGlassLayer(
@@ -2226,10 +2116,9 @@ class _ManagementShellState extends State<ManagementShell> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            itemCount: tabs.length + 1,
+            itemCount: tabs.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              if (index == tabs.length) return _managementAnalysisNavChip();
               final tab = tabs[index];
               final selected = section == tab.key;
               return GlassChip(
@@ -2250,16 +2139,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
     );
   }
-
-  Widget _managementAnalysisNavChip() => GlassButton(
-    onTap: () => openInsightFlowAnalysis(context),
-    label: 'ANALYSIS',
-    icon: const Icon(
-      CupertinoIcons.chart_bar_fill,
-      size: 18,
-      color: CupertinoColors.white,
-    ),
-  );
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -2315,6 +2194,8 @@ class _ManagementShellState extends State<ManagementShell> {
                                         ],
                                         body(),
                                         if (section == ManagementSection.organization) ...[
+                                          const SizedBox(height: 16),
+                                          actions(),
                                           const SizedBox(height: 16),
                                           assignmentList(),
                                         ],
