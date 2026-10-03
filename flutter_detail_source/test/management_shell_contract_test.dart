@@ -128,7 +128,7 @@ void main() {
     expect(source, contains('_assignmentRegistryRow(a)'));
     expect(source, contains("_profileFieldHeight = 72"));
     expect(source, contains("height: dialogHeight"));
-    expect(source, contains("MediaQuery.sizeOf(context).height * 0.85"));
+    expect(source, contains("MediaQuery.sizeOf(context).height - 48"));
     expect(source, contains("constraints.maxWidth >= 560"));
     expect(source, contains("crossAxisCount: 2"));
     expect(source, contains("mainAxisExtent: _profileFieldHeight"));
@@ -241,6 +241,13 @@ void main() {
     expect(source, contains("Active members"));
     expect(source, contains("Assigned"));
     expect(source, contains("View profile"));
+    expect(source, contains("case 'organization_owner':"));
+    expect(source, contains("return 'Organization Owner';"));
+    expect(source, contains("return 'Branch Head';"));
+    expect(source, contains("return 'Team Lead';"));
+    expect(source, contains('final reportsPerson = people.where((person) =>'));
+    expect(source, contains('final reportsName ='));
+    expect(source, contains("label: const Text('Retry profile')"));
     expect(source, contains("final assignmentId = p['assignment_id']?.toString() ?? '';"));
     expect(source, contains("a['assignment_id']?.toString() == assignmentId"));
     expect(source, contains("_showAssignmentProfile(target)"));
