@@ -118,6 +118,7 @@ class _ManagementShellState extends State<ManagementShell> {
   String search = '';
   String? selectedLocation;
   String? selectedSection;
+  String? selectedRole;
   Map<String, dynamic>? _selectedAssignmentProfile;
   Future<Map<String, dynamic>>? _assignmentProfileFuture;
   bool _showIdProof = false;
@@ -1317,7 +1318,7 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
   Widget peopleView() {
-    final query = search.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+    final query = search.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     final roleOptions = people.map((p) => p['role_id']?.toString() ?? '')
         .where((v) => v.isNotEmpty).toSet().toList()..sort();
     final locationOptions = people.map((p) => p['location_name']?.toString() ?? '')
@@ -1338,9 +1339,10 @@ class _ManagementShellState extends State<ManagementShell> {
       if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
       if (selectedLocation != null && p['location_name']?.toString() != selectedLocation) return false;
       if (selectedSection != null && p['section_name']?.toString() != selectedSection) return false;
+      if (selectedRole != null && p['role_id']?.toString() != selectedRole) return false;
       return true;
     }).toList();
-    final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null;
+    final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
     Widget metric(String label, int value, IconData icon) => Expanded(
       child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
         Icon(icon, size: 17, color: TechColors.borderActive),
@@ -1455,17 +1457,24 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 9),
             if (narrow) ...[
               DropdownButtonFormField<String>(
-                value: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
+                initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All locations')),
                   ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedLocation = v),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
+                initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All sections')),
                   ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedSection = v),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: selectedRole, isExpanded: true, decoration: const InputDecoration(labelText: 'Role', isDense: true),
+                items: [const DropdownMenuItem(value: null, child: Text('All roles')),
+                  ...roleOptions.map((v) => DropdownMenuItem(value: v, child: Text(_roleLabel(v), overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() => selectedRole = v),
               ),
             ] else Row(children: [
               Expanded(child: DropdownButtonFormField<String>(
@@ -1482,7 +1491,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 onChanged: (v) => setState(() => selectedSection = v),
               )),
               if (hasFilters) IconButton(tooltip: 'Clear filters', onPressed: () => setState(() {
-                search = ''; selectedLocation = null; selectedSection = null;
+                search = ''; selectedLocation = null; selectedSection = null; selectedRole = null;
               }), icon: const Icon(Icons.filter_alt_off)),
             ]),
             if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
