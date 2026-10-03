@@ -1623,7 +1623,7 @@ class _ManagementShellState extends State<ManagementShell> {
   };
 
   String _sectionDetail(ManagementSection value) => switch (value) {
-    ManagementSection.overview => 'ORGANIZATION CONTROL PLANE',
+    ManagementSection.overview => 'ORGANIZATION OVERVIEW',
     ManagementSection.organization => 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
     ManagementSection.invitations => 'INVITATION CONTROL',
