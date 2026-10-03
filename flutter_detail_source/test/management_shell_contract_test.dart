@@ -40,7 +40,8 @@ void main() {
     expect(source, contains('assignmentList()'));
     expect(source, contains('actions()'));
 
-    expect(source, contains('openInsightFlowAnalysis(context)'));
+    expect(source, contains('openInsightFlowAnalysis('));
+    expect(source, contains('managedDatasetId: datasetId'));
     expect(source, contains('LiquidGlassScope'));
     expect(source, contains('GlassBackgroundSource'));
     expect(source, contains('TechAnimatedBackground'));
@@ -48,7 +49,7 @@ void main() {
     expect(source, contains('GlassCard'));
     expect(source, contains('GlassChip'));
     expect(source, contains('AdaptiveLiquidGlassLayer'));
-    expect(source, contains('_managementAnalysisNavChip'));
+    expect(source, isNot(contains('_managementAnalysisNavChip')));
     expect(source, contains('kInsightFlowNavigationGlassSettings'));
     expect(source, contains('management_navigation.dart'));
     expect(source, contains('AuthorizationManagementScreen('));
