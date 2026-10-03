@@ -203,6 +203,20 @@ void main() {
     expect(source, contains('_unassignedPeople()'));
     expect(source, contains('audit.take(5)'));
     expect(source, contains('_overviewSkeleton()'));
+    expect(source, contains("Widget peopleView()"));
+    expect(source, contains("View and manage the people in your organization"));
+    expect(source, contains("Search people"));
+    expect(source, contains("No people match your search"));
+    expect(source, contains("No people match these filters"));
+    expect(source, contains("No people yet"));
+    expect(source, contains("Clear search and filters"));
+    expect(source, contains("Total people"));
+    expect(source, contains("Active members"));
+    expect(source, contains("Assigned"));
+    expect(source, contains("View details"));
+    expect(source, contains("selectedLocation"));
+    expect(source, contains("selectedSection"));
+    expect(source, contains("constraints.maxWidth < 680"));
     expect(source, isNot(contains('CONTROL PLANE')));
 
   });
