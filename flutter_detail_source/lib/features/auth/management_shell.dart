@@ -1981,8 +1981,8 @@ Widget auditView() => Column(
                       style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
                     Text('Expires ${_formatInvitationExpiry(expiry)}',
                       style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-                    TextButton.icon(onPressed: () => _showInvitationDetails(item),
-                      icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details')),
+                    Tooltip(message: 'View invitation details', child: TextButton.icon(onPressed: () => _showInvitationDetails(item),
+                      icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details'))),
                   ]),
                 ]);
               }
