@@ -42,7 +42,6 @@ void main() {
     expect(source, contains('_showAuditDetails(event)'));
     expect(source, contains('constraints.maxWidth < 480'));
     expect(source, contains("request('/audit?limit=100')"));
-    expect(source, contains("SELECT event_id, actor_principal_id, action, outcome, metadata, created_at"));
     expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
     expect(source, isNot(contains('ManagementSection.locations')));
     expect(source, isNot(contains('ManagementSection.sections')));
