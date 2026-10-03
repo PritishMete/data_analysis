@@ -77,16 +77,15 @@ class _ManagementGlassDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: actions
-                      .map(
-                        (action) => Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: action,
-                        ),
-                      )
-                      .toList(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    runAlignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: actions,
+                  ),
                 ),
               ],
             ),
@@ -258,9 +257,9 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   InputDecoration input(String label) => InputDecoration(
-    labelText: label.toUpperCase(),
-    labelStyle: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontFamily: 'monospace'),
-    floatingLabelStyle: const TextStyle(color: TechColors.borderActive, fontSize: 10, fontFamily: 'monospace'),
+    labelText: label,
+    labelStyle: const TextStyle(color: TechColors.textMuted, fontSize: 12),
+    floatingLabelStyle: const TextStyle(color: TechColors.borderActive, fontSize: 12),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
       borderSide: BorderSide(color: TechColors.textMuted.withValues(alpha: 0.28)),
