@@ -214,7 +214,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const Text('Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
-        SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: const InputDecoration(hintText: 'SEARCH DATASETS...', prefixIcon: Icon(Icons.search, size: 16), isDense: true))),
+        SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
         _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
       ])),
       const SizedBox(height: 12),
