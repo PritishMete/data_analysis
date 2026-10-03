@@ -27,9 +27,10 @@ void main() {
     expect(navigation, isNot(contains('AUDIT LOG')));
     expect(navigation, isNot(contains('ANALYSIS')));
     expect(source, isNot(contains('_managementAnalysisNavChip')));
-    expect(source, contains("_title('Audit', detail: 'Review recent organization activity"));
-    expect(source, contains("'management.location.created': 'Location created'"));
-    expect(source, contains("'management.manager.assigned': 'Manager assigned'"));
+    expect(source, contains("_title('Audit'"));
+    expect(source, contains('Review recent organization activity'));
+    expect(source.replaceAll(RegExp(r'\\s+'), ''), contains("'management.location.created':'Location created'"));
+    expect(source.replaceAll(RegExp(r'\\s+'), ''), contains("'management.manager.assigned':'Manager assigned'"));
     expect(source, contains("event['actor_principal_id']"));
     expect(source, contains("event['created_at']"));
     expect(source, contains("event['metadata']"));
@@ -216,6 +217,9 @@ void main() {
     expect(source, contains('ManagementSection.audit'));
     expect(source, contains('_unassignedPeople()'));
     expect(source, contains('audit.take(5)'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('section == ManagementSection.audit'));
+    expect(source, isNot(contains('metadata.entries.where')));
     expect(source, contains('_overviewSkeleton()'));
     expect(source, contains("Widget peopleView()"));
     expect(source, contains("View and manage the people in your organization"));
