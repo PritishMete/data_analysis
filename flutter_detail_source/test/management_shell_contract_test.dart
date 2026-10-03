@@ -6,19 +6,36 @@ void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
 
+    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationEnd = source.indexOf('];', navigationStart);
+    expect(navigationStart, greaterThanOrEqualTo(0));
+    expect(navigationEnd, greaterThan(navigationStart));
+    final navigation = source.substring(navigationStart, navigationEnd);
     for (final label in [
-      'Overview',
-      'Organization',
-      'People',
-      'Locations',
-      'Sections',
-      'Invitations',
-      'Data Access',
-      'Audit Log',
-      'Analysis',
+      "MapEntry(ManagementSection.overview, 'OVERVIEW')",
+      "MapEntry(ManagementSection.organization, 'ORGANIZATION')",
+      "MapEntry(ManagementSection.people, 'PEOPLE')",
+      "MapEntry(ManagementSection.dataAccess, 'ACCESS')",
+      "MapEntry(ManagementSection.invitations, 'INVITATIONS')",
+      "MapEntry(ManagementSection.audit, 'AUDIT')",
     ]) {
-      expect(source, contains(label));
+      expect(navigation, contains(label));
     }
+    expect(navigation, isNot(contains('LOCATIONS')));
+    expect(navigation, isNot(contains('SECTIONS')));
+    expect(navigation, isNot(contains('DATA ACCESS')));
+    expect(navigation, isNot(contains('AUDIT LOG')));
+    expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
+    expect(source, isNot(contains('ManagementSection.locations')));
+    expect(source, isNot(contains('ManagementSection.sections')));
+    expect(source, contains("'CREATE LOCATION'"));
+    expect(source, contains("'CREATE SECTION'"));
+    expect(source, contains("'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE'"));
+    expect(source, contains('selectedLocation = id'));
+    expect(source, contains('selectedSection = sectionId'));
+    expect(source, contains('selectedSection ?? sections.first'));
+    expect(source, contains('assignmentList()'));
+    expect(source, contains('actions()'));
 
     expect(source, contains('openInsightFlowAnalysis(context)'));
     expect(source, contains('LiquidGlassScope'));
