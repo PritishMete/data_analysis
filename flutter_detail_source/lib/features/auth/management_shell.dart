@@ -2817,7 +2817,7 @@ class _ManagementShellState extends State<ManagementShell> {
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.terminal, color: TechColors.borderActive, size: 18),
+                const Icon(Icons.auto_awesome_rounded, color: TechColors.borderActive, size: 18),
                 const SizedBox(width: 10),
                 const Text('InsightFlow', style: TextStyle(
                   color: TechColors.textPrimary,
