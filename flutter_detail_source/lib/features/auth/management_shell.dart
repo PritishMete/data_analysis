@@ -1787,10 +1787,12 @@ class _ManagementShellState extends State<ManagementShell> {
                       );
                     }
 
-                    return SizedBox(
-                      width: 760,
-                      height: maxHeight.clamp(320.0, 760.0).toDouble(),
-                      child: GlassContainer(
+                    return ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: maxHeight.clamp(320.0, 760.0).toDouble(),
+                        child: GlassContainer(
                         useOwnLayer: true,
                         quality: GlassQuality.standard,
                         settings: TechColors.panelGlass.copyWith(
