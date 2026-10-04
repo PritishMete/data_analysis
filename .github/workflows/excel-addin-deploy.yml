@@ -193,6 +193,16 @@ jobs:
           index.write_text(text.replace(marker, commit), encoding='utf-8')
           PY
 
+      - name: Generate GitHub Pages SPA fallback
+        working-directory: .
+        run: |
+          set -euo pipefail
+          # GitHub Pages serves this document for unknown deep paths. Keep the
+          # browser URL (including its fragment) intact while loading the same
+          # Flutter app and project-scoped asset base as the root document.
+          cp flutter_detail_source/build/web/index.html flutter_detail_source/build/web/404.html
+          test -s flutter_detail_source/build/web/404.html
+
       - name: Verify build contract
         working-directory: .
         run: |
