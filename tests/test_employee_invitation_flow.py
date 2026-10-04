@@ -93,9 +93,9 @@ def test_existing_confirmed_auth_account_is_not_duplicated(monkeypatch):
     suffix = uuid.uuid4().hex
     owner = _claims("existing-owner", suffix, f"owner-{suffix}@example.com")
     guest_email = f"existing-{suffix}@example.com"
+    _prepare_identity_table()
     result = register_organization(owner, f"Existing Flow {suffix}", "Main", f"EX-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
-    _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
 
     def fail_invite(email, redirect_to):
         raise RuntimeError("User already registered")
@@ -127,6 +127,7 @@ def test_invitation_acceptance_uses_persisted_organization_and_marks_password_se
     suffix = uuid.uuid4().hex
     owner = _claims("accept-owner", suffix, f"owner-{suffix}@example.com")
     guest = _claims("accept-guest", suffix, f"guest-{suffix}@example.com")
+    _prepare_identity_table()
     result = register_organization(owner, f"Accept Flow {suffix}", "Main", f"AC-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
     _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
