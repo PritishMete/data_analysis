@@ -409,6 +409,10 @@ _CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+# Always retain the production GitHub Pages origin even if the Render
+# environment variable is missing, stale, or accidentally contains a path.
+if "https://pritishmete.github.io" not in _CORS_ORIGINS:
+    _CORS_ORIGINS.append("https://pritishmete.github.io")
 
 app.add_middleware(
     CORSMiddleware,

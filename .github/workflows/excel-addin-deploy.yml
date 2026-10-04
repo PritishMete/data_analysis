@@ -12,6 +12,7 @@ on:
       - 'core/db.py'
       - 'requirements.txt'
       - 'render.yaml'
+      - 'main.py'
       - 'tools/verify_excel_deployment.py'
       - '.github/workflows/excel-addin-deploy.yml'
   workflow_dispatch:
