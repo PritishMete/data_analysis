@@ -1082,12 +1082,23 @@ def create_invitation(
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
     normalized_role = ROLE_ALIASES.get(role_id, role_id)
-    if normalized_role not in {"team_lead", "employee", "external_viewer"}:
-        raise PermissionDenied("Invitations cannot directly assign Owner or Manager access.")
+    invitation_roles = {
+        "manager", "team_lead", "employee", "external_viewer",
+        "data_analyst", "senior_data_analyst", "business_analyst",
+        "data_scientist", "data_engineer", "ml_engineer",
+        "analytics_engineer", "bi_developer", "data_architect",
+        "data_quality_analyst", "data_governance_analyst",
+    }
+    if normalized_role not in invitation_roles:
+        raise PermissionDenied("Unsupported invitation role.")
     claims = require_recent_auth(require_email_verified(verify_id_token(actor_token)))
     actor = str(claims["uid"])
     authorization(actor, workspace_id, "invitation.manage")
     workspace = _workspace(workspace_id)
+    if normalized_role == "manager" and _effective_role_level(
+        (workspace.get("members") or {}).get(actor) or {}
+    ) < ROLE_LEVELS["organization_owner"]:
+        raise PermissionDenied("Only the Organization Owner can invite a Manager.")
     if expires_at is not None and expires_at <= int(time.time() * 1000):
         raise ValueError("Invitation expiry must be in the future.")
     invitation_id = uuid.uuid4().hex
