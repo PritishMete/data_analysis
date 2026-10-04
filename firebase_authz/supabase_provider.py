@@ -18,7 +18,12 @@ from core.db import SessionLocal
 from .service import AuthzError
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
-from .supabase_admin import find_user_by_email, invite_user_by_email
+from .supabase_admin import (
+    SupabaseAdminConfigurationError,
+    SupabaseAdminOperationError,
+    find_user_by_email,
+    invite_user_by_email,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -482,8 +487,15 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     except Exception as invite_error:
         try:
             existing = find_user_by_email(email)
+        except SupabaseAdminOperationError:
+            # Keep Admin failures distinct from application authorization failures.
+            # The route converts these to a safe 503 response and the underlying
+            # sanitized Supabase exception is already logged by supabase_admin.
+            raise
+        except SupabaseAdminConfigurationError:
+            raise
         except Exception as lookup_error:
-            raise AuthzError("Employee invitation email could not be initiated. The server-side Supabase Auth Admin credential is missing or invalid.") from lookup_error
+            raise AuthzError("Employee invitation email could not be initiated. No invitation record was created.") from lookup_error
         if not existing:
             raise AuthzError("Employee invitation email could not be initiated. No invitation record was created.") from invite_error
         if not existing["email_confirmed"]:
