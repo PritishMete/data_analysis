@@ -9,3 +9,9 @@ WHERE role_id IN ('organization_owner','manager','team_lead','employee','externa
 
 CREATE INDEX IF NOT EXISTS idx_invitations_org_status ON invitations(organization_id, status);
 CREATE INDEX IF NOT EXISTS idx_invitations_email_status ON invitations(lower(email), status);
+
+ALTER TABLE invitations ADD COLUMN IF NOT EXISTS auth_user_id TEXT;
+ALTER TABLE invitations ADD COLUMN IF NOT EXISTS email_delivery_status TEXT NOT NULL DEFAULT 'not_started';
+ALTER TABLE invitations ADD COLUMN IF NOT EXISTS email_delivery_started_at TIMESTAMPTZ;
+ALTER TABLE invitations ADD COLUMN IF NOT EXISTS password_setup_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_invitations_auth_user_id ON invitations(auth_user_id);
