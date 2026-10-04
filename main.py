@@ -417,7 +417,12 @@ app.add_middleware(
     # not as a cookie. Explicit production origins are used instead of a
     # wildcard so browser responses remain readable on error responses too.
     allow_credentials=True,
-    allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
+    # Keep the production GitHub Pages origin explicit so a missing or
+    # malformed Render CORS environment variable cannot break browser fetches.
+    allow_origin_regex=(
+        r"^(?:https://pritishmete\.github\.io|"
+        r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?)$"
+    ),
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Authorization",
