@@ -50,7 +50,6 @@ class _OrganizationOnboardingScreenState
         Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
         headers: {...headers, 'Content-Type': 'application/json'},
         body: jsonEncode({
-          'workspace_id': workspaceId,
           'invitation_id': invitationId,
         }),
       );
