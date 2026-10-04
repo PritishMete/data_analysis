@@ -18,6 +18,7 @@ from core.db import SessionLocal
 from .service import AuthzError
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
+from .supabase_admin import find_user_by_email, invite_user_by_email
 
 
 logger = logging.getLogger(__name__)
@@ -444,45 +445,84 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     expiry = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc) if expires_at is not None else None
     if expiry is not None and expiry <= datetime.now(timezone.utc):
         raise ValueError("Invitation expiry must be in the future.")
+
+    with SessionLocal() as db:
+        actor = _principal_for_claims(db, claims, workspace_id)
+        if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
+            raise AuthzError("Workspace authorization denied.")
+
     invitation_id = _id("inv")
+    redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
+    if not redirect_to:
+        raise AuthzError("Employee invitation redirect is not configured.")
+
+    auth_user_id = ""
+    delivery_status = "initiated"
+    password_setup_required = True
+    try:
+        invited = invite_user_by_email(email, redirect_to)
+        auth_user_id = invited["user_id"]
+        if not auth_user_id:
+            raise RuntimeError("Supabase Auth returned no user ID.")
+    except Exception as invite_error:
+        try:
+            existing = find_user_by_email(email)
+        except Exception as lookup_error:
+            raise AuthzError("Employee invitation email could not be initiated. The server-side Supabase Auth Admin credential is missing or invalid.") from lookup_error
+        if not existing:
+            raise AuthzError("Employee invitation email could not be initiated. No invitation record was created.") from invite_error
+        if not existing["email_confirmed"]:
+            raise AuthzError("This email already has an unconfirmed Auth account. Complete its existing confirmation flow rather than creating a duplicate account.") from invite_error
+        auth_user_id = existing["user_id"]
+        delivery_status = "existing_account"
+        password_setup_required = False
+
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
         db.execute(text("""INSERT INTO invitations
             (invitation_id, organization_id, email, role_id, status,
-             expires_at, created_by_principal_id)
-            VALUES (:id,:org,:email,:role,'invited',:expires,:creator)"""),
+             expires_at, created_by_principal_id, auth_user_id,
+             email_delivery_status, email_delivery_started_at)
+            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,
+                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
-                    "role": role_id, "expires": expiry,
-                    "creator": actor["principal_id"]})
-    return {"invitation_id": invitation_id, "status": "invited"}
-
+                    "role": role_id, "expires": expiry, "creator": actor["principal_id"],
+                    "auth_user": auth_user_id, "delivery_status": delivery_status})
+    return {"invitation_id": invitation_id, "status": "invited",
+            "email_delivery_status": delivery_status,
+            "password_setup_required": password_setup_required}
 
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
     with SessionLocal() as db:
         rows = db.execute(text("""SELECT invitation_id, organization_id, email, employee_id,
-            role_id, status, expires_at FROM invitations
+            role_id, status, expires_at, auth_user_id, email_delivery_status, password_setup_at FROM invitations
             WHERE lower(email)=:email AND status='invited'
               AND (expires_at IS NULL OR expires_at > now())"""), {"email": email}).mappings().all()
     return [dict(row) for row in rows]
 
 
-def accept_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: str) -> dict[str, Any]:
+def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str) -> dict[str, Any]:
     provider, subject = _identity(claims)
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     email = str(claims.get("email") or "").strip().lower()
     with SessionLocal.begin() as db:
-        invitation = db.execute(text("""SELECT * FROM invitations
-            WHERE invitation_id=:id AND organization_id=:org FOR UPDATE"""),
-                                {"id": invitation_id, "org": workspace_id}).mappings().first()
+        invitation = db.execute(
+            text("""SELECT * FROM invitations
+                    WHERE invitation_id=:id
+                      AND (:org IS NULL OR organization_id=:org)
+                    FOR UPDATE"""),
+            {"id": invitation_id, "org": workspace_id},
+        ).mappings().first()
         if not invitation or invitation["status"] != "invited":
             raise AuthzError("Invitation is no longer active.")
         if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
+        workspace_id = str(invitation["organization_id"])
 
         identity = db.execute(
             text("""SELECT principal_id FROM identity_bindings
@@ -537,6 +577,30 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: 
             accepted_at=now() WHERE invitation_id=:id"""),
                    {"id": invitation_id, "principal": principal_id})
     return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id}
+
+
+def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -> dict[str, Any]:
+    email = str(claims.get("email") or "").strip().lower()
+    if not bool(claims.get("email_verified")):
+        raise AuthzError("Verified email is required.")
+    with SessionLocal.begin() as db:
+        invitation = db.execute(
+            text("""SELECT invitation_id, organization_id, email, status, expires_at
+                    FROM invitations WHERE invitation_id=:id FOR UPDATE"""),
+            {"id": invitation_id},
+        ).mappings().first()
+        if not invitation or invitation["status"] != "invited":
+            raise AuthzError("Invitation is no longer active.")
+        if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
+            raise AuthzError("Invitation has expired.")
+        if invitation["email"].lower() != email:
+            raise AuthzError("Invitation identity does not match the authenticated email.")
+        db.execute(
+            text("""UPDATE invitations SET password_setup_at=now()
+                    WHERE invitation_id=:id"""),
+            {"id": invitation_id},
+        )
+    return {"password_setup": True, "organization_id": str(invitation["organization_id"])}
 
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
