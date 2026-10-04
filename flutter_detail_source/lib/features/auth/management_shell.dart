@@ -297,98 +297,93 @@ class _ManagementShellState extends State<ManagementShell> {
     String role = 'employee';
     int expiryDays = 7;
 
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await GlassDialog.show<Map<String, dynamic>>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => _ManagementGlassDialog(
-          title: const Text('Invite employee'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Send an InsightFlow invitation to an email address. '
-                'The server will apply the current workspace authorization and role rules.',
-                style: TextStyle(
-                  color: TechColors.textMuted,
-                  fontSize: 12,
-                  height: 1.4,
-                ),
+      title: 'Invite employee',
+      message: '',
+      content: StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Send an InsightFlow invitation to an email address. '
+              'The server will apply the current workspace authorization and role rules.',
+              style: TextStyle(
+                color: TechColors.textMuted,
+                fontSize: 12,
+                height: 1.4,
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-                decoration: input('Employee email'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: role,
-                decoration: input('Role'),
-                items: roleOptions
-                    .map(
-                      (value) => DropdownMenuItem<String>(
-                        value: value,
-                        child: Text(_roleLabel(value)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() => role = value);
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: expiryDays,
-                decoration: input('Invitation expiry'),
-                items: const [3, 7, 14, 30]
-                    .map(
-                      (days) => DropdownMenuItem<int>(
-                        value: days,
-                        child: Text('$days days'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setDialogState(() => expiryDays = value);
-                  }
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
             ),
-            FilledButton.icon(
-              onPressed: () {
-                final email = emailController.text.trim();
-                if (email.isEmpty || !email.contains('@')) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Enter a valid employee email.')),
-                  );
-                  return;
-                }
-                Navigator.of(dialogContext).pop({
-                  'email': email,
-                  'role_id': role,
-                  'expires_at': DateTime.now()
-                      .add(Duration(days: expiryDays))
-                      .toUtc()
-                      .millisecondsSinceEpoch,
-                });
+            const SizedBox(height: 14),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              decoration: input('Employee email'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: role,
+              decoration: input('Role'),
+              items: roleOptions
+                  .map(
+                    (value) => DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(_roleLabel(value)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) setDialogState(() => role = value);
               },
-              icon: const Icon(Icons.send_outlined, size: 16),
-              label: const Text('Send invitation'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: expiryDays,
+              decoration: input('Invitation expiry'),
+              items: const [3, 7, 14, 30]
+                  .map(
+                    (days) => DropdownMenuItem<int>(
+                      value: days,
+                      child: Text('$days days'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) setDialogState(() => expiryDays = value);
+              },
             ),
           ],
         ),
       ),
+      actions: [
+        GlassDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, null),
+        ),
+        GlassDialogAction(
+          label: 'Send invitation',
+          isPrimary: true,
+          onPressed: () {
+            final email = emailController.text.trim();
+            if (email.isEmpty || !email.contains('@')) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Enter a valid employee email.')),
+              );
+              return;
+            }
+            Navigator.pop(context, {
+              'email': email,
+              'role_id': role,
+              'expires_at': DateTime.now()
+                  .add(Duration(days: expiryDays))
+                  .toUtc()
+                  .millisecondsSinceEpoch,
+            });
+          },
+        ),
+      ],
     );
 
     emailController.dispose();
@@ -435,9 +430,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final deliveryStatus =
           data is Map ? data['email_delivery_status']?.toString() : null;
       if (deliveryStatus == 'initiated') {
-        feedback(
-          StateError('Invitation email initiated successfully.'),
-        );
+        feedback(StateError('Invitation email initiated successfully.'));
       } else if (deliveryStatus == 'existing_account') {
         feedback(
           StateError(
@@ -453,7 +446,6 @@ class _ManagementShellState extends State<ManagementShell> {
       feedback(e);
     }
   }
-
   Future<void> createLocation() async {
     final name = TextEditingController(), id = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (c) => _ManagementGlassDialog(
