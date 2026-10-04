@@ -108,12 +108,16 @@ def test_existing_confirmed_auth_account_is_not_duplicated(monkeypatch):
         _cleanup(result["organization_id"])
 
 
-def test_invitation_acceptance_uses_persisted_organization_and_marks_password_setup():
+def test_invitation_acceptance_uses_persisted_organization_and_marks_password_setup(monkeypatch):
     suffix = uuid.uuid4().hex
     owner = _claims("accept-owner", suffix, f"owner-{suffix}@example.com")
     guest = _claims("accept-guest", suffix, f"guest-{suffix}@example.com")
     result = register_organization(owner, f"Accept Flow {suffix}", "Main", f"AC-{suffix}")
     workspace = result["workspace_id"]
+    monkeypatch.setattr(
+        "firebase_authz.supabase_provider.invite_user_by_email",
+        lambda email, redirect_to: {"user_id": f"auth-{email}", "email_confirmed": False},
+    )
 
     try:
         invitation = create_invitation(
