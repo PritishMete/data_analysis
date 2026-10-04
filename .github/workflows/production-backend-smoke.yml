@@ -50,6 +50,20 @@ jobs:
           test "$post_status" != "404"
           test "$post_status" = "401" || test "$post_status" = "403"
 
+          invitation_response_file="$(mktemp)"
+          invitation_headers_file="$(mktemp)"
+          invitation_status="$(curl --silent --show-error --output "$invitation_response_file" --dump-header "$invitation_headers_file"             -X OPTIONS             -H 'Origin: https://pritishmete.github.io'             -H 'Access-Control-Request-Method: POST'             -H 'Access-Control-Request-Headers: authorization,content-type'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/invitations)"
+          echo "Invitation OPTIONS status: $invitation_status"
+          cat "$invitation_headers_file"
+          echo "Invitation OPTIONS body:"
+          cat "$invitation_response_file"
+          invitation_post_status="$(curl --silent --show-error --output "$invitation_response_file"             -X POST             -H 'Content-Type: application/json'             -d '{"workspace_id":"__smoke__","email":"__smoke__@example.com","role_id":"employee"}'             -w '%{http_code}'             https://data-analysis-oajs.onrender.com/v1/authz/invitations)"
+          echo "Unauthenticated invitation POST status: $invitation_post_status"
+          echo "Invitation POST body:"
+          cat "$invitation_response_file"
+          test "$invitation_status" = "200"
+          test "$invitation_post_status" = "401" || test "$invitation_post_status" = "403"
+
       - name: Verify organization diagnostic endpoint
         run: |
           set -euo pipefail
