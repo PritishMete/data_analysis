@@ -433,7 +433,11 @@ def create_location(claims: dict[str, Any], workspace_id: str, name: str,
     with SessionLocal.begin() as db:
         actor = _actor(db, claims, workspace_id)
         permissions = _permissions(db, actor["organization_id"], actor["principal_id"])
-        if "organization.manage" not in permissions:
+        scope = _management_scope(db, actor)
+        if (
+            not scope["organization_wide"]
+            or "organization.manage" not in permissions
+        ):
             raise AuthzError("You don't have permission to create locations.")
         org = actor["organization_id"]
         duplicate = db.execute(text("""
