@@ -291,6 +291,169 @@ class _ManagementShellState extends State<ManagementShell> {
     }
   }
 
+  Future<void> _inviteEmployee() async {
+    final emailController = TextEditingController();
+    const roleOptions = <String>['employee', 'team_lead', 'external_viewer'];
+    String role = 'employee';
+    int expiryDays = 7;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => _ManagementGlassDialog(
+          title: const Text('Invite employee'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Send an InsightFlow invitation to an email address. '
+                'The server will apply the current workspace authorization and role rules.',
+                style: TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                decoration: input('Employee email'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: role,
+                decoration: input('Role'),
+                items: roleOptions
+                    .map(
+                      (value) => DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(_roleLabel(value)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => role = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: expiryDays,
+                decoration: input('Invitation expiry'),
+                items: const [3, 7, 14, 30]
+                    .map(
+                      (days) => DropdownMenuItem<int>(
+                        value: days,
+                        child: Text('$days days'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => expiryDays = value);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                final email = emailController.text.trim();
+                if (email.isEmpty || !email.contains('@')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Enter a valid employee email.')),
+                  );
+                  return;
+                }
+                Navigator.of(dialogContext).pop({
+                  'email': email,
+                  'role_id': role,
+                  'expires_at': DateTime.now()
+                      .add(Duration(days: expiryDays))
+                      .toUtc()
+                      .millisecondsSinceEpoch,
+                });
+              },
+              icon: const Icon(Icons.send_outlined, size: 16),
+              label: const Text('Send invitation'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    emailController.dispose();
+    if (result == null || !mounted) return;
+
+    if (insightFlowWorkspaceId.trim().isEmpty) {
+      feedback(
+        StateError(
+          'Workspace authorization context is unavailable. Please refresh the management workspace.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      final headers = await supabaseAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      final response = await http
+          .post(
+            Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations'),
+            headers: headers,
+            body: jsonEncode({
+              'workspace_id': insightFlowWorkspaceId,
+              'email': result['email'],
+              'role_id': result['role_id'],
+              'expires_at': result['expires_at'],
+            }),
+          )
+          .timeout(_managementRequestTimeout);
+
+      dynamic data;
+      try {
+        data = jsonDecode(response.body);
+      } catch (_) {}
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          data is Map && data['detail'] != null
+              ? data['detail'].toString()
+              : 'Employee invitation could not be sent.',
+        );
+      }
+
+      final deliveryStatus =
+          data is Map ? data['email_delivery_status']?.toString() : null;
+      if (deliveryStatus == 'initiated') {
+        feedback(
+          StateError('Invitation email initiated successfully.'),
+        );
+      } else if (deliveryStatus == 'existing_account') {
+        feedback(
+          StateError(
+            'The email already belongs to an existing confirmed account; '
+            'no duplicate Auth account was created.',
+          ),
+        );
+      } else {
+        feedback(StateError('Invitation created.'));
+      }
+      await loadAll();
+    } catch (e) {
+      feedback(e);
+    }
+  }
+
   Future<void> createLocation() async {
     final name = TextEditingController(), id = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (c) => _ManagementGlassDialog(
@@ -1855,6 +2018,15 @@ class _ManagementShellState extends State<ManagementShell> {
     ];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          onPressed: _inviteEmployee,
+          icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
+          label: const Text('Invite employee'),
+        ),
+      ),
+      const SizedBox(height: 10),
       LayoutBuilder(builder: (context, constraints) {
         final count = constraints.maxWidth >= 900 ? cards.length.clamp(1, 5)
             : constraints.maxWidth >= 560 ? 3 : 2;
