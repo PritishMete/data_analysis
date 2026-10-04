@@ -1515,7 +1515,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
     final employeeCount = backendCount('employee', people.where((p) => p['role_id'] == 'employee').length);
     final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
-    final assignedCount = people.where((p) => {
+    final assignedCount = people.where((p) {
       final loc = p['location_name']?.toString() ?? '';
       final sec = p['section_name']?.toString() ?? '';
       return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
