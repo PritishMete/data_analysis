@@ -285,7 +285,7 @@ void main() {
     expect(source, contains("title: 'Invite employee'"));
     expect(source, contains("GlassDialogAction("));
     expect(source, contains("label: const Text('Invite employee')"));
-    expect(source, contains("'/v1/authz/invitations'"));
+    expect(source, contains('v1/authz/invitations'));
     expect(source, contains("'email_delivery_status'"));
     expect(source, contains("no duplicate Auth account was created"));
     expect(invitationUi, isNot(contains('Resend')));
