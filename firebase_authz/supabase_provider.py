@@ -417,7 +417,7 @@ def _principal_for_claims(db, claims: dict[str, Any], organization_id: str | Non
         LEFT JOIN organization_members m ON m.principal_id=b.principal_id
         WHERE ((b.provider=:provider AND b.provider_subject=:subject)
                OR (b.provider='firebase' AND b.firebase_uid=:uid))
-          AND (:org IS NULL OR m.organization_id=:org)
+          AND (CAST(:org AS TEXT) IS NULL OR m.organization_id=CAST(:org AS TEXT))
           AND b.status='active'
         ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END"""),
                      {"uid": uid, "provider": provider, "subject": subject,
