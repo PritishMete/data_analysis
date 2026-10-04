@@ -178,3 +178,16 @@ def test_admin_error_sanitization_redacts_bearer_tokens():
     )
     assert "eyJheader" not in message
     assert "Bearer [REDACTED]" in message
+
+
+def test_invitation_request_rejects_client_supplied_auth_user_id():
+    from pydantic import ValidationError
+    from firebase_authz.routes import InvitationRequest
+
+    with pytest.raises(ValidationError):
+        InvitationRequest(
+            workspace_id="org_test",
+            email="employee@example.com",
+            role_id="employee",
+            auth_user_id="arbitrary-client-user",
+        )
