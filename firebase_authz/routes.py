@@ -442,13 +442,34 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
 
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
+    logger.info(
+        "invitation_acceptance_started workspace_supplied=%s",
+        bool(req.workspace_id),
+    )
     try:
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import accept_invitation as provider_accept_invitation
-            return provider_accept_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.invitation_id)
-        return accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
-    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
-    except AuthzError as exc: raise HTTPException(403, str(exc))
+            result = provider_accept_invitation(
+                verify_id_token(_token(authorization)),
+                req.workspace_id,
+                req.invitation_id,
+            )
+        else:
+            result = accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
+        logger.info("invitation_acceptance_response status_code=200")
+        return result
+    except AuthenticationRequired as exc:
+        logger.warning("invitation_acceptance_response status_code=401 error_class=%s", exc.__class__.__name__)
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        logger.warning("invitation_acceptance_response status_code=403 error_class=%s", exc.__class__.__name__)
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        logger.exception(
+            "invitation_acceptance_response status_code=500 error_class=%s",
+            exc.__class__.__name__,
+        )
+        raise HTTPException(500, "Invitation could not be activated. Please try again.")
 
 @router.post("/invitations/password-setup-complete")
 def invitation_password_setup_complete(

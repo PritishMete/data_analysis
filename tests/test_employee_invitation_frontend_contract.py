@@ -42,3 +42,10 @@ def test_pending_invitation_backend_exposes_org_name_without_user_facing_id_fall
     provider = (ROOT / "firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
     assert "o.name AS organization_name" in provider
     assert "JOIN organizations o ON o.organization_id=i.organization_id" in provider
+
+
+def test_invitation_acceptance_backend_does_not_use_nullable_sql_parameter_for_org_constraint():
+    provider = (ROOT / "firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    assert "AND (:org IS NULL OR organization_id=:org)" not in provider
+    assert "if workspace_id:" in provider
+    assert "organization_id=:org" in provider

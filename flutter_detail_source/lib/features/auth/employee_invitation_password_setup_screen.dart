@@ -67,16 +67,22 @@ class _EmployeeInvitationPasswordSetupScreenState
     });
 
     try {
+      debugPrint('invitation_lifecycle password_setup_started');
       await InsightFlowSupabaseAuthService.setPassword(
         password,
         timeout: const Duration(seconds: 10),
       );
+      debugPrint('invitation_lifecycle password_setup_response status=success');
       final session = await InsightFlowSupabaseAuthService.ensureSession(
         timeout: const Duration(seconds: 5),
       );
       if (session == null || session.accessToken.isEmpty) {
+        debugPrint('invitation_lifecycle session_available=false');
         throw StateError('Your authenticated session could not be restored.');
       }
+      final authenticatedEmail = InsightFlowSupabaseAuthService.currentUser?.email;
+      debugPrint('invitation_lifecycle session_available=true');
+      debugPrint('invitation_lifecycle authenticated_email_available=' + (authenticatedEmail?.trim().isNotEmpty == true).toString());
 
       final response = await http
           .post(
@@ -92,6 +98,7 @@ class _EmployeeInvitationPasswordSetupScreenState
             }),
           )
           .timeout(const Duration(seconds: 10));
+      debugPrint('invitation_lifecycle password_setup_response status=' + response.statusCode.toString());
       if (response.statusCode != 200) {
         dynamic decoded;
         try {
@@ -103,13 +110,12 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Password setup could not be completed.',
         );
       }
-      final workspaceId = widget.invitation['workspace_id']?.toString() ??
-          widget.invitation['organization_id']?.toString() ??
-          '';
       final invitationId = widget.invitation['invitation_id']?.toString() ?? '';
-      if (workspaceId.isEmpty || invitationId.isEmpty) {
+      if (invitationId.isEmpty) {
         throw StateError('This invitation is incomplete. Please request a new invitation.');
       }
+      debugPrint('invitation_lifecycle pending_invitation_loaded=true');
+      debugPrint('invitation_lifecycle invitation_acceptance_started');
       final acceptResponse = await http
           .post(
             Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
@@ -120,6 +126,7 @@ class _EmployeeInvitationPasswordSetupScreenState
             body: jsonEncode({'invitation_id': invitationId}),
           )
           .timeout(const Duration(seconds: 10));
+      debugPrint('invitation_lifecycle invitation_acceptance_response status=' + acceptResponse.statusCode.toString());
       dynamic acceptDecoded;
       try {
         acceptDecoded = acceptResponse.body.trim().isEmpty
@@ -133,8 +140,11 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Invitation could not be activated. Please try again.',
         );
       }
+      debugPrint('invitation_lifecycle onboarding_navigation_started');
       await widget.onCompleted().timeout(const Duration(seconds: 10));
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('invitation_lifecycle failure error_class=' + error.runtimeType.toString());
+      debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
         _busy = false;

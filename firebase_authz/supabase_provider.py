@@ -552,13 +552,28 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     email = str(claims.get("email") or "").strip().lower()
     with SessionLocal.begin() as db:
-        invitation = db.execute(
-            text("""SELECT * FROM invitations
+        # The invitation is authoritative for its organization. Only apply a
+        # caller-supplied workspace constraint when one was explicitly sent.
+        if workspace_id:
+            invitation_query = text("""SELECT * FROM invitations
                     WHERE invitation_id=:id
-                      AND (:org IS NULL OR organization_id=:org)
-                    FOR UPDATE"""),
-            {"id": invitation_id, "org": workspace_id},
+                      AND organization_id=:org
+                    FOR UPDATE""")
+            invitation_params = {"id": invitation_id, "org": workspace_id}
+        else:
+            invitation_query = text("""SELECT * FROM invitations
+                    WHERE invitation_id=:id
+                    FOR UPDATE""")
+            invitation_params = {"id": invitation_id}
+        invitation = db.execute(
+            invitation_query,
+            invitation_params,
         ).mappings().first()
+        logger.info(
+            "invitation_acceptance_lookup invitation_present=%s workspace_constraint=%s",
+            invitation is not None,
+            bool(workspace_id),
+        )
         if not invitation or invitation["status"] != "invited":
             raise AuthzError("Invitation is no longer active.")
         if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
