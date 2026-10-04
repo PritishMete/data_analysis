@@ -18,3 +18,7 @@ services:
         value: supabase
       - key: INSIGHTFLOW_AUTH_REQUIRED
         value: "true"
+      - key: INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT
+        value: https://pritishmete.github.io/data_analysis/employee-invite
+      - key: SUPABASE_SECRET_KEY
+        sync: false
