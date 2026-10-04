@@ -79,15 +79,77 @@ def _require_read(db, actor: dict[str, Any]) -> None:
         raise AuthzError("Workspace authorization denied.")
 
 
+def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the actor's authoritative organizational assignment scope."""
+    rows = db.execute(text("""
+        SELECT assignment_id, location_id, section_id, role_id
+        FROM organizational_assignments
+        WHERE organization_id=:org
+          AND principal_id=:principal
+          AND status='active'
+    """), {
+        "org": actor["organization_id"],
+        "principal": actor["principal_id"],
+    }).mappings().all()
+    if not rows:
+        return {
+            "role_id": None,
+            "location_id": None,
+            "section_id": None,
+            "organization_wide": False,
+        }
+
+    assignment = max(
+        rows,
+        key=lambda row: ROLE_LEVELS.get(str(row["role_id"]), 0),
+    )
+    role_id = str(assignment["role_id"])
+    if role_id == "organization_owner":
+        return {
+            "role_id": role_id,
+            "location_id": None,
+            "section_id": None,
+            "organization_wide": True,
+        }
+    return {
+        "role_id": role_id,
+        "location_id": assignment["location_id"],
+        "section_id": assignment["section_id"],
+        "organization_wide": False,
+    }
+
+
 def _require_location_manage(db, actor: dict[str, Any], location_id: str) -> None:
     permissions = _permissions(db, actor["organization_id"], actor["principal_id"])
-    if "organization.manage" in permissions:
+    scope = _management_scope(db, actor)
+    if scope["organization_wide"] and "organization.manage" in permissions:
         return
-    if "users.manage" in permissions and _is_org_manager(
-        db, actor["organization_id"], actor["principal_id"], location_id
-    ):
-        return
+    if scope["role_id"] == "branch_head" and "organization.manage" in permissions:
+        if scope["location_id"] and str(scope["location_id"]) == str(location_id):
+            return
+    if scope["role_id"] == "manager" and "users.manage" in permissions:
+        if (
+            scope["location_id"]
+            and str(scope["location_id"]) == str(location_id)
+            and _is_org_manager(
+                db, actor["organization_id"], actor["principal_id"], location_id
+            )
+        ):
+            return
     raise AuthzError("You don't have permission to manage this location.")
+
+
+def _read_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
+    return _management_scope(db, actor)
+
+
+def _scope_location_ids(scope: dict[str, Any], locations: list[Any]) -> list[Any]:
+    if scope["organization_wide"]:
+        return locations
+    location_id = scope.get("location_id")
+    if location_id is None:
+        return []
+    return [value for value in locations if str(value) == str(location_id)]
 
 
 def _location(db, organization_id: str, location_id: str) -> dict[str, Any]:
@@ -288,12 +350,18 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
         actor = _actor(db, claims, workspace_id)
         _require_read(db, actor)
         org = actor["organization_id"]
+        scope = _read_scope(db, actor)
         locations = db.execute(text("""
             SELECT location_id FROM locations
             WHERE organization_id=:org
             ORDER BY lower(name), location_id
         """), {"org": org}).scalars().all()
-        counts = _role_counts(db, org)
+        locations = _scope_location_ids(scope, locations)
+        counts = _role_counts(
+            db,
+            org,
+            None if scope["organization_wide"] else scope.get("location_id"),
+        )
         return {
             "organization": {
                 "organization_id": org,
@@ -303,11 +371,22 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                     {"org": org},
                 ).scalar_one(),
             },
+            "actor": {
+                "principal_id": actor["principal_id"],
+                "employee_id": actor["employee_id"],
+                "role_id": scope["role_id"],
+                "location_id": scope["location_id"],
+                "section_id": scope["section_id"],
+                "organization_wide": scope["organization_wide"],
+            },
             "summary": {
                 "location_count": len(locations),
+                "total_people": sum(counts.values()),
+                "branch_head_count": counts.get("branch_head", 0),
                 "employee_count": counts.get("employee", 0),
                 "manager_count": counts.get("manager", 0),
                 "team_lead_count": counts.get("team_lead", 0),
+                "role_counts": counts,
             },
             "locations": [_location_summary(db, org, str(location_id)) for location_id in locations],
         }
@@ -317,11 +396,13 @@ def list_locations(claims: dict[str, Any], workspace_id: str) -> list[dict[str, 
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
         _require_read(db, actor)
+        scope = _read_scope(db, actor)
         ids = db.execute(text("""
             SELECT location_id FROM locations
             WHERE organization_id=:org
             ORDER BY lower(name), location_id
         """), {"org": actor["organization_id"]}).scalars().all()
+        ids = _scope_location_ids(scope, ids)
         return [_location_summary(db, actor["organization_id"], str(location_id)) for location_id in ids]
 
 
@@ -370,6 +451,13 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
         actor = _actor(db, claims, workspace_id)
         _require_read(db, actor)
         org = actor["organization_id"]
+        scope = _read_scope(db, actor)
+        if not scope["organization_wide"] and scope.get("location_id"):
+            if location_id and str(location_id) != str(scope["location_id"]):
+                raise AuthzError("Location is outside your management scope.")
+            location_id = str(scope["location_id"])
+        if not scope["organization_wide"] and not scope.get("location_id"):
+            return []
         if location_id:
             _location(db, org, location_id)
         if location_id:
