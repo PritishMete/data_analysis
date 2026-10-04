@@ -12,6 +12,7 @@ import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'employee_profile_onboarding_screen.dart';
+import 'employee_invitation_password_setup_screen.dart';
 import 'sign_in_screen.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
@@ -402,12 +403,26 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         authenticatedChild = const ManagementShell();
         break;
       case InsightFlowOnboardingState.pendingInvitation:
-        authenticatedChild = OrganizationOnboardingScreen(
-          state: {'pending_invitations': _pendingInvitations},
-          onCompleted: () async {
-            await _refresh(showLoading: false);
-          },
+        final passwordInvitation = _pendingInvitations.firstWhere(
+          (item) => item['password_setup_at'] == null &&
+              item['email_delivery_status'] == 'initiated',
+          orElse: () => <String, dynamic>{},
         );
+        if (passwordInvitation.isNotEmpty) {
+          authenticatedChild = EmployeeInvitationPasswordSetupScreen(
+            invitation: passwordInvitation,
+            onCompleted: () async {
+              await _refresh(showLoading: false);
+            },
+          );
+        } else {
+          authenticatedChild = OrganizationOnboardingScreen(
+            state: {'pending_invitations': _pendingInvitations},
+            onCompleted: () async {
+              await _refresh(showLoading: false);
+            },
+          );
+        }
         break;
       case InsightFlowOnboardingState.noMembership:
         authenticatedChild = const CompanyRegistrationScreen();
