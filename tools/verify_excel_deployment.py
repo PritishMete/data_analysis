@@ -44,12 +44,15 @@ def _assert_build(root: Path, expected_commit: str) -> None:
     index = root / "index.html"
     bootstrap = root / "flutter_bootstrap.js"
     main_js = root / "main.dart.js"
+    fallback = root / "404.html"
 
-    for path in (index, bootstrap, main_js):
+    for path in (index, bootstrap, main_js, fallback):
         if not path.is_file():
             raise AssertionError(f"missing required build asset: {path}")
 
     index_text = index.read_text(encoding="utf-8")
+    if fallback.read_text(encoding="utf-8") != index_text:
+        raise AssertionError("404.html must match the Flutter index entry document")
     for snippet in REQUIRED_INDEX_SNIPPETS:
         if snippet not in index_text:
             raise AssertionError(f"index.html missing required Excel asset: {snippet}")
@@ -79,6 +82,18 @@ def _fetch(url: str) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
+
+def _fetch_pages_fallback(url: str) -> str:
+    from urllib.error import HTTPError
+
+    try:
+        return _fetch(url)
+    except HTTPError as exc:
+        if exc.code != 404:
+            raise
+        return exc.read().decode("utf-8", errors="replace")
+
+
 def _assert_live(base_url: str, expected_commit: str) -> None:
     base = base_url.rstrip("/") + "/"
     index_text = _fetch(base)
@@ -89,6 +104,14 @@ def _assert_live(base_url: str, expected_commit: str) -> None:
     marker = f'<meta name="detail-analysis-build-id" content="{expected_commit}">'
     if marker not in index_text:
         raise AssertionError("live taskpane is not serving the intended source commit")
+
+    invite_page = _fetch_pages_fallback(base + "employee-invite#type=invite")
+    if marker not in invite_page or '<base href="/data_analysis/">' not in invite_page:
+        raise AssertionError("direct employee-invite path is not serving the Flutter SPA fallback")
+
+    signup_page = _fetch(base + "#type=signup")
+    if marker not in signup_page:
+        raise AssertionError("root signup callback no longer serves the expected Flutter app")
 
     bootstrap = _fetch(base + "flutter_bootstrap.js")
     if "main.dart.js" not in bootstrap:
