@@ -285,6 +285,25 @@ void main() {
     expect(source, contains("title: 'Invite employee'"));
     expect(source, contains("GlassDialogAction("));
     expect(source, contains("label: const Text('Invite employee')"));
+    for (final role in [
+      'manager',
+      'team_lead',
+      'employee',
+      'data_analyst',
+      'senior_data_analyst',
+      'business_analyst',
+      'data_scientist',
+      'data_engineer',
+      'ml_engineer',
+      'analytics_engineer',
+      'bi_developer',
+      'data_architect',
+      'data_quality_analyst',
+      'data_governance_analyst',
+      'external_viewer',
+    ]) {
+      expect(source, contains("'$role'"), reason: 'Invitation role missing: $role');
+    }
     expect(source, contains('v1/authz/invitations'));
     expect(source, contains("'email_delivery_status'"));
     expect(source, contains("no duplicate Auth account was created"));
