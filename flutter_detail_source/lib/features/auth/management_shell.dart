@@ -1513,7 +1513,7 @@ class _ManagementShellState extends State<ManagementShell> {
         ? Map<String, dynamic>.from(summary['role_counts'] as Map)
         : const <String, dynamic>{};
     int backendCount(String key, int fallback) {
-      final value = roleCounts[key] ?? summary[key + '_count'];
+      final value = roleCounts[key] ?? summary['${key}_count'];
       return int.tryParse(value?.toString() ?? '') ?? fallback;
     }
     final totalPeople = int.tryParse(summary['total_people']?.toString() ?? '') ?? people.length;
@@ -1521,13 +1521,6 @@ class _ManagementShellState extends State<ManagementShell> {
     final managerCount = backendCount('manager', people.where((p) => p['role_id'] == 'manager').length);
     final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
     final employeeCount = backendCount('employee', people.where((p) => p['role_id'] == 'employee').length);
-    final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
-    final assignedCount = people.where((p) {
-      final loc = p['location_name']?.toString() ?? '';
-      final sec = p['section_name']?.toString() ?? '';
-      return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
-          sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
-    }).length;
     final filtered = people.where((p) {
       final fields = [p['full_name'], p['email'], p['employee_id'], p['role_id'],
         p['location_name'], p['section_name'], p['status']]
