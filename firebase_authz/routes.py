@@ -3,7 +3,7 @@ import os
 import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, mark_invitation_password_setup, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 
@@ -409,7 +409,12 @@ class InvitationRequest(BaseModel):
     expires_at: int | None = None
 
 class InvitationAcceptRequest(BaseModel):
-    workspace_id: str
+    model_config = ConfigDict(extra="forbid")
+    invitation_id: str
+    workspace_id: str | None = None
+
+class InvitationPasswordSetupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     invitation_id: str
 
 class MembershipStatusRequest(BaseModel):
@@ -438,6 +443,20 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
             from .supabase_provider import accept_invitation as provider_accept_invitation
             return provider_accept_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.invitation_id)
         return accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+
+@router.post("/invitations/password-setup-complete")
+def invitation_password_setup_complete(
+    req: InvitationPasswordSetupRequest,
+    authorization: str = Header(default=None),
+):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+            from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
+            return provider_mark_password_setup(claims, req.invitation_id)
+        raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
 
