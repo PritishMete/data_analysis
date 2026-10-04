@@ -76,7 +76,6 @@ def _credential_client(source: str, credential: str):
         options=ClientOptions(
             auto_refresh_token=False,
             persist_session=False,
-            detect_session_in_url=False,
         ),
     )
 
