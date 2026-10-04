@@ -458,12 +458,13 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
         if role_id == "manager":
-            is_owner = db.execute(text("""SELECT 1 FROM member_roles
+            can_invite_manager = db.execute(text("""SELECT 1 FROM member_roles
                 WHERE organization_id=:org AND principal_id=:principal
-                  AND role_id='organization_owner'"""),
+                  AND role_id IN ('organization_owner', 'branch_head')
+                LIMIT 1"""),
                 {"org": workspace_id, "principal": actor["principal_id"]}).scalar_one_or_none()
-            if is_owner is None:
-                raise AuthzError("Only the Organization Owner can invite a Manager.")
+            if can_invite_manager is None:
+                raise AuthzError("Only an Organization Owner or Branch Head can invite a Manager.")
 
     invitation_id = _id("inv")
     redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
