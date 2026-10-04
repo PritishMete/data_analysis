@@ -23,6 +23,14 @@ class SupabaseAdminConfigurationError(RuntimeError):
     """The server is missing the URL or an Admin API credential."""
 
 
+class SupabaseAdminOperationError(RuntimeError):
+    """A trusted-server Supabase Auth Admin operation failed."""
+
+
+class SupabaseAdminCredentialError(SupabaseAdminOperationError):
+    """The configured Admin credential was rejected by Supabase."""
+
+
 def _supabase_url() -> str:
     url = os.environ.get("SUPABASE_URL", "").strip()
     if url:
@@ -131,7 +139,13 @@ def _run_admin_operation(operation: str, callback: Callable[[Any], Any]):
                 candidates[index + 1][0],
             )
     assert last_error is not None
-    raise last_error
+    if _is_admin_auth_failure(last_error):
+        raise SupabaseAdminCredentialError(
+            f"Supabase Auth Admin rejected all configured credentials for {operation}."
+        ) from last_error
+    raise SupabaseAdminOperationError(
+        f"Supabase Auth Admin operation {operation} failed."
+    ) from last_error
 
 
 def invite_user_by_email(email: str, redirect_to: str) -> dict[str, Any]:
