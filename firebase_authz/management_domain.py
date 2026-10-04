@@ -543,6 +543,23 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
                 raise AuthzError("Section does not belong to the requested location.")
         clauses = ["oa.organization_id=:org"]
         params: dict[str, Any] = {"org": org}
+        scope = _read_scope(db, actor)
+        if not scope["organization_wide"]:
+            scoped_location = scope.get("location_id")
+            scoped_section = scope.get("section_id")
+            if scoped_location is None:
+                clauses.append("oa.principal_id=:scope_principal")
+                params["scope_principal"] = actor["principal_id"]
+            else:
+                if location_id and str(location_id) != str(scoped_location):
+                    raise AuthzError("Location is outside your management scope.")
+                clauses.append("oa.location_id=:scope_location")
+                params["scope_location"] = scoped_location
+                if scoped_section is not None:
+                    if section_id and str(section_id) != str(scoped_section):
+                        raise AuthzError("Section is outside your management scope.")
+                    clauses.append("oa.section_id=:scope_section")
+                    params["scope_section"] = scoped_section
         if search:
             params["search"] = f"%{search.strip()}%"
             clauses.append(
@@ -613,6 +630,19 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
         _require_read(db, actor)
+        scope = _read_scope(db, actor)
+        scope_clause = "oa.organization_id=:org"
+        params: dict[str, Any] = {"org": actor["organization_id"]}
+        if not scope["organization_wide"]:
+            if scope.get("location_id"):
+                scope_clause += " AND oa.location_id=:scope_location"
+                params["scope_location"] = scope["location_id"]
+                if scope.get("section_id"):
+                    scope_clause += " AND oa.section_id=:scope_section"
+                    params["scope_section"] = scope["section_id"]
+            else:
+                scope_clause += " AND oa.principal_id=:scope_principal"
+                params["scope_principal"] = actor["principal_id"]
         rows = db.execute(text("""
             SELECT oa.assignment_id, oa.organization_id, oa.principal_id, m.employee_id,
                    oa.location_id, l.name AS location_name, oa.role_id,
@@ -654,9 +684,9 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
             LEFT JOIN organization_members parent_member
               ON parent_member.organization_id=parent.organization_id
              AND parent_member.principal_id=parent.principal_id
-            WHERE oa.organization_id=:org
+            WHERE {scope_clause}
             ORDER BY oa.location_id, oa.section_id, oa.role_id, coalesce(lower(profile.full_name), lower(m.employee_id))
-        """), {"org": actor["organization_id"]}).mappings().all()
+        """), params).mappings().all()
         return [dict(row) for row in rows]
 
 
