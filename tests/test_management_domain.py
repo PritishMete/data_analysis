@@ -87,6 +87,7 @@ def _cleanup(*organization_ids: str) -> None:
 
 def test_management_reads_are_organization_scoped():
     from firebase_authz.management_domain import (
+        create_location,
         list_assignments,
         list_locations,
         list_people,
