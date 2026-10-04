@@ -1260,22 +1260,29 @@ class _ManagementShellState extends State<ManagementShell> {
         LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 760;
+            final actorRole = overview['actor'] is Map
+                ? overview['actor']['role_id']?.toString()
+                : null;
             final controls = Wrap(
               spacing: 8,
               runSpacing: 8,
               alignment: WrapAlignment.end,
               children: [
-                _actionChip(
-                  'CREATE LOCATION',
-                  Icons.add_location_alt_outlined,
-                  createLocation,
-                ),
-                _actionChip(
-                  'CREATE SECTION',
-                  Icons.account_tree_outlined,
-                  createSection,
-                  accent: true,
-                ),
+                if (actorRole == 'organization_owner')
+                  _actionChip(
+                    'CREATE LOCATION',
+                    Icons.add_location_alt_outlined,
+                    createLocation,
+                  ),
+                if (actorRole == 'organization_owner' ||
+                    actorRole == 'branch_head' ||
+                    actorRole == 'manager')
+                  _actionChip(
+                    'CREATE SECTION',
+                    Icons.account_tree_outlined,
+                    createSection,
+                    accent: true,
+                  ),
               ],
             );
             return compact
@@ -2049,14 +2056,17 @@ class _ManagementShellState extends State<ManagementShell> {
     ];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          onPressed: _inviteEmployee,
-          icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
-          label: const Text('Invite employee'),
+      if (overview['actor'] is Map &&
+          <String>{'organization_owner', 'branch_head', 'manager'}
+              .contains(overview['actor']['role_id']?.toString()))
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: _inviteEmployee,
+            icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
+            label: const Text('Invite employee'),
+          ),
         ),
-      ),
       const SizedBox(height: 10),
       LayoutBuilder(builder: (context, constraints) {
         final count = constraints.maxWidth >= 900 ? cards.length.clamp(1, 5)
@@ -2236,18 +2246,30 @@ class _ManagementShellState extends State<ManagementShell> {
     }
   }
 
-  Widget actions() => GlassCard(
-    margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
-    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _eyebrow('Contextual controls'), const SizedBox(height: 9),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        _actionChip('ASSIGN MANAGER', Icons.manage_accounts, () => assignManager(), accent: true),
-        _actionChip('REPLACE MANAGER', Icons.swap_horiz, () => assignManager(replace: true)),
-        _actionChip('ASSIGN TEAM LEAD', Icons.supervisor_account, assignTeamLead),
+  Widget actions() {
+    final role = overview['actor'] is Map
+        ? overview['actor']['role_id']?.toString()
+        : null;
+    final canManagePeople = role == 'organization_owner' ||
+        role == 'branch_head' ||
+        role == 'manager';
+    if (!canManagePeople) return const SizedBox.shrink();
+    final canManageManagers = role == 'organization_owner' || role == 'branch_head';
+    return GlassCard(
+      margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow('Contextual controls'), const SizedBox(height: 9),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          if (canManageManagers)
+            _actionChip('ASSIGN MANAGER', Icons.manage_accounts, () => assignManager(), accent: true),
+          if (canManageManagers)
+            _actionChip('REPLACE MANAGER', Icons.swap_horiz, () => assignManager(replace: true)),
+          _actionChip('ASSIGN TEAM LEAD', Icons.supervisor_account, assignTeamLead),
+        ]),
       ]),
-    ]),
-  );
+    );
+  }
 
   String _roleLabel(String value) {
     final normalized = value.trim().toLowerCase();
