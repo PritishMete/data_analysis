@@ -751,7 +751,7 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
             else:
                 scope_clause += " AND oa.principal_id=:scope_principal"
                 params["scope_principal"] = actor["principal_id"]
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             SELECT oa.assignment_id, oa.organization_id, oa.principal_id, m.employee_id,
                    oa.location_id, l.name AS location_name, oa.role_id,
                    oa.section_id, s.name AS section_name,
