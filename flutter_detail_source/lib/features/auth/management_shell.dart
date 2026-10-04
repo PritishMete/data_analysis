@@ -1521,6 +1521,13 @@ class _ManagementShellState extends State<ManagementShell> {
     final managerCount = backendCount('manager', people.where((p) => p['role_id'] == 'manager').length);
     final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
     final employeeCount = backendCount('employee', people.where((p) => p['role_id'] == 'employee').length);
+    final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final assignedCount = people.where((p) {
+      final loc = p['location_name']?.toString() ?? '';
+      final sec = p['section_name']?.toString() ?? '';
+      return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
+          sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
+    }).length;
     final filtered = people.where((p) {
       final fields = [p['full_name'], p['email'], p['employee_id'], p['role_id'],
         p['location_name'], p['section_name'], p['status']]
@@ -1627,6 +1634,10 @@ class _ManagementShellState extends State<ManagementShell> {
             metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined),
             const SizedBox(height: 7),
             metric('Employees', employeeCount, Icons.person_outline),
+            const SizedBox(height: 7),
+            metric('Active members', activeCount, Icons.verified_user_outlined),
+            const SizedBox(height: 7),
+            metric('Assigned', assignedCount, Icons.account_tree_outlined),
           ] else Wrap(
             spacing: 9,
             runSpacing: 9,
@@ -1636,6 +1647,8 @@ class _ManagementShellState extends State<ManagementShell> {
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Managers', managerCount, Icons.manage_accounts_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Employees', employeeCount, Icons.person_outline)),
+              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Active members', activeCount, Icons.verified_user_outlined)),
+              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Assigned', assignedCount, Icons.account_tree_outlined)),
             ],
           ),
           const SizedBox(height: 12),
