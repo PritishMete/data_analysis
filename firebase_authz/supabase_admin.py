@@ -122,10 +122,17 @@ def _run_admin_operation(operation: str, callback: Callable[[Any], Any]):
                 _sanitized_exception_message(exc),
             )
             # Only try the legacy key when the preferred secret key was
-            # explicitly rejected as an Admin credential. Do not mask
-            # email-provider, duplicate-user, validation, or transient errors.
+            # explicitly rejected as an Admin credential. Preserve Supabase's
+            # duplicate-user 422 so the invitation layer can resolve the
+            # existing Auth account; wrap every other unexpected Admin error
+            # in a safe service-operation exception.
             if not _is_admin_auth_failure(exc):
-                raise
+                message = _sanitized_exception_message(exc).lower()
+                if _status_code(exc) == 422 and "already been registered" in message:
+                    raise
+                raise SupabaseAdminOperationError(
+                    f"Supabase Auth Admin operation {operation} failed."
+                ) from exc
             if index + 1 < len(candidates):
                 logger.warning(
                     "supabase_admin_fallback operation=%s from=%s to=%s",
