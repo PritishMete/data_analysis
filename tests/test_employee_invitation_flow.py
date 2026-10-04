@@ -27,6 +27,30 @@ def _claims(prefix: str, suffix: str, email: str) -> dict:
     }
 
 
+def _prepare_identity_binding(claims: dict, principal_id: str) -> None:
+    with SessionLocal.begin() as db:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS identity_bindings (
+                provider TEXT NOT NULL,
+                provider_subject TEXT NOT NULL,
+                firebase_uid TEXT,
+                principal_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active'
+            )
+        """))
+        db.execute(
+            text("""INSERT INTO identity_bindings
+                    (provider, provider_subject, firebase_uid, principal_id, status)
+                    VALUES (:provider, :subject, :uid, :principal, 'active')"""),
+            {
+                "provider": "password",
+                "subject": claims["uid"],
+                "uid": claims["uid"],
+                "principal": principal_id,
+            },
+        )
+
+
 def _cleanup(organization_id: str) -> None:
     with SessionLocal.begin() as db:
         db.execute(
@@ -41,6 +65,7 @@ def test_employee_invitation_calls_supabase_auth_and_records_delivery(monkeypatc
     guest_email = f"employee-{suffix}@example.com"
     result = register_organization(owner, f"Invite Flow {suffix}", "Main", f"INV-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
+    _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
 
     calls = []
 
@@ -81,6 +106,7 @@ def test_existing_confirmed_auth_account_is_not_duplicated(monkeypatch):
     guest_email = f"existing-{suffix}@example.com"
     result = register_organization(owner, f"Existing Flow {suffix}", "Main", f"EX-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
+    _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
 
     def fail_invite(email, redirect_to):
         raise RuntimeError("User already registered")
@@ -114,6 +140,7 @@ def test_invitation_acceptance_uses_persisted_organization_and_marks_password_se
     guest = _claims("accept-guest", suffix, f"guest-{suffix}@example.com")
     result = register_organization(owner, f"Accept Flow {suffix}", "Main", f"AC-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
+    _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
     monkeypatch.setattr(
         "firebase_authz.supabase_provider.invite_user_by_email",
         lambda email, redirect_to: {"user_id": f"auth-{email}", "email_confirmed": False},
