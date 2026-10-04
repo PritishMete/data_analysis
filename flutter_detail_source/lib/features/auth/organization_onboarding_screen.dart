@@ -45,13 +45,13 @@ class _OrganizationOnboardingScreenState
         throw StateError('Your authentication session could not be restored.');
       }
       final headers = await supabaseAuthHeaders();
-      final response = await http.post(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'invitation_id': invitationId,
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
+            headers: {...headers, 'Content-Type': 'application/json'},
+            body: jsonEncode({'invitation_id': invitationId}),
+          )
+          .timeout(const Duration(seconds: 10));
       final decoded = response.body.trim().isEmpty
           ? <String, dynamic>{}
           : jsonDecode(response.body);
@@ -66,15 +66,19 @@ class _OrganizationOnboardingScreenState
       if (uid != null) {
         await setInsightFlowWorkspaceId(uid, workspaceId);
       }
-      await widget.onCompleted();
+      await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _busy = false;
         _message = error is StateError
             ? error.message.toString()
-            : 'Invitation could not be accepted.';
+            : error is TimeoutException
+                ? 'Invitation activation took too long. Please retry.'
+                : 'Invitation could not be accepted. Please retry.';
       });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -88,10 +92,8 @@ class _OrganizationOnboardingScreenState
         : <Map<String, dynamic>>[];
 
     final primary = invitations.isNotEmpty ? invitations.first : null;
-    final organization =
-        primary?['organization_name']?.toString() ??
-        primary?['organization_id']?.toString() ??
-        'your organization';
+    final organization = primary?['organization_name']?.toString().trim() ?? '';
+    final displayOrganization = organization.isEmpty ? 'your organization' : organization;
     final role = primary?['role_id']?.toString() ?? 'assigned role';
     final employeeId = primary?['employee_id']?.toString();
 
@@ -101,7 +103,7 @@ class _OrganizationOnboardingScreenState
       children: [
         if (primary != null) ...[
           AuthGlassMessage(
-            text: "You have an active invitation to $organization. Role: $role"
+            text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access the organization workspace. Role: $role"
                 "${employeeId == null ? '' : ' · Employee ID: $employeeId'}",
           ),          const SizedBox(height: 14),
           GlassButton.custom(

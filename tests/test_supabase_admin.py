@@ -191,3 +191,25 @@ def test_invitation_request_rejects_client_supplied_auth_user_id():
             role_id="employee",
             auth_user_id="arbitrary-client-user",
         )
+
+
+
+def test_invite_user_by_email_passes_organization_name_to_supabase_template_data():
+    class FakeAdmin:
+        def __init__(self):
+            self.options = None
+
+        def invite_user_by_email(self, email, options):
+            self.options = options
+            return type("Response", (), {"user": type("User", (), {"id": "user-1", "email_confirmed_at": None})()})()
+
+    fake = FakeAdmin()
+    with patch.object(supabase_admin, "_run_admin_operation", side_effect=lambda operation, callback: callback(type("Client", (), {"auth": type("Auth", (), {"admin": fake})()})())):
+        result = supabase_admin.invite_user_by_email(
+            "employee@example.com",
+            "https://example.com/invite",
+            organization_name="Acme Analytics",
+        )
+    assert result["user_id"] == "user-1"
+    assert fake.options["data"]["organization_name"] == "Acme Analytics"
+    assert fake.options["redirect_to"] == "https://example.com/invite"

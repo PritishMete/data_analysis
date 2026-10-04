@@ -155,12 +155,22 @@ def _run_admin_operation(operation: str, callback: Callable[[Any], Any]):
     )
 
 
-def invite_user_by_email(email: str, redirect_to: str) -> dict[str, Any]:
+def invite_user_by_email(
+    email: str,
+    redirect_to: str,
+    *,
+    organization_name: str,
+) -> dict[str, Any]:
     response = _run_admin_operation(
         "invite_user_by_email",
         lambda client: client.auth.admin.invite_user_by_email(
             email,
-            options={"redirect_to": redirect_to},
+            options={
+                "redirect_to": redirect_to,
+                "data": {
+                    "organization_name": organization_name.strip(),
+                },
+            },
         ),
     )
     user = getattr(response, "user", None)

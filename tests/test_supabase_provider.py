@@ -206,7 +206,9 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, guest["email"], "employee")
-        assert pending_invitations(guest)[0]["invitation_id"] == invitation["invitation_id"]
+        pending = pending_invitations(guest)
+        assert pending[0]["invitation_id"] == invitation["invitation_id"]
+        assert pending[0]["organization_name"] == "Invitation Test"
         accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
         assert accepted["accepted"] is True
         with SessionLocal() as db:

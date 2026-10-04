@@ -463,6 +463,13 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
+        organization_name = db.execute(
+            text("SELECT name FROM organizations WHERE organization_id=:org"),
+            {"org": workspace_id},
+        ).scalar_one_or_none()
+        if not organization_name:
+            raise AuthzError("Organization could not be resolved for this workspace.")
+        organization_name = str(organization_name).strip()
         if role_id == "manager":
             can_invite_manager = db.execute(text("""SELECT 1 FROM member_roles
                 WHERE organization_id=:org AND principal_id=:principal
@@ -481,7 +488,7 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     delivery_status = "initiated"
     password_setup_required = True
     try:
-        invited = invite_user_by_email(email, redirect_to)
+        invited = invite_user_by_email(email, redirect_to, organization_name=organization_name)
         auth_user_id = invited["user_id"]
         if not auth_user_id:
             raise SupabaseAdminOperationError("Supabase Auth did not return an invited user ID.")
@@ -532,9 +539,10 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
     with SessionLocal() as db:
-        rows = db.execute(text("""SELECT invitation_id, organization_id, email, employee_id,
-            role_id, status, expires_at, auth_user_id, email_delivery_status, password_setup_at FROM invitations
-            WHERE lower(email)=:email AND status='invited'
+        rows = db.execute(text("""SELECT i.invitation_id, i.organization_id, o.name AS organization_name, i.email, i.employee_id,
+            i.role_id, i.status, i.expires_at, i.auth_user_id, i.email_delivery_status, i.password_setup_at FROM invitations i
+            JOIN organizations o ON o.organization_id=i.organization_id
+            WHERE lower(i.email)=:email AND i.status='invited'
               AND (expires_at IS NULL OR expires_at > now())"""), {"email": email}).mappings().all()
     return [dict(row) for row in rows]
 

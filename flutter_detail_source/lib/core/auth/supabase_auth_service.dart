@@ -160,8 +160,13 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithPassword(email: email, password: password);
   }
 
-  static Future<void> setPassword(String password) async {
-    await client.auth.updateUser(UserAttributes(password: password));
+  static Future<void> setPassword(
+    String password, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    await client.auth
+        .updateUser(UserAttributes(password: password))
+        .timeout(timeout);
   }
 
   static Future<AuthResponse> signUp({

@@ -65,24 +65,31 @@ class _EmployeeInvitationPasswordSetupScreenState
     });
 
     try {
-      await InsightFlowSupabaseAuthService.setPassword(password);
-      final session = await InsightFlowSupabaseAuthService.ensureSession();
+      await InsightFlowSupabaseAuthService.setPassword(
+        password,
+        timeout: const Duration(seconds: 10),
+      );
+      final session = await InsightFlowSupabaseAuthService.ensureSession(
+        timeout: const Duration(seconds: 5),
+      );
       if (session == null || session.accessToken.isEmpty) {
         throw StateError('Your authenticated session could not be restored.');
       }
 
-      final response = await http.post(
-        Uri.parse(
-          '$insightFlowBackendBaseUrl/v1/authz/invitations/password-setup-complete',
-        ),
+      final response = await http
+          .post(
+            Uri.parse(
+              '$insightFlowBackendBaseUrl/v1/authz/invitations/password-setup-complete',
+            ),
         headers: {
           ...await supabaseAuthHeaders(),
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'invitation_id': widget.invitation['invitation_id']?.toString() ?? '',
-        }),
-      );
+            body: jsonEncode({
+              'invitation_id': widget.invitation['invitation_id']?.toString() ?? '',
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) {
         dynamic decoded;
         try {
@@ -94,7 +101,37 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Password setup could not be completed.',
         );
       }
-      await widget.onCompleted();
+      final workspaceId = widget.invitation['workspace_id']?.toString() ??
+          widget.invitation['organization_id']?.toString() ??
+          '';
+      final invitationId = widget.invitation['invitation_id']?.toString() ?? '';
+      if (workspaceId.isEmpty || invitationId.isEmpty) {
+        throw StateError('This invitation is incomplete. Please request a new invitation.');
+      }
+      final acceptResponse = await http
+          .post(
+            Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
+            headers: {
+              ...await supabaseAuthHeaders(),
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'invitation_id': invitationId}),
+          )
+          .timeout(const Duration(seconds: 10));
+      dynamic acceptDecoded;
+      try {
+        acceptDecoded = acceptResponse.body.trim().isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(acceptResponse.body);
+      } catch (_) {}
+      if (acceptResponse.statusCode != 200) {
+        throw StateError(
+          acceptDecoded is Map && acceptDecoded['detail'] != null
+              ? acceptDecoded['detail'].toString()
+              : 'Invitation could not be activated. Please try again.',
+        );
+      }
+      await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -102,16 +139,19 @@ class _EmployeeInvitationPasswordSetupScreenState
         _error = true;
         _message = error is StateError
             ? error.message.toString()
-            : error.toString().replaceFirst('Exception: ', '');
+            : error is TimeoutException
+                ? 'The invitation setup took too long. Please retry.'
+                : 'Invitation setup could not be completed. Please retry.';
       });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final organization = widget.invitation['organization_name']?.toString() ??
-        widget.invitation['organization_id']?.toString() ??
-        'your organization';
+    final organization = widget.invitation['organization_name']?.toString().trim() ?? '';
+    final displayOrganization = organization.isEmpty ? 'your organization' : organization;
     final role = widget.invitation['role_id']?.toString() ?? 'employee';
 
     return AuthGlassScaffold(
@@ -119,7 +159,7 @@ class _EmployeeInvitationPasswordSetupScreenState
       subtitle: 'Secure your invited InsightFlow account.',
       children: [
         AuthGlassMessage(
-          text: 'You are invited to join $organization as ${role.replaceAll('_', ' ')}. Your email is verified through Supabase Auth.',
+          text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access your organization workspace as ${role.replaceAll('_', ' ')}. Your email is verified through Supabase Auth.",
           error: false,
         ),
         const SizedBox(height: 14),
