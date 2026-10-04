@@ -97,8 +97,8 @@ def _is_admin_auth_failure(exc: Exception) -> bool:
 def _sanitized_exception_message(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     # Never allow credentials or bearer tokens to enter server logs.
-    message = re.sub(r"(?i)bearer\\s+[^\\s,;]+", "Bearer [REDACTED]", message)
-    message = re.sub(r"(?i)(sb_secret|sb_publishable)_[A-Za-z0-9_-]+", r"\\1_[REDACTED]", message)
+    message = re.sub(r"(?i)bearer\s+[^\s,;]+", "Bearer [REDACTED]", message)
+    message = re.sub(r"(?i)(sb_secret|sb_publishable)_[A-Za-z0-9_-]+", r"\1_[REDACTED]", message)
     message = re.sub(r"(?i)eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[JWT_REDACTED]", message)
     return message[:1000]
 
@@ -124,22 +124,28 @@ def _run_admin_operation(operation: str, callback: Callable[[Any], Any]):
             # Only try the legacy key when the preferred secret key was
             # explicitly rejected as an Admin credential. Do not mask
             # email-provider, duplicate-user, validation, or transient errors.
-            if index + 1 >= len(candidates) or not _is_admin_auth_failure(exc):
+            if not _is_admin_auth_failure(exc):
                 raise
-            logger.warning(
-                "supabase_admin_fallback operation=%s from=%s to=%s",
-                operation,
-                source,
-                candidates[index + 1][0],
-            )
-    assert last_error is not None
-    if _is_admin_auth_failure(last_error):
+            if index + 1 < len(candidates):
+                logger.warning(
+                    "supabase_admin_fallback operation=%s from=%s to=%s",
+                    operation,
+                    source,
+                    candidates[index + 1][0],
+                )
+                continue
+            break
+    if last_error is not None and _is_admin_auth_failure(last_error):
         raise SupabaseAdminCredentialError(
             f"Supabase Auth Admin rejected all configured credentials for {operation}."
         ) from last_error
+    if last_error is not None:
+        raise SupabaseAdminOperationError(
+            f"Supabase Auth Admin operation {operation} failed."
+        ) from last_error
     raise SupabaseAdminOperationError(
         f"Supabase Auth Admin operation {operation} failed."
-    ) from last_error
+    )
 
 
 def invite_user_by_email(email: str, redirect_to: str) -> dict[str, Any]:
@@ -165,31 +171,102 @@ def invite_user_by_email(email: str, redirect_to: str) -> dict[str, Any]:
     }
 
 
+def is_existing_auth_user_error(exc: Exception) -> bool:
+    """Return True only for Supabase's duplicate Auth-user condition."""
+    status = _status_code(exc)
+    message = _sanitized_exception_message(exc).lower()
+    return status == 422 and "already been registered" in message
+
+
+def _response_value(response: Any, name: str, default: Any = None) -> Any:
+    value = getattr(response, name, None)
+    if value is not None:
+        return value
+    if isinstance(response, dict):
+        if name in response:
+            return response[name]
+        data = response.get("data")
+        if isinstance(data, dict) and name in data:
+            return data[name]
+    data = getattr(response, "data", None)
+    if data is not None:
+        value = getattr(data, name, None)
+        if value is not None:
+            return value
+    return default
+
+
+def _user_field(user: Any, name: str) -> Any:
+    value = getattr(user, name, None)
+    if value is not None:
+        return value
+    if isinstance(user, dict):
+        return user.get(name)
+    return None
+
+
+def _next_user_page(response: Any, page: int, user_count: int) -> int | None:
+    next_page = _response_value(response, "next_page")
+    if next_page is None:
+        next_page = _response_value(response, "nextPage")
+    if next_page is not None:
+        try:
+            next_page = int(next_page)
+        except (TypeError, ValueError):
+            next_page = None
+        if next_page and next_page > page:
+            return next_page
+        return None
+
+    last_page = _response_value(response, "last_page")
+    if last_page is None:
+        last_page = _response_value(response, "lastPage")
+    if last_page is not None:
+        try:
+            return page + 1 if page < int(last_page) else None
+        except (TypeError, ValueError):
+            pass
+
+    total = _response_value(response, "total")
+    if total is not None:
+        try:
+            return page + 1 if page * 1000 < int(total) else None
+        except (TypeError, ValueError):
+            pass
+
+    return page + 1 if user_count >= 1000 else None
+
+
 def find_user_by_email(email: str) -> dict[str, Any] | None:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return None
+
     page = 1
     while True:
         response = _run_admin_operation(
             "list_users",
-            lambda client, page=page: client.auth.admin.list_users(page=page, per_page=1000),
+            lambda client, page=page: client.auth.admin.list_users(
+                page=page,
+                per_page=1000,
+            ),
         )
-        users = getattr(response, "users", None)
-        if users is None and isinstance(response, dict):
-            users = response.get("users")
-        users = users or []
+        users = _response_value(response, "users", []) or []
         for user in users:
-            value = getattr(user, "email", None)
-            if value is None and isinstance(user, dict):
-                value = user.get("email")
-            if str(value or "").strip().lower() != email:
+            value = _user_field(user, "email")
+            if str(value or "").strip().lower() != normalized_email:
                 continue
-            user_id = getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else None)
-            confirmed = getattr(user, "email_confirmed_at", None)
-            if confirmed is None and isinstance(user, dict):
-                confirmed = user.get("email_confirmed_at")
+            user_id = _user_field(user, "id")
+            confirmed = _user_field(user, "email_confirmed_at")
+            user_id = str(user_id or "").strip()
+            if not user_id:
+                return None
             return {
-                "user_id": str(user_id or "").strip(),
+                "user_id": user_id,
                 "email_confirmed": confirmed is not None,
             }
-        if len(users) < 1000:
+
+        next_page = _next_user_page(response, page, len(users))
+        if next_page is None:
             return None
-        page += 1
+        page = next_page
