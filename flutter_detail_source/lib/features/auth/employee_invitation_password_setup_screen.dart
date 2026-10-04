@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
@@ -103,7 +102,7 @@ class _EmployeeInvitationPasswordSetupScreenState
         _error = true;
         _message = error is StateError
             ? error.message.toString()
-            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+            : error.toString().replaceFirst('Exception: ', '');
       });
     }
   }
