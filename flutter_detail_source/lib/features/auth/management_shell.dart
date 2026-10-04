@@ -293,7 +293,23 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> _inviteEmployee() async {
     final emailController = TextEditingController();
-    const roleOptions = <String>['employee', 'team_lead', 'external_viewer'];
+    const roleOptions = <String>[
+      'manager',
+      'team_lead',
+      'employee',
+      'data_analyst',
+      'senior_data_analyst',
+      'business_analyst',
+      'data_scientist',
+      'data_engineer',
+      'ml_engineer',
+      'analytics_engineer',
+      'bi_developer',
+      'data_architect',
+      'data_quality_analyst',
+      'data_governance_analyst',
+      'external_viewer',
+    ];
     String role = 'employee';
     int expiryDays = 7;
 
