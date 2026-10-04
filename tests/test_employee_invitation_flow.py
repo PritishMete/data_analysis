@@ -27,7 +27,7 @@ def _claims(prefix: str, suffix: str, email: str) -> dict:
     }
 
 
-def _prepare_identity_binding(claims: dict, principal_id: str) -> None:
+def _prepare_identity_table() -> None:
     with SessionLocal.begin() as db:
         db.execute(text("""
             CREATE TABLE IF NOT EXISTS identity_bindings (
@@ -38,17 +38,6 @@ def _prepare_identity_binding(claims: dict, principal_id: str) -> None:
                 status TEXT NOT NULL DEFAULT 'active'
             )
         """))
-        db.execute(
-            text("""INSERT INTO identity_bindings
-                    (provider, provider_subject, firebase_uid, principal_id, status)
-                    VALUES (:provider, :subject, :uid, :principal, 'active')"""),
-            {
-                "provider": "password",
-                "subject": claims["uid"],
-                "uid": claims["uid"],
-                "principal": principal_id,
-            },
-        )
 
 
 def _cleanup(organization_id: str) -> None:
@@ -63,9 +52,9 @@ def test_employee_invitation_calls_supabase_auth_and_records_delivery(monkeypatc
     suffix = uuid.uuid4().hex
     owner = _claims("employee-invite-owner", suffix, f"owner-{suffix}@example.com")
     guest_email = f"employee-{suffix}@example.com"
+    _prepare_identity_table()
     result = register_organization(owner, f"Invite Flow {suffix}", "Main", f"INV-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="IN-WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
-    _prepare_identity_binding(owner, result["branch_head"]["principal_id"])
 
     calls = []
 
