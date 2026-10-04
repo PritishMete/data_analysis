@@ -23,6 +23,7 @@ from .supabase_admin import (
     SupabaseAdminOperationError,
     find_user_by_email,
     invite_user_by_email,
+    is_existing_auth_user_error,
 )
 
 
@@ -483,24 +484,31 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         invited = invite_user_by_email(email, redirect_to)
         auth_user_id = invited["user_id"]
         if not auth_user_id:
-            raise RuntimeError("Supabase Auth returned no user ID.")
+            raise SupabaseAdminOperationError("Supabase Auth did not return an invited user ID.")
     except Exception as invite_error:
+        if not is_existing_auth_user_error(invite_error):
+            raise
         try:
             existing = find_user_by_email(email)
-        except SupabaseAdminOperationError:
-            # Keep Admin failures distinct from application authorization failures.
-            # The route converts these to a safe 503 response and the underlying
-            # sanitized Supabase exception is already logged by supabase_admin.
-            raise
-        except SupabaseAdminConfigurationError:
+        except (SupabaseAdminConfigurationError, SupabaseAdminOperationError):
+            # Keep trusted Admin failures distinct from application authorization
+            # failures. The route converts these to a safe 503 response.
             raise
         except Exception as lookup_error:
-            raise AuthzError("Employee invitation email could not be initiated. No invitation record was created.") from lookup_error
-        if not existing:
-            raise AuthzError("Employee invitation email could not be initiated. No invitation record was created.") from invite_error
-        if not existing["email_confirmed"]:
-            raise AuthzError("This email already has an unconfirmed Auth account. Complete its existing confirmation flow rather than creating a duplicate account.") from invite_error
-        auth_user_id = existing["user_id"]
+            raise SupabaseAdminOperationError(
+                "Supabase Auth existing-user lookup failed."
+            ) from lookup_error
+        if not existing or existing.get("user_id") is None:
+            raise SupabaseAdminOperationError(
+                "Supabase Auth reported an existing user, but the trusted lookup "
+                "did not return that exact email."
+            ) from invite_error
+        if not existing.get("email_confirmed"):
+            raise AuthzError(
+                "This email already has an unconfirmed Auth account. "
+                "Complete its existing confirmation flow before accepting an employee invitation."
+            ) from invite_error
+        auth_user_id = str(existing["user_id"]).strip()
         delivery_status = "existing_account"
         password_setup_required = False
 
