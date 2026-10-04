@@ -557,6 +557,9 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
+        invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
+        if invited_auth_user_id and invited_auth_user_id != uid:
+            raise AuthzError("Invitation identity does not match the authenticated account.")
         workspace_id = str(invitation["organization_id"])
 
         identity = db.execute(
