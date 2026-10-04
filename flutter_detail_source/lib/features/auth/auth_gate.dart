@@ -15,6 +15,7 @@ import 'employee_profile_onboarding_screen.dart';
 import 'employee_invitation_password_setup_screen.dart';
 import 'sign_in_screen.dart';
 import '../../widgets/insightflow_floating_brand.dart';
+import '../dashboard/data_screen.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -228,6 +229,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   InsightFlowOnboardingState _onboardingState =
       InsightFlowOnboardingState.initializing;
   List<Map<String, dynamic>> _pendingInvitations = const [];
+  List<String> _roleIds = const [];
 
   @override
   void initState() {
@@ -320,6 +322,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         _workspaceLookupFailed = false;
         _onboardingState = resolved.state;
         _pendingInvitations = resolved.pendingInvitations;
+        _roleIds = resolved.roleIds;
       });
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -400,7 +403,16 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
         break;
       case InsightFlowOnboardingState.activeMember:
-        authenticatedChild = const ManagementShell();
+        final managementRoles = {
+          'organization_owner',
+          'branch_head',
+          'manager',
+        };
+        final isManagementUser =
+            _roleIds.any((role) => managementRoles.contains(role));
+        authenticatedChild = isManagementUser
+            ? const ManagementShell()
+            : const DataScreen();
         break;
       case InsightFlowOnboardingState.pendingInvitation:
         final passwordInvitation = _pendingInvitations.firstWhere(
