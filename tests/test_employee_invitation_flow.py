@@ -39,7 +39,7 @@ def test_employee_invitation_calls_supabase_auth_and_records_delivery(monkeypatc
     suffix = uuid.uuid4().hex
     owner = _claims("employee-invite-owner", suffix, f"owner-{suffix}@example.com")
     guest_email = f"employee-{suffix}@example.com"
-    result = register_organization(owner, f"Invite Flow {suffix}", "Main", f"INV-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
+    result = register_organization(owner, f"Invite Flow {suffix}", "Main", f"INV-{suffix}", full_name="Test Owner", phone="+919876543210", address_line1="1 Test Street", state="West Bengal", postal_code="700001", country="India", country_code="IN", state_code="WB", id_proof_type="passport", id_proof_number=f"P{suffix[:8]}")
     workspace = result["workspace_id"]
 
     calls = []
