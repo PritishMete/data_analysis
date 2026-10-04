@@ -132,6 +132,101 @@ def test_management_reads_are_organization_scoped():
         _cleanup(a["organization_id"], b["organization_id"])
 
 
+
+def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplied():
+    from firebase_authz.management_domain import (
+        list_assignments,
+        list_locations,
+        list_people,
+        list_sections,
+        management_overview,
+    )
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"branch-head-scope-{suffix}"
+    branch_employee_uid = f"branch-employee-{suffix}"
+    other_employee_uid = f"other-employee-{suffix}"
+    org = _seed_org(owner_uid, "Branch Head Scope", f"BRANCH-SCOPE-{suffix}")
+    try:
+        owner = _claims(owner_uid)
+        with SessionLocal.begin() as session:
+            branch_employee = _add_member(
+                session, org["organization_id"], branch_employee_uid, "EMP-BRANCH"
+            )
+            other_employee = _add_member(
+                session, org["organization_id"], other_employee_uid, "EMP-OTHER"
+            )
+        second = create_location(
+            owner,
+            org["workspace_id"],
+            "Other Branch",
+            f"OTHER-{suffix}",
+        )
+
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("""
+                    INSERT INTO organizational_assignments
+                      (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
+                """),
+                {
+                    "assignment": f"asg_branch_{uuid.uuid4().hex}",
+                    "org": org["organization_id"],
+                    "principal": branch_employee,
+                    "location": org["location_id"],
+                },
+            )
+            session.execute(
+                text("""
+                    INSERT INTO organizational_assignments
+                      (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
+                """),
+                {
+                    "assignment": f"asg_other_{uuid.uuid4().hex}",
+                    "org": org["organization_id"],
+                    "principal": other_employee,
+                    "location": second["location_id"],
+                },
+            )
+
+        overview = management_overview(owner, org["workspace_id"])
+        assert overview["actor"]["role_id"] == "branch_head"
+        assert overview["actor"]["location_id"] == org["location_id"]
+        assert overview["summary"]["location_count"] == 1
+        assert overview["summary"]["total_people"] == 2
+        assert overview["summary"]["branch_head_count"] == 1
+        assert overview["summary"]["employee_count"] == 1
+        assert {item["location_id"] for item in overview["locations"]} == {org["location_id"]}
+
+        locations = list_locations(owner, org["workspace_id"])
+        assert [item["location_id"] for item in locations] == [org["location_id"]]
+
+        sections = list_sections(owner, org["workspace_id"])
+        assert all(item["location_id"] == org["location_id"] for item in sections)
+
+        people = list_people(owner, org["workspace_id"])
+        assert people
+        assert all(item["organization_id"] == org["organization_id"] for item in people)
+        assert all(item["location_id"] == org["location_id"] for item in people)
+        assert {item["employee_id"] for item in people} == {
+            org["employee_id"],
+            "EMP-BRANCH",
+        }
+
+        assignments = list_assignments(owner, org["workspace_id"])
+        assert assignments
+        assert all(item["organization_id"] == org["organization_id"] for item in assignments)
+        assert all(item["location_id"] == org["location_id"] for item in assignments)
+        assert {item["employee_id"] for item in assignments} == {
+            org["employee_id"],
+            "EMP-BRANCH",
+        }
+    finally:
+        _cleanup(org["organization_id"])
+
+
 def test_manager_assignment_conflict_replacement_and_audit_are_atomic():
     from firebase_authz.management_domain import assign_manager, replace_manager, list_audit_events
     from firebase_authz.service import AuthzError
