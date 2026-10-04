@@ -98,3 +98,83 @@ class SupabaseAdminCredentialTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class _ListUser:
+    def __init__(self, user_id, email, confirmed=True):
+        self.id = user_id
+        self.email = email
+        self.email_confirmed_at = "2026-01-01T00:00:00Z" if confirmed else None
+
+
+class _ListResponse:
+    def __init__(self, users, **metadata):
+        self.users = users
+        for key, value in metadata.items():
+            setattr(self, key, value)
+
+
+def test_find_user_by_email_supports_sdk_response_and_pagination():
+    responses = iter(
+        [
+            _ListResponse([_ListUser("other", "other@example.com")], total=2),
+            _ListResponse([_ListUser("target", "TARGET@example.com")], total=2),
+        ]
+    )
+    with patch.object(
+        supabase_admin,
+        "_run_admin_operation",
+        side_effect=lambda operation, callback: next(responses),
+    ):
+        assert supabase_admin.find_user_by_email(" target@example.com ") == {
+            "user_id": "target",
+            "email_confirmed": True,
+        }
+
+
+def test_find_user_by_email_supports_nested_data_response():
+    response = {
+        "data": {
+            "users": [
+                {
+                    "id": "nested-user",
+                    "email": "nested@example.com",
+                    "email_confirmed_at": None,
+                }
+            ]
+        }
+    }
+    with patch.object(
+        supabase_admin,
+        "_run_admin_operation",
+        side_effect=lambda operation, callback: response,
+    ):
+        assert supabase_admin.find_user_by_email("nested@example.com") == {
+            "user_id": "nested-user",
+            "email_confirmed": False,
+        }
+
+
+def test_existing_auth_user_error_only_matches_duplicate_422():
+    assert supabase_admin.is_existing_auth_user_error(
+        _AdminServerError("A user with this email address has already been registered")
+    ) is False
+
+    class Duplicate(Exception):
+        status_code = 422
+
+    assert supabase_admin.is_existing_auth_user_error(
+        Duplicate("A user with this email address has already been registered")
+    )
+    assert not supabase_admin.is_existing_auth_user_error(
+        Duplicate("Invalid invitation request")
+    )
+
+
+def test_admin_error_sanitization_redacts_bearer_tokens():
+    message = supabase_admin._sanitized_exception_message(
+        Exception("Bearer eyJheader.payload.signature")
+    )
+    assert "eyJheader" not in message
+    assert "Bearer [REDACTED]" in message
