@@ -280,7 +280,7 @@ void main() {
     expect(invitationUi, contains('_showInvitationDetails(item)'));
     expect(invitationUi, contains('Search invitations'));
     expect(invitationUi, contains('Clear filters'));
-    expect(source, contains('void _inviteEmployee() async'));
+    expect(source, contains('Future<void> _inviteEmployee() async'));
     expect(source, contains('GlassDialog.show<Map<String, dynamic>>'));
     expect(source, contains("title: 'Invite employee'"));
     expect(source, contains("GlassDialogAction("));
