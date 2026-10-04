@@ -440,8 +440,15 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
     role_id = {"owner": "organization_owner", "analyst": "employee", "viewer": "external_viewer"}.get(role_id, role_id)
-    if role_id not in {"team_lead", "employee", "external_viewer"}:
-        raise AuthzError("Invitations cannot directly assign Owner or Manager access.")
+    invitation_roles = {
+        "manager", "team_lead", "employee", "external_viewer",
+        "data_analyst", "senior_data_analyst", "business_analyst",
+        "data_scientist", "data_engineer", "ml_engineer",
+        "analytics_engineer", "bi_developer", "data_architect",
+        "data_quality_analyst", "data_governance_analyst",
+    }
+    if role_id not in invitation_roles:
+        raise AuthzError("Unsupported invitation role.")
     expiry = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc) if expires_at is not None else None
     if expiry is not None and expiry <= datetime.now(timezone.utc):
         raise ValueError("Invitation expiry must be in the future.")
@@ -450,6 +457,13 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
+        if role_id == "manager":
+            is_owner = db.execute(text("""SELECT 1 FROM member_roles
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND role_id='organization_owner'"""),
+                {"org": workspace_id, "principal": actor["principal_id"]}).scalar_one_or_none()
+            if is_owner is None:
+                raise AuthzError("Only the Organization Owner can invite a Manager.")
 
     invitation_id = _id("inv")
     redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
