@@ -280,6 +280,11 @@ void main() {
     expect(invitationUi, contains('_showInvitationDetails(item)'));
     expect(invitationUi, contains('Search invitations'));
     expect(invitationUi, contains('Clear filters'));
+    expect(source, contains('void _inviteEmployee() async'));
+    expect(source, contains("label: const Text('Invite employee')"));
+    expect(source, contains("'/v1/authz/invitations'"));
+    expect(source, contains("'email_delivery_status'"));
+    expect(source, contains("no duplicate Auth account was created"));
     expect(invitationUi, isNot(contains('Resend')));
     expect(invitationUi, isNot(contains('Cancel invitation')));
     expect(invitationUi, isNot(contains('Revoke invitation')));
