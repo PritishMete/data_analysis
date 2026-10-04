@@ -511,7 +511,7 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
                   )
                 ORDER BY lower(s.name), s.section_id
             """), params).mappings().all()
-        else:
+        elif scope["role_id"] in {"branch_head", "manager"}:
             params = {"org": org, "location": location_id}
             rows = db.execute(text("""
                 SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
@@ -520,6 +520,21 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
                   AND s.location_id=:location
                 ORDER BY lower(s.name), s.section_id
             """), params).mappings().all()
+        else:
+            rows = db.execute(text("""
+                SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
+                FROM sections s
+                WHERE s.organization_id=:org
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organizational_assignments scope_oa
+                    WHERE scope_oa.organization_id=s.organization_id
+                      AND scope_oa.principal_id=:principal
+                      AND scope_oa.status='active'
+                      AND scope_oa.section_id=s.section_id
+                  )
+                ORDER BY lower(s.name), s.section_id
+            """), {"org": org, "principal": actor["principal_id"]}).mappings().all()
         result = []
         for row in rows:
             item = dict(row)
