@@ -80,7 +80,12 @@ def _require_read(db, actor: dict[str, Any]) -> None:
 
 
 def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
-    """Resolve the actor's authoritative organizational assignment scope."""
+    """Resolve the actor's authoritative organizational assignment scope.
+
+    Multiple active assignments remain separate contexts for one principal.
+    Team Lead scope therefore aggregates all of that principal's active
+    section assignments instead of collapsing them to one section.
+    """
     rows = db.execute(text("""
         SELECT assignment_id, location_id, section_id, role_id
         FROM organizational_assignments
@@ -95,26 +100,39 @@ def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
         return {
             "role_id": None,
             "location_id": None,
+            "location_ids": [],
             "section_id": None,
+            "section_ids": [],
             "organization_wide": False,
         }
 
-    assignment = max(
-        rows,
-        key=lambda row: ROLE_LEVELS.get(str(row["role_id"]), 0),
+    role_id = max(
+        (str(row["role_id"]) for row in rows),
+        key=lambda value: ROLE_LEVELS.get(value, 0),
     )
-    role_id = str(assignment["role_id"])
     if role_id == "organization_owner":
         return {
             "role_id": role_id,
             "location_id": None,
+            "location_ids": [],
             "section_id": None,
+            "section_ids": [],
             "organization_wide": True,
         }
+
+    scoped = [row for row in rows if str(row["role_id"]) == role_id]
+    location_ids = list(dict.fromkeys(
+        str(row["location_id"]) for row in scoped if row["location_id"] is not None
+    ))
+    section_ids = list(dict.fromkeys(
+        str(row["section_id"]) for row in scoped if row["section_id"] is not None
+    ))
     return {
         "role_id": role_id,
-        "location_id": assignment["location_id"],
-        "section_id": assignment["section_id"],
+        "location_id": location_ids[0] if len(location_ids) == 1 else None,
+        "location_ids": location_ids,
+        "section_id": section_ids[0] if len(section_ids) == 1 else None,
+        "section_ids": section_ids,
         "organization_wide": False,
     }
 
@@ -146,10 +164,8 @@ def _read_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
 def _scope_location_ids(scope: dict[str, Any], locations: list[Any]) -> list[Any]:
     if scope["organization_wide"]:
         return locations
-    location_id = scope.get("location_id")
-    if location_id is None:
-        return []
-    return [value for value in locations if str(value) == str(location_id)]
+    location_ids = {str(value) for value in scope.get("location_ids", [])}
+    return [value for value in locations if str(value) in location_ids]
 
 
 def _location(db, organization_id: str, location_id: str) -> dict[str, Any]:
@@ -545,21 +561,43 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
         params: dict[str, Any] = {"org": org}
         scope = _read_scope(db, actor)
         if not scope["organization_wide"]:
-            scoped_location = scope.get("location_id")
-            scoped_section = scope.get("section_id")
-            if scoped_location is None:
+            scoped_locations = {str(value) for value in scope.get("location_ids", [])}
+            if location_id and str(location_id) not in scoped_locations:
+                raise AuthzError("Location is outside your management scope.")
+            if scope["role_id"] == "team_lead":
+                scoped_sections = {str(value) for value in scope.get("section_ids", [])}
+                if section_id and str(section_id) not in scoped_sections:
+                    raise AuthzError("Section is outside your management scope.")
+                clauses.append("""
+                    EXISTS (
+                        SELECT 1
+                        FROM organizational_assignments scope_oa
+                        WHERE scope_oa.organization_id=oa.organization_id
+                          AND scope_oa.principal_id=:scope_principal
+                          AND scope_oa.status='active'
+                          AND scope_oa.role_id='team_lead'
+                          AND scope_oa.location_id=oa.location_id
+                          AND scope_oa.section_id=oa.section_id
+                    )
+                """)
+                params["scope_principal"] = actor["principal_id"]
+            elif scope["role_id"] in {"branch_head", "manager"}:
+                clauses.append("""
+                    EXISTS (
+                        SELECT 1
+                        FROM organizational_assignments scope_oa
+                        WHERE scope_oa.organization_id=oa.organization_id
+                          AND scope_oa.principal_id=:scope_principal
+                          AND scope_oa.status='active'
+                          AND scope_oa.role_id=:scope_role
+                          AND scope_oa.location_id=oa.location_id
+                    )
+                """)
+                params["scope_principal"] = actor["principal_id"]
+                params["scope_role"] = scope["role_id"]
+            else:
                 clauses.append("oa.principal_id=:scope_principal")
                 params["scope_principal"] = actor["principal_id"]
-            else:
-                if location_id and str(location_id) != str(scoped_location):
-                    raise AuthzError("Location is outside your management scope.")
-                clauses.append("oa.location_id=:scope_location")
-                params["scope_location"] = scoped_location
-                if scoped_section is not None:
-                    if section_id and str(section_id) != str(scoped_section):
-                        raise AuthzError("Section is outside your management scope.")
-                    clauses.append("oa.section_id=:scope_section")
-                    params["scope_section"] = scoped_section
         if search:
             params["search"] = f"%{search.strip()}%"
             clauses.append(
@@ -634,12 +672,34 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
         scope_clause = "oa.organization_id=:org"
         params: dict[str, Any] = {"org": actor["organization_id"]}
         if not scope["organization_wide"]:
-            if scope.get("location_id"):
-                scope_clause += " AND oa.location_id=:scope_location"
-                params["scope_location"] = scope["location_id"]
-                if scope.get("section_id"):
-                    scope_clause += " AND oa.section_id=:scope_section"
-                    params["scope_section"] = scope["section_id"]
+            if scope["role_id"] == "team_lead":
+                scope_clause += """
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organizational_assignments scope_oa
+                    WHERE scope_oa.organization_id=oa.organization_id
+                      AND scope_oa.principal_id=:scope_principal
+                      AND scope_oa.status='active'
+                      AND scope_oa.role_id='team_lead'
+                      AND scope_oa.location_id=oa.location_id
+                      AND scope_oa.section_id=oa.section_id
+                  )
+                """
+                params["scope_principal"] = actor["principal_id"]
+            elif scope["role_id"] in {"branch_head", "manager"}:
+                scope_clause += """
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organizational_assignments scope_oa
+                    WHERE scope_oa.organization_id=oa.organization_id
+                      AND scope_oa.principal_id=:scope_principal
+                      AND scope_oa.status='active'
+                      AND scope_oa.role_id=:scope_role
+                      AND scope_oa.location_id=oa.location_id
+                  )
+                """
+                params["scope_principal"] = actor["principal_id"]
+                params["scope_role"] = scope["role_id"]
             else:
                 scope_clause += " AND oa.principal_id=:scope_principal"
                 params["scope_principal"] = actor["principal_id"]
