@@ -122,6 +122,15 @@ class _AuthoritativeAuthorizationFailure implements Exception {}
 
 class _TransientAuthorizationFailure implements Exception {}
 
+List<String> _roleIdsFromWorkspace(Map<String, dynamic> workspace) {
+  final raw = workspace['role_ids'];
+  if (raw is! List) return const <String>[];
+  return raw
+      .map((value) => value.toString().trim().toLowerCase())
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
 Future<InsightFlowOnboardingResolution>
     resolveInsightFlowOnboardingStateFromBackend(String uid) async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
