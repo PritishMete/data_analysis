@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
+from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -433,6 +434,9 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
             _token(authorization), req.expires_at
         )
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
+        logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
+        raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
 
