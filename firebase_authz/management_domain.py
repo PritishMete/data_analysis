@@ -468,29 +468,58 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
         _require_read(db, actor)
         org = actor["organization_id"]
         scope = _read_scope(db, actor)
-        if not scope["organization_wide"] and scope.get("location_id"):
-            if location_id and str(location_id) != str(scope["location_id"]):
+        if not scope["organization_wide"]:
+            scoped_locations = {str(value) for value in scope.get("location_ids", [])}
+            if location_id and str(location_id) not in scoped_locations:
                 raise AuthzError("Location is outside your management scope.")
-            location_id = str(scope["location_id"])
-        if not scope["organization_wide"] and not scope.get("location_id"):
-            return []
+            if not scoped_locations:
+                return []
+            if location_id is None and len(scoped_locations) == 1:
+                location_id = next(iter(scoped_locations))
         if location_id:
             _location(db, org, location_id)
-        if location_id:
+        if scope["organization_wide"]:
+            if location_id:
+                rows = db.execute(text("""
+                    SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
+                    FROM sections s
+                    WHERE s.organization_id=:org
+                      AND s.location_id=:location
+                    ORDER BY lower(s.name), s.section_id
+                """), {"org": org, "location": location_id}).mappings().all()
+            else:
+                rows = db.execute(text("""
+                    SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
+                    FROM sections s
+                    WHERE s.organization_id=:org
+                    ORDER BY lower(s.name), s.section_id
+                """), {"org": org}).mappings().all()
+        elif scope["role_id"] == "team_lead":
+            params = {"org": org, "principal": actor["principal_id"]}
+            rows = db.execute(text("""
+                SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
+                FROM sections s
+                WHERE s.organization_id=:org
+                  AND EXISTS (
+                    SELECT 1
+                    FROM organizational_assignments scope_oa
+                    WHERE scope_oa.organization_id=s.organization_id
+                      AND scope_oa.principal_id=:principal
+                      AND scope_oa.status='active'
+                      AND scope_oa.role_id='team_lead'
+                      AND scope_oa.section_id=s.section_id
+                  )
+                ORDER BY lower(s.name), s.section_id
+            """), params).mappings().all()
+        else:
+            params = {"org": org, "location": location_id}
             rows = db.execute(text("""
                 SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
                 FROM sections s
                 WHERE s.organization_id=:org
                   AND s.location_id=:location
                 ORDER BY lower(s.name), s.section_id
-            """), {"org": org, "location": location_id}).mappings().all()
-        else:
-            rows = db.execute(text("""
-                SELECT s.section_id, s.organization_id, s.location_id, s.name, s.status
-                FROM sections s
-                WHERE s.organization_id=:org
-                ORDER BY lower(s.name), s.section_id
-            """), {"org": org}).mappings().all()
+            """), params).mappings().all()
         result = []
         for row in rows:
             item = dict(row)
