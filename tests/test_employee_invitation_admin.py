@@ -137,7 +137,9 @@ def test_supabase_admin_does_not_fallback_for_non_auth_admin_errors(monkeypatch)
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr("firebase_authz.supabase_admin._credential_client", fake_client)
 
-    with pytest.raises(_ProviderFailure):
+    from firebase_authz.supabase_admin import SupabaseAdminOperationError
+
+    with pytest.raises(SupabaseAdminOperationError):
         invite_user_by_email("employee@example.com", "https://example.com/invite")
     assert calls == ["SUPABASE_SECRET_KEY"]
 
@@ -167,8 +169,10 @@ def test_supabase_admin_diagnostic_logging_never_logs_credentials(monkeypatch, c
         raise _AuthFailure(f"Authorization: Bearer {secret}")
 
     monkeypatch.setattr("firebase_authz.supabase_admin._credential_client", fake_client)
+    from firebase_authz.supabase_admin import SupabaseAdminCredentialError
+
     with caplog.at_level("WARNING"):
-        with pytest.raises(_AuthFailure):
+        with pytest.raises(SupabaseAdminCredentialError):
             invite_user_by_email("employee@example.com", "https://example.com/invite")
 
     assert secret not in caplog.text
