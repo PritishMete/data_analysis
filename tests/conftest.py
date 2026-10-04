@@ -30,6 +30,29 @@ def db_session():
     import plan_cache.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    # Authz identity lookup tables are maintained by the SQL migrations rather
+    # than SQLAlchemy models, so create the minimal SQLite equivalents needed by
+    # authz tests. This keeps the repository test DB aligned with production.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS principals (
+                principal_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS identity_bindings (
+                provider TEXT NOT NULL,
+                provider_subject TEXT NOT NULL,
+                principal_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                firebase_uid TEXT,
+                PRIMARY KEY (provider, provider_subject)
+            )
+        """))
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     session = SessionLocal()
     try:
