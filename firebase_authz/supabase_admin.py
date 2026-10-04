@@ -10,7 +10,6 @@ import re
 from typing import Any, Callable
 
 from supabase import create_client
-from supabase.lib.client_options import ClientOptions
 
 
 logger = logging.getLogger(__name__)
@@ -73,10 +72,6 @@ def _credential_client(source: str, credential: str):
     return create_client(
         _supabase_url(),
         credential,
-        options=ClientOptions(
-            auto_refresh_token=False,
-            persist_session=False,
-        ),
     )
 
 
