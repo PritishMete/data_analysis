@@ -62,10 +62,12 @@ class InsightFlowOnboardingResolution {
   const InsightFlowOnboardingResolution(
     this.state, {
     this.pendingInvitations = const <Map<String, dynamic>>[],
+    this.roleIds = const <String>[],
   });
 
   final InsightFlowOnboardingState state;
   final List<Map<String, dynamic>> pendingInvitations;
+  final List<String> roleIds;
 }
 
 Future<InsightFlowOnboardingResolution?>
@@ -187,12 +189,14 @@ Future<InsightFlowOnboardingResolution>
       await setInsightFlowWorkspaceId(uid, workspaceId);
       if (selected.containsKey('profile_complete') &&
           selected['profile_complete'] != true) {
-        return const InsightFlowOnboardingResolution(
+        return InsightFlowOnboardingResolution(
           InsightFlowOnboardingState.profileIncomplete,
+          roleIds: _roleIdsFromWorkspace(selected),
         );
       }
-      return const InsightFlowOnboardingResolution(
+      return InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.activeMember,
+        roleIds: _roleIdsFromWorkspace(selected),
       );
     }
 
