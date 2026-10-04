@@ -82,7 +82,7 @@ class _EmployeeInvitationPasswordSetupScreenState
       }
       final authenticatedEmail = InsightFlowSupabaseAuthService.currentUser?.email;
       debugPrint('invitation_lifecycle session_available=true');
-      debugPrint('invitation_lifecycle authenticated_email_available=' + (authenticatedEmail?.trim().isNotEmpty == true).toString());
+      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail?.trim().isNotEmpty == true}');
 
       final response = await http
           .post(
@@ -98,7 +98,7 @@ class _EmployeeInvitationPasswordSetupScreenState
             }),
           )
           .timeout(const Duration(seconds: 10));
-      debugPrint('invitation_lifecycle password_setup_response status=' + response.statusCode.toString());
+      debugPrint('invitation_lifecycle password_setup_response status=${response.statusCode}');
       if (response.statusCode != 200) {
         dynamic decoded;
         try {
@@ -126,7 +126,7 @@ class _EmployeeInvitationPasswordSetupScreenState
             body: jsonEncode({'invitation_id': invitationId}),
           )
           .timeout(const Duration(seconds: 10));
-      debugPrint('invitation_lifecycle invitation_acceptance_response status=' + acceptResponse.statusCode.toString());
+      debugPrint('invitation_lifecycle invitation_acceptance_response status=${acceptResponse.statusCode}');
       dynamic acceptDecoded;
       try {
         acceptDecoded = acceptResponse.body.trim().isEmpty
@@ -143,7 +143,7 @@ class _EmployeeInvitationPasswordSetupScreenState
       debugPrint('invitation_lifecycle onboarding_navigation_started');
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error, stackTrace) {
-      debugPrint('invitation_lifecycle failure error_class=' + error.runtimeType.toString());
+      debugPrint('invitation_lifecycle failure error_class=${error.runtimeType}');
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
