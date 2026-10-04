@@ -403,16 +403,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
         break;
       case InsightFlowOnboardingState.activeMember:
-        final managementRoles = {
-          'organization_owner',
-          'branch_head',
-          'manager',
-        };
-        final isManagementUser =
-            _roleIds.any((role) => managementRoles.contains(role));
-        authenticatedChild = isManagementUser
-            ? const ManagementShell()
-            : const DataScreen();
+        // Every authenticated employee enters the same authoritative
+        // Management Cell. The server-derived role/scope controls what the
+        // ManagementShell can show and what management APIs permit.
+        authenticatedChild = const ManagementShell();
         break;
       case InsightFlowOnboardingState.pendingInvitation:
         final passwordInvitation = _pendingInvitations.firstWhere(
