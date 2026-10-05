@@ -20,7 +20,7 @@ class SourceRouter extends StatelessWidget {
   const SourceRouter({super.key, required this.state});
 
   _SourceTab get _currentTab {
-    if (state.showDetailAnalysis) return _SourceTab.detailAnalysis;
+    if (state.showDetailAnalysis && state.canUploadDataset) return _SourceTab.detailAnalysis;
     if (state.dataSourceMode == DataSourceMode.uploadedFile) {
       return _SourceTab.uploadedFile;
     }
@@ -31,6 +31,7 @@ class SourceRouter extends StatelessWidget {
 
   Future<void> _selectTab(BuildContext context, _SourceTab tab) async {
     if (tab == _SourceTab.detailAnalysis) {
+      if (!state.canUploadDataset) return;
       state.setState(() => state.showDetailAnalysis = true);
       return;
     }
@@ -160,8 +161,10 @@ class SourceRouter extends StatelessWidget {
         children: [
           chip('Active Selection', _SourceTab.activeSelection, webOnly: true),
           chip('Named Sheet', _SourceTab.namedSheet, webOnly: true),
-          if (state.canUploadDataset) chip('Upload File', _SourceTab.uploadedFile),
-          chip('Detail Analysis', _SourceTab.detailAnalysis),
+          if (state.canUploadDataset) ...[
+            chip('Upload File', _SourceTab.uploadedFile),
+            chip('Detail Analysis', _SourceTab.detailAnalysis),
+          ],
         ],
       ),
     );
@@ -241,6 +244,7 @@ class SourceRouter extends StatelessWidget {
   }
 
   Widget _buildDetailAnalysisPanel(BuildContext context) {
+    if (!state.canUploadDataset) return const SizedBox.shrink();
     final report = state.detailAnalysisResult;
     final reportText = report == null
         ? null
@@ -335,6 +339,7 @@ class SourceRouter extends StatelessWidget {
   }
 
   Future<void> _runPowerBiDetailAnalysis() async {
+    if (!state.canUploadDataset) return;
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv', 'tsv', 'xlsx', 'xlsm', 'xls', 'json'],
