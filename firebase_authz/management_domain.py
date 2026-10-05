@@ -312,10 +312,41 @@ def _role_counts(db, organization_id: str, location_id: str | None = None) -> di
     rows = db.execute(text(f"""
         SELECT oa.role_id, count(DISTINCT oa.principal_id) AS count
         FROM organizational_assignments oa
-        WHERE oa.organization_id=:org AND oa.status='active' {location_clause}
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id
+         AND m.principal_id=oa.principal_id
+        WHERE oa.organization_id=:org
+          AND oa.status='active'
+          AND m.status='active'
+          {location_clause}
         GROUP BY oa.role_id
     """), params).all()
     return {str(row.role_id): int(row.count) for row in rows}
+
+
+def _total_people_count(
+    db, organization_id: str, scope: dict[str, Any]
+) -> int:
+    if scope["organization_wide"]:
+        scope_clause = ""
+        params = {"org": organization_id}
+    else:
+        location_ids = [str(value) for value in scope.get("location_ids", [])]
+        if not location_ids:
+            return 0
+        scope_clause = "AND oa.location_id = ANY(:locations)"
+        params = {"org": organization_id, "locations": location_ids}
+    return int(db.execute(text(f"""
+        SELECT count(DISTINCT oa.principal_id)
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id
+         AND m.principal_id=oa.principal_id
+        WHERE oa.organization_id=:org
+          AND oa.status='active'
+          AND m.status='active'
+          {scope_clause}
+    """), params).scalar_one())
 
 
 def _location_summary(db, organization_id: str, location_id: str) -> dict[str, Any]:
@@ -378,6 +409,8 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             org,
             None if scope["organization_wide"] else scope.get("location_id"),
         )
+        total_people = _total_people_count(db, org, scope)
+        permissions = sorted(_permissions(db, org, actor["principal_id"]))
         return {
             "organization": {
                 "organization_id": org,
@@ -394,10 +427,11 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "location_id": scope["location_id"],
                 "section_id": scope["section_id"],
                 "organization_wide": scope["organization_wide"],
+                "permissions": permissions,
             },
             "summary": {
                 "location_count": len(locations),
-                "total_people": sum(counts.values()),
+                "total_people": total_people,
                 "branch_head_count": counts.get("branch_head", 0),
                 "employee_count": counts.get("employee", 0),
                 "manager_count": counts.get("manager", 0),
