@@ -178,6 +178,36 @@ FROM (VALUES
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions(role_id, permission_id)
+SELECT seed.role_id, seed.permission_id
+FROM (VALUES
+    ('ml_engineer','data.view'),('ml_engineer','analysis.run'),('ml_engineer','worksheet.create'),
+    ('ml_engineer','pivot.create'),('ml_engineer','worksheet.modify'),('ml_engineer','operation.undo.own'),
+    ('ml_engineer','history.view'),('ml_engineer','organization.view'),('ml_engineer','working_copy.view'),
+    ('ml_engineer','working_copy.modify'),('ml_engineer','excel.mutate.working_copy'),
+    ('analytics_engineer','data.view'),('analytics_engineer','analysis.run'),('analytics_engineer','worksheet.create'),
+    ('analytics_engineer','pivot.create'),('analytics_engineer','worksheet.modify'),('analytics_engineer','operation.undo.own'),
+    ('analytics_engineer','history.view'),('analytics_engineer','organization.view'),('analytics_engineer','working_copy.view'),
+    ('analytics_engineer','working_copy.modify'),('analytics_engineer','excel.mutate.working_copy'),
+    ('bi_developer','data.view'),('bi_developer','analysis.run'),('bi_developer','worksheet.create'),
+    ('bi_developer','pivot.create'),('bi_developer','worksheet.modify'),('bi_developer','operation.undo.own'),
+    ('bi_developer','history.view'),('bi_developer','organization.view'),('bi_developer','working_copy.view'),
+    ('bi_developer','working_copy.modify'),('bi_developer','excel.mutate.working_copy'),
+    ('data_architect','data.view'),('data_architect','analysis.run'),('data_architect','worksheet.create'),
+    ('data_architect','pivot.create'),('data_architect','worksheet.modify'),('data_architect','operation.undo.own'),
+    ('data_architect','history.view'),('data_architect','organization.view'),('data_architect','working_copy.view'),
+    ('data_architect','working_copy.modify'),('data_architect','excel.mutate.working_copy'),
+    ('data_quality_analyst','data.view'),('data_quality_analyst','analysis.run'),('data_quality_analyst','worksheet.create'),
+    ('data_quality_analyst','pivot.create'),('data_quality_analyst','worksheet.modify'),('data_quality_analyst','operation.undo.own'),
+    ('data_quality_analyst','history.view'),('data_quality_analyst','organization.view'),('data_quality_analyst','working_copy.view'),
+    ('data_quality_analyst','working_copy.modify'),('data_quality_analyst','excel.mutate.working_copy'),
+    ('data_governance_analyst','data.view'),('data_governance_analyst','analysis.run'),('data_governance_analyst','worksheet.create'),
+    ('data_governance_analyst','pivot.create'),('data_governance_analyst','worksheet.modify'),('data_governance_analyst','operation.undo.own'),
+    ('data_governance_analyst','history.view'),('data_governance_analyst','organization.view'),('data_governance_analyst','working_copy.view'),
+    ('data_governance_analyst','working_copy.modify'),('data_governance_analyst','excel.mutate.working_copy')
+) AS seed(role_id, permission_id)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions(role_id, permission_id)
 SELECT 'external_viewer', permission_id
 FROM permissions
 WHERE permission_id IN ('data.view','history.view','organization.view')
