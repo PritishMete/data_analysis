@@ -1235,13 +1235,21 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
             ON CONFLICT (organization_id, resource_id)
             DO UPDATE SET resource_type=EXCLUDED.resource_type, owner_principal_id=EXCLUDED.owner_principal_id"""),
                    {"org": organization_id, "dataset": dataset_id, "owner": owner})
-        db.execute(text("""INSERT INTO dataset_authorization(organization_id, dataset_id, owner_principal_id, protected_original)
-            VALUES (:org, :dataset, :owner, :protected)
+        owner_location = db.execute(text("""SELECT location_id FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:owner
+              AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL
+            ORDER BY assignment_id LIMIT 1"""),
+            {"org": organization_id, "owner": owner}).scalar_one_or_none()
+        db.execute(text("""INSERT INTO dataset_authorization
+            (organization_id, dataset_id, owner_principal_id, protected_original, location_id)
+            VALUES (:org, :dataset, :owner, :protected, :location)
             ON CONFLICT (organization_id, dataset_id)
             DO UPDATE SET owner_principal_id=EXCLUDED.owner_principal_id,
                           protected_original=EXCLUDED.protected_original,
+                          location_id=COALESCE(EXCLUDED.location_id, dataset_authorization.location_id),
                           status='active'"""),
-                   {"org": organization_id, "dataset": dataset_id, "owner": owner, "protected": protected})
+            {"org": organization_id, "dataset": dataset_id, "owner": owner,
+             "protected": protected, "location": owner_location})
         db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :dataset, :owner, CAST(:permissions AS jsonb))
             ON CONFLICT (organization_id, resource_id, principal_id)
@@ -1587,8 +1595,12 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
             {"org": organization_id, "copy": working_copy_id, "principal": context["principal_id"]}).scalar_one_or_none()
     allowed = set(grant or [])
+    if action == "working_copy.assign" and "working_copy.assign" not in set(context.get("permissions", [])):
+        raise AuthzError("You don't have permission to assign this working copy.")
     if not assignment and action != "working_copy.assign" and action not in allowed:
         raise AuthzError("This working copy is assigned to another user.")
+    if action == "working_copy.assign" and not assignment and "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
+        raise AuthzError("A working copy must be assigned to its current manager before it can be reassigned.")
     return {**context, "authorized": True, "organization_id": organization_id,
             "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
             "source_version": row["source_version"], "version": row["version"]}
