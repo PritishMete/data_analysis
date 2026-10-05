@@ -921,13 +921,66 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
         raise AuthzError("Workspace authorization denied.")
     org = str(context["organization_id"])
     resolved_workspace_id = str(context["workspace_id"])
+    actor = str(context["principal_id"])
+    actor_roles = set(context.get("role_ids", []))
+    organization_wide = "organization_owner" in actor_roles
+    branch_scoped = bool(actor_roles.intersection({"branch_head", "manager"}))
+    team_scoped = "team_lead" in actor_roles
+
     with SessionLocal() as db:
-        members = db.execute(text("""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
+        if organization_wide:
+            member_scope = "TRUE"
+            member_params = {"org": org, "actor": actor}
+        elif branch_scoped:
+            member_scope = """EXISTS (
+                SELECT 1 FROM organizational_assignments scope_oa
+                WHERE scope_oa.organization_id=m.organization_id
+                  AND scope_oa.principal_id=:actor
+                  AND scope_oa.status='active'
+                  AND scope_oa.location_id=oa.location_id
+            )"""
+            member_params = {"org": org, "actor": actor}
+        elif team_scoped:
+            member_scope = """EXISTS (
+                SELECT 1 FROM organizational_assignments scope_oa
+                WHERE scope_oa.organization_id=m.organization_id
+                  AND scope_oa.principal_id=:actor
+                  AND scope_oa.role_id='team_lead'
+                  AND scope_oa.status='active'
+                  AND scope_oa.location_id=oa.location_id
+                  AND scope_oa.section_id=oa.section_id
+            )"""
+            member_params = {"org": org, "actor": actor}
+        else:
+            member_scope = "m.principal_id=:actor"
+            member_params = {"org": org, "actor": actor}
+
+        members = db.execute(text(f"""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
             COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids
-            FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
-            LEFT JOIN member_roles mr ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-            WHERE m.organization_id=:org GROUP BY b.firebase_uid,m.employee_id,m.status"""), {"org": org}).mappings().all()
-        datasets = db.execute(text("""SELECT da.dataset_id, da.protected_original,
+            FROM organization_members m
+            JOIN identity_bindings b ON b.principal_id=m.principal_id
+            LEFT JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+            LEFT JOIN organizational_assignments oa
+              ON oa.organization_id=m.organization_id AND oa.principal_id=m.principal_id AND oa.status='active'
+            WHERE m.organization_id=:org AND {member_scope}
+            GROUP BY b.firebase_uid,m.employee_id,m.status"""), member_params).mappings().all()
+
+        if organization_wide:
+            dataset_scope = "TRUE"
+        elif "branch_head" in actor_roles:
+            dataset_scope = """da.location_id IN (
+                SELECT location_id FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:actor
+                  AND role_id='branch_head' AND status='active'
+                  AND location_id IS NOT NULL
+            )"""
+        else:
+            # Managers, Team Leads and lower roles use the explicit copy-request
+            # workflow. The original/master registry is not exposed by this
+            # legacy management snapshot.
+            dataset_scope = "FALSE"
+        datasets = db.execute(text(f"""SELECT da.dataset_id, da.protected_original,
             da.status AS authorization_status, r.owner_principal_id,
             ds.dataset_name, ds.original_filename, ds.row_count, ds.column_count,
             ds.current_version_id AS current_version, ds.version_number,
@@ -937,23 +990,85 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
               ON r.organization_id=da.organization_id AND r.resource_id=da.dataset_id
             LEFT JOIN datasets ds
               ON ds.organization_id=da.organization_id AND ds.dataset_id=da.dataset_id
-            WHERE da.organization_id=:org AND da.status='active'"""), {"org": org}).mappings().all()
-        working_copies = db.execute(text("""SELECT working_copy_id, source_dataset_id,
-            source_version, version, status, created_by_principal_id
-            FROM working_copy_authorization WHERE organization_id=:org AND status='active'"""),
-                                   {"org": org}).mappings().all()
-        approved = db.execute(text("""SELECT b.firebase_uid AS uid, a.employee_id, a.status
+            WHERE da.organization_id=:org AND da.status='active' AND {dataset_scope}"""),
+            {"org": org, "actor": actor}).mappings().all()
+
+        if organization_wide:
+            working_copy_scope = "TRUE"
+        elif "branch_head" in actor_roles:
+            working_copy_scope = """EXISTS (
+                SELECT 1 FROM dataset_authorization da
+                WHERE da.organization_id=wc.organization_id
+                  AND da.dataset_id=wc.source_dataset_id
+                  AND da.location_id IN (
+                    SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:actor
+                      AND role_id='branch_head' AND status='active'
+                      AND location_id IS NOT NULL
+                  )
+            )"""
+        else:
+            working_copy_scope = """EXISTS (
+                SELECT 1 FROM working_copy_assignments wca
+                WHERE wca.organization_id=wc.organization_id
+                  AND wca.working_copy_id=wc.working_copy_id
+                  AND wca.principal_id=:actor
+                  AND wca.status='active'
+            )"""
+        working_copies = db.execute(text(f"""SELECT wc.working_copy_id, wc.source_dataset_id,
+            wc.source_version, wc.version, wc.status, wc.created_by_principal_id
+            FROM working_copy_authorization wc
+            WHERE wc.organization_id=:org AND wc.status='active' AND {working_copy_scope}"""),
+            {"org": org, "actor": actor}).mappings().all()
+
+        if organization_wide:
+            approved_scope = "TRUE"
+        elif "branch_head" in actor_roles:
+            approved_scope = """a.principal_id IN (
+                SELECT oa.principal_id FROM organizational_assignments oa
+                WHERE oa.organization_id=:org AND oa.location_id IN (
+                    SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:actor
+                      AND role_id='branch_head' AND status='active'
+                ) AND oa.status='active'
+            )"""
+        else:
+            approved_scope = "a.principal_id=:actor"
+        approved = db.execute(text(f"""SELECT b.firebase_uid AS uid, a.employee_id, a.status
             FROM approved_employees a JOIN identity_bindings b ON b.principal_id=a.principal_id
-            WHERE a.organization_id=:org AND a.status='active'"""), {"org": org}).mappings().all()
-        delegations = db.execute(text("""SELECT delegation_id, team_lead_principal_id,
+            WHERE a.organization_id=:org AND a.status='active' AND {approved_scope}"""),
+            {"org": org, "actor": actor}).mappings().all()
+
+        if organization_wide or "branch_head" in actor_roles:
+            delegation_scope = "TRUE"
+        elif team_scoped:
+            delegation_scope = "team_lead_principal_id=:actor"
+        else:
+            delegation_scope = "FALSE"
+        delegations = db.execute(text(f"""SELECT delegation_id, team_lead_principal_id,
             member_principal_ids, dataset_ids, permissions, expires_at, status
-            FROM delegations WHERE organization_id=:org"""), {"org": org}).mappings().all()
+            FROM delegations WHERE organization_id=:org AND {delegation_scope}"""),
+            {"org": org, "actor": actor}).mappings().all()
+
         audit = []
-        if "audit.view" in set(context.get("permissions", [])):
+        if organization_wide:
             audit = db.execute(text("""SELECT event_id, actor_principal_id, action, outcome,
                 metadata, created_at FROM audit_events WHERE organization_id=:org
                 ORDER BY created_at DESC LIMIT 100"""), {"org": org}).mappings().all()
-        actor_roles = set(context.get("role_ids", []))
+        elif "branch_head" in actor_roles and "audit.view" in set(context.get("permissions", [])):
+            audit = db.execute(text("""SELECT event_id, actor_principal_id, action, outcome,
+                metadata, created_at FROM audit_events
+                WHERE organization_id=:org
+                  AND (metadata->>'location_id') = ANY(
+                    SELECT location_id::text
+                    FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:actor
+                      AND role_id='branch_head' AND status='active'
+                      AND location_id IS NOT NULL
+                  )
+                ORDER BY created_at DESC LIMIT 100"""),
+                {"org": org, "actor": actor}).mappings().all()
+
         actor_email = str(claims.get("email") or "").strip().lower()
         invitation_query = """
             SELECT
@@ -1035,7 +1150,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "org": org,
                 "actor_roles": list(actor_roles),
                 "actor_email": actor_email,
-                "actor_principal": context["principal_id"],
+                "actor_principal": actor,
             },
         ).mappings().all()
     return {"organization_id": org, "workspace_id": resolved_workspace_id,
@@ -1064,7 +1179,6 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             ],
             "approved_employees": [dict(row) for row in approved],
             "delegations": [dict(row) for row in delegations], "audit": [dict(row) for row in audit]}
-
 
 def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
     actor_uid = str(claims.get("uid") or claims.get("sub") or "").strip()
