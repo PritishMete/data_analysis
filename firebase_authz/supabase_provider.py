@@ -441,10 +441,14 @@ def _permission_for_principal(db, organization_id: str, principal_id: str, permi
 
 
 def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
-                      role_id: str, expires_at: int | None = None) -> dict[str, Any]:
+                      role_id: str, expires_at: int | None = None,
+                      location_id: str | None = None) -> dict[str, Any]:
     email = str(email or "").strip().lower()
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
+    location_id = str(location_id or "").strip()
+    if not location_id:
+        raise ValueError("A branch/location is required for an employee invitation.")
     role_id = {"owner": "organization_owner", "analyst": "employee", "viewer": "external_viewer"}.get(role_id, role_id)
     invitation_roles = {
         "manager", "team_lead", "employee", "external_viewer",
@@ -463,6 +467,25 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
             raise AuthzError("Workspace authorization denied.")
+        location = db.execute(text("""
+            SELECT location_id, status FROM locations
+            WHERE organization_id=:org AND location_id=:location
+        """), {"org": workspace_id, "location": location_id}).mappings().first()
+        if not location or location["status"] != "active":
+            raise AuthzError("Selected branch/location is not active in this organization.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if "organization_owner" not in actor_roles:
+            scoped = db.execute(text("""
+                SELECT 1 FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND location_id=:location AND status='active'
+                LIMIT 1
+            """), {"org": workspace_id, "principal": actor["principal_id"], "location": location_id}).scalar_one_or_none()
+            if scoped is None:
+                raise AuthzError("Selected branch/location is outside your management scope.")
         organization_name = db.execute(
             text("SELECT name FROM organizations WHERE organization_id=:org"),
             {"org": workspace_id},
@@ -525,13 +548,13 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
             raise AuthzError("Workspace authorization denied.")
         db.execute(text("""INSERT INTO invitations
             (invitation_id, organization_id, email, role_id, status,
-             expires_at, created_by_principal_id, auth_user_id,
+             expires_at, created_by_principal_id, auth_user_id, location_id,
              email_delivery_status, email_delivery_started_at)
-            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,
+            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,:location,
                     :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
                     "role": role_id, "expires": expiry, "creator": actor["principal_id"],
-                    "auth_user": auth_user_id, "delivery_status": delivery_status})
+                    "auth_user": auth_user_id, "location": location_id, "delivery_status": delivery_status})
     return {"invitation_id": invitation_id, "status": "invited",
             "email_delivery_status": delivery_status,
             "password_setup_required": password_setup_required}
@@ -584,6 +607,18 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         if invited_auth_user_id and invited_auth_user_id != uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
         workspace_id = str(invitation["organization_id"])
+        location_id = str(invitation.get("location_id") or "").strip()
+        if not location_id and invitation.get("created_by_principal_id"):
+            legacy_location = db.execute(text("""
+                SELECT min(location_id) AS location_id
+                FROM (
+                    SELECT DISTINCT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND status='active' AND location_id IS NOT NULL
+                ) scoped_locations
+                HAVING count(*) = 1
+            """), {"org": workspace_id, "principal": invitation["created_by_principal_id"]}).scalar_one_or_none()
+            location_id = str(legacy_location or "").strip()
 
         identity = db.execute(
             text("""SELECT principal_id FROM identity_bindings
@@ -634,10 +669,17 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
             VALUES (:org,:principal,:role) ON CONFLICT DO NOTHING"""),
                    {"org": workspace_id, "principal": principal_id, "role": invitation["role_id"]})
+        if location_id:
+            db.execute(text("""
+                INSERT INTO organizational_assignments
+                  (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                VALUES (:assignment, :org, :principal, :location, :role, 'active')
+                ON CONFLICT DO NOTHING
+            """), {"assignment": _id("asg"), "org": workspace_id, "principal": principal_id, "location": location_id, "role": invitation["role_id"]})
         db.execute(text("""UPDATE invitations SET status='accepted', accepted_by_principal_id=:principal,
             accepted_at=now() WHERE invitation_id=:id"""),
                    {"id": invitation_id, "principal": principal_id})
-    return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id}
+    return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id, "location_id": location_id or None}
 
 
 def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -> dict[str, Any]:

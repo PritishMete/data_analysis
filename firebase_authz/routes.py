@@ -408,6 +408,7 @@ class InvitationRequest(BaseModel):
     email: str
     role_id: str
     expires_at: int | None = None
+    location_id: str
 
 class InvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -428,10 +429,10 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     try:
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import create_invitation as provider_create_invitation
-            return provider_create_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.email, req.role_id, req.expires_at)
+            return provider_create_invitation(verify_id_token(_token(authorization)), req.workspace_id, req.email, req.role_id, req.expires_at, req.location_id)
         return create_invitation(
             req.workspace_id, req.email, req.role_id,
-            _token(authorization), req.expires_at
+            _token(authorization), req.expires_at, req.location_id
         )
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:

@@ -311,6 +311,8 @@ class _ManagementShellState extends State<ManagementShell> {
       'external_viewer',
     ];
     String role = 'employee';
+    if (locations.isEmpty) { feedback(StateError('Create an active branch/location before inviting an employee.')); return; }
+    String locationId = selectedLocation ?? locations.first['location_id'].toString();
     int expiryDays = 7;
 
     final result = await GlassDialog.show<Map<String, dynamic>>(
@@ -337,6 +339,13 @@ class _ManagementShellState extends State<ManagementShell> {
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
               decoration: input('Employee email'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: locationId,
+              decoration: input('Branch / Location'),
+              items: locations.map((value) => DropdownMenuItem<String>(value: value['location_id'].toString(), child: Text(value['name'].toString()))).toList(),
+              onChanged: (value) { if (value != null) setDialogState(() => locationId = value); },
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -392,6 +401,7 @@ class _ManagementShellState extends State<ManagementShell> {
             Navigator.pop(context, {
               'email': email,
               'role_id': role,
+              'location_id': locationId,
               'expires_at': DateTime.now()
                   .add(Duration(days: expiryDays))
                   .toUtc()
@@ -425,6 +435,7 @@ class _ManagementShellState extends State<ManagementShell> {
               'workspace_id': insightFlowWorkspaceId,
               'email': result['email'],
               'role_id': result['role_id'],
+              'location_id': result['location_id'],
               'expires_at': result['expires_at'],
             }),
           )
