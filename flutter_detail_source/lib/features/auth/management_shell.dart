@@ -1374,9 +1374,6 @@ class _ManagementShellState extends State<ManagementShell> {
         LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 760;
-            final actorRole = overview['actor'] is Map
-                ? overview['actor']['role_id']?.toString()
-                : null;
             final controls = Wrap(
               spacing: 8,
               runSpacing: 8,
