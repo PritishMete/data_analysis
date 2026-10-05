@@ -932,6 +932,18 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                     )
                 ) AS sender_role_id,
                 recipient_profile.full_name AS recipient_name,
+                COALESCE(
+                    (
+                        SELECT oa.role_id
+                        FROM organizational_assignments oa
+                        WHERE oa.organization_id = i.organization_id
+                          AND oa.principal_id = i.accepted_by_principal_id
+                          AND oa.status = 'active'
+                        ORDER BY oa.assignment_id
+                        LIMIT 1
+                    ),
+                    i.role_id
+                ) AS recipient_role_id,
                 i.accepted_by_principal_id
             FROM invitations i
             LEFT JOIN locations l
