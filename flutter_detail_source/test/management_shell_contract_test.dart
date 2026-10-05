@@ -254,9 +254,9 @@ void main() {
     expect(source, contains("selectedSection"));
     expect(source, contains("constraints.maxWidth < 680"));
     expect(source, contains("request('')"));
-    expect(source, contains("maps(r[6]['invitations'])"));
+    expect(source, contains("maps(r[5]['invitations'])"));
     expect(source, contains('Widget invitationView()'));
-    expect(source, contains("maps(r[6]['invitations'])"));
+    expect(source, contains("maps(r[5]['invitations'])"));
     expect(source, isNot(contains('pendingInvitations = 0')));
     expect(source, contains('observedStatuses'));
     expect(source, contains('View invitation details'));
