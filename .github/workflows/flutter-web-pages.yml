@@ -1,0 +1,110 @@
+name: Build and publish InsightFlow Flutter web
+
+on:
+  push:
+    branches: [feature/data-workspace]
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/flutter-web-pages.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: insightflow-flutter-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: flutter_detail_source
+        run: flutter pub get
+
+      - name: Run auth and onboarding regression tests
+        working-directory: flutter_detail_source
+        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
+
+      - name: Analyze changed auth and onboarding files
+        working-directory: flutter_detail_source
+        run: flutter analyze lib/core/auth/authenticated_http.dart lib/features/auth/auth_gate.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
+
+      - name: Stamp production web build identity
+        working-directory: flutter_detail_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
+          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com/g" web/index.html
+
+      - name: Build Flutter web
+        working-directory: flutter_detail_source
+        run: flutter build web --release --base-href /data_analysis/
+
+      - name: Verify generated web bundle
+        working-directory: flutter_detail_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f build/web/index.html
+          test -f build/web/flutter_bootstrap.js
+          grep -q "${GITHUB_SHA}" build/web/index.html
+          grep -R -q "profile_complete" build/web
+          grep -R -q "membership_status" build/web
+          grep -R -q "/v1/authz/me" build/web
+
+      - name: Checkout published gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-publish
+          fetch-depth: 1
+
+      - name: Replace Flutter web bundle only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf gh-pages-publish/assets
+          rm -rf gh-pages-publish/canvaskit
+          rm -f gh-pages-publish/flutter.js
+          rm -f gh-pages-publish/flutter_bootstrap.js
+          rm -f gh-pages-publish/flutter_service_worker.js
+          rm -f gh-pages-publish/main.dart.js
+          rm -f gh-pages-publish/index.html
+          rm -f gh-pages-publish/version.json
+          cp -R flutter_detail_source/build/web/. gh-pages-publish/
+
+      - name: Verify published source build identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "${GITHUB_SHA}" gh-pages-publish/index.html
+          grep -R -q "profile_complete" gh-pages-publish
+          grep -R -q "membership_status" gh-pages-publish
+
+      - name: Commit and publish
+        working-directory: gh-pages-publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No published Flutter changes."
+            exit 0
+          fi
+          git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
+          git push origin gh-pages
