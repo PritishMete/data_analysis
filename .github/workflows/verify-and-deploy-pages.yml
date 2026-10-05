@@ -1,0 +1,62 @@
+name: Verify and deploy Flutter web
+
+on:
+  push:
+    branches:
+      - feature/data-workspace
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run Flutter auth/onboarding tests
+        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
+
+      - name: Analyze changed auth/onboarding files
+        run: flutter analyze lib/core/auth/authenticated_http.dart lib/features/auth/auth_gate.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
+
+      - name: Build production Flutter web
+        run: flutter build web --base-href /data_analysis/ --release
+
+      - name: Verify generated web build contains authoritative onboarding logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f build/web/flutter_bootstrap.js
+          test -f build/web/index.html
+          if ! grep -R -q "profileIncomplete" build/web; then
+            echo "Generated web build does not contain the corrected onboarding state."
+            exit 1
+          fi
+          if ! grep -R -q "membership_status" build/web; then
+            echo "Generated web build does not contain authoritative membership routing logic."
+            exit 1
+          fi
+
+      - name: Publish generated web build to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: flutter_detail_source/build/web
+          force_orphan: false
+          commit_message: "Deploy Flutter web from ${{ github.sha }}"
