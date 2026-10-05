@@ -147,8 +147,9 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(activeBlock, isNot(contains('DataScreen')));
 
     final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
-    expect(management, contains('managementRoles'));
-    expect(management, contains('roleIds'));
+    expect(management, contains("contextData['role_ids']"));
+    expect(management, contains("'organization_owner'"));
+    expect(management, contains("'employee'"));
   });
 
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
