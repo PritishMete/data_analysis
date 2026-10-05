@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .service import AuthzError
+from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
 from .supabase_admin import (
@@ -470,6 +471,49 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         if not organization_name:
             raise AuthzError("Organization could not be resolved for this workspace.")
         organization_name = str(organization_name).strip()
+
+        # Placement is resolved from the trusted inviter identity, never from
+        # invitation request data. Keep the inviter's active organizational
+        # context on the invitation so acceptance cannot silently lose the
+        # branch/section that authorized the invitation.
+        inviter_assignments = db.execute(text("""
+            SELECT assignment_id, location_id, section_id, role_id, created_at
+            FROM organizational_assignments
+            WHERE organization_id=:org
+              AND principal_id=:principal
+              AND status='active'
+            ORDER BY created_at, assignment_id
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).mappings().all()
+        inviter_scope = None
+        if inviter_assignments:
+            highest_level = max(
+                ROLE_LEVELS.get(str(row["role_id"]), 0)
+                for row in inviter_assignments
+            )
+            scoped = [
+                row for row in inviter_assignments
+                if ROLE_LEVELS.get(str(row["role_id"]), 0) == highest_level
+            ]
+            if len(scoped) == 1:
+                inviter_scope = scoped[0]
+
+        placement_required = role_id != "external_viewer"
+        if placement_required and not inviter_scope:
+            raise AuthzError(
+                "The inviter has no unambiguous active organizational assignment."
+            )
+        invitation_location_id = (
+            str(inviter_scope["location_id"])
+            if inviter_scope and inviter_scope["location_id"] is not None
+            else None
+        )
+        invitation_section_id = (
+            str(inviter_scope["section_id"])
+            if inviter_scope and inviter_scope["section_id"] is not None
+            else None
+        )
+        if invitation_section_id and not invitation_location_id:
+            raise AuthzError("Invitation placement has an invalid section/location context.")
         if role_id == "manager":
             can_invite_manager = db.execute(text("""SELECT 1 FROM member_roles
                 WHERE organization_id=:org AND principal_id=:principal
@@ -526,12 +570,15 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         db.execute(text("""INSERT INTO invitations
             (invitation_id, organization_id, email, role_id, status,
              expires_at, created_by_principal_id, auth_user_id,
-             email_delivery_status, email_delivery_started_at)
+             email_delivery_status, email_delivery_started_at,
+             location_id, section_id)
             VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,
-                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
+                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END,
+                    :location,:section)"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
                     "role": role_id, "expires": expiry, "creator": actor["principal_id"],
-                    "auth_user": auth_user_id, "delivery_status": delivery_status})
+                    "auth_user": auth_user_id, "delivery_status": delivery_status,
+                    "location": invitation_location_id, "section": invitation_section_id})
     return {"invitation_id": invitation_id, "status": "invited",
             "email_delivery_status": delivery_status,
             "password_setup_required": password_setup_required}
@@ -631,9 +678,75 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
               SET employee_id=EXCLUDED.employee_id,status='active'"""),
                    {"org": workspace_id, "workspace": workspace_id, "principal": principal_id,
                     "employee": employee_id})
+        role_id = str(invitation["role_id"])
         db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
             VALUES (:org,:principal,:role) ON CONFLICT DO NOTHING"""),
-                   {"org": workspace_id, "principal": principal_id, "role": invitation["role_id"]})
+                   {"org": workspace_id, "principal": principal_id, "role": role_id})
+
+        # Acceptance is one transaction: membership, role and organizational
+        # placement either all commit or none do. Placement comes only from
+        # trusted invitation metadata captured from the inviter's assignment.
+        location_id = str(invitation.get("location_id") or "").strip() or None
+        section_id = str(invitation.get("section_id") or "").strip() or None
+        if role_id != "external_viewer":
+            if not location_id:
+                raise AuthzError("Invitation has no trusted organizational placement.")
+            if section_id:
+                section_valid = db.execute(text("""
+                    SELECT 1 FROM sections
+                    WHERE organization_id=:org AND location_id=:location
+                      AND section_id=:section AND status='active'
+                """), {
+                    "org": workspace_id, "location": location_id, "section": section_id,
+                }).scalar_one_or_none()
+                if not section_valid:
+                    raise AuthzError("Invitation section is not part of its assigned branch.")
+            location_valid = db.execute(text("""
+                SELECT 1 FROM locations
+                WHERE organization_id=:org AND location_id=:location AND status='active'
+            """), {"org": workspace_id, "location": location_id}).scalar_one_or_none()
+            if not location_valid:
+                raise AuthzError("Invitation branch is not part of the organization.")
+
+            existing_assignment = db.execute(text("""
+                SELECT assignment_id
+                FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND status='active'
+                LIMIT 1
+                FOR UPDATE
+            """), {"org": workspace_id, "principal": principal_id}).scalar_one_or_none()
+            if existing_assignment is None:
+                assignment_id = _id("asg")
+                db.execute(text("""INSERT INTO organizational_assignments
+                    (assignment_id, organization_id, principal_id, location_id,
+                     role_id, section_id, reports_to_assignment_id, status)
+                    VALUES (:assignment,:org,:principal,:location,
+                            :role,:section,NULL,'active')"""), {
+                    "assignment": assignment_id,
+                    "org": workspace_id,
+                    "principal": principal_id,
+                    "location": location_id,
+                    "role": role_id,
+                    "section": section_id,
+                })
+            else:
+                assignment = db.execute(text("""
+                    SELECT role_id, location_id, section_id
+                    FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND assignment_id=:assignment AND status='active'
+                    FOR UPDATE
+                """), {
+                    "org": workspace_id, "principal": principal_id, "assignment": existing_assignment,
+                }).mappings().one()
+                if (
+                    str(assignment["role_id"]) != role_id
+                    or str(assignment["location_id"]) != location_id
+                    or (str(assignment["section_id"]) if assignment["section_id"] else None) != section_id
+                ):
+                    raise AuthzError("Authenticated account already has a conflicting organizational assignment.")
+
         db.execute(text("""UPDATE invitations SET status='accepted', accepted_by_principal_id=:principal,
             accepted_at=now() WHERE invitation_id=:id"""),
                    {"id": invitation_id, "principal": principal_id})
