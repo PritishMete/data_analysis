@@ -212,13 +212,25 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
         accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
         assert accepted["accepted"] is True
         with SessionLocal() as db:
-            row = db.execute(text("""SELECT m.status, mr.role_id FROM organization_members m
+            row = db.execute(text("""SELECT m.status, mr.role_id,
+                    oa.status AS assignment_status, oa.location_id, oa.section_id,
+                    oa.principal_id
+                FROM organization_members m
                 JOIN identity_bindings b ON b.principal_id=m.principal_id
-                JOIN member_roles mr ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-                    WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                JOIN member_roles mr ON mr.organization_id=m.organization_id
+                    AND mr.principal_id=m.principal_id
+                LEFT JOIN organizational_assignments oa
+                  ON oa.organization_id=m.organization_id
+                 AND oa.principal_id=m.principal_id
+                 AND oa.status='active'
+                WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
                            {"org": workspace, "uid": guest_uid}).one()
         assert row.status == "active"
         assert row.role_id == "employee"
+        assert row.assignment_status == "active"
+        assert row.location_id == result["location_id"]
+        assert row.section_id is None
+        assert row.principal_id == row.principal_id
         assert set_membership_status(owner, workspace, guest_uid, "suspended") is True
         with pytest.raises(AuthzError):
             mutate_role(guest, workspace, owner_uid, "manager", True)
@@ -227,6 +239,74 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_invited_employee_management_scope_and_branch_head_population():
+    import uuid
+    from firebase_authz.management_domain import list_people, management_overview
+    from firebase_authz.supabase_provider import accept_invitation, create_invitation, register_organization
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"management-owner-{suffix}"
+    existing_uid = f"management-existing-{suffix}"
+    guest_uid = f"management-guest-{suffix}"
+    owner = {
+        "uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
+    }
+    guest = {
+        "uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}},
+    }
+    result = register_organization(owner, f"Management Invitation {suffix}", "Main", f"MGMT-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        with SessionLocal.begin() as db:
+            existing_principal = f"prn_existing_{suffix}"
+            db.execute(text("INSERT INTO principals(principal_id) VALUES (:id)"), {"id": existing_principal})
+            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
+                VALUES ('firebase', :uid, :uid, :principal)"""),
+                       {"uid": existing_uid, "principal": existing_principal})
+            db.execute(text("""INSERT INTO organization_members
+                (organization_id, workspace_id, principal_id, employee_id, status)
+                VALUES (:org, :org, :principal, 'EMP-EXISTING', 'active')"""),
+                       {"org": workspace, "principal": existing_principal})
+            db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
+                VALUES (:org, :principal, 'employee')"""),
+                       {"org": workspace, "principal": existing_principal})
+            db.execute(text("""INSERT INTO organizational_assignments
+                (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                VALUES (:assignment, :org, :principal, :location, 'employee', 'active')"""),
+                       {"assignment": f"asg_existing_{suffix}", "org": workspace,
+                        "principal": existing_principal, "location": result["location_id"]})
+
+        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        accept_invitation(guest, workspace, invitation["invitation_id"])
+
+        owner_overview = management_overview(owner, workspace)
+        assert owner_overview["summary"]["total_people"] == 3
+        assert owner_overview["summary"]["branch_head_count"] == 1
+        assert owner_overview["summary"]["employee_count"] == 2
+
+        employee_overview = management_overview(guest, workspace)
+        assert employee_overview["actor"]["role_id"] == "employee"
+        assert employee_overview["actor"]["location_id"] == result["location_id"]
+        assert employee_overview["summary"]["total_people"] == 1
+
+        people = list_people(guest, workspace)
+        assert len(people) == 1
+        assert people[0]["employee_id"] == next(
+            row[0] for row in SessionLocal().execute(
+                text("""SELECT employee_id FROM organization_members m
+                        JOIN identity_bindings b ON b.principal_id=m.principal_id
+                        WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                {"org": workspace, "uid": guest_uid},
+            ).all()
+        )
+    finally:
+        with SessionLocal.begin() as db:
+            db.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
 
 
 def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
