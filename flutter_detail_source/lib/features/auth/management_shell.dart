@@ -2408,10 +2408,53 @@ class _ManagementShellState extends State<ManagementShell> {
             _actionChip('ASSIGN MANAGER', Icons.manage_accounts, () => assignManager(), accent: true),
           if (canManageManagers)
             _actionChip('REPLACE MANAGER', Icons.swap_horiz, () => assignManager(replace: true)),
-          _actionChip('ASSIGN TEAM LEAD', Icons.supervisor_account, assignTeamLead),
+          if (role == 'branch_head')
+            _actionChip('TEAM LEAD REQUESTS', Icons.fact_check, reviewTeamLeadRequests, accent: true),
+          _actionChip(
+            role == 'manager' ? 'REQUEST TEAM LEAD' : 'ASSIGN TEAM LEAD',
+            Icons.supervisor_account,
+            assignTeamLead,
+          ),
         ]),
       ]),
     );
+  }
+
+  Future<void> reviewTeamLeadRequests() async {
+    try {
+      final response = await request('/assignments/team-lead/requests');
+      final requests = maps(response['requests']);
+      if (!mounted) return;
+      if (requests.isEmpty) { feedback('No Team Lead authorization requests.'); return; }
+      for (final item in requests.where((x) => x['status'] == 'pending')) {
+        if (!mounted) return;
+        final approve = await showDialog<bool>(
+          context: context,
+          builder: (c) => _ManagementGlassDialog(
+            title: Text('Team Lead authorization · ${item['location_name'] ?? 'Branch'}'),
+            content: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('REQUESTER  ${item['requester_name'] ?? item['requester_employee_id'] ?? '—'}'),
+              const SizedBox(height: 8),
+              Text('CANDIDATE  ${item['target_name'] ?? item['target_employee_id'] ?? '—'}'),
+              const SizedBox(height: 8),
+              Text('SECTION  ${item['section_name'] ?? '—'}'),
+              const SizedBox(height: 12),
+              const Text('Approving this request creates the Team Lead assignment in this branch.',
+                style: TextStyle(color: TechColors.textMuted, height: 1.4)),
+            ]),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Reject')),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Approve')),
+            ],
+          ),
+        );
+        if (approve == null) continue;
+        await request('/assignments/team-lead/requests/${item['request_id']}/decision',
+            method: 'POST', body: {'approve': approve});
+        feedback(approve ? 'Team Lead request approved.' : 'Team Lead request rejected.');
+      }
+      await loadAll();
+    } catch (e) { feedback(e); }
   }
 
   String _roleLabel(String value) {
