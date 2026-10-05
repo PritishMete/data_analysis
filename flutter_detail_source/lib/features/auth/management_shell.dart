@@ -657,6 +657,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> assignTeamLead() async {
     final active = people.where((p) => p['status'] == 'active').toList();
+    final managerRequest = _managementRole() == 'manager';
     if (locations.isEmpty || sections.isEmpty || active.isEmpty) { feedback(StateError('An active location, section, and person are required.')); return; }
     var location = selectedLocation ?? locations.first['location_id'].toString();
     var sectionId = selectedSection ?? sections.first['section_id'].toString();
@@ -687,9 +688,15 @@ class _ManagementShellState extends State<ManagementShell> {
     })) ?? false;
     if (!ok) return;
     try {
-      await request('/assignments/team-lead', method: 'POST',
-        body: {'location_id': location, 'section_id': sectionId, 'principal_id': principal});
-      feedback('Team Lead assigned.');
+      await request(
+        managerRequest ? '/assignments/team-lead/request' : '/assignments/team-lead',
+        method: 'POST',
+        body: {'location_id': location, 'section_id': sectionId, 'principal_id': principal},
+      );
+      feedback(managerRequest
+          ? 'Team Lead assignment request sent to the Branch Head.'
+          : 'Team Lead assigned.');
+
       await loadAll();
     } catch (e) { feedback(e); }
   }
