@@ -33,8 +33,74 @@ class InsightFlowAuthService {
 
   static _SupabaseCompatUser? get currentUser {
     final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
-    return user == null ? null : _SupabaseCompatUser(user.id);
+    if (user == null) return null;
+    final metadata = user.userMetadata;
+    return _SupabaseCompatUser(
+      uid: user.id,
+      email: user.email,
+      displayName: (metadata['display_name'] ?? metadata['full_name'] ?? metadata['name'])?.toString(),
+    );
   }
+
+  static bool hasProvider(String providerId) {
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+    if (user == null) return false;
+    final normalized = providerId.trim().toLowerCase();
+    final expected = normalized == 'password' ? 'email' : normalized == 'google.com' ? 'google' : normalized;
+    return user.identities?.any((identity) =>
+            identity.provider.toLowerCase() == expected) ??
+        false;
+  }
+
+  static Future<void> reauthenticateWithPassword(String password) async {
+    final email = currentUser?.email;
+    if (email == null || email.isEmpty) {
+      throw StateError('Email/password reauthentication is unavailable.');
+    }
+    await InsightFlowSupabaseAuthService.signInWithPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  static Future<void> reauthenticateWithGoogle() async {
+    await InsightFlowSupabaseAuthService.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: 'https://pritishmete.github.io/data_analysis/',
+    );
+  }
+
+  static Future<void> updateProfile({
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    await InsightFlowSupabaseAuthService.client.auth.updateUser(
+      UserAttributes(
+        data: {
+          if (displayName != null) 'display_name': displayName,
+          if (photoUrl != null) 'avatar_url': photoUrl,
+        },
+      ),
+    );
+  }
+
+  static Future<void> verifyBeforeUpdateEmail(String email) async {
+    await InsightFlowSupabaseAuthService.client.auth.updateUser(
+      UserAttributes(email: email.trim()),
+    );
+  }
+
+  static Future<void> changePassword(String newPassword) async {
+    await InsightFlowSupabaseAuthService.setPassword(newPassword);
+  }
+
+  static Future<void> deleteAccount() async {
+    // The protected /account/cleanup endpoint performs the server-side
+    // Supabase account deletion before this client-side session is cleared.
+    await InsightFlowSupabaseAuthService.signOut();
+  }
+
+  static Future<void> signOut() => InsightFlowSupabaseAuthService.signOut();
 
   static String userFacingAuthError(Object error) {
     if (error is AuthException) {
@@ -62,6 +128,13 @@ class InsightFlowAuthService {
 }
 
 class _SupabaseCompatUser {
-  const _SupabaseCompatUser(this.uid);
+  const _SupabaseCompatUser({
+    required this.uid,
+    this.email,
+    this.displayName,
+  });
+
   final String uid;
+  final String? email;
+  final String? displayName;
 }
