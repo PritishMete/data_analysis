@@ -2449,8 +2449,10 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
         );
         if (approve == null) continue;
-        await request('/assignments/team-lead/requests/${item['request_id']}/decision',
-            method: 'POST', body: {'approve': approve});
+        await request(
+          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=${approve}',
+          method: 'POST',
+        );
         feedback(approve ? 'Team Lead request approved.' : 'Team Lead request rejected.');
       }
       await loadAll();
