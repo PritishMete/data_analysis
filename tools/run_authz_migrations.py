@@ -187,6 +187,16 @@ def verify_organizational_structure(engine) -> None:
 
 
 
+def verify_invitation_organizational_placement(engine) -> None:
+    inspector = inspect(engine)
+    required = {"organization_id", "created_by_principal_id", "location_id", "section_id"}
+    actual = {column["name"] for column in inspector.get_columns("invitations")}
+    missing = sorted(required - actual)
+    if missing:
+        raise RuntimeError(
+            "Invitation placement columns are missing: " + ",".join(missing)
+        )
+
 def verify_managed_dataset_security(engine) -> None:
     inspector = inspect(engine)
     required = {"datasets", "dataset_versions", "dataset_columns", "dataset_rows"}
@@ -258,6 +268,7 @@ def run_migrations() -> None:
     if missing:
         raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
     verify_organizational_structure(engine)
+    verify_invitation_organizational_placement(engine)
     verify_profile_security(engine)
     verify_employee_id_allocator(engine)
     verify_managed_dataset_security(engine)
@@ -311,6 +322,7 @@ def main() -> int:
         print("REQUIRED_TABLES=FAIL")
     else:
         verify_organizational_structure(engine)
+        verify_invitation_organizational_placement(engine)
         verify_profile_security(engine)
         verify_employee_id_allocator(engine)
         verify_managed_dataset_security(engine)
