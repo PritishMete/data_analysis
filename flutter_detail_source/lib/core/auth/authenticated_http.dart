@@ -63,11 +63,13 @@ class InsightFlowOnboardingResolution {
     this.state, {
     this.pendingInvitations = const <Map<String, dynamic>>[],
     this.roleIds = const <String>[],
+    this.workspaceId,
   });
 
   final InsightFlowOnboardingState state;
   final List<Map<String, dynamic>> pendingInvitations;
   final List<String> roleIds;
+  final String? workspaceId;
 }
 
 Future<InsightFlowOnboardingResolution?>
@@ -122,8 +124,8 @@ class _AuthoritativeAuthorizationFailure implements Exception {}
 
 class _TransientAuthorizationFailure implements Exception {}
 
-List<String> _roleIdsFromWorkspace(Map<String, dynamic> workspace) {
-  final raw = workspace['role_ids'];
+List<String> _roleIdsFromAuthorization(Map<String, dynamic> decoded) {
+  final raw = decoded['role_ids'];
   if (raw is! List) return const <String>[];
   return raw
       .map((value) => value.toString().trim().toLowerCase())
@@ -163,49 +165,70 @@ Future<InsightFlowOnboardingResolution>
       );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
+    final decodedJson = jsonDecode(response.body);
+    if (decodedJson is! Map) {
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.transientFailure,
       );
     }
+    final decoded = Map<String, dynamic>.from(decodedJson);
 
+    // The top-level /v1/authz/me contract is the sole authorization source
+    // for post-auth routing. Workspace cache is continuity only.
+    final membershipStatus =
+        decoded['membership_status']?.toString().trim().toLowerCase();
+    final profileComplete = decoded['profile_complete'];
+    final authoritativeWorkspaceId =
+        decoded['workspace_id']?.toString().trim() ?? '';
+    final roleIds = _roleIdsFromAuthorization(decoded);
     final workspaces = decoded['workspaces'];
-    if (workspaces is! List) {
+
+    if (membershipStatus == null ||
+        membershipStatus.isEmpty ||
+        workspaces is! List) {
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.transientFailure,
       );
     }
 
-    final active = workspaces
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .where(
-          (item) =>
-              item['membership_status']?.toString().toLowerCase() == 'active',
-        )
-        .toList();
-
-    if (active.isNotEmpty) {
-      final selected = active.first;
-      final workspaceId =
-          selected['workspace_id']?.toString().trim() ?? '';
-      if (workspaceId.isEmpty) {
+    if (membershipStatus == 'active') {
+      if (authoritativeWorkspaceId.isEmpty) {
         return const InsightFlowOnboardingResolution(
           InsightFlowOnboardingState.transientFailure,
         );
       }
-      await setInsightFlowWorkspaceId(uid, workspaceId);
-      if (selected.containsKey('profile_complete') &&
-          selected['profile_complete'] != true) {
-        return InsightFlowOnboardingResolution(
-          InsightFlowOnboardingState.profileIncomplete,
-          roleIds: _roleIdsFromWorkspace(selected),
+
+      final activeWorkspaceMatches = workspaces
+          .whereType<Map>()
+          .any(
+            (item) =>
+                item['workspace_id']?.toString().trim() ==
+                    authoritativeWorkspaceId &&
+                item['membership_status']?.toString().trim().toLowerCase() ==
+                    'active',
+          );
+      if (!activeWorkspaceMatches) {
+        return const InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.transientFailure,
         );
       }
+
+      await setInsightFlowWorkspaceId(uid, authoritativeWorkspaceId);
+
+      // Missing profile_complete is deliberately treated as incomplete.
+      // Never infer onboarding completion from a missing field or from cache.
+      if (profileComplete != true) {
+        return InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.profileIncomplete,
+          roleIds: roleIds,
+          workspaceId: authoritativeWorkspaceId,
+        );
+      }
+
       return InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.activeMember,
-        roleIds: _roleIdsFromWorkspace(selected),
+        roleIds: roleIds,
+        workspaceId: authoritativeWorkspaceId,
       );
     }
 
