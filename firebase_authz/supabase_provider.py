@@ -1606,4 +1606,27 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             "source_version": row["source_version"], "version": row["version"]}
 
 
+\n\ndef list_dataset_catalog(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
+    context = authorization_context(claims, workspace_id)
+    roles = set(context.get("role_ids", []))
+    if not roles.intersection({"organization_owner","branch_head","manager","team_lead"}):
+        return []
+    org = str(context["organization_id"])
+    with SessionLocal() as db:
+        rows = db.execute(text("""SELECT da.dataset_id, ds.dataset_name, ds.original_filename,
+                da.location_id, l.name AS location_name
+            FROM dataset_authorization da
+            LEFT JOIN datasets ds ON ds.organization_id=da.organization_id AND ds.dataset_id=da.dataset_id
+            LEFT JOIN locations l ON l.organization_id=da.organization_id AND l.location_id=da.location_id
+            WHERE da.organization_id=:org AND da.status='active'
+            ORDER BY lower(coalesce(ds.dataset_name, da.dataset_id)), da.dataset_id"""),
+            {"org": org}).mappings().all()
+        if "organization_owner" in roles:
+            return [dict(row) for row in rows]
+        locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:principal AND status='active' AND location_id IS NOT NULL"""),
+            {"org":org,"principal":context["principal_id"]}).scalars().all())
+        return [dict(row) for row in rows if row["location_id"] is None or row["location_id"] in locations]
+
+
 
