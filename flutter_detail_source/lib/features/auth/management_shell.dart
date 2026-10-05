@@ -247,6 +247,9 @@ class _ManagementShellState extends State<ManagementShell> {
         audit = maps(r[5]['audit']);
         invitations = maps(r[5]['invitations']);
         loading = false;
+        if (!_sectionAllowed(section)) {
+          section = ManagementSection.overview;
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -255,6 +258,96 @@ class _ManagementShellState extends State<ManagementShell> {
           error = e.toString().replaceFirst('Bad state: ', '');
         });
       }
+    }
+  }
+
+  String _managementRole() {
+    final actor = overview['actor'];
+    return actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
+  }
+
+  List<ManagementSection> _allowedSections() {
+    final policy = overview['ui_policy'];
+    if (policy is Map && policy['sections'] is List) {
+      final sections = <ManagementSection>[];
+      for (final raw in policy['sections'] as List) {
+        switch (raw.toString()) {
+          case 'overview':
+            sections.add(ManagementSection.overview);
+            break;
+          case 'organization':
+            sections.add(ManagementSection.organization);
+            break;
+          case 'people':
+            sections.add(ManagementSection.people);
+            break;
+          case 'dataAccess':
+            sections.add(ManagementSection.dataAccess);
+            break;
+          case 'invitations':
+            sections.add(ManagementSection.invitations);
+            break;
+          case 'audit':
+            sections.add(ManagementSection.audit);
+            break;
+        }
+      }
+      if (sections.isNotEmpty) return sections;
+    }
+
+    switch (_managementRole()) {
+      case 'organization_owner':
+      case 'branch_head':
+      case 'manager':
+        return const [
+          ManagementSection.overview,
+          ManagementSection.organization,
+          ManagementSection.people,
+          ManagementSection.dataAccess,
+          ManagementSection.invitations,
+          ManagementSection.audit,
+        ];
+      case 'team_lead':
+        return const [
+          ManagementSection.overview,
+          ManagementSection.people,
+          ManagementSection.dataAccess,
+        ];
+      default:
+        return const [ManagementSection.overview];
+    }
+  }
+
+  bool _sectionAllowed(ManagementSection value) =>
+      _allowedSections().contains(value);
+
+  String _roleWorkspaceTitle() {
+    switch (_managementRole()) {
+      case 'organization_owner':
+        return 'ORGANIZATION / MANAGEMENT';
+      case 'branch_head':
+        return 'BRANCH / MANAGEMENT';
+      case 'manager':
+        return 'TEAM / MANAGEMENT';
+      case 'team_lead':
+        return 'SECTION / MANAGEMENT';
+      default:
+        return 'EMPLOYEE / WORKSPACE';
+    }
+  }
+
+  String _roleWorkspaceSubtitle() {
+    switch (_managementRole()) {
+      case 'organization_owner':
+        return 'Organization-wide management portal';
+      case 'branch_head':
+        return 'Branch-scoped management portal';
+      case 'manager':
+        return 'Team-scoped management portal';
+      case 'team_lead':
+        return 'Section-scoped management portal';
+      default:
+        return 'Employee workspace';
     }
   }
 
@@ -3248,9 +3341,9 @@ class _ManagementShellState extends State<ManagementShell> {
             final workspace = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _eyebrow('ORGANIZATION / MANAGEMENT'),
+                _eyebrow(_roleWorkspaceTitle()),
                 const SizedBox(height: 3),
-                const Text('MANAGEMENT WORKSPACE', style: TextStyle(
+                Text(_roleWorkspaceSubtitle(), style: const TextStyle(
                   color: TechColors.textMuted,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
@@ -3302,14 +3395,14 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget _buildManagementNavigation() {
-    const tabs = <MapEntry<ManagementSection, String>>[
-      MapEntry(ManagementSection.overview, 'OVERVIEW'),
-      MapEntry(ManagementSection.organization, 'ORGANIZATION'),
-      MapEntry(ManagementSection.people, 'PEOPLE'),
-      MapEntry(ManagementSection.dataAccess, 'ACCESS'),
-      MapEntry(ManagementSection.invitations, 'INVITATIONS'),
-      MapEntry(ManagementSection.audit, 'AUDIT'),
-    ];
+    final tabs = <MapEntry<ManagementSection, String>>[
+      const MapEntry(ManagementSection.overview, 'OVERVIEW'),
+      const MapEntry(ManagementSection.organization, 'ORGANIZATION'),
+      const MapEntry(ManagementSection.people, 'PEOPLE'),
+      const MapEntry(ManagementSection.dataAccess, 'ACCESS'),
+      const MapEntry(ManagementSection.invitations, 'INVITATIONS'),
+      const MapEntry(ManagementSection.audit, 'AUDIT'),
+    ].where((tab) => _sectionAllowed(tab.key)).toList();
     // Same geometry and glass settings as DataScreen.NavigationTabs.
     return AdaptiveLiquidGlassLayer(
       settings: kInsightFlowNavigationGlassSettings,
