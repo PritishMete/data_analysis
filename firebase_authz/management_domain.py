@@ -363,11 +363,13 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
 
 def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
     role = str(role_id or "").strip()
-    if role in {"organization_owner", "branch_head", "manager"}:
+    if role in {"organization_owner", "branch_head"}:
         sections = [
             "overview", "organization", "people",
             "dataAccess", "invitations", "audit",
         ]
+    elif role == "manager":
+        sections = ["overview", "people", "dataAccess", "invitations"]
     elif role == "team_lead":
         sections = ["overview", "people", "dataAccess"]
     else:
