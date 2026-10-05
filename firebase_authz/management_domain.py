@@ -361,6 +361,20 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
         "section_count": int(section_count),
     }
 
+def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
+    role = str(role_id or "").strip()
+    if role in {"organization_owner", "branch_head", "manager"}:
+        sections = [
+            "overview", "organization", "people",
+            "dataAccess", "invitations", "audit",
+        ]
+    elif role == "team_lead":
+        sections = ["overview", "people", "dataAccess"]
+    else:
+        sections = ["overview"]
+    return {"sections": sections}
+
+
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
@@ -395,6 +409,7 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "section_id": scope["section_id"],
                 "organization_wide": scope["organization_wide"],
             },
+            "ui_policy": _management_ui_policy(scope["role_id"]),
             "summary": {
                 "location_count": len(locations),
                 "total_people": sum(counts.values()),
