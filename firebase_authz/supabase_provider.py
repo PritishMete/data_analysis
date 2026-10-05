@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .service import AuthzError
+from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
 from .supabase_admin import (
@@ -715,6 +716,49 @@ def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid:
             raise AuthzError("Workspace authorization denied.")
         if status in {"suspended", "removed"}:
             _guard_last_owner(db, workspace_id, target["principal_id"])
+        actor_roles = set(db.execute(text("""SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal"""),
+            {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        target_roles = set(db.execute(text("""SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal"""),
+            {"org": workspace_id, "principal": target["principal_id"]}).scalars().all())
+        if "organization_owner" not in actor_roles:
+            actor_level = max((ROLE_LEVELS.get(role, 0) for role in actor_roles), default=0)
+            target_level = max((ROLE_LEVELS.get(role, 0) for role in target_roles), default=0)
+            if target_level >= actor_level:
+                raise AuthzError("You cannot change membership status for an equal or higher role.")
+            if "branch_head" in actor_roles:
+                same_branch = db.execute(text("""SELECT 1
+                    FROM organizational_assignments actor_oa
+                    JOIN organizational_assignments target_oa
+                      ON target_oa.organization_id=actor_oa.organization_id
+                     AND target_oa.location_id=actor_oa.location_id
+                    WHERE actor_oa.organization_id=:org
+                      AND actor_oa.principal_id=:actor
+                      AND actor_oa.role_id='branch_head'
+                      AND actor_oa.status='active'
+                      AND target_oa.principal_id=:target
+                      AND target_oa.status='active'
+                    LIMIT 1"""),
+                    {"org":workspace_id,"actor":actor["principal_id"],"target":target["principal_id"]}).scalar_one_or_none()
+                if not same_branch:
+                    raise AuthzError("The target member is outside your branch.")
+            elif "manager" in actor_roles or "team_lead" in actor_roles:
+                same_branch = db.execute(text("""SELECT 1
+                    FROM organizational_assignments actor_oa
+                    JOIN organizational_assignments target_oa
+                      ON target_oa.organization_id=actor_oa.organization_id
+                     AND target_oa.location_id=actor_oa.location_id
+                    WHERE actor_oa.organization_id=:org
+                      AND actor_oa.principal_id=:actor
+                      AND actor_oa.status='active'
+                      AND actor_oa.role_id IN ('manager','team_lead')
+                      AND target_oa.principal_id=:target
+                      AND target_oa.status='active'
+                    LIMIT 1"""),
+                    {"org":workspace_id,"actor":actor["principal_id"],"target":target["principal_id"]}).scalar_one_or_none()
+                if not same_branch:
+                    raise AuthzError("The target member is outside your team branch.")
         db.execute(text("UPDATE organization_members SET status=:status WHERE organization_id=:org AND principal_id=:principal"),
                    {"status": status, "org": workspace_id, "principal": target["principal_id"]})
     return True
