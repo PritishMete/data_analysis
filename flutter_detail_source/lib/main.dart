@@ -21,7 +21,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
 
-  // Additive Phase 1 initialization. Firebase remains the active provider.
+  // Initialize the Supabase Auth provider before the authorization gate.
   try {
     await InsightFlowSupabaseAuthService.initialize();
     InsightFlowSupabaseAuthService.logSafeStatus();
