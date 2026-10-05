@@ -315,6 +315,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
         assert branch_head_invitations[0]["location_id"] == org["location_id"]
         assert branch_head_invitations[0]["sender_name"] == f"Owner {owner_uid}"
         assert branch_head_invitations[0]["sender_role_id"] == "branch_head"
+        assert branch_head_invitations[0]["recipient_role_id"] == "employee"
         assert branch_head_invitations[0]["recipient_display"] == f"branch-recipient-{suffix}@example.com"
 
         employee_result = management_snapshot(
