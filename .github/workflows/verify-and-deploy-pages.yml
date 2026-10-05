@@ -34,6 +34,19 @@ jobs:
       - name: Analyze changed auth/onboarding files
         run: flutter analyze lib/core/auth/authenticated_http.dart lib/features/auth/auth_gate.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
 
+      - name: Stamp production build identity
+        shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_WEB_CLIENT_ID}" ]; then
+            echo "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID secret is required for the production web build."
+            exit 1
+          fi
+          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
+          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${GOOGLE_WEB_CLIENT_ID}/g" web/index.html
+
       - name: Build production Flutter web
         run: flutter build web --base-href /data_analysis/ --release
 
