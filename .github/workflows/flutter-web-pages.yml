@@ -36,7 +36,7 @@ jobs:
 
       - name: Run auth and onboarding regression tests
         working-directory: flutter_detail_source
-        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
+        run: flutter test test/core/auth/insightflow_auth_service_test.dart test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
 
       - name: Analyze changed auth and onboarding files
         working-directory: flutter_detail_source
