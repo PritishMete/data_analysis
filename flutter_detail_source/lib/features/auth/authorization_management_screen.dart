@@ -884,7 +884,7 @@ class _AuthorizationManagementScreenState
           title: 'TEAM / EMPLOYEES',
           children: [
             ..._memberRows(),
-            if (isOwner || isManager)
+            if (isOwner)
               TextButton(
                 onPressed: _inviteEmployee,
                 child: const Text('Invite employee'),
@@ -905,13 +905,13 @@ class _AuthorizationManagementScreenState
         ),
       _MetadataSection(
         title: 'MANAGED DATASETS',
-        children: _managedDatasetRows(isOwner || isManager),
+        children: _managedDatasetRows(isOwner),
       ),
       _MetadataSection(
         title: 'DATASET ACCESS',
         children: [
           ..._datasetAccessRows(),
-          if (isOwner || isManager)
+          if (isOwner)
             TextButton(
               onPressed: _createDelegation,
               child: const Text('Manage Team Lead delegation'),
