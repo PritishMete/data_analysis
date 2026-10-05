@@ -228,25 +228,63 @@ class _ManagementShellState extends State<ManagementShell> {
     });
   }
 
+  bool _hasManagementPermission(String permission) {
+    final actor = overview['actor'];
+    if (actor is! Map) return false;
+    final permissions = actor['permissions'];
+    return permissions is List &&
+        permissions.map((value) => value.toString()).contains(permission);
+  }
+
   Future<void> _loadAll() async {
     if (mounted) {
       setState(() { loading = true; error = null; });
     }
     try {
-      final r = await Future.wait([
-        request('/overview'), request('/locations'), request('/sections'),
-        request('/people'), request('/assignments'), request('/audit?limit=100'), request(''),
+      // Overview is authoritative for the caller's management scope and
+      // permissions. Do it first so optional endpoints cannot turn a valid
+      // employee Management Cell into a blanket startup failure.
+      final overviewResponse = await request('/overview');
+      final actor = overviewResponse['actor'];
+      final permissions = actor is Map && actor['permissions'] is List
+          ? (actor['permissions'] as List)
+              .map((value) => value.toString())
+              .toSet()
+          : <String>{};
+
+      final responses = await Future.wait([
+        request('/locations'),
+        request('/sections'),
+        request('/people'),
+        request('/assignments'),
+        if (permissions.contains('audit.view'))
+          request('/audit?limit=100')
+        else
+          Future.value(<String, dynamic>{'audit': <dynamic>[]}),
+        if (permissions.contains('invitation.manage'))
+          request('')
+        else
+          Future.value(<String, dynamic>{'invitations': <dynamic>[]}),
       ]);
+
       if (!mounted) return;
       setState(() {
-        overview = r[0];
-        locations = maps(r[1]['locations']);
-        sections = maps(r[2]['sections']);
-        people = maps(r[3]['people']);
-        assignments = maps(r[4]['assignments']);
-        audit = maps(r[5]['audit']);
-        invitations = maps(r[6]['invitations']);
+        overview = overviewResponse;
+        locations = maps(responses[0]['locations']);
+        sections = maps(responses[1]['sections']);
+        people = maps(responses[2]['people']);
+        assignments = maps(responses[3]['assignments']);
+        audit = maps(responses[4]['audit']);
+        invitations = maps(responses[5]['invitations']);
         loading = false;
+        if (!_hasManagementPermission('audit.view') &&
+            section == ManagementSection.audit) {
+          section = ManagementSection.overview;
+        }
+        if (!_hasManagementPermission('invitation.manage') &&
+            section == ManagementSection.invitations) {
+          section = ManagementSection.overview;
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -3271,13 +3309,15 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget _buildManagementNavigation() {
-    const tabs = <MapEntry<ManagementSection, String>>[
-      MapEntry(ManagementSection.overview, 'OVERVIEW'),
-      MapEntry(ManagementSection.organization, 'ORGANIZATION'),
-      MapEntry(ManagementSection.people, 'PEOPLE'),
-      MapEntry(ManagementSection.dataAccess, 'ACCESS'),
-      MapEntry(ManagementSection.invitations, 'INVITATIONS'),
-      MapEntry(ManagementSection.audit, 'AUDIT'),
+    final tabs = <MapEntry<ManagementSection, String>>[
+      const MapEntry(ManagementSection.overview, 'OVERVIEW'),
+      const MapEntry(ManagementSection.organization, 'ORGANIZATION'),
+      const MapEntry(ManagementSection.people, 'PEOPLE'),
+      const MapEntry(ManagementSection.dataAccess, 'ACCESS'),
+      if (_hasManagementPermission('invitation.manage'))
+        const MapEntry(ManagementSection.invitations, 'INVITATIONS'),
+      if (_hasManagementPermission('audit.view'))
+        const MapEntry(ManagementSection.audit, 'AUDIT'),
     ];
     // Same geometry and glass settings as DataScreen.NavigationTabs.
     return AdaptiveLiquidGlassLayer(
