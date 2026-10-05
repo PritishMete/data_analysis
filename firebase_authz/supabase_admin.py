@@ -210,6 +210,10 @@ def _response_value(response: Any, name: str, default: Any = None) -> Any:
         value = getattr(data, name, None)
         if value is not None:
             return value
+        # Supabase Python SDK versions can expose list_users() as a response
+        # whose .data is the user list itself rather than {users: [...]}.
+        if name == "users" and isinstance(data, list):
+            return data
     return default
 
 
