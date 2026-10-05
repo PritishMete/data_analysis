@@ -921,12 +921,78 @@ def replace_manager(claims: dict[str, Any], workspace_id: str,
         return _assignment(db, org, assignment_id)
 
 
+def request_team_lead_assignment(claims: dict[str, Any], workspace_id: str, location_id: str, section_id: str, principal_id: str, reports_to_assignment_id: str | None = None) -> dict[str, Any]:
+    with SessionLocal.begin() as db:
+        actor = _actor(db, claims, workspace_id)
+        if _management_scope(db, actor)["role_id"] != "manager":
+            raise AuthzError("Only a Manager can request a Team Lead assignment.")
+        _require_location_manage(db, actor, location_id)
+        section = _section(db, actor["organization_id"], section_id)
+        if section["location_id"] != location_id or section["status"] != "active":
+            raise AuthzError("Section does not belong to the requested active branch.")
+        candidate = _member_principal(db, actor["organization_id"], principal_id)
+        rid = _id("mreq")
+        db.execute(text("""INSERT INTO management_assignment_requests
+          (request_id,organization_id,workspace_id,requester_principal_id,location_id,section_id,target_principal_id,reports_to_assignment_id)
+          SELECT :id,:org,:workspace,:requester,:location,:section,:target,:reports_to
+          WHERE NOT EXISTS (SELECT 1 FROM management_assignment_requests WHERE organization_id=:org AND requester_principal_id=:requester AND target_principal_id=:target AND location_id=:location AND section_id=:section AND status='pending')"""), {
+          "id":rid,"org":actor["organization_id"],"workspace":workspace_id,"requester":actor["principal_id"],"location":location_id,"section":section_id,"target":candidate["principal_id"],"reports_to":reports_to_assignment_id})
+        existing=db.execute(text("""SELECT request_id FROM management_assignment_requests WHERE organization_id=:org AND requester_principal_id=:requester AND target_principal_id=:target AND location_id=:location AND section_id=:section AND status='pending'"""), {"org":actor["organization_id"],"requester":actor["principal_id"],"target":candidate["principal_id"],"location":location_id,"section":section_id}).scalar_one_or_none()
+        return {"request_id": existing or rid, "status":"pending"}
+
+
+def list_team_lead_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
+    with SessionLocal() as db:
+        actor=_actor(db,claims,workspace_id); scope=_management_scope(db,actor)
+        if scope["role_id"] not in {"branch_head","manager"}: raise AuthzError("Team Lead authorization requests are not available to this role.")
+        params={"org":actor["organization_id"],"principal":actor["principal_id"]}
+        if scope["role_id"]=="branch_head":
+            params["locations"]=list(db.execute(text("SELECT location_id FROM organizational_assignments WHERE organization_id=:org AND principal_id=:principal AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL"),params).scalars().all())
+            clause="AND r.location_id = ANY(:locations)"
+        else: clause="AND r.requester_principal_id=:principal"
+        rows=db.execute(text(f"""SELECT r.request_id,r.status,r.location_id,l.name AS location_name,r.section_id,s.name AS section_name,
+            requester.employee_id AS requester_employee_id,requester_profile.full_name AS requester_name,
+            target.employee_id AS target_employee_id,target_profile.full_name AS target_name,r.created_at,r.reviewed_at
+          FROM management_assignment_requests r JOIN locations l ON l.location_id=r.location_id AND l.organization_id=r.organization_id
+          JOIN sections s ON s.section_id=r.section_id AND s.organization_id=r.organization_id
+          JOIN organization_members requester ON requester.principal_id=r.requester_principal_id AND requester.organization_id=r.organization_id
+          LEFT JOIN organization_member_profiles requester_profile ON requester_profile.principal_id=r.requester_principal_id AND requester_profile.organization_id=r.organization_id
+          JOIN organization_members target ON target.principal_id=r.target_principal_id AND target.organization_id=r.organization_id
+          LEFT JOIN organization_member_profiles target_profile ON target_profile.principal_id=r.target_principal_id AND target_profile.organization_id=r.organization_id
+          WHERE r.organization_id=:org {clause} ORDER BY r.created_at DESC"""),params).mappings().all()
+        return [dict(x) for x in rows]
+
+
+def decide_team_lead_request(claims: dict[str, Any], workspace_id: str, request_id: str, approve: bool) -> dict[str, Any]:
+    with SessionLocal.begin() as db:
+        actor=_actor(db,claims,workspace_id)
+        if _management_scope(db,actor)["role_id"]!="branch_head": raise AuthzError("Only the Branch Head can approve Team Lead assignments.")
+        req=db.execute(text("SELECT * FROM management_assignment_requests WHERE organization_id=:org AND request_id=:request AND status='pending' FOR UPDATE"),{"org":actor["organization_id"],"request":request_id}).mappings().first()
+        if not req: raise AuthzError("Pending Team Lead authorization request not found.")
+        _require_location_manage(db,actor,req["location_id"])
+        status="approved" if approve else "rejected"
+        if not approve:
+            db.execute(text("UPDATE management_assignment_requests SET status='rejected',reviewed_by_principal_id=:reviewer,reviewed_at=now(),updated_at=now() WHERE request_id=:request"),{"reviewer":actor["principal_id"],"request":request_id})
+            return {"request_id":request_id,"status":"rejected"}
+        parent_id=req["reports_to_assignment_id"]
+        if parent_id:
+            parent=_assignment(db,actor["organization_id"],parent_id)
+            if parent["role_id"]!="manager" or parent["location_id"]!=req["location_id"] or parent["status"]!="active": raise AuthzError("Team Lead must report to an active Manager in the same branch.")
+        candidate=_member_principal(db,actor["organization_id"],req["target_principal_id"]); _ensure_assignment_role(db,actor["organization_id"],candidate["principal_id"],"team_lead")
+        assignment_id=_id("asg")
+        db.execute(text("""INSERT INTO organizational_assignments (assignment_id,organization_id,principal_id,location_id,role_id,section_id,reports_to_assignment_id,status) VALUES (:id,:org,:principal,:location,'team_lead',:section,:parent,'active')"""),{"id":assignment_id,"org":actor["organization_id"],"principal":candidate["principal_id"],"location":req["location_id"],"section":req["section_id"],"parent":parent_id})
+        db.execute(text("UPDATE management_assignment_requests SET status='approved',reviewed_by_principal_id=:reviewer,reviewed_at=now(),updated_at=now() WHERE request_id=:request"),{"reviewer":actor["principal_id"],"request":request_id})
+        return {"request_id":request_id,"status":status,"assignment_id":assignment_id}
+
+
 def assign_team_lead(claims: dict[str, Any], workspace_id: str, location_id: str,
                      section_id: str, principal_id: str,
                      reports_to_assignment_id: str | None = None) -> dict[str, Any]:
     with SessionLocal.begin() as db:
         actor = _actor(db, claims, workspace_id)
         org = actor["organization_id"]
+        if _management_scope(db, actor)["role_id"] == "manager":
+            raise AuthzError("Managers must request Branch Head approval before assigning a Team Lead.")
         _require_location_manage(db, actor, location_id)
         location = _location(db, org, location_id)
         section = _section(db, org, section_id)
