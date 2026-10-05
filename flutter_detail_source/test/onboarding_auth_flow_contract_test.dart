@@ -71,6 +71,17 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, isNot(contains('unawaited(_scheduleBackgroundRetry());')));
   });
 
+  test('active invited employees are gated by backend profile completion before Management Cell', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    expect(http, contains("selected.containsKey('profile_complete')"));
+    expect(http, contains('InsightFlowOnboardingState.profileIncomplete'));
+    expect(gate, contains('case InsightFlowOnboardingState.profileIncomplete:'));
+    expect(gate, contains('EmployeeProfileOnboardingScreen('));
+    expect(gate, contains('case InsightFlowOnboardingState.activeMember:'));
+    expect(gate, contains('ManagementShell()'));
+  });
+
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
     final registration =
         File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
