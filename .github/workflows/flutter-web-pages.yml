@@ -40,7 +40,7 @@ jobs:
 
       - name: Analyze changed auth and onboarding files
         working-directory: flutter_detail_source
-        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/features/auth/auth_gate.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
+        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/insightflow_auth_service.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/sign_up_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
 
       - name: Stamp production web build identity
         working-directory: flutter_detail_source
@@ -50,9 +50,29 @@ jobs:
           sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
           sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com/g" web/index.html
 
+      - name: Validate production Supabase web configuration
+        env:
+          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL || secrets.SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSIGHTFLOW_SUPABASE_URL}" || { echo "Missing GitHub Actions secret: INSIGHTFLOW_SUPABASE_URL (or SUPABASE_URL fallback)."; exit 1; }
+          test -n "${INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY}" || { echo "Missing GitHub Actions secret: INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY (or SUPABASE_PUBLISHABLE_KEY fallback)."; exit 1; }
+          case "${INSIGHTFLOW_SUPABASE_URL}" in
+            https://*.supabase.co) ;;
+            *) echo "INSIGHTFLOW_SUPABASE_URL must be the HTTPS Supabase project URL."; exit 1 ;;
+          esac
+
       - name: Build Flutter web
         working-directory: flutter_detail_source
-        run: flutter build web --release --base-href /data_analysis/
+        env:
+          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL || secrets.SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build web --release --base-href /data_analysis/ \
+            --dart-define=INSIGHTFLOW_SUPABASE_URL="${INSIGHTFLOW_SUPABASE_URL}" \
+            --dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY="${INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY}"
 
       - name: Verify generated web bundle
         working-directory: flutter_detail_source
@@ -65,6 +85,7 @@ jobs:
           grep -R -q "profile_complete" build/web
           grep -R -q "membership_status" build/web
           grep -R -q "/v1/authz/me" build/web
+          grep -R -q "zfdgwnipdyrpbardqoql.supabase.co" build/web
 
       - name: Checkout published gh-pages
         uses: actions/checkout@v4
@@ -107,5 +128,5 @@ jobs:
             echo "No published Flutter changes."
             exit 0
           fi
-          git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
+          git commit -m "deploy: publish Supabase web auth configuration from ${GITHUB_SHA}"
           git push origin gh-pages
