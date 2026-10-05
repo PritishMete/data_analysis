@@ -1,5 +1,6 @@
 name: Build and publish InsightFlow Flutter web
 # Production publish trigger: keep Flutter gh-pages synchronized with feature/data-workspace.
+# Supabase signup regression publish trigger.
 
 on:
   push:
