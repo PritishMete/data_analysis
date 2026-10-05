@@ -825,6 +825,16 @@ def get_assignment_profile(
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
         _require_sensitive_profile_read(db, actor)
+        scope = _management_scope(db, actor)
+        target = _assignment(db, actor["organization_id"], assignment_id)
+        if scope["organization_wide"]:
+            return _profile_detail(db, actor["organization_id"], assignment_id)
+        if scope["role_id"] in {"branch_head", "manager"}:
+            if str(target["location_id"]) not in {str(v) for v in scope.get("location_ids", [])}:
+                raise AuthzError("Assignment is outside your management scope.")
+            return _profile_detail(db, actor["organization_id"], assignment_id)
+        if target["principal_id"] != actor["principal_id"]:
+            raise AuthzError("Assignment is outside your management scope.")
         return _profile_detail(db, actor["organization_id"], assignment_id)
 
 
@@ -1086,11 +1096,27 @@ def list_audit_events(claims: dict[str, Any], workspace_id: str,
         actor = _actor(db, claims, workspace_id)
         if "audit.view" not in _permissions(db, actor["organization_id"], actor["principal_id"]):
             raise AuthzError("Workspace authorization denied.")
-        rows = db.execute(text("""
+        scope = _management_scope(db, actor)
+        if scope["organization_wide"]:
+            scope_clause = "organization_id=:org"
+            params = {"org": actor["organization_id"], "limit": limit}
+        elif scope["role_id"] == "branch_head":
+            scope_clause = """organization_id=:org AND EXISTS (
+                SELECT 1 FROM organizational_assignments oa
+                WHERE oa.organization_id=audit_events.organization_id
+                  AND oa.principal_id=:principal AND oa.role_id='branch_head'
+                  AND oa.location_id = (audit_events.metadata->>'location_id')
+                  AND oa.status='active'
+            )"""
+            params = {"org": actor["organization_id"], "principal": actor["principal_id"], "limit": limit}
+        else:
+            scope_clause = "organization_id=:org AND actor_principal_id=:principal"
+            params = {"org": actor["organization_id"], "principal": actor["principal_id"], "limit": limit}
+        rows = db.execute(text(f"""
             SELECT event_id, actor_principal_id, action, outcome, metadata, created_at
             FROM audit_events
-            WHERE organization_id=:org
+            WHERE {scope_clause}
             ORDER BY created_at DESC
             LIMIT :limit
-        """), {"org": actor["organization_id"], "limit": limit}).mappings().all()
+        """), params).mappings().all()
         return [dict(row) for row in rows]
