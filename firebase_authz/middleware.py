@@ -171,11 +171,22 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             if resource_id:
                 validate_id(resource_id, "resource ID")
 
+            # Uploaded files are dataset ingress. Employees, analysts, Team Leads,
+            # and other lower roles must never be able to bypass the managed-dataset
+            # workflow by posting an arbitrary multipart file to a legacy analysis,
+            # transform, Excel, or Power BI endpoint. Only roles with the explicit
+            # dataset.upload capability may submit file content.
+            is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
+
             if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
                 from .supabase_provider import authorize as provider_authorize
                 decision = provider_authorize(claims, workspace_id, action, resource_id or None)
+                if is_multipart_upload:
+                    provider_authorize(claims, workspace_id, "dataset.upload", None)
             else:
                 decision = authorization(uid, workspace_id, action, resource_id or None)
+                if is_multipart_upload:
+                    authorization(uid, workspace_id, "dataset.upload", None)
             request.state.firebase_uid = uid
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None
