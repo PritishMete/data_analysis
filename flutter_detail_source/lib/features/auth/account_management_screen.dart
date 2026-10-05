@@ -177,7 +177,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         content: const Padding(
           padding: EdgeInsets.only(top: 8),
           child: Text(
-            'This permanently deletes your Firebase Authentication account. '
+            'This permanently deletes your Supabase Authentication account. '
             'It does not create replacement organization access.',
           ),
         ),
@@ -240,7 +240,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
     return AuthGlassScaffold(
       title: 'ACCOUNT / PROFILE',
-      subtitle: user?.email ?? 'Firebase account',
+      subtitle: user?.email ?? 'Supabase account',
       children: [
         const AuthGlassFieldLabel('Display name'),
         GlassTextField(
