@@ -49,9 +49,38 @@ jobs:
           sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
           sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com/g" web/index.html
 
+      - name: Validate Firebase Web build configuration
+        shell: bash
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+        run: |
+          set -euo pipefail
+          test -n "${FIREBASE_WEB_API_KEY}"
+          test -n "${FIREBASE_WEB_APP_ID}"
+          test -n "${FIREBASE_WEB_MESSAGING_SENDER_ID}"
+          test -n "${FIREBASE_WEB_PROJECT_ID}"
+          test -n "${FIREBASE_WEB_AUTH_DOMAIN}"
+          test "${FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
+
       - name: Build Flutter web
         working-directory: flutter_detail_source
-        run: flutter build web --release --base-href /data_analysis/
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+        run: |
+          flutter build web --release --base-href /data_analysis/ \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY="${FIREBASE_WEB_API_KEY}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID="${FIREBASE_WEB_APP_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID="${FIREBASE_WEB_MESSAGING_SENDER_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID="${FIREBASE_WEB_PROJECT_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN="${FIREBASE_WEB_AUTH_DOMAIN}"
 
       - name: Verify generated web bundle
         working-directory: flutter_detail_source
