@@ -800,8 +800,33 @@ def mutate_role(claims: dict[str, Any], workspace_id: str, target_uid: str,
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         target = _principal_for_uid(db, target_uid, workspace_id)
-        if not actor or not target or not _permission_for_principal(db, workspace_id, actor["principal_id"], "roles.manage"):
+        if not actor or not target:
             raise AuthzError("Workspace authorization denied.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an Organization Owner or Branch Head can change role assignments.")
+        if canonical == "organization_owner" and "organization_owner" not in actor_roles:
+            raise AuthzError("Only an Organization Owner can assign the Organization Owner role.")
+        if "organization_owner" not in actor_roles:
+            same_branch = db.execute(text("""
+                SELECT 1
+                FROM organizational_assignments actor_oa
+                JOIN organizational_assignments target_oa
+                  ON target_oa.organization_id=actor_oa.organization_id
+                 AND target_oa.location_id=actor_oa.location_id
+                WHERE actor_oa.organization_id=:org
+                  AND actor_oa.principal_id=:actor
+                  AND actor_oa.role_id='branch_head'
+                  AND actor_oa.status='active'
+                  AND target_oa.principal_id=:target
+                  AND target_oa.status='active'
+                LIMIT 1
+            """), {"org": workspace_id, "actor": actor["principal_id"], "target": target["principal_id"]}).scalar_one_or_none()
+            if not same_branch:
+                raise AuthzError("The target member is outside your branch.")
         role_exists = db.execute(text("SELECT 1 FROM roles WHERE role_id=:role"), {"role": canonical}).scalar_one_or_none()
         if not role_exists:
             raise AuthzError("Role is not part of the organization RBAC model.")
@@ -825,8 +850,14 @@ def upsert_role(claims: dict[str, Any], workspace_id: str, role_id: str,
     permissions = clean_permissions(permissions)
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
-        if not actor or not _permission_for_principal(db, workspace_id, actor["principal_id"], "roles.manage"):
+        if not actor:
             raise AuthzError("Workspace authorization denied.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if "organization_owner" not in actor_roles:
+            raise AuthzError("Only an Organization Owner can manage RBAC role definitions.")
         role = db.execute(text("SELECT system FROM roles WHERE role_id=:role"), {"role": role_id}).scalar_one_or_none()
         if role is True:
             raise AuthzError("System roles cannot be overwritten.")
