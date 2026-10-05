@@ -995,6 +995,9 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                 "organization_id": str(row["organization_id"]),
                 "employee_id": row["employee_id"],
                 "membership_status": "active",
+                "profile_complete": profile_complete
+                if row["organization_id"] == selected["organization_id"]
+                else False,
                 "role_ids": list(roles) if row["organization_id"] == selected["organization_id"] else [],
             })
 
