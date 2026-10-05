@@ -7,6 +7,41 @@ INSERT INTO permissions(permission_id) VALUES
 ('authorization.request.view')
 ON CONFLICT (permission_id) DO NOTHING;
 
+ALTER TABLE dataset_authorization ADD COLUMN IF NOT EXISTS location_id TEXT;
+DO $
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_dataset_authorization_location'
+    ) THEN
+        ALTER TABLE dataset_authorization
+            ADD CONSTRAINT fk_dataset_authorization_location
+            FOREIGN KEY (location_id) REFERENCES locations(location_id);
+    END IF;
+END $;
+
+-- Recover branch scope for legacy datasets only when the owner has one active branch.
+WITH owner_locations AS (
+    SELECT da.organization_id, da.dataset_id, min(oa.location_id) AS location_id,
+           count(DISTINCT oa.location_id) AS location_count
+    FROM dataset_authorization da
+    JOIN organizational_assignments oa
+      ON oa.organization_id=da.organization_id
+     AND oa.principal_id=da.owner_principal_id
+     AND oa.role_id='branch_head'
+     AND oa.status='active'
+     AND oa.location_id IS NOT NULL
+    WHERE da.location_id IS NULL
+    GROUP BY da.organization_id, da.dataset_id
+    HAVING count(DISTINCT oa.location_id)=1
+)
+UPDATE dataset_authorization da
+SET location_id=ol.location_id
+FROM owner_locations ol
+WHERE da.organization_id=ol.organization_id AND da.dataset_id=ol.dataset_id;
+
+CREATE INDEX IF NOT EXISTS idx_dataset_authorization_location
+    ON dataset_authorization(organization_id, location_id);
+
 CREATE TABLE IF NOT EXISTS authorization_requests (
     request_id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
