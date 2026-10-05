@@ -1415,8 +1415,8 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head","manager","team_lead"}):
-        raise AuthzError("Only management roles can assign working copies.")
+    if not roles.intersection({"organization_owner","branch_head"}):
+        raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
     authorize_working_copy(claims, workspace_id, working_copy_id, "working_copy.assign")
     org = str(context["organization_id"])
     with SessionLocal.begin() as db:
