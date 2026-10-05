@@ -18,4 +18,18 @@ void main() {
     expect(dataScreen, contains("tooltip: 'Access management'"));
     expect(dataScreen, contains('openInsightFlowManagement(context)'));
   });
+
+  test('employee Management Cell does not fail on unauthorized audit/invitation requests', () {
+    final shell =
+        File('lib/features/auth/management_shell.dart').readAsStringSync();
+
+    expect(shell, contains("if (permissions.contains('audit.view'))"));
+    expect(shell, contains("if (permissions.contains('invitation.manage'))"));
+    expect(shell, contains("if (_hasManagementPermission('audit.view'))"));
+    expect(shell, contains("if (_hasManagementPermission('invitation.manage'))"));
+    expect(shell, contains("request('/overview')"));
+    expect(shell, contains("request('/people')"));
+    expect(shell, contains("request('/assignments')"));
+  });
+  });
 }
