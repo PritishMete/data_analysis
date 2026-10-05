@@ -466,8 +466,14 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
 
     with SessionLocal() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
-        if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
+        if not actor or actor["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
         location = db.execute(text("""
             SELECT location_id, status FROM locations
             WHERE organization_id=:org AND location_id=:location
@@ -545,8 +551,14 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
 
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
-        if not actor or actor["status"] != "active" or not _permission_for_principal(db, workspace_id, actor["principal_id"], "invitation.manage"):
+        if not actor or actor["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
         db.execute(text("""INSERT INTO invitations
             (invitation_id, organization_id, email, role_id, status,
              expires_at, created_by_principal_id, auth_user_id, location_id,
