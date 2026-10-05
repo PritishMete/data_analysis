@@ -31,5 +31,4 @@ void main() {
     expect(shell, contains("request('/people')"));
     expect(shell, contains("request('/assignments')"));
   });
-  });
 }
