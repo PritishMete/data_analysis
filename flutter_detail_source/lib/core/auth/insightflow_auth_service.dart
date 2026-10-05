@@ -34,7 +34,7 @@ class InsightFlowAuthService {
   static _SupabaseCompatUser? get currentUser {
     final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
     if (user == null) return null;
-    final metadata = user.userMetadata;
+    final metadata = user.userMetadata ?? const <String, dynamic>{};
     return _SupabaseCompatUser(
       uid: user.id,
       email: user.email,
