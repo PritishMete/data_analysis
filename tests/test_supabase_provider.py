@@ -229,6 +229,50 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
 
 
+def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
+    import uuid
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        authorization_context,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"profile-owner-{suffix}"
+    guest_uid = f"profile-guest-{suffix}"
+    owner = {
+        "uid": owner_uid,
+        "sub": owner_uid,
+        "email": f"owner-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
+    }
+    guest = {
+        "uid": guest_uid,
+        "sub": guest_uid,
+        "email": f"guest-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}},
+    }
+    result = register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        accept_invitation(guest, workspace, invitation["invitation_id"])
+
+        context = authorization_context(guest, workspace)
+        assert context["membership_status"] == "active"
+        assert context["profile_complete"] is False
+        assert context["workspaces"][0]["membership_status"] == "active"
+        assert context["workspaces"][0]["profile_complete"] is False
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
 def test_supabase_invitation_rejects_expired_and_revoked():
     import uuid
     from datetime import datetime, timedelta, timezone
