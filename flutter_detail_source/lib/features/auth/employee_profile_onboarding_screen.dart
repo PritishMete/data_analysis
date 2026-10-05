@@ -351,6 +351,7 @@ class _EmployeeProfileOnboardingScreenState
     );
   }
 
+  @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const AuthGlassScaffold(
@@ -368,7 +369,7 @@ class _EmployeeProfileOnboardingScreenState
         AuthGlassMessage(
           text: _email.isEmpty
               ? 'Your authenticated email must already be confirmed.'
-              : 'EMAIL  ' + _email + '  •  VERIFIED',
+              : 'EMAIL  $_email  •  VERIFIED',
           error: false,
         ),
         const SizedBox(height: 12),
@@ -377,7 +378,7 @@ class _EmployeeProfileOnboardingScreenState
             builder: (context, constraints) {
               final rows = <List<Widget>>[
                 [_field('Full Name', _fullName), _readonly('Employee ID', _employeeId)],
-                [_readonly('Email', _email + '  •  CONFIRMED'), _phoneInputRow()],
+                [_readonly('Email', '$_email  •  CONFIRMED'), _phoneInputRow()],
                 [
                   _field('Address Line 1', _address1),
                   ProfileSelectField(
@@ -465,7 +466,7 @@ class _EmployeeProfileOnboardingScreenState
           const SizedBox(height: 12),
           _review('FULL NAME', _fullName.text),
           _review('EMPLOYEE ID', _employeeId),
-          _review('EMAIL', _email + ' ✓'),
+          _review('EMAIL', '$_email ✓'),
           _review('PHONE', _phoneE164() ?? '—'),
           _review('ADDRESS LINE 1', _address1.text),
           _review('STATE', _state?.label ?? ''),
@@ -473,7 +474,7 @@ class _EmployeeProfileOnboardingScreenState
           _review('PIN / POSTAL CODE', _postal.text),
           _review(
             'ID PROOF',
-            (_proofType?.label ?? '') + '  ' + _mask(_proofNumber.text),
+            '${_proofType?.label ?? ''}  ${_mask(_proofNumber.text)}',
           ),
           const SizedBox(height: 10),
           GlassButton.custom(
