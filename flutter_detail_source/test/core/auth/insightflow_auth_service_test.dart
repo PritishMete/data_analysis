@@ -1,41 +1,11 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:liquid_glass_widgets/core/auth/insightflow_auth_service.dart';
 import 'package:liquid_glass_widgets/core/auth/supabase_auth_service.dart';
 
 void main() {
-  group('InsightFlowAuthService startup boundaries', () {
-    test('Google initialization failure maps to a provider-specific error', () {
-      final message = InsightFlowAuthService.userFacingAuthError(
-        FirebaseAuthException(
-          code: 'google-sign-in-initialization-failed',
-          message: 'Google SDK initialization failed internally',
-        ),
-      );
-
-      expect(
-        message,
-        'Google sign-in could not start. Try email/password or Microsoft sign-in, or try Google again later.',
-      );
-      expect(message, isNot(contains('Firebase authentication is not configured for this build.')));
-    });
-
-    test('Firebase configuration error message is not used for Google provider errors', () {
-      final googleError = FirebaseAuthException(
-        code: 'google-sign-in-initialization-failed',
-      );
-
-      expect(
-        InsightFlowAuthService.userFacingAuthError(googleError),
-        isNot('Firebase authentication is not configured for this build.'),
-      );
-    });
-  });
-
-  group('Supabase email verification error mapping', () {
+  group('Supabase authentication boundaries', () {
     test('email_not_confirmed is detected as an unverified email', () {
       final error = AuthException(
         'Email not confirmed',
@@ -61,70 +31,40 @@ void main() {
         isFalse,
       );
     });
-  });
 
-  group('InsightFlowAuthService provider error mapping', () {
-    test('Google web UI required error is provider-specific', () {
-      expect(InsightFlowAuthService.userFacingAuthError(FirebaseAuthException(code: 'google-web-ui-required')), 'Google sign-in must be started with the Google sign-in button.');
-    });
+    test('signup does not fall through to an uninitialized Supabase client', () async {
+      if (InsightFlowSupabaseConfig.isConfigured) {
+        return;
+      }
 
-    test('Google provider error does not expose raw details', () {
-      final message = InsightFlowAuthService.userFacingAuthError(FirebaseAuthException(code: 'google-provider-error', message: 'sensitive provider details'));
-      expect(message, 'Google sign-in could not be completed. Please try again.');
-      expect(message, isNot(contains('sensitive provider details')));
-    });
-
-    test('Google cancellation is user-facing cancellation', () {
-      final error = GoogleSignInException(
-        code: GoogleSignInExceptionCode.canceled,
-        description: 'user cancelled',
-      );
-
-      expect(
-        InsightFlowAuthService.userFacingAuthError(error),
-        'Sign-in was cancelled.',
+      await expectLater(
+        InsightFlowSupabaseAuthService.signUp(
+          email: 'signup-regression@example.invalid',
+          password: 'not-a-real-password',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message.toString(),
+            'message',
+            'Supabase authentication is not configured for this build.',
+          ),
+        ),
       );
     });
 
-    test('Google configuration failure is not exposed as a raw exception', () {
+    test('Supabase auth facade never uses Firebase-specific configuration errors', () {
       final message = InsightFlowAuthService.userFacingAuthError(
-        FirebaseAuthException(
-          code: 'invalid-configuration',
-          message: 'provider configuration details',
+        AuthException(
+          'Email not confirmed',
+          code: 'email_not_confirmed',
+          statusCode: '400',
         ),
       );
 
+      expect(message, 'Email not verified. Please verify your email first.');
       expect(
         message,
-        'This sign-in provider is not configured correctly. Check the Firebase provider settings.',
-      );
-      expect(message, isNot(contains('provider configuration details')));
-    });
-
-    test('popup blocked has a specific recovery message', () {
-      expect(
-        InsightFlowAuthService.userFacingAuthError(
-          FirebaseAuthException(code: 'popup-blocked'),
-        ),
-        'The sign-in window was blocked. Allow pop-ups and try again.',
-      );
-    });
-
-    test('Microsoft provider-disabled error remains actionable', () {
-      expect(
-        InsightFlowAuthService.userFacingAuthError(
-          FirebaseAuthException(code: 'operation-not-allowed'),
-        ),
-        'This sign-in method is not enabled for this Firebase project.',
-      );
-    });
-
-    test('email/password errors retain the existing path', () {
-      expect(
-        InsightFlowAuthService.userFacingAuthError(
-          FirebaseAuthException(code: 'wrong-password'),
-        ),
-        'Email or password is incorrect.',
+        isNot(contains('Firebase')),
       );
     });
   });
