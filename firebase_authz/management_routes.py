@@ -28,6 +28,9 @@ from .management_domain import (
     management_overview,
     replace_manager,
     set_reporting_relationship,
+    request_team_lead_assignment,
+    list_team_lead_requests,
+    decide_team_lead_request,
 )
 from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, list_dataset_catalog
 
@@ -213,6 +216,33 @@ def team_lead_assign(
         assign_team_lead, _claims(authorization), _workspace(workspace_id),
         req.location_id, req.section_id, req.principal_id, req.reports_to_assignment_id,
     )
+
+
+@router.get("/assignments/team-lead/requests")
+def team_lead_requests(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"requests": _dispatch(list_team_lead_requests, _claims(authorization), _workspace(workspace_id))}
+
+
+@router.post("/assignments/team-lead/request")
+def team_lead_request(
+    req: TeamLeadAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(request_team_lead_assignment, _claims(authorization), _workspace(workspace_id), req.location_id, req.section_id, req.principal_id, req.reports_to_assignment_id)
+
+
+@router.post("/assignments/team-lead/requests/{request_id}/decision")
+def team_lead_request_decision(
+    request_id: str,
+    approve: bool = Query(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(decide_team_lead_request, _claims(authorization), _workspace(workspace_id), request_id, approve)
 
 
 @router.post("/assignments/reporting")
