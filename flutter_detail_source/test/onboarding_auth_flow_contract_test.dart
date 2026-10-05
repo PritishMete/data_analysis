@@ -82,6 +82,75 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, contains('ManagementShell()'));
   });
 
+  test('authoritative /me top-level state controls onboarding before workspace details', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+
+    expect(http, contains("decoded['membership_status']"));
+    expect(http, contains("decoded['profile_complete']"));
+    expect(http, contains("decoded['role_ids']"));
+    expect(http, contains("decoded['workspaces']"));
+    expect(http, contains("if (membershipStatus == 'active')"));
+    expect(http, contains("if (profileComplete != true)"));
+    expect(http, contains('InsightFlowOnboardingState.profileIncomplete'));
+    expect(http, isNot(contains("selected.containsKey('profile_complete')")));
+    expect(http, isNot(contains("_roleIdsFromWorkspace")));
+    expect(gate, contains('_authoritativeWorkspaceId'));
+    expect(gate, contains('workspaceId: _authoritativeWorkspaceId ?? \'\''));
+  });
+
+  test('active employee with missing profile_complete cannot become activeMember', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final profileGuard = http.indexOf('if (profileComplete != true)');
+    final activeReturn = http.indexOf(
+      'InsightFlowOnboardingState.activeMember',
+      profileGuard,
+    );
+
+    expect(profileGuard, greaterThanOrEqualTo(0));
+    expect(activeReturn, greaterThan(profileGuard));
+    expect(
+      http.substring(profileGuard, activeReturn),
+      contains('InsightFlowOnboardingState.profileIncomplete'),
+    );
+  });
+
+  test('stale cached workspace cannot bypass authoritative profileIncomplete', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final activeBranch = http.indexOf("if (membershipStatus == 'active')");
+    final profileGuard = http.indexOf('if (profileComplete != true)', activeBranch);
+
+    expect(activeBranch, greaterThanOrEqualTo(0));
+    expect(profileGuard, greaterThan(activeBranch));
+    expect(
+      http.substring(activeBranch, profileGuard),
+      contains('setInsightFlowWorkspaceId(uid, authoritativeWorkspaceId)'),
+    );
+    expect(
+      http.substring(profileGuard, profileGuard + 260),
+      contains('InsightFlowOnboardingState.profileIncomplete'),
+    );
+  });
+
+  test('completed employees and both management roles route to ManagementShell, never DataScreen', () {
+    final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    final activeStart = gate.indexOf('case InsightFlowOnboardingState.activeMember:');
+    final pendingStart = gate.indexOf(
+      'case InsightFlowOnboardingState.pendingInvitation:',
+      activeStart,
+    );
+
+    expect(activeStart, greaterThanOrEqualTo(0));
+    expect(pendingStart, greaterThan(activeStart));
+    final activeBlock = gate.substring(activeStart, pendingStart);
+    expect(activeBlock, contains('const ManagementShell()'));
+    expect(activeBlock, isNot(contains('DataScreen')));
+
+    final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    expect(management, contains('managementRoles'));
+    expect(management, contains('roleIds'));
+  });
+
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
     final registration =
         File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
