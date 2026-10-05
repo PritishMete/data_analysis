@@ -47,7 +47,7 @@ DEFAULT_ROLES = {
     "analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "viewer": {"data.view","history.view","organization.view"},
     "organization_owner": set(ACTIONS),
-    "branch_head": set(ACTIONS) - {"account.delete"},
+    "branch_head": set(ACTIONS) - {"account.delete","roles.manage","policies.manage"},
     "manager": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","worksheet.delete","operation.undo.own","history.view","users.manage","organization.view","membership.view","membership.manage","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy"},
     "team_lead": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","membership.view","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy"},
     "employee": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
