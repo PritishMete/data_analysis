@@ -18,7 +18,7 @@ class ManagedDatasetAccessWorkspace extends StatefulWidget {
 class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWorkspace> {
   bool loading = true, rowsLoading = false;
   String? error, rowsError, search;
-  List<Map<String,dynamic>> datasets = [], members = [], rows = [];
+  List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
   Map<String,dynamic>? selected, profile;
   int offset = 0;
@@ -52,12 +52,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final values = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management')]);
+      final values = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
       final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
       final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
+      final cat = values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
+      final rq = values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
+        catalog = (cat['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+        requests = (rq['requests'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
         members = (mg['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
         roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
         loading = false;
@@ -94,6 +98,22 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) {
       if (mounted) setState(() { rowsLoading = false; rowsError = e.toString().replaceFirst('Bad state: ', ''); });
     }
+  }
+
+  Future<void> _requestCopy(String datasetId) async {
+    try {
+      await _get('/v1/authz/management/data-access/requests?dataset_id=' + Uri.encodeQueryComponent(datasetId));
+      _snack('Copy request submitted to the Branch Head.');
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _decideRequest(String requestId, bool approve) async {
+    try {
+      await _get('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString());
+      _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
+      await _load();
+    } catch (e) { _snack(e); }
   }
 
   Future<void> _grant(String uid, List<String> permissions) async {
@@ -183,7 +203,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canManage => roles.contains('organization_owner') || roles.contains('branch_head') || roles.contains('manager');
+  bool get canManage => roles.contains('organization_owner') || roles.contains('branch_head');
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -206,7 +226,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head') || roles.contains('manager');
+    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
@@ -215,7 +235,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
-        _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
+        if (canManage) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
