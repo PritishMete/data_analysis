@@ -230,6 +230,105 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
         _cleanup(org["organization_id"])
 
 
+def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
+    from firebase_authz.supabase_provider import management_snapshot
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"invite-owner-{suffix}"
+    branch_head_uid = f"invite-branch-head-{suffix}"
+    employee_uid = f"invite-recipient-{suffix}"
+    other_recipient_uid = f"invite-other-recipient-{suffix}"
+    org = _seed_org(owner_uid, "Invitation Visibility", f"INV-VIS-{suffix}")
+    try:
+        with SessionLocal.begin() as session:
+            branch_head = _add_member(
+                session, org["organization_id"], branch_head_uid, "BH-VIS", role="branch_head"
+            )
+            employee = _add_member(
+                session, org["organization_id"], employee_uid, "EMP-VIS", role="employee"
+            )
+            _add_member(
+                session, org["organization_id"], other_recipient_uid, "EMP-OTHER-VIS", role="employee"
+            )
+            session.execute(
+                text("""
+                    INSERT INTO organizational_assignments
+                      (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                    VALUES (:assignment, :org, :principal, :location, 'branch_head', 'active')
+                """),
+                {
+                    "assignment": f"asg_bh_{uuid.uuid4().hex}",
+                    "org": org["organization_id"],
+                    "principal": branch_head,
+                    "location": org["location_id"],
+                },
+            )
+            second = session.execute(
+                text("""
+                    INSERT INTO locations(location_id, organization_id, name, branch_identifier)
+                    VALUES (:location, :org, 'Other Branch', :identifier)
+                    RETURNING location_id
+                """),
+                {
+                    "location": f"loc_{uuid.uuid4().hex}",
+                    "org": org["organization_id"],
+                    "identifier": f"OTHER-{suffix}",
+                },
+            ).scalar_one()
+
+            owner_principal = session.execute(
+                text("""
+                    SELECT principal_id FROM identity_bindings
+                    WHERE provider='firebase' AND provider_subject=:uid
+                """),
+                {"uid": owner_uid},
+            ).scalar_one()
+            session.execute(
+                text("""
+                    INSERT INTO invitations
+                      (invitation_id, organization_id, email, role_id, status,
+                       created_by_principal_id, location_id)
+                    VALUES
+                      (:main_id, :org, :main_email, 'employee', 'invited', :creator, :main_location),
+                      (:other_id, :org, :other_email, 'manager', 'invited', :creator, :other_location),
+                      (:recipient_id, :org, :recipient_email, 'employee', 'invited', :creator, :other_location)
+                """),
+                {
+                    "main_id": f"inv_{uuid.uuid4().hex}",
+                    "other_id": f"inv_{uuid.uuid4().hex}",
+                    "recipient_id": f"inv_{uuid.uuid4().hex}",
+                    "org": org["organization_id"],
+                    "main_email": f"branch-recipient-{suffix}@example.com",
+                    "other_email": f"other-branch-{suffix}@example.com",
+                    "recipient_email": f"{employee_uid}@example.com",
+                    "creator": owner_principal,
+                    "main_location": org["location_id"],
+                    "other_location": second,
+                },
+            )
+
+        branch_head_result = management_snapshot(
+            _claims(branch_head_uid), org["workspace_id"]
+        )
+        branch_head_invitations = branch_head_result["invitations"]
+        assert len(branch_head_invitations) == 1
+        assert branch_head_invitations[0]["location_id"] == org["location_id"]
+        assert branch_head_invitations[0]["sender_name"] == f"Owner {owner_uid}"
+        assert branch_head_invitations[0]["sender_role_id"] == "branch_head"
+        assert branch_head_invitations[0]["recipient_display"] == f"branch-recipient-{suffix}@example.com"
+
+        employee_result = management_snapshot(
+            _claims(employee_uid), org["workspace_id"]
+        )
+        employee_invitations = employee_result["invitations"]
+        assert len(employee_invitations) == 1
+        assert employee_invitations[0]["email"] == f"{employee_uid}@example.com"
+        assert employee_invitations[0]["location_id"] == second
+        assert employee_invitations[0]["email"] != f"branch-recipient-{suffix}@example.com"
+    finally:
+        _cleanup(org["organization_id"])
+
+
 def test_manager_assignment_conflict_replacement_and_audit_are_atomic():
     from firebase_authz.management_domain import assign_manager, replace_manager, list_audit_events
     from firebase_authz.service import AuthzError
