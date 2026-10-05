@@ -1129,12 +1129,17 @@ class _ManagementShellState extends State<ManagementShell> {
           builder: (context, constraints) {
             final columns = constraints.maxWidth < 820 ? 1 : 2;
             final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            final actions = [
+            final actions = <(String, String, IconData, ManagementSection)>[
               ('Add person', 'Review and manage people', Icons.person_add_alt_1_outlined, ManagementSection.people),
-              ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
-              ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
-              ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
-              ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
+              if (_hasManagementPermission('organization.manage'))
+                ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
+              if (_hasManagementPermission('invitation.manage'))
+                ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
+              if (_hasManagementPermission('membership.view') ||
+                  _hasManagementPermission('users.manage'))
+                ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
+              if (_hasManagementPermission('audit.view'))
+                ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
             ];
             return Wrap(
               spacing: 12,
