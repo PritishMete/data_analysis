@@ -106,7 +106,7 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions(role_id, permission_id)
 SELECT 'branch_head', permission_id FROM permissions
-WHERE permission_id NOT IN ('account.delete')
+WHERE permission_id NOT IN ('account.delete','roles.manage')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions(role_id, permission_id)
