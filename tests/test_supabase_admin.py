@@ -156,6 +156,31 @@ def test_find_user_by_email_supports_nested_data_response():
         }
 
 
+def test_find_user_by_email_supports_list_data_response():
+    response = type(
+        "Response",
+        (),
+        {
+            "data": [
+                {
+                    "id": "list-user",
+                    "email": "LIST@example.com",
+                    "email_confirmed_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+        },
+    )()
+    with patch.object(
+        supabase_admin,
+        "_run_admin_operation",
+        side_effect=lambda operation, callback: response,
+    ):
+        assert supabase_admin.find_user_by_email("list@example.com") == {
+            "user_id": "list-user",
+            "email_confirmed": True,
+        }
+
+
 def test_existing_auth_user_error_only_matches_duplicate_422():
     assert supabase_admin.is_existing_auth_user_error(
         _AdminServerError("A user with this email address has already been registered")
