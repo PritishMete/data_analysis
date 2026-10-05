@@ -59,6 +59,7 @@ class SourceRouter extends StatelessWidget {
         break;
 
       case _SourceTab.uploadedFile:
+        if (!state.canUploadDataset) return;
         // Delegates to the real upload pipeline on DataScreenState — it
         // already handles picking, parsing, resetting analysisData/view,
         // applying headers, and showing a notification. Re-implementing
@@ -159,7 +160,7 @@ class SourceRouter extends StatelessWidget {
         children: [
           chip('Active Selection', _SourceTab.activeSelection, webOnly: true),
           chip('Named Sheet', _SourceTab.namedSheet, webOnly: true),
-          chip('Upload File', _SourceTab.uploadedFile),
+          if (state.canUploadDataset) chip('Upload File', _SourceTab.uploadedFile),
           chip('Detail Analysis', _SourceTab.detailAnalysis),
         ],
       ),
@@ -187,6 +188,9 @@ class SourceRouter extends StatelessWidget {
   }
 
   Widget _buildUploadPanel(BuildContext context) {
+    if (!state.canUploadDataset) {
+      return const SizedBox.shrink();
+    }
     final uploaded = state.uploadedFile;
 
     return Column(
