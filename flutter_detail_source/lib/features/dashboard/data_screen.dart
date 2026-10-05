@@ -356,6 +356,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   DataSourceMode dataSourceMode = DataSourceMode.excel;
   FileUploadResult? uploadedFile;
   bool isUploadingFile = false;
+  bool canUploadDataset = false;
 
   String? get currentFileName => uploadedFile?.fileName;
 
@@ -520,6 +521,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _transformationManager.addListener(_onTransformationManagerChanged);
+    _loadDatasetUploadCapability();
     syncOnStartup();
   }
 
@@ -550,6 +552,25 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // =========================================================================
   // Business logic — all unchanged
   // =========================================================================
+
+  Future<void> _loadDatasetUploadCapability() async {
+    try {
+      final user = InsightFlowAuthService.currentUser;
+      if (user == null) return;
+      final resolution = await resolveInsightFlowOnboardingStateFromBackend(user.uid);
+      if (!mounted) return;
+      final roles = resolution.roleIds.map((role) => role.toLowerCase()).toSet();
+      setState(() {
+        canUploadDataset = roles.contains('organization_owner') ||
+            roles.contains('branch_head') ||
+            roles.contains('manager');
+      });
+    } catch (_) {
+      // Fail closed: an employee must not receive an upload control merely
+      // because the role lookup was unavailable.
+      if (mounted) setState(() => canUploadDataset = false);
+    }
+  }
 
   Future<void> syncOnStartup() async {
     if (!kIsWeb) return;
