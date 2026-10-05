@@ -228,6 +228,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   InsightFlowOnboardingState _onboardingState =
       InsightFlowOnboardingState.initializing;
   List<Map<String, dynamic>> _pendingInvitations = const [];
+  String? _authoritativeWorkspaceId;
 
   @override
   void initState() {
@@ -320,6 +321,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         _workspaceLookupFailed = false;
         _onboardingState = resolved.state;
         _pendingInvitations = resolved.pendingInvitations;
+        _authoritativeWorkspaceId = resolved.workspaceId;
       });
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -395,7 +397,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         break;
       case InsightFlowOnboardingState.profileIncomplete:
         authenticatedChild = EmployeeProfileOnboardingScreen(
-          workspaceId: insightFlowWorkspaceId,
+          workspaceId: _authoritativeWorkspaceId ?? '',
           onCompleted: () async => _refresh(showLoading: false),
         );
         break;
