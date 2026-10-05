@@ -74,7 +74,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
   test('active invited employees are gated by backend profile completion before Management Cell', () {
     final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
     final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
-    expect(http, contains("selected.containsKey('profile_complete')"));
+    // Profile completion is read from the authoritative top-level /me response.
+    expect(http, contains("decoded['profile_complete']"));
     expect(http, contains('InsightFlowOnboardingState.profileIncomplete'));
     expect(gate, contains('case InsightFlowOnboardingState.profileIncomplete:'));
     expect(gate, contains('EmployeeProfileOnboardingScreen('));
