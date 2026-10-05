@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'core/auth/insightflow_auth_service.dart';
 import 'core/auth/supabase_auth_service.dart';
 import 'features/auth/auth_gate.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -32,65 +31,11 @@ void main() async {
     );
   }
 
-  String? firebaseInitError;
-  final supabaseConfigured = InsightFlowSupabaseConfig.isConfigured;
-
-  // Keep Firebase configuration validation/core initialization separate from
-  // optional provider initialization. A Google SDK failure must never be
-  // reported as a missing Firebase configuration.
-  try {
-    final firebaseOptions =
-        InsightFlowAuthService.validateFirebaseConfiguration();
-    debugPrint('[auth-init] firebase-options: valid');
-    await InsightFlowAuthService.initializeFirebaseCore(firebaseOptions);
-    debugPrint('[auth-init] firebase-core: initialized');
-  } catch (error, stackTrace) {
-    debugPrint(
-      '[auth-init] Firebase startup failed at configuration/core stage: '
-      '${error.runtimeType}',
-    );
-    debugPrintStack(stackTrace: stackTrace);
-    if (!supabaseConfigured) {
-      firebaseInitError =
-          'Firebase authentication is not configured for this build.';
-    }
-  }
-
-  if (firebaseInitError == null) {
-    try {
-      await InsightFlowAuthService.initializeFirebasePersistence();
-      debugPrint('[auth-init] firebase-persistence: initialized');
-    } catch (error, stackTrace) {
-      debugPrint(
-        '[auth-init] firebase-persistence failed: ${error.runtimeType}',
-      );
-      debugPrintStack(stackTrace: stackTrace);
-    }
-
-    try {
-      await InsightFlowAuthService.initializeGoogleSignIn();
-      debugPrint('[auth-init] google-sign-in: initialized');
-    } catch (error, stackTrace) {
-      debugPrint('[auth-init] google-sign-in failed: ${error.runtimeType}');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-
-    try {
-      await InsightFlowAuthService.initializeRedirectResult();
-      debugPrint('[auth-init] redirect-result: processed');
-    } catch (error, stackTrace) {
-      debugPrint('[auth-init] redirect-result failed: ${error.runtimeType}');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  runApp(ElectricAIApp(firebaseInitError: firebaseInitError));
+  runApp(const ElectricAIApp());
 }
 
 class ElectricAIApp extends StatelessWidget {
-  const ElectricAIApp({super.key, this.firebaseInitError});
-
-  final String? firebaseInitError;
+  const ElectricAIApp({super.key});
 
   /// Detect if device has low available memory.
   ///
@@ -186,30 +131,9 @@ class ElectricAIApp extends StatelessWidget {
             child: BackendHeartbeatHost(child: child!),
           ),
         ),
-        home: firebaseInitError == null
-            ? const AuthGate()
-            : const _FirebaseConfigurationError(),
+        home: const AuthGate(),
       ),
     );
   }
 }
 
-class _FirebaseConfigurationError extends StatelessWidget {
-  const _FirebaseConfigurationError();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CupertinoPageScaffold(
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Firebase authentication is not configured for this build.\n\n'
-            'Register the InsightFlow Web app and rebuild with its Firebase Web configuration.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
-    );
-  }
-}
