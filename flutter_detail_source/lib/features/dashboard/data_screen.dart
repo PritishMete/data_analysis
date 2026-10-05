@@ -562,8 +562,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       final roles = resolution.roleIds.map((role) => role.toLowerCase()).toSet();
       setState(() {
         canUploadDataset = roles.contains('organization_owner') ||
-            roles.contains('branch_head') ||
-            roles.contains('manager');
+            roles.contains('branch_head');
       });
     } catch (_) {
       // Fail closed: an employee must not receive an upload control merely
