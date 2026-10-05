@@ -22,6 +22,8 @@ void main() {
     expect(source, contains("/v1/managed-datasets"));
     expect(source, contains("Upload New Version"));
     expect(source, contains("Start Working"));
+    expect(source, contains("_managedDatasetRows(isOwner)"));
+    expect(source, isNot(contains("_managedDatasetRows(isOwner || isManager)")));
     expect(source, contains("row_count"));
     expect(source, contains("column_count"));
   });
