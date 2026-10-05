@@ -1105,8 +1105,9 @@ def list_audit_events(claims: dict[str, Any], workspace_id: str,
     limit = max(1, min(int(limit), 200))
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
-        if "audit.view" not in _permissions(db, actor["organization_id"], actor["principal_id"]):
-            raise AuthzError("Workspace authorization denied.")
+        scope = _management_scope(db, actor)
+        if scope["role_id"] not in {"organization_owner", "branch_head"}:
+            raise AuthzError("Only an Organization Owner or Branch Head can view audit events.")
         scope = _management_scope(db, actor)
         if scope["organization_wide"]:
             scope_clause = "organization_id=:org"
