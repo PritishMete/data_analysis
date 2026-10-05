@@ -102,7 +102,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _requestCopy(String datasetId) async {
     try {
-      await _get('/v1/authz/management/data-access/requests?dataset_id=' + Uri.encodeQueryComponent(datasetId));
+      await _post('/v1/authz/management/data-access/requests?dataset_id=' + Uri.encodeQueryComponent(datasetId), {});
       _snack('Copy request submitted to the Branch Head.');
       await _load();
     } catch (e) { _snack(e); }
@@ -110,7 +110,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _decideRequest(String requestId, bool approve) async {
     try {
-      await _get('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString());
+      await _post('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString(), {});
       _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
       await _load();
     } catch (e) { _snack(e); }
@@ -302,16 +302,48 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _stat(String label, String value) => GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye(label), const SizedBox(height: 2), Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    const Text('People and dataset access', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)), const SizedBox(height: 5), const Text('Choose an existing access level for a person on this dataset. Current workspace rules remain in effect.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)), const SizedBox(height: 10),
-    ...members.where((m) => m['status']?.toString() != 'removed').map((m) {
-      final uid = m['uid']?.toString() ?? '';
-      return Padding(padding: const EdgeInsets.only(bottom: 5), child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Wrap(spacing: 6, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        SizedBox(width: 170, child: Text(m['employee_id']?.toString() ?? uid, style: const TextStyle(color: TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700))),
-        Text((m['role_ids'] as List? ?? const []).map((r) => r.toString().replaceAll('_', ' ')).join(' · '), style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-        _action('VIEWER', Icons.visibility, () => _grant(uid, const ['dataset.view_original'])),
-        _action('EDITOR', Icons.edit, () => _grant(uid, const ['dataset.view_original', 'dataset.create_working_copy', 'dataset.edit_working_copy'])),
-        _action('REVOKE', Icons.block, () => _grant(uid, const [])),
-      ])));
-    }),
+    const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 5),
+    const Text('Original datasets remain Branch Head / Organization Owner only. Managers and Team Leads request a working copy; approval creates and assigns a private copy.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const SizedBox(height: 10),
+    if (roles.contains('manager') || roles.contains('team_lead')) ...[
+      const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      const SizedBox(height: 6),
+      ...catalog.map((d) => Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(d['dataset_name']?.toString() ?? d['dataset_id']?.toString() ?? 'Dataset', style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(d['location_name']?.toString() ?? 'Branch', style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+            ])),
+            _action('REQUEST COPY', Icons.lock_open_outlined, () => _requestCopy(d['dataset_id'].toString()), active: true),
+          ]),
+        ),
+      )),
+    ],
+    if (roles.contains('organization_owner') || roles.contains('branch_head')) ...[
+      const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      const SizedBox(height: 6),
+      if (requests.isEmpty) const Text('No copy authorization requests.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
+      ...requests.map((r) => Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((r['requester_name']?.toString() ?? r['requester_employee_id']?.toString() ?? 'Employee') + ' · ' + (r['dataset_id']?.toString() ?? 'dataset'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text((r['status']?.toString() ?? 'pending').toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+            ])),
+            if (r['status']?.toString() == 'pending') ...[
+              _action('APPROVE', Icons.check, () => _decideRequest(r['request_id'].toString(), true), active: true),
+              _action('REJECT', Icons.close, () => _decideRequest(r['request_id'].toString(), false)),
+            ],
+          ]),
+        ),
+      )),
+    ],
   ]));
-}
