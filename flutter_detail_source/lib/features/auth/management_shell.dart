@@ -235,7 +235,7 @@ class _ManagementShellState extends State<ManagementShell> {
     try {
       final r = await Future.wait([
         request('/overview'), request('/locations'), request('/sections'),
-        request('/people'), request('/assignments'), request('/audit?limit=100'), request(''),
+        request('/people'), request('/assignments'), request(''),
       ]);
       if (!mounted) return;
       setState(() {
@@ -245,7 +245,7 @@ class _ManagementShellState extends State<ManagementShell> {
         people = maps(r[3]['people']);
         assignments = maps(r[4]['assignments']);
         audit = maps(r[5]['audit']);
-        invitations = maps(r[6]['invitations']);
+        invitations = maps(r[5]['invitations']);
         loading = false;
       });
     } catch (e) {
