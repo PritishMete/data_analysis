@@ -173,7 +173,19 @@ class InsightFlowSupabaseAuthService {
     required String email,
     required String password,
     String? displayName,
-  }) {
+  }) async {
+    // Signup must remain a Supabase-only operation. Retry provider
+    // initialization here so a startup race cannot turn a valid signup into
+    // an unhelpful generic authentication failure.
+    if (!InsightFlowSupabaseConfig.isConfigured) {
+      throw StateError('Supabase authentication is not configured for this build.');
+    }
+    if (!isInitialized) {
+      await initialize();
+    }
+    if (!isInitialized) {
+      throw StateError('Supabase authentication could not be initialized.');
+    }
     return client.auth.signUp(
       email: email,
       password: password,
