@@ -369,7 +369,11 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "dataAccess", "invitations", "audit",
         ]
     elif role == "manager":
-        sections = ["overview", "people", "dataAccess", "invitations"]
+        # Managers can manage their branch/team scope, request working-copy
+        # access, and request Team Lead assignments. They do not administer
+        # invitations; invitation administration stays with Branch Head /
+        # Organization Owner.
+        sections = ["overview", "people", "dataAccess"]
     elif role == "team_lead":
         sections = ["overview", "people", "dataAccess"]
     else:
