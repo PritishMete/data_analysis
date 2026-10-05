@@ -266,6 +266,27 @@ class _ManagementShellState extends State<ManagementShell> {
     return actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
   }
 
+  Map<String, dynamic> _uiPolicy() {
+    final raw = overview['ui_policy'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  bool _canUi(String capability) {
+    final capabilities = _uiPolicy()['capabilities'];
+    return capabilities is List &&
+        capabilities.map((value) => value.toString()).contains(capability);
+  }
+
+  String _uiRoleLabel() {
+    final value = _uiPolicy()['role_label']?.toString().trim() ?? '';
+    return value.isNotEmpty ? value : _roleLabel(_managementRole());
+  }
+
+  String _uiScopeLabel() {
+    final value = _uiPolicy()['scope_label']?.toString().trim() ?? '';
+    return value.isNotEmpty ? value : 'Assigned workspace';
+  }
+
   List<ManagementSection> _allowedSections() {
     final policy = overview['ui_policy'];
     if (policy is Map && policy['sections'] is List) {
@@ -327,35 +348,11 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _sectionAllowed(ManagementSection value) =>
       _allowedSections().contains(value);
 
-  String _roleWorkspaceTitle() {
-    switch (_managementRole()) {
-      case 'organization_owner':
-        return 'ORGANIZATION / MANAGEMENT';
-      case 'branch_head':
-        return 'BRANCH / MANAGEMENT';
-      case 'manager':
-        return 'TEAM / MANAGEMENT';
-      case 'team_lead':
-        return 'SECTION / MANAGEMENT';
-      default:
-        return 'EMPLOYEE / WORKSPACE';
-    }
-  }
+  String _roleWorkspaceTitle() =>
+      _uiRoleLabel().toUpperCase() + ' / MANAGEMENT';
 
-  String _roleWorkspaceSubtitle() {
-    switch (_managementRole()) {
-      case 'organization_owner':
-        return 'Organization-wide management portal';
-      case 'branch_head':
-        return 'Branch-scoped management portal';
-      case 'manager':
-        return 'Team-scoped management portal';
-      case 'team_lead':
-        return 'Section-scoped management portal';
-      default:
-        return 'Employee workspace';
-    }
-  }
+  String _roleWorkspaceSubtitle() =>
+      _uiScopeLabel() + ' management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
@@ -1385,15 +1382,14 @@ class _ManagementShellState extends State<ManagementShell> {
               runSpacing: 8,
               alignment: WrapAlignment.end,
               children: [
-                if (actorRole == 'organization_owner')
+                if (_canUi('organization.structure.manage'))
                   _actionChip(
                     'CREATE LOCATION',
                     Icons.add_location_alt_outlined,
                     createLocation,
                   ),
-                if (actorRole == 'organization_owner' ||
-                    actorRole == 'branch_head' ||
-                    actorRole == 'manager')
+                if (_canUi('organization.structure.manage') ||
+                    _canUi('organization.section.create'))
                   _actionChip(
                     'CREATE SECTION',
                     Icons.account_tree_outlined,
@@ -2187,9 +2183,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (overview['actor'] is Map &&
-          <String>{'organization_owner', 'branch_head', 'manager'}
-              .contains(overview['actor']['role_id']?.toString()))
+      if (_canUi('invitation.manage'))
         Align(
           alignment: Alignment.centerRight,
           child: FilledButton.icon(
@@ -2390,14 +2384,11 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget actions() {
-    final role = overview['actor'] is Map
-        ? overview['actor']['role_id']?.toString()
-        : null;
-    final canManagePeople = role == 'organization_owner' ||
-        role == 'branch_head' ||
-        role == 'manager';
+    final canManagePeople = _canUi('manager.assign') ||
+        _canUi('team_lead.assign') ||
+        _canUi('team_lead.request');
     if (!canManagePeople) return const SizedBox.shrink();
-    final canManageManagers = role == 'organization_owner' || role == 'branch_head';
+    final canManageManagers = _canUi('manager.assign') || _canUi('manager.replace');
     return GlassCard(
       margin: EdgeInsets.zero, padding: const EdgeInsets.all(14),
       shape: const LiquidRoundedSuperellipse(borderRadius: 16),
@@ -2408,13 +2399,14 @@ class _ManagementShellState extends State<ManagementShell> {
             _actionChip('ASSIGN MANAGER', Icons.manage_accounts, () => assignManager(), accent: true),
           if (canManageManagers)
             _actionChip('REPLACE MANAGER', Icons.swap_horiz, () => assignManager(replace: true)),
-          if (role == 'branch_head')
+          if (_canUi('team_lead.approve'))
             _actionChip('TEAM LEAD REQUESTS', Icons.fact_check, reviewTeamLeadRequests, accent: true),
-          _actionChip(
-            role == 'manager' ? 'REQUEST TEAM LEAD' : 'ASSIGN TEAM LEAD',
-            Icons.supervisor_account,
-            assignTeamLead,
-          ),
+          if (_canUi('team_lead.assign') || _canUi('team_lead.request'))
+            _actionChip(
+              _canUi('team_lead.request') ? 'REQUEST TEAM LEAD' : 'ASSIGN TEAM LEAD',
+              Icons.supervisor_account,
+              assignTeamLead,
+            ),
         ]),
       ]),
     );
