@@ -448,8 +448,6 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
     location_id = str(location_id or "").strip()
-    if not location_id:
-        raise ValueError("A branch/location is required for an employee invitation.")
     role_id = {"owner": "organization_owner", "analyst": "employee", "viewer": "external_viewer"}.get(role_id, role_id)
     invitation_roles = {
         "manager", "team_lead", "employee", "external_viewer",
@@ -474,6 +472,31 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
             raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
+        if not location_id:
+            # The production Flutter invitation flow predates branch-scoped
+            # invitation storage and does not send a client-selected location.
+            # Derive the location from the authenticated actor instead of
+            # trusting or requiring a client-supplied branch identifier.
+            actor_location_rows = db.execute(text("""
+                SELECT DISTINCT location_id
+                FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND status='active' AND location_id IS NOT NULL
+                ORDER BY location_id
+            """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all()
+            if len(actor_location_rows) == 1:
+                location_id = str(actor_location_rows[0]).strip()
+            elif len(actor_location_rows) == 0 and "organization_owner" in actor_roles:
+                owner_location_rows = db.execute(text("""
+                    SELECT location_id
+                    FROM locations
+                    WHERE organization_id=:org AND status='active'
+                    ORDER BY location_id
+                """), {"org": workspace_id}).scalars().all()
+                if len(owner_location_rows) == 1:
+                    location_id = str(owner_location_rows[0]).strip()
+            if not location_id:
+                raise ValueError("A branch/location is required for an employee invitation. Select an active branch before inviting.")
         location = db.execute(text("""
             SELECT location_id, status FROM locations
             WHERE organization_id=:org AND location_id=:location
