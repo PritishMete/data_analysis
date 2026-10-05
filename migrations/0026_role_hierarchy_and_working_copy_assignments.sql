@@ -8,7 +8,7 @@ INSERT INTO permissions(permission_id) VALUES
 ON CONFLICT (permission_id) DO NOTHING;
 
 ALTER TABLE dataset_authorization ADD COLUMN IF NOT EXISTS location_id TEXT;
-DO $
+DO $insightflow$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'fk_dataset_authorization_location'
@@ -17,7 +17,7 @@ BEGIN
             ADD CONSTRAINT fk_dataset_authorization_location
             FOREIGN KEY (location_id) REFERENCES locations(location_id);
     END IF;
-END $;
+END $insightflow$;
 
 -- Recover branch scope for legacy datasets only when the owner has one active branch.
 WITH owner_locations AS (
