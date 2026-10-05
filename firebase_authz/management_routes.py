@@ -29,6 +29,7 @@ from .management_domain import (
     replace_manager,
     set_reporting_relationship,
 )
+from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy
 
 router = APIRouter(prefix="/v1/authz/management", tags=["management"])
 
@@ -223,6 +224,56 @@ def reporting_change(
     return _dispatch(
         set_reporting_relationship, _claims(authorization), _workspace(workspace_id),
         req.assignment_id, req.reports_to_assignment_id,
+    )
+
+
+@router.post("/data-access/requests")
+def copy_request(
+    dataset_id: str = Query(...),
+    note: str | None = Query(default=None),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        request_dataset_copy, _claims(authorization), _workspace(workspace_id), dataset_id, note
+    )
+
+
+@router.get("/data-access/requests")
+def copy_requests(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"requests": _dispatch(list_copy_requests, _claims(authorization), _workspace(workspace_id))}
+
+
+@router.post("/data-access/requests/{request_id}/decision")
+def copy_request_decision(
+    request_id: str,
+    approve: bool = Query(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        approve_copy_request, _claims(authorization), _workspace(workspace_id), request_id, approve
+    )
+
+
+class WorkingCopyAssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    working_copy_id: str
+    target_uid: str
+
+
+@router.post("/data-access/working-copies/assign")
+def working_copy_assignment(
+    req: WorkingCopyAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        assign_working_copy, _claims(authorization), _workspace(workspace_id),
+        req.working_copy_id, req.target_uid,
     )
 
 
