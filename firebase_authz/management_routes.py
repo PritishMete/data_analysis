@@ -29,7 +29,7 @@ from .management_domain import (
     replace_manager,
     set_reporting_relationship,
 )
-from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy
+from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, list_dataset_catalog
 
 router = APIRouter(prefix="/v1/authz/management", tags=["management"])
 
@@ -225,6 +225,14 @@ def reporting_change(
         set_reporting_relationship, _claims(authorization), _workspace(workspace_id),
         req.assignment_id, req.reports_to_assignment_id,
     )
+
+
+@router.get("/data-access/catalog")
+def data_access_catalog(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return {"datasets": _dispatch(list_dataset_catalog, _claims(authorization), _workspace(workspace_id))}
 
 
 @router.post("/data-access/requests")
