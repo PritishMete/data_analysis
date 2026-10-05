@@ -362,23 +362,80 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
     }
 
 def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
+    """Return the server-authoritative management-shell policy.
+
+    Organizational roles control management authority. Professional invitation
+    roles (data_analyst, data_scientist, etc.) do not gain administrative
+    authority merely from their designation.
+    """
     role = str(role_id or "").strip()
-    if role in {"organization_owner", "branch_head"}:
-        sections = [
-            "overview", "organization", "people",
-            "dataAccess", "invitations", "audit",
-        ]
-    elif role == "manager":
-        # Managers can manage their branch/team scope, request working-copy
-        # access, and request Team Lead assignments. They do not administer
-        # invitations; invitation administration stays with Branch Head /
-        # Organization Owner.
-        sections = ["overview", "people", "dataAccess"]
-    elif role == "team_lead":
-        sections = ["overview", "people", "dataAccess"]
-    else:
-        sections = ["overview"]
-    return {"sections": sections}
+    if role == "organization_owner":
+        return {
+            "management_tier": "organization",
+            "role_label": "Organization Owner",
+            "scope_label": "Organization-wide",
+            "sections": [
+                "overview", "organization", "people",
+                "dataAccess", "invitations", "audit",
+            ],
+            "capabilities": [
+                "organization.structure.manage",
+                "manager.assign",
+                "manager.replace",
+                "team_lead.assign",
+                "team_lead.approve",
+                "invitation.manage",
+                "audit.view",
+            ],
+        }
+    if role == "branch_head":
+        return {
+            "management_tier": "branch",
+            "role_label": "Branch Head",
+            "scope_label": "Branch",
+            "sections": [
+                "overview", "organization", "people",
+                "dataAccess", "invitations", "audit",
+            ],
+            "capabilities": [
+                "organization.structure.manage",
+                "manager.assign",
+                "manager.replace",
+                "team_lead.assign",
+                "team_lead.approve",
+                "invitation.manage",
+                "audit.view",
+            ],
+        }
+    if role == "manager":
+        return {
+            "management_tier": "team",
+            "role_label": "Manager",
+            "scope_label": "Branch / Team",
+            "sections": ["overview", "people", "dataAccess"],
+            "capabilities": [
+                "organization.section.create",
+                "team_lead.request",
+            ],
+        }
+    if role == "team_lead":
+        return {
+            "management_tier": "section",
+            "role_label": "Team Lead",
+            "scope_label": "Section",
+            "sections": ["overview", "people", "dataAccess"],
+            "capabilities": [],
+        }
+    return {
+        "management_tier": "member",
+        "role_label": (
+            "External Viewer" if role == "external_viewer"
+            else "Employee"
+        ),
+        "scope_label": "Assigned workspace",
+        "sections": ["overview"],
+        "capabilities": [],
+    }
 
 
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
