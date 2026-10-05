@@ -897,8 +897,79 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             audit = db.execute(text("""SELECT event_id, actor_principal_id, action, outcome,
                 metadata, created_at FROM audit_events WHERE organization_id=:org
                 ORDER BY created_at DESC LIMIT 100"""), {"org": org}).mappings().all()
-        invitations = db.execute(text("""SELECT invitation_id,email,employee_id,role_id,status,expires_at
-            FROM invitations WHERE organization_id=:org"""), {"org": org}).mappings().all()
+        actor_roles = set(context.get("role_ids", []))
+        actor_email = str(claims.get("email") or "").strip().lower()
+        invitation_query = """
+            SELECT
+                i.invitation_id,
+                i.email,
+                i.employee_id,
+                i.role_id,
+                i.status,
+                i.expires_at,
+                i.location_id,
+                l.name AS location_name,
+                i.created_by_principal_id,
+                creator_profile.full_name AS sender_name,
+                COALESCE(
+                    (
+                        SELECT oa.role_id
+                        FROM organizational_assignments oa
+                        WHERE oa.organization_id = i.organization_id
+                          AND oa.principal_id = i.created_by_principal_id
+                          AND oa.location_id = i.location_id
+                          AND oa.status = 'active'
+                        ORDER BY oa.assignment_id
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT mr.role_id
+                        FROM member_roles mr
+                        WHERE mr.organization_id = i.organization_id
+                          AND mr.principal_id = i.created_by_principal_id
+                        ORDER BY mr.role_id
+                        LIMIT 1
+                    )
+                ) AS sender_role_id,
+                recipient_profile.full_name AS recipient_name,
+                i.accepted_by_principal_id
+            FROM invitations i
+            LEFT JOIN locations l
+              ON l.organization_id = i.organization_id
+             AND l.location_id = i.location_id
+            LEFT JOIN organization_member_profiles creator_profile
+              ON creator_profile.organization_id = i.organization_id
+             AND creator_profile.principal_id = i.created_by_principal_id
+            LEFT JOIN organization_member_profiles recipient_profile
+              ON recipient_profile.organization_id = i.organization_id
+             AND recipient_profile.principal_id = i.accepted_by_principal_id
+            WHERE i.organization_id = :org
+              AND (
+                    'organization_owner' = ANY(:actor_roles)
+                    OR lower(i.email) = :actor_email
+                    OR (
+                        'branch_head' = ANY(:actor_roles)
+                        AND EXISTS (
+                            SELECT 1
+                            FROM organizational_assignments actor_assignment
+                            WHERE actor_assignment.organization_id = i.organization_id
+                              AND actor_assignment.principal_id = :actor_principal
+                              AND actor_assignment.location_id = i.location_id
+                              AND actor_assignment.status = 'active'
+                        )
+                    )
+              )
+            ORDER BY i.created_at DESC NULLS LAST, i.invitation_id
+        """
+        invitations = db.execute(
+            text(invitation_query),
+            {
+                "org": org,
+                "actor_roles": list(actor_roles),
+                "actor_email": actor_email,
+                "actor_principal": context["principal_id"],
+            },
+        ).mappings().all()
     return {"organization_id": org, "workspace_id": resolved_workspace_id,
             "role_ids": context.get("role_ids", []),
             "members": [dict(row) for row in members],
@@ -913,7 +984,16 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 for row in datasets
             ],
             "working_copies": [dict(row) for row in working_copies],
-            "invitations": [dict(row) for row in invitations],
+            "invitations": [
+                {
+                    **dict(row),
+                    "sender_name": row["sender_name"] or "Unknown sender",
+                    "sender_role_id": row["sender_role_id"],
+                    "recipient_name": row["recipient_name"],
+                    "recipient_display": row["recipient_name"] or row["email"],
+                }
+                for row in invitations
+            ],
             "approved_employees": [dict(row) for row in approved],
             "delegations": [dict(row) for row in delegations], "audit": [dict(row) for row in audit]}
 
