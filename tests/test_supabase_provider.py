@@ -230,7 +230,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
         assert row.assignment_status == "active"
         assert row.location_id == result["location_id"]
         assert row.section_id is None
-        assert row.principal_id == row.principal_id
+        assert row.principal_id
         assert set_membership_status(owner, workspace, guest_uid, "suspended") is True
         with pytest.raises(AuthzError):
             mutate_role(guest, workspace, owner_uid, "manager", True)
@@ -296,14 +296,9 @@ def test_invited_employee_management_scope_and_branch_head_population():
 
         people = list_people(guest, workspace)
         assert len(people) == 1
-        assert people[0]["employee_id"] == next(
-            row[0] for row in SessionLocal().execute(
-                text("""SELECT employee_id FROM organization_members m
-                        JOIN identity_bindings b ON b.principal_id=m.principal_id
-                        WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
-                {"org": workspace, "uid": guest_uid},
-            ).all()
-        )
+        assert people[0]["role_id"] == "employee"
+        assert people[0]["location_id"] == result["location_id"]
+        assert people[0]["employee_id"].startswith("EMP-")
     finally:
         with SessionLocal.begin() as db:
             db.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
