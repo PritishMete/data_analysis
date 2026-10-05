@@ -44,7 +44,7 @@ void main() {
     expect(source, contains('No activity matches your search or filters.'));
     expect(source, contains('_showAuditDetails(e)'));
     expect(source, contains('constraints.maxWidth < 480'));
-    expect(source, contains("request('/audit?limit=100')"));
+    expect(source, isNot(contains("request('/audit?limit=100')")));
     expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
     expect(source, isNot(contains('ManagementSection.locations')));
     expect(source, isNot(contains('ManagementSection.sections')));
@@ -83,7 +83,6 @@ void main() {
     expect(source, contains("'/sections'"));
     expect(source, contains("'/people'"));
     expect(source, contains("'/assignments'"));
-    expect(source, contains("'/audit?limit=100'"));
     expect(source, contains('Future<void>? _refreshFuture'));
     expect(source, contains('final active = _refreshFuture'));
     expect(source, contains('identical(_refreshFuture, future)'));
