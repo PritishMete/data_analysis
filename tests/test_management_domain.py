@@ -193,6 +193,8 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
             )
 
         overview = management_overview(owner, org["workspace_id"])
+        assert overview["locations"][0]["employee_count"] == 1
+        assert overview["locations"][0]["location_id"] == org["location_id"]
         assert overview["actor"]["role_id"] == "branch_head"
         assert overview["actor"]["location_id"] == org["location_id"]
         assert overview["summary"]["location_count"] == 1

@@ -28,6 +28,10 @@ class _FakeDb:
             return _FakeResult(mapping=self.actor)
         if "role_permissions" in sql:
             return _FakeResult(scalar=1)
+        if "FROM locations" in sql:
+            return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
+        if "FROM member_roles" in sql:
+            return _FakeResult(scalar="organization_owner")
         if "INSERT INTO invitations" in sql:
             if self.fail_insert:
                 raise RuntimeError("database insert failed")
@@ -98,7 +102,7 @@ def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     )
 
     result = provider.create_invitation(
-        _claims(), "org_test", "new@example.com", "employee"
+        _claims(), "org_test", "new@example.com", "employee", location_id="loc_main"
     )
 
     assert result["status"] == "invited"
@@ -167,7 +171,7 @@ def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(mon
 
     with pytest.raises(AuthzError, match="unconfirmed Auth account"):
         provider.create_invitation(
-            _claims(), "org_test", "unconfirmed@example.com", "employee"
+            _claims(), "org_test", "unconfirmed@example.com", "employee", location_id="loc_main"
         )
 
     assert db.inserts == []
