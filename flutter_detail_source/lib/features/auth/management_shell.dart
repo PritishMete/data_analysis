@@ -1995,28 +1995,37 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   void _showInvitationDetails(Map<String, dynamic> item) {
-    final person = _invitationPerson(item);
     final rawStatus = item['status']?.toString() ?? '';
     final expiry = item['expires_at']?.toString() ?? '';
     final expiryDate = DateTime.tryParse(expiry);
     final expiredByDate = rawStatus.trim().toLowerCase() == 'invited' &&
         expiryDate != null && expiryDate.isBefore(DateTime.now());
+    final sender = item['sender_name']?.toString().trim() ?? '';
+    final senderRole = item['sender_role_id']?.toString().trim() ?? '';
+    final recipient = item['recipient_display']?.toString().trim() ?? '';
+    final recipientRole = item['recipient_role_id']?.toString().trim() ?? '';
+    final branch = item['location_name']?.toString().trim() ?? '';
     showDialog<void>(
       context: context,
       builder: (dialogContext) => _ManagementGlassDialog(
         title: const Text('Invitation details'),
         content: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _profileDetailRow(
+            'FROM',
+            sender.isEmpty
+                ? 'Unknown sender'
+                : '$sender${senderRole.isEmpty ? '' : ' · ${_roleLabel(senderRole)}'}',
+          ),
+          _profileDetailRow(
+            'TO',
+            recipient.isEmpty ? (item['email']?.toString() ?? '—') : recipient,
+          ),
+          if (recipientRole.isNotEmpty)
+            _profileDetailRow('DESIGNATION', _roleLabel(recipientRole)),
+          if (branch.isNotEmpty) _profileDetailRow('BRANCH', branch),
           _profileDetailRow('EMAIL', item['email']?.toString()),
-          if ((person?['full_name']?.toString().trim() ?? '').isNotEmpty)
-            _profileDetailRow('INVITEE', person!['full_name']?.toString()),
           _profileDetailRow('STATUS', _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate)),
           _profileDetailRow('EXPIRY', _formatInvitationExpiry(expiry)),
-          if ((person?['role_id']?.toString().trim() ?? '').isNotEmpty)
-            _profileDetailRow('ROLE', _roleLabel(person!['role_id']!.toString())),
-          if ((item['employee_id']?.toString() ?? '').isNotEmpty)
-            _profileDetailRow('EMPLOYEE ID', item['employee_id']?.toString()),
-          if ((item['role_id']?.toString() ?? '').isNotEmpty)
-            _profileDetailRow('ROLE ID', item['role_id']?.toString()),
           if ((item['invitation_id']?.toString() ?? '').isNotEmpty)
             _profileDetailRow('INVITATION ID', item['invitation_id']?.toString()),
         ]),
@@ -2026,7 +2035,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
     );
   }
-
   Widget invitationView() {
     final query = invitationSearch.trim().toLowerCase();
     final now = DateTime.now();
@@ -2175,8 +2183,12 @@ class _ManagementShellState extends State<ManagementShell> {
           final expiredByDate = status == 'invited' && expiryDate != null && expiryDate.isBefore(now);
           final label = _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate);
           final person = _invitationPerson(item);
-          final fullName = person?['full_name']?.toString().trim() ?? '';
-          final role = item['role_id']?.toString() ?? '';
+          final fullName = item['recipient_display']?.toString().trim().isNotEmpty == true
+              ? item['recipient_display']!.toString().trim()
+              : (person?['full_name']?.toString().trim() ?? '');
+          final role = item['recipient_role_id']?.toString() ?? item['role_id']?.toString() ?? '';
+          final senderName = item['sender_name']?.toString().trim() ?? '';
+          final senderRole = item['sender_role_id']?.toString().trim() ?? '';
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: surface(LayoutBuilder(builder: (context, constraints) {
@@ -2187,8 +2199,16 @@ class _ManagementShellState extends State<ManagementShell> {
                   maxLines: narrow ? 2 : 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
-                Text(item['email']?.toString() ?? 'Email unavailable', maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                Text('TO · ${item['email']?.toString() ?? 'Email unavailable'}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+                if (senderName.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'FROM · $senderName${senderRole.isEmpty ? '' : ' · ${_roleLabel(senderRole)}'}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: TechColors.textMuted, fontSize: 10),
+                  ),
+                ],
               ]);
               if (compact) {
                 return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
