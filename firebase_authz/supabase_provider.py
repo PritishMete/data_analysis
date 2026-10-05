@@ -850,9 +850,11 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
         delegations = db.execute(text("""SELECT delegation_id, team_lead_principal_id,
             member_principal_ids, dataset_ids, permissions, expires_at, status
             FROM delegations WHERE organization_id=:org"""), {"org": org}).mappings().all()
-        audit = db.execute(text("""SELECT event_id, actor_principal_id, action, outcome,
-            metadata, created_at FROM audit_events WHERE organization_id=:org
-            ORDER BY created_at DESC LIMIT 100"""), {"org": org}).mappings().all()
+        audit = []
+        if "audit.view" in set(context.get("permissions", [])):
+            audit = db.execute(text("""SELECT event_id, actor_principal_id, action, outcome,
+                metadata, created_at FROM audit_events WHERE organization_id=:org
+                ORDER BY created_at DESC LIMIT 100"""), {"org": org}).mappings().all()
         invitations = db.execute(text("""SELECT invitation_id,email,employee_id,role_id,status,expires_at
             FROM invitations WHERE organization_id=:org"""), {"org": org}).mappings().all()
     return {"organization_id": org, "workspace_id": resolved_workspace_id,
