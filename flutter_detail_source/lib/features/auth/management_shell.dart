@@ -298,7 +298,6 @@ class _ManagementShellState extends State<ManagementShell> {
     switch (_managementRole()) {
       case 'organization_owner':
       case 'branch_head':
-      case 'manager':
         return const [
           ManagementSection.overview,
           ManagementSection.organization,
@@ -306,6 +305,13 @@ class _ManagementShellState extends State<ManagementShell> {
           ManagementSection.dataAccess,
           ManagementSection.invitations,
           ManagementSection.audit,
+        ];
+      case 'manager':
+        return const [
+          ManagementSection.overview,
+          ManagementSection.people,
+          ManagementSection.dataAccess,
+          ManagementSection.invitations,
         ];
       case 'team_lead':
         return const [
