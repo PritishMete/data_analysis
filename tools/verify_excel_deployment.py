@@ -37,6 +37,7 @@ REQUIRED_MAIN_SNIPPETS = (
 FORBIDDEN_MAIN_SNIPPETS = (
     'OTP SENT TO EMAIL',
     'EMAIL OTP',
+    "/audit?limit=100",
 )
 
 
