@@ -1653,8 +1653,11 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
             {"org": organization_id, "copy": working_copy_id, "principal": context["principal_id"]}).scalar_one_or_none()
     allowed = set(grant or [])
-    if action == "working_copy.assign" and "working_copy.assign" not in set(context.get("permissions", [])):
-        raise AuthzError("You don't have permission to assign this working copy.")
+    if action == "working_copy.assign":
+        if not set(context.get("role_ids", [])).intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
+        if "working_copy.assign" not in set(context.get("permissions", [])):
+            raise AuthzError("You don't have permission to assign this working copy.")
     if not assignment and action != "working_copy.assign" and action not in allowed:
         raise AuthzError("This working copy is assigned to another user.")
     if action == "working_copy.assign" and not assignment and "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
