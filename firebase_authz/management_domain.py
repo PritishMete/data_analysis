@@ -393,11 +393,22 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             ORDER BY lower(name), location_id
         """), {"org": org}).scalars().all()
         locations = _scope_location_ids(scope, locations)
-        counts = _role_counts(
-            db,
-            org,
-            None if scope["organization_wide"] else scope.get("location_id"),
-        )
+        if scope["organization_wide"]:
+            counts = _role_counts(db, org)
+        else:
+            scoped_locations = list(scope.get("location_ids", []))
+            if not scoped_locations:
+                counts = {}
+            else:
+                rows = db.execute(text("""
+                    SELECT oa.role_id, count(DISTINCT oa.principal_id) AS count
+                    FROM organizational_assignments oa
+                    WHERE oa.organization_id=:org
+                      AND oa.status='active'
+                      AND oa.location_id = ANY(:locations)
+                    GROUP BY oa.role_id
+                """), {"org": org, "locations": scoped_locations}).all()
+                counts = {str(row.role_id): int(row.count) for row in rows}
         return {
             "organization": {
                 "organization_id": org,
