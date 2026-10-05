@@ -485,6 +485,8 @@ def upload_managed_dataset_stream(
 ) -> dict[str, Any]:
     claims = _claims(token)
     _authorize_upload(claims, workspace_id)
+    if dataset_id is not None:
+        _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.view_original')
     safe_name = _safe_filename(filename)
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
@@ -634,7 +636,7 @@ def delete_managed_dataset(
     provider: SupabaseDatasetStorageProvider | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
-    _authorize_delete(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.delete')
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
     from core.db import SessionLocal
