@@ -158,9 +158,6 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
         File('lib/features/auth/employee_profile_onboarding_screen.dart').readAsStringSync();
     final geo =
         File('lib/core/profile/profile_geo_data.dart').readAsStringSync();
-    final auth =
-        File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
-
     expect(registration, contains('Country *'));
     expect(registration, contains('State / Province / Region *'));
     expect(registration, contains('ID Proof Type *'));
