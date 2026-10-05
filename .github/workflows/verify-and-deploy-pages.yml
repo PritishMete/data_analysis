@@ -43,12 +43,16 @@ jobs:
           set -euo pipefail
           test -f build/web/flutter_bootstrap.js
           test -f build/web/index.html
-          if ! grep -R -q "profileIncomplete" build/web; then
-            echo "Generated web build does not contain the corrected onboarding state."
+          if ! grep -R -q "profile_complete" build/web; then
+            echo "Generated web build does not contain the profile completion contract."
             exit 1
           fi
           if ! grep -R -q "membership_status" build/web; then
             echo "Generated web build does not contain authoritative membership routing logic."
+            exit 1
+          fi
+          if ! grep -R -q "/v1/authz/me" build/web; then
+            echo "Generated web build does not contain the authoritative /me lookup."
             exit 1
           fi
 
