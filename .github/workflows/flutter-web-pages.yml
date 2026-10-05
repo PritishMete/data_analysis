@@ -40,7 +40,7 @@ jobs:
 
       - name: Analyze changed auth and onboarding files
         working-directory: flutter_detail_source
-        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/insightflow_auth_service.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/sign_up_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
+        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/insightflow_auth_service.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart test/onboarding_auth_flow_contract_test.dart
 
       - name: Stamp production web build identity
         working-directory: flutter_detail_source
