@@ -319,7 +319,7 @@ class _EmployeeProfileOnboardingScreenState
       label: 'COUNTRY CODE *',
       value: _phoneCountry == null
           ? null
-          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+          : '${_phoneCountry!.label}  ${_phoneCountry!.subtitle}',
       placeholder: 'Select calling code',
       onTap: _busy ? null : _pickPhoneCountry,
     );
