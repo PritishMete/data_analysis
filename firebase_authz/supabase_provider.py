@@ -1302,7 +1302,9 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
                     "permissions": '["dataset.view_original","dataset.create_working_copy","dataset.manage_acl"]'})
     return {"dataset_id": dataset_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id}
 
-\n\ndef request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str, note: str | None = None) -> dict[str, Any]:
+
+
+def request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str, note: str | None = None) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
     if not roles.intersection({"manager", "team_lead"}):
@@ -1650,7 +1652,9 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             "source_version": row["source_version"], "version": row["version"]}
 
 
-\n\ndef list_dataset_catalog(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
+
+
+def list_dataset_catalog(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
     if not roles.intersection({"organization_owner","branch_head","manager","team_lead"}):
