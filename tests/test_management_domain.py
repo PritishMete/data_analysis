@@ -85,6 +85,55 @@ def _cleanup(*organization_ids: str) -> None:
             )
 
 
+def test_employee_management_http_endpoint_returns_200_for_authorized_scope():
+    from firebase_authz import management_routes
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"http-owner-{suffix}"
+    employee_uid = f"http-employee-{suffix}"
+    org = _seed_org(owner_uid, "HTTP Management", f"HTTP-{suffix}")
+    try:
+        with SessionLocal.begin() as session:
+            employee = _add_member(
+                session, org["organization_id"], employee_uid, "EMP-HTTP"
+            )
+            session.execute(
+                text("""
+                    INSERT INTO organizational_assignments
+                      (assignment_id, organization_id, principal_id, location_id, role_id, status)
+                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
+                """),
+                {
+                    "assignment": f"asg_http_{suffix}",
+                    "org": org["organization_id"],
+                    "principal": employee,
+                    "location": org["location_id"],
+                },
+            )
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(management_routes, "_claims", lambda _: _claims(employee_uid))
+        monkeypatch.setattr(management_routes, "_workspace", lambda value: org["workspace_id"])
+        try:
+            response = management_routes.overview(
+                authorization="Bearer test-token",
+                workspace_id=org["workspace_id"],
+            )
+            people_response = management_routes.people(
+                authorization="Bearer test-token",
+                workspace_id=org["workspace_id"],
+            )
+        finally:
+            monkeypatch.undo()
+
+        assert response["actor"]["role_id"] == "employee"
+        assert response["actor"]["location_id"] == org["location_id"]
+        assert response["summary"]["total_people"] == 1
+        assert people_response["people"][0]["employee_id"] == "EMP-HTTP"
+    finally:
+        _cleanup(org["organization_id"])
+
+
 def test_management_reads_are_organization_scoped():
     from firebase_authz.management_domain import (
         create_location,
