@@ -262,9 +262,26 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
 
         context = authorization_context(guest, workspace)
         assert context["membership_status"] == "active"
+        assert context["workspace_id"] == workspace
+        assert context["employee_id"]
+        assert context["role_ids"] == ["employee"]
         assert context["profile_complete"] is False
         assert context["workspaces"][0]["membership_status"] == "active"
         assert context["workspaces"][0]["profile_complete"] is False
+
+        import firebase_authz.routes as routes
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+        monkeypatch.setattr(routes, "verify_id_token", lambda token: guest)
+        try:
+            me_response = routes.me("Bearer test-token")
+        finally:
+            monkeypatch.undo()
+        assert me_response["membership_status"] == "active"
+        assert me_response["workspace_id"] == workspace
+        assert me_response["employee_id"] == context["employee_id"]
+        assert me_response["role_ids"] == ["employee"]
+        assert me_response["profile_complete"] is False
     finally:
         with SessionLocal.begin() as session:
             session.execute(
