@@ -207,6 +207,8 @@ def _response_value(response: Any, name: str, default: Any = None) -> Any:
             return data[name]
     data = getattr(response, "data", None)
     if data is not None:
+        if isinstance(data, dict) and name in data:
+            return data[name]
         value = getattr(data, name, None)
         if value is not None:
             return value
@@ -268,7 +270,14 @@ def find_user_by_email(email: str) -> dict[str, Any] | None:
                 per_page=1000,
             ),
         )
-        users = _response_value(response, "users", []) or []
+        users = _response_value(response, "users", None)
+        if users is None:
+            data = getattr(response, "data", None)
+            if isinstance(data, list):
+                users = data
+            elif isinstance(response, dict) and isinstance(response.get("data"), list):
+                users = response["data"]
+        users = users or []
         for user in users:
             value = _user_field(user, "email")
             if str(value or "").strip().lower() != normalized_email:
