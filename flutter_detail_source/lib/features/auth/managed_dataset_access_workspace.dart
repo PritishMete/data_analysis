@@ -74,7 +74,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _select(Map<String,dynamic> d) async {
     final id = d['dataset_id']?.toString();
     if (id == null) return;
-    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = true; rowsError = null; });
+    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewOriginal; rowsError = null; });
+    if (!canViewOriginal) return;
     try {
       final p = await _get('/v1/managed-datasets/' + id + '/profile?preview_limit=5');
       profile = p is Map ? Map<String,dynamic>.from(p) : <String,dynamic>{};
@@ -203,7 +204,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  // Dataset import/version controls are privileged: only Organization Owners and Branch Heads may see or invoke them.\n  bool get canManage => roles.contains('organization_owner') || roles.contains('branch_head');
+  bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
+  bool get canUpload => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
+  bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
+  bool get canCopy => !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -235,7 +239,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
-        if (canManage) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
+        if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -267,10 +271,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
-        _action('START WORKING', Icons.edit_note, _startWorking, active: true),
-        _action('DOWNLOAD CSV', Icons.download_outlined, _download),
-        if (canManage) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-        if (canManage) _action('DELETE', Icons.delete_outline, _deleteDataset),
+        if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
+        if (canViewOriginal) ...[
+          _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+          _action('DOWNLOAD CSV', Icons.download_outlined, _download),
+          if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
+          if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
+        ],
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
