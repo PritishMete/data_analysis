@@ -5,9 +5,6 @@ on:
     branches:
       - feature/employee-management-cell
   workflow_dispatch:
-    paths:
-      - 'flutter_detail_source/**'
-      - '.github/workflows/flutter-web-pages.yml'
 
 # Pages deployment trigger for feature/employee-management-cell
 # Workflow trigger marker: 2026-10-06
