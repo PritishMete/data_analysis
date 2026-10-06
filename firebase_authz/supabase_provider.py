@@ -448,9 +448,9 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     if "@" not in email or len(email) > 320:
         raise ValueError("Invalid invitation email.")
     location_id = str(location_id or "").strip()
-    role_id = {"owner": "organization_owner", "analyst": "employee", "viewer": "external_viewer"}.get(role_id, role_id)
+    role_id = {"owner": "organization_owner", "viewer": "external_viewer"}.get(role_id, role_id)
     invitation_roles = {
-        "manager", "team_lead", "employee", "external_viewer",
+        "manager", "team_lead", "external_viewer",
         "data_analyst", "senior_data_analyst", "business_analyst",
         "data_scientist", "data_engineer", "ml_engineer",
         "analytics_engineer", "bi_developer", "data_architect",
@@ -818,7 +818,7 @@ def _guard_last_owner(db, organization_id: str, principal_id: str):
 
 def mutate_role(claims: dict[str, Any], workspace_id: str, target_uid: str,
                 role_id: str, enabled: bool) -> bool:
-    aliases = {"owner": "organization_owner", "analyst": "employee", "viewer": "external_viewer"}
+    aliases = {"owner": "organization_owner", "viewer": "external_viewer"}
     canonical = aliases.get(role_id, role_id)
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
