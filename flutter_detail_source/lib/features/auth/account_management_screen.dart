@@ -6,6 +6,7 @@ import '../../core/auth/authenticated_http.dart';
 import 'dart:convert';
 
 import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class AccountManagementScreen extends StatefulWidget {
