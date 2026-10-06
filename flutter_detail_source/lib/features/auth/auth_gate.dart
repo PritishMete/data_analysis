@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,7 +10,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
-import 'management_shell.dart';\nimport 'employee_management_shell.dart';
+import 'management_shell.dart';
+import 'employee_management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
@@ -251,12 +255,18 @@ class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
       if (widget.workspaceId.isNotEmpty) {
         headers['X-InsightFlow-Workspace-ID'] = widget.workspaceId;
       }
-      final response = await httpGetAuth(
-        '/v1/authz/management/overview',
-        headers: headers,
-      );
-      final data = response is Map
-          ? Map<String, dynamic>.from(response)
+      final response = await http
+          .get(
+            Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/management/overview'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 45));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Management authorization policy could not be loaded.');
+      }
+      final decoded = jsonDecode(response.body);
+      final data = decoded is Map
+          ? Map<String, dynamic>.from(decoded)
           : const <String, dynamic>{};
       final policy = data['ui_policy'];
       final sections = policy is Map && policy['sections'] is List
