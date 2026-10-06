@@ -20,6 +20,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String? error, rowsError, search;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
+  List<String> uiCapabilities = [];
   Map<String,dynamic>? selected, profile;
   int offset = 0;
   static const pageSize = 100;
@@ -64,6 +65,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         requests = (rq['requests'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
         members = (mg['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
         roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
+        final policy = mg['ui_policy'];
+        uiCapabilities = policy is Map && policy['capabilities'] is List
+            ? (policy['capabilities'] as List).map((e) => e.toString()).toList()
+            : <String>[];
         loading = false;
       });
     } catch (e) {
@@ -205,9 +210,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
   bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
-  // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.
-  // Professional roles such as Data Analyst must never receive the import control.
-  bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));
+  // The backend management policy is the authoritative UI capability source.
+  // Do not infer upload authority from professional/job roles in Flutter.
+  bool get canUpload => uiCapabilities.contains('dataset.upload');
   bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
   bool get canCopy => !canViewOriginal;
 
