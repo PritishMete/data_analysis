@@ -386,6 +386,8 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "dataset.upload",
+                "dataset.authorize_copy",
             ],
         }
     if role == "branch_head":
@@ -405,6 +407,8 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "dataset.upload",
+                "dataset.authorize_copy",
             ],
         }
     if role == "manager":
@@ -416,6 +420,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "capabilities": [
                 "organization.section.create",
                 "team_lead.request",
+                "dataset.upload",
             ],
         }
     if role == "team_lead":
