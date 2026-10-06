@@ -42,7 +42,6 @@ ROLE_LEVELS = {
 
 DEFAULT_ROLES = {
     "owner": set(ACTIONS),
-    "analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "viewer": {"data.view","history.view","organization.view"},
     "organization_owner": set(ACTIONS),
     "branch_head": set(ACTIONS) - {"account.delete","roles.manage","policies.manage"},
