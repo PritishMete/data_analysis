@@ -23,6 +23,7 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    environment: github-pages
     timeout-minutes: 45
 
     steps:
