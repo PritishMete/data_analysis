@@ -392,7 +392,6 @@ class _ManagementShellState extends State<ManagementShell> {
     const roleOptions = <String>[
       'manager',
       'team_lead',
-      'employee',
       'data_analyst',
       'senior_data_analyst',
       'business_analyst',
@@ -406,7 +405,7 @@ class _ManagementShellState extends State<ManagementShell> {
       'data_governance_analyst',
       'external_viewer',
     ];
-    String role = 'employee';
+    String role = 'data_analyst';
     if (locations.isEmpty) { feedback(StateError('Create an active branch/location before inviting an employee.')); return; }
     String locationId = selectedLocation ?? locations.first['location_id'].toString();
     int expiryDays = 7;
@@ -1526,8 +1525,7 @@ class _ManagementShellState extends State<ManagementShell> {
                           (a) =>
                               a['section_id']?.toString() ==
                                   s['section_id']?.toString() &&
-                              (a['role_id'] == 'team_lead' ||
-                                  a['role_id'] == 'employee'),
+                              a['role_id'] == 'team_lead',
                         )
                         .toList();
                     final sectionId = s['section_id']?.toString() ?? '';
@@ -2459,8 +2457,6 @@ class _ManagementShellState extends State<ManagementShell> {
         return 'Team Lead';
       case 'manager':
         return 'Manager';
-      case 'employee':
-        return 'Employee';
       default:
         return normalized
             .split(RegExp(r'[._-]+'))
