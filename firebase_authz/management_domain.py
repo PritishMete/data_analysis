@@ -646,11 +646,11 @@ def list_sections(claims: dict[str, Any], workspace_id: str,
                 ORDER BY m.employee_id, oa.assignment_id
             """), {"org": org, "section": row["section_id"]}).mappings().all()
             item["team_leads"] = [dict(value) for value in team_leads]
-            item["employee_count"] = int(db.execute(text("""
+            item["member_count"] = int(db.execute(text("""
                 SELECT count(DISTINCT principal_id) FROM organizational_assignments
                 WHERE organization_id=:org AND section_id=:section
-                  AND role_id='employee' AND status='active'
-            """), {"org": org, "section": row["section_id"]}).scalar_one())
+                  AND role_id = ANY(:roles) AND status='active'
+            """), {"org": org, "section": row["section_id"], "roles": list(_PROFESSIONAL_ROLE_IDS)}).scalar_one())
             result.append(item)
         return result
 
