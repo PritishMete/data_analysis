@@ -164,10 +164,10 @@ class _EmployeeInvitationPasswordSetupScreenState
   Widget build(BuildContext context) {
     final organization = widget.invitation['organization_name']?.toString().trim() ?? '';
     final displayOrganization = organization.isEmpty ? 'your organization' : organization;
-    final role = widget.invitation['role_id']?.toString() ?? 'employee';
+    final role = widget.invitation['role_id']?.toString() ?? 'data_analyst';
 
     return AuthGlassScaffold(
-      title: 'EMPLOYEE / ACCOUNT SETUP',
+      title: 'INVITED ACCOUNT SETUP',
       subtitle: 'Secure your invited InsightFlow account.',
       children: [
         AuthGlassMessage(
