@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'insightflow_auth_service.dart';
 import 'supabase_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
 
@@ -531,7 +530,7 @@ Future<String?> _resolveDatasetId(String sourceSheetName) async {
   if (id == null || id.isEmpty) return null;
   try {
     final headers = await firebaseAuthHeaders(resourceId: id);
-    final uid = InsightFlowAuthService.currentUser?.uid;
+    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
     if (uid != null) {
       await http.post(
         Uri.parse('$insightFlowBackendBaseUrl/v1/authz/datasets/register'),
@@ -618,7 +617,8 @@ Future<bool> authorizeExcelOperation({
       resourceId: datasetId,
     );
     if (!allowed) return false;
-    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+    final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
+    if (token == null || token.isEmpty) return false;
     await setExcelMutationAuthorization(
       idToken: token,
       workspaceId: insightFlowWorkspaceId,
@@ -635,7 +635,8 @@ Future<bool> authorizeExcelOperation({
     resourceId: datasetId,
   );
   if (originalAllowed) {
-    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+    final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
+    if (token == null || token.isEmpty) return false;
     await setExcelMutationAuthorization(
       idToken: token,
       workspaceId: insightFlowWorkspaceId,
@@ -653,7 +654,8 @@ Future<bool> authorizeExcelOperation({
   final workingCopyId = copy?['working_copy_id']?.toString();
   if (workingCopyId == null || workingCopyId.isEmpty) return false;
 
-  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+  final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
+  if (token == null || token.isEmpty) return false;
   await setExcelMutationAuthorization(
     idToken: token,
     workspaceId: insightFlowWorkspaceId,
