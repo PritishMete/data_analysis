@@ -9,6 +9,7 @@ on:
       - 'flutter_detail_source/**'
       - '.github/workflows/flutter-web-pages.yml'
 
+# Pages deployment trigger for feature/employee-management-cell
 permissions:
   contents: write
 
