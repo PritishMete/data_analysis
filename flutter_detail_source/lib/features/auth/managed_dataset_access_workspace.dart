@@ -205,7 +205,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
   bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
-  // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.\n  // Professional roles such as Data Analyst must never receive the import control.\n  bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));
+  // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.
+  // Professional roles such as Data Analyst must never receive the import control.
+  bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));
   bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
   bool get canCopy => !canViewOriginal;
 
