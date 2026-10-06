@@ -19,7 +19,7 @@ from .service import AuthzError
 class ManagementConflict(AuthzError):
     """A valid management request conflicts with current organizational state."""
 
-
+\n_PROFESSIONAL_ROLE_IDS = (\n    "data_analyst", "senior_data_analyst", "business_analyst",\n    "data_scientist", "data_engineer", "ml_engineer",\n    "analytics_engineer", "bi_developer", "data_architect",\n    "data_quality_analyst", "data_governance_analyst",\n)\n
 def _id(prefix: str) -> str:
     import uuid
     return f"{prefix}_{uuid.uuid4().hex}"
@@ -356,7 +356,7 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
         **location,
         "branch_head": dict(branch_head) if branch_head else None,
         "manager": dict(manager) if manager else None,
-        "employee_count": counts.get("employee", 0),
+        "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
         "team_lead_count": counts.get("team_lead", 0),
         "section_count": int(section_count),
     }
@@ -493,7 +493,7 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "location_count": len(locations),
                 "total_people": sum(counts.values()),
                 "branch_head_count": counts.get("branch_head", 0),
-                "employee_count": counts.get("employee", 0),
+                "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
                 "manager_count": counts.get("manager", 0),
                 "team_lead_count": counts.get("team_lead", 0),
                 "role_counts": counts,
