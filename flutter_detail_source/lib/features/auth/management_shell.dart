@@ -697,7 +697,7 @@ class _ManagementShellState extends State<ManagementShell> {
     } catch (e) { feedback(e); }
   }
 
-  int level(dynamic role) => {'employee': 10, 'team_lead': 30, 'manager': 40, 'branch_head': 50, 'organization_owner': 50}[role?.toString()] ?? 0;
+  int level(dynamic role) => {'external_viewer': 10, 'data_analyst': 20, 'senior_data_analyst': 20, 'business_analyst': 20, 'data_scientist': 20, 'data_engineer': 20, 'ml_engineer': 20, 'analytics_engineer': 20, 'bi_developer': 20, 'data_architect': 20, 'data_quality_analyst': 20, 'data_governance_analyst': 20, 'team_lead': 30, 'manager': 40, 'branch_head': 45, 'organization_owner': 50}[role?.toString()] ?? 0;
 
   Future<void> reporting(Map<String, dynamic> a) async {
     final candidates = assignments.where((x) =>
