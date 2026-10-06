@@ -257,7 +257,7 @@ class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
       }
       final response = await http
           .get(
-            Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/management/overview'),
+            Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management/overview'),
             headers: headers,
           )
           .timeout(const Duration(seconds: 45));
