@@ -9,7 +9,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
-import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import 'auth_glass_widgets.dart';
 import 'account_management_screen.dart';
@@ -43,7 +43,7 @@ class _AuthorizationManagementScreenState
 
   Future<void> _logout() async {
     try {
-      await InsightFlowAuthService.signOut();
+      await InsightFlowSupabaseAuthService.signOut();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -177,7 +177,7 @@ class _AuthorizationManagementScreenState
           '$status · ${memberRoles.isEmpty ? 'No role assigned' : memberRoles.join(', ')}',
         ),
       ];
-      if (uid != InsightFlowAuthService.currentUser?.uid) {
+      if (uid != InsightFlowSupabaseAuthService.currentUser?.uid) {
         rows.add(
           Wrap(
             spacing: 6,
