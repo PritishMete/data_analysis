@@ -514,7 +514,7 @@ def _role_permissions(workspace: dict[str, Any], member: dict[str, Any]) -> set[
         permissions.add("dataset.upload")
     if level >= ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
         permissions.add("excel.mutate.original")
-    if level >= ROLE_LEVELS["employee"] and level < ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
+    if 20 <= level < ROLE_LEVELS["manager"] and "worksheet.modify" in permissions:
         permissions.add("excel.mutate.working_copy")
     return permissions
 
@@ -1083,7 +1083,7 @@ def create_invitation(
         raise ValueError("Invalid invitation email.")
     normalized_role = ROLE_ALIASES.get(role_id, role_id)
     invitation_roles = {
-        "manager", "team_lead", "employee", "external_viewer",
+        "manager", "team_lead", "external_viewer",
         "data_analyst", "senior_data_analyst", "business_analyst",
         "data_scientist", "data_engineer", "ml_engineer",
         "analytics_engineer", "bi_developer", "data_architect",
