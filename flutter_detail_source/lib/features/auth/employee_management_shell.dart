@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -45,14 +47,20 @@ class _EmployeeManagementShellState extends State<EmployeeManagementShell> {
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final response = await httpGetAuth(
-        '/v1/authz/management/overview',
-        headers: await _headers(),
-      );
+      final response = await http
+          .get(
+            Uri.parse(insightFlowBackendBaseUrl + '/v1/authz/management/overview'),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 45));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Management authorization policy could not be loaded.');
+      }
+      final decoded = jsonDecode(response.body);
       if (!mounted) return;
       setState(() {
-        overview = response is Map
-            ? Map<String, dynamic>.from(response)
+        overview = decoded is Map
+            ? Map<String, dynamic>.from(decoded)
             : const {};
         loading = false;
       });
