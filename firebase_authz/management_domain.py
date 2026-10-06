@@ -19,7 +19,14 @@ from .service import AuthzError
 class ManagementConflict(AuthzError):
     """A valid management request conflicts with current organizational state."""
 
-\n_PROFESSIONAL_ROLE_IDS = (\n    "data_analyst", "senior_data_analyst", "business_analyst",\n    "data_scientist", "data_engineer", "ml_engineer",\n    "analytics_engineer", "bi_developer", "data_architect",\n    "data_quality_analyst", "data_governance_analyst",\n)\n
+
+_PROFESSIONAL_ROLE_IDS = (
+    "data_analyst", "senior_data_analyst", "business_analyst",
+    "data_scientist", "data_engineer", "ml_engineer",
+    "analytics_engineer", "bi_developer", "data_architect",
+    "data_quality_analyst", "data_governance_analyst",
+)
+
 def _id(prefix: str) -> str:
     import uuid
     return f"{prefix}_{uuid.uuid4().hex}"
