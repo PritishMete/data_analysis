@@ -125,6 +125,7 @@ class InsightFlowSupabaseAuthService {
       user.id,
       user.email,
       emailVerified: user.emailConfirmedAt != null,
+      displayName: user.userMetadata?['display_name']?.toString(),
     );
   }
 
