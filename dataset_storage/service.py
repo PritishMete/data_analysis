@@ -164,7 +164,11 @@ def list_authorized_datasets(
         for dataset in repo.list_by_organization(organization_id, limit=100):
             if dataset.status == "deleted":
                 continue
-            action = "dataset.view_original" if roles.intersection({"organization_owner", "branch_head"}) else "dataset.create_working_copy"
+            action = (
+                "dataset.view_original"
+                if roles.intersection({"organization_owner", "branch_head", "manager"})
+                else "dataset.create_working_copy"
+            )
             try:
                 _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
             except AuthzError:
