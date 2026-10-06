@@ -155,6 +155,182 @@ def list_authorized_datasets(
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
+    roles = set(context.get("role_ids", []))
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        result = []
+        for dataset in repo.list_by_organization(organization_id, limit=100):
+            if dataset.status == "deleted":
+                continue
+            action = "dataset.view_original" if roles.intersection({"organization_owner", "branch_head"}) else "dataset.create_working_copy"
+            try:
+                _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
+            except AuthzError:
+                continue
+            result.append(_structured_summary(dataset, len(repo.list_versions(dataset.dataset_id))))
+        return result
+    finally:
+        repo.db.close()
+
+from __future__ import annotations
+
+import csv
+import io
+import os
+import re
+import uuid
+
+import pandas as pd
+from typing import Any, BinaryIO, Iterator
+
+from sqlalchemy import delete, select
+
+from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
+from firebase_authz.supabase_provider import (
+    audit_dataset_event,
+    authorization_context,
+    authorize,
+    authorize_dataset,
+    create_working_copy,
+    delete_dataset_authorization,
+    register_dataset,
+    revoke_dataset_working_copies,
+)
+from datasets.models import DatasetColumn, DatasetRow
+from datasets.repository import DatasetRepository
+from datasets.service import DatasetRegistryService
+from schema_intelligence.repository import RelationshipRepository
+from schema_intelligence.service import SchemaIntelligenceService
+
+from .provider import SupabaseDatasetStorageProvider, archive_original_enabled
+
+MAX_DATASET_BYTES = int(
+    os.getenv("INSIGHTFLOW_DATASET_MAX_BYTES", str(100 * 1024 * 1024))
+)
+BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".sh"}
+
+
+def _safe_filename(filename: str) -> str:
+    raw_name = str(filename or "").strip()
+    if "/" in raw_name or "\\" in raw_name:
+        raise ValueError("Unsafe dataset filename.")
+    name = os.path.basename(raw_name)
+    if (
+        not name
+        or name in {".", ".."}
+        or len(name) > 255
+        or "/" in name
+        or "\\" in name
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+    ):
+        raise ValueError("Unsafe dataset filename.")
+    extension = os.path.splitext(name)[1].lower()
+    if extension in BLOCKED_EXTENSIONS:
+        raise ValueError("This file type is not accepted as a managed dataset.")
+    if extension != ".csv":
+        raise ValueError("Only safe CSV files are accepted as managed datasets.")
+    return name
+
+
+def _claims(token: str) -> dict[str, Any]:
+    return require_email_verified(verify_id_token(token))
+
+
+def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+    context = authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        raise PermissionDenied("User is not an active member of this workspace.")
+    return context
+
+
+def _authorize_upload(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+    return authorize(claims, workspace_id, "dataset.upload")
+
+
+def _authorize_delete(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+    return authorize(claims, workspace_id, "dataset.delete")
+
+
+def _authorize_dataset(
+    claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str
+):
+    # Every managed-dataset operation must resolve the dataset resource itself.
+    # Do not short-circuit owners/managers through workspace-only permission
+    # checks: the managed dataset is the resource boundary for profile, rows,
+    # download, and working-copy operations.
+    _authorization_context(claims, workspace_id)
+    return authorize_dataset(claims, workspace_id, dataset_id, action)
+
+
+def _audit_safely(
+    workspace_id: str,
+    actor_uid: str,
+    action: str,
+    outcome: str,
+    *,
+    resource_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    try:
+        payload = dict(metadata or {})
+        if resource_id:
+            payload["resource_id"] = resource_id
+        audit_dataset_event(
+            workspace_id, actor_uid, action, outcome, metadata=payload
+        )
+    except Exception:
+        pass
+
+
+def _structured_summary(dataset, version_count: int) -> dict[str, Any]:
+    current = next(
+        (
+            version
+            for version in getattr(dataset, "versions", [])
+            if version.version_id == dataset.current_version_id
+        ),
+        None,
+    )
+    return {
+        "dataset_id": dataset.dataset_id,
+        "organization_id": dataset.organization_id,
+        "display_name": dataset.dataset_name,
+        "dataset_name": dataset.dataset_name,
+        "original_filename": current.original_filename if current else dataset.original_filename,
+        "content_type": (current.content_type if current else None) or dataset.content_type or "text/csv",
+        "file_size": current.file_size if current else dataset.file_size,
+        "current_version": dataset.current_version_id,
+        "version": dataset.version_number,
+        "version_count": version_count,
+        "row_count": current.row_count if current else dataset.row_count,
+        "column_count": current.column_count if current else dataset.column_count,
+        "uploaded_by_uid": (current.created_by if current else None) or dataset.uploaded_by,
+        "uploaded_at": (
+            current.created_at.isoformat()
+            if current and current.created_at
+            else dataset.created_at.isoformat()
+            if dataset.created_at
+            else None
+        ),
+        "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
+        "status": dataset.status,
+        "protected_original": True,
+        "storage_provider": current.storage_provider if current else dataset.storage_provider,
+        "storage_mode": "sql_structured",
+        "archive_original": bool(
+            current and current.storage_provider == "supabase_storage"
+        ),
+    }
+
+
+def list_authorized_datasets(
+    *, workspace_id: str, token: str
+) -> list[dict[str, Any]]:
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    organization_id = str(context["organization_id"])
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
