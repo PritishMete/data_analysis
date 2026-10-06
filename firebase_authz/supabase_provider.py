@@ -1771,11 +1771,18 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if "organization_owner" not in actor_roles and (not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}):
             raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
     elif action == "dataset.create_working_copy":
-        # Lower roles can create a working copy only from an explicit grant.
-        # Branch Heads and Owners can create one without a per-user grant.
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
+        # Branch Heads and Managers can copy datasets inside their branch scope.
+        # All lower roles require an explicit per-dataset working-copy grant.
+        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles and "manager" not in actor_roles:
             if "dataset.create_working_copy" not in grant_permissions:
                 raise AuthzError("This dataset has not been authorized for copying by this user.")
+        if "manager" in actor_roles and "branch_head" not in actor_roles and "organization_owner" not in actor_roles:
+            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
+                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
     elif action not in grant_permissions:
         raise AuthzError("Permission denied for this resource.")
     return {**context, "authorized": True, "workspace_id": resolved_workspace_id,
