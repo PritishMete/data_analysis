@@ -1562,7 +1562,7 @@ class _ManagementShellState extends State<ManagementShell> {
                                     ),
                                   ),
                                   Text(
-                                    '${s['employee_count'] ?? 0} members',
+                                    '${s['member_count'] ?? 0} members',
                                     style: const TextStyle(
                                       color: TechColors.textMuted,
                                       fontSize: 10,
@@ -1628,7 +1628,8 @@ class _ManagementShellState extends State<ManagementShell> {
     final branchHeadCount = backendCount('branch_head', people.where((p) => p['role_id'] == 'branch_head').length);
     final managerCount = backendCount('manager', people.where((p) => p['role_id'] == 'manager').length);
     final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
-    final employeeCount = backendCount('employee', people.where((p) => p['role_id'] == 'employee').length);
+    const professionalRoles = <String>{'data_analyst','senior_data_analyst','business_analyst','data_scientist','data_engineer','ml_engineer','analytics_engineer','bi_developer','data_architect','data_quality_analyst','data_governance_analyst'};
+    final professionalMemberCount = people.where((p) => professionalRoles.contains(p['role_id']?.toString())).length;
     final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
     final assignedCount = people.where((p) {
       final loc = p['location_name']?.toString() ?? '';
@@ -1741,7 +1742,7 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 7),
             metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined),
             const SizedBox(height: 7),
-            metric('Employees', employeeCount, Icons.person_outline),
+            metric('Professional members', professionalMemberCount, Icons.person_outline),
             const SizedBox(height: 7),
             metric('Active members', activeCount, Icons.verified_user_outlined),
             const SizedBox(height: 7),
@@ -1754,7 +1755,7 @@ class _ManagementShellState extends State<ManagementShell> {
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Branch Heads', branchHeadCount, Icons.badge_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Managers', managerCount, Icons.manage_accounts_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Employees', employeeCount, Icons.person_outline)),
+              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Professional members', professionalMemberCount, Icons.person_outline)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Active members', activeCount, Icons.verified_user_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Assigned', assignedCount, Icons.account_tree_outlined)),
             ],
