@@ -704,7 +704,8 @@ Future<bool> authorizeWorkingCopyExcelMutation({
   if (response.statusCode != 200) {
     return false;
   }
-  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+  final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
+  if (token == null || token.isEmpty) return false;
   await setExcelMutationAuthorization(
     idToken: token,
     workspaceId: insightFlowWorkspaceId,
