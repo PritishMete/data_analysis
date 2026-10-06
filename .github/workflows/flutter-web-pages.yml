@@ -2,7 +2,9 @@ name: Build and publish InsightFlow Flutter web
 
 on:
   push:
-    branches: [feature/data-workspace]
+    branches:
+      - feature/data-workspace
+      - feature/employee-management-cell
     paths:
       - 'flutter_detail_source/**'
       - '.github/workflows/flutter-web-pages.yml'
