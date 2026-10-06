@@ -174,7 +174,7 @@ class _AuthorizationManagementScreenState
       final rows = <Widget>[
         _MetaRow(
           member['employee_id']?.toString() ?? uid,
-          '$status · ${memberRoles.isEmpty ? 'employee' : memberRoles.join(', ')}',
+          '$status · ${memberRoles.isEmpty ? 'No role assigned' : memberRoles.join(', ')}',
         ),
       ];
       if (uid != InsightFlowAuthService.currentUser?.uid) {
@@ -263,7 +263,7 @@ class _AuthorizationManagementScreenState
     await _post('invitations', {
       'workspace_id': insightFlowWorkspaceId,
       'email': email.text.trim(),
-      'role_id': 'employee',
+      'role_id': 'data_analyst',
     });
     email.dispose();
     await _load();
