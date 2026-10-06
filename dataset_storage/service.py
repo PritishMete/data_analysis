@@ -178,7 +178,6 @@ def list_authorized_datasets(
     finally:
         repo.db.close()
 
-from __future__ import annotations
 
 import csv
 import io
