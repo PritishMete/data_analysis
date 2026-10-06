@@ -280,7 +280,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ],
       ])),
       const SizedBox(height: 12),
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (canViewOriginal) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _eye('DATASET PREVIEW'), const SizedBox(height: 5), Text(total == 0 ? 'EMPTY DATASET' : 'SHOWING ' + (offset + 1).toString() + '–' + end.toString() + ' OF ' + total.toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')), const SizedBox(height: 8),
         if (rowsLoading) const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)))
         else if (rowsError != null) Column(children: [Text(rowsError!, style: const TextStyle(color: TechColors.statusRed)), const SizedBox(height: 8), _action('RETRY', Icons.refresh, _loadRows, active: true)])
@@ -302,7 +302,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ])),
       ])),
       const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12),
-      _surface(Wrap(spacing: 8, runSpacing: 8, children: [_action('OPEN ANALYSIS', Icons.bar_chart, _startWorking, active: true), _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; }))])),
+      _surface(Wrap(spacing: 8, runSpacing: 8, children: [
+        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
+        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
+      ])),
     ]);
   }
 
