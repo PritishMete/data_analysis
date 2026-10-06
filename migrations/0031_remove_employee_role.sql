@@ -16,6 +16,10 @@ UPDATE member_roles
 SET role_id = 'data_analyst'
 WHERE role_id = 'employee';
 
+UPDATE organizational_assignments
+SET role_id = 'data_analyst'
+WHERE role_id = 'employee';
+
 UPDATE invitations
 SET role_id = 'data_analyst'
 WHERE role_id = 'employee';
