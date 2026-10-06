@@ -236,44 +236,6 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        GlassButton.custom(
-          onTap: _loading
-              ? () {}
-              : () async {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  try {
-                    await InsightFlowSupabaseAuthService.setRememberDevice(
-                      _emailController.text.trim(),
-                      _rememberDevice,
-                    );
-                    final result =
-                        await InsightFlowAuthService.signInWithMicrosoft();
-                    if (result == null && mounted) {
-                      setState(() => _loading = false);
-                    }
-                  } catch (error) {
-                    if (!mounted) return;
-                    setState(() {
-                      _loading = false;
-                      _error = InsightFlowAuthService.userFacingAuthError(
-                        error,
-                      );
-                    });
-                  }
-                },
-          enabled: !_loading,
-          width: double.infinity,
-          height: 42,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: 'Continue with Microsoft',
-          child: const Text(
-            'Continue with Microsoft',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ),
         const SizedBox(height: 14),
         const Divider(height: 1),
         const SizedBox(height: 10),
