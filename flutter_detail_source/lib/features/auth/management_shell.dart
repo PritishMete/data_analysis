@@ -389,7 +389,8 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> _inviteEmployee() async {
     final emailController = TextEditingController();
-    // Generic `employee` is intentionally not a valid invitation role.\n    const roleOptions = <String>[
+    // Generic `employee` is intentionally not a valid invitation role.
+    const roleOptions = <String>[
       'manager',
       'team_lead',
       'data_analyst',
