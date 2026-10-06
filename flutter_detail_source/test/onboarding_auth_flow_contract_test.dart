@@ -80,7 +80,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, contains('case InsightFlowOnboardingState.profileIncomplete:'));
     expect(gate, contains('EmployeeProfileOnboardingScreen('));
     expect(gate, contains('case InsightFlowOnboardingState.activeMember:'));
-    expect(gate, contains('ManagementShell()'));
+    expect(gate, contains('_EmployeeManagementEntry('));
+    expect(gate, contains('EmployeeManagementShell()'));
   });
 
   test('authoritative /me top-level state controls onboarding before workspace details', () {
@@ -144,13 +145,14 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(activeStart, greaterThanOrEqualTo(0));
     expect(pendingStart, greaterThan(activeStart));
     final activeBlock = gate.substring(activeStart, pendingStart);
-    expect(activeBlock, contains('const ManagementShell()'));
+    expect(activeBlock, contains('_EmployeeManagementEntry('));
     expect(activeBlock, isNot(contains('DataScreen')));
 
-    final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
-    expect(management, contains("contextData['role_ids']"));
-    expect(management, contains("'organization_owner'"));
-    expect(management, isNot(contains("'employee'")));
+    final employeeManagement =
+        File('lib/features/auth/employee_management_shell.dart').readAsStringSync();
+    expect(employeeManagement, contains('EmployeeManagementShell'));
+    expect(employeeManagement, contains('EmployeeCellSection'));
+    expect(employeeManagement, contains('ManagedDatasetAccessWorkspace'));
   });
 
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
