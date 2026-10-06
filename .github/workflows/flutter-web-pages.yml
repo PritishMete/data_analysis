@@ -11,6 +11,7 @@ on:
 
 # Pages deployment trigger for feature/employee-management-cell
 # Workflow trigger marker: 2026-10-06
+# Explicit publish trigger: 2026-10-06T21:08+05:30
 permissions:
   contents: write
 
