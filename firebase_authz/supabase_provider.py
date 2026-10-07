@@ -765,7 +765,7 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
     return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id, "location_id": location_id or None}
 
 
-def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -> dict[str, Any]:
+def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str, token: str | None = None) -> dict[str, Any]:
     email = str(claims.get("email") or "").strip().lower()
     if not bool(claims.get("email_verified")):
         raise AuthzError("Verified email is required.")
@@ -785,6 +785,14 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
         invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
         if invited_auth_user_id and invited_auth_user_id != authenticated_uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
+        invitation_token_hash = str(invitation.get("token_hash") or "").strip()
+        if invitation_token_hash:
+            raw_token = str(token or "").strip()
+            if not raw_token or not secrets.compare_digest(
+                invitation_token_hash,
+                hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            ):
+                raise AuthzError("Invitation token is invalid.")
         db.execute(
             text("""UPDATE invitations SET password_setup_at=now()
                     WHERE invitation_id=:id"""),
