@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -19,12 +21,10 @@ from .service import AuthzError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
-from .supabase_admin import (
-    SupabaseAdminConfigurationError,
-    SupabaseAdminOperationError,
-    find_user_by_email,
-    invite_user_by_email,
-    is_existing_auth_user_error,
+from .invitation_email import (
+    InvitationEmailConfigurationError,
+    InvitationEmailDeliveryError,
+    send_invitation_email,
 )
 
 
@@ -533,45 +533,20 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
                 raise AuthzError("Only an Organization Owner or Branch Head can invite a Manager.")
 
     invitation_id = _id("inv")
-    redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
-    if not redirect_to:
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    redirect_base = os.environ.get(
+        "INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT",
+        "https://pritishmete.github.io/data_analysis/employee-invite",
+    ).strip()
+    if not redirect_base:
         raise AuthzError("Employee invitation redirect is not configured.")
+    separator = "&" if "?" in redirect_base else "?"
+    invitation_url = f"{redirect_base}{separator}token={raw_token}"
 
-    auth_user_id = ""
-    delivery_status = "initiated"
-    password_setup_required = True
-    try:
-        invited = invite_user_by_email(email, redirect_to, organization_name=organization_name)
-        auth_user_id = invited["user_id"]
-        if not auth_user_id:
-            raise SupabaseAdminOperationError("Supabase Auth did not return an invited user ID.")
-    except Exception as invite_error:
-        if not is_existing_auth_user_error(invite_error):
-            raise
-        try:
-            existing = find_user_by_email(email)
-        except (SupabaseAdminConfigurationError, SupabaseAdminOperationError):
-            # Keep trusted Admin failures distinct from application authorization
-            # failures. The route converts these to a safe 503 response.
-            raise
-        except Exception as lookup_error:
-            raise SupabaseAdminOperationError(
-                "Supabase Auth existing-user lookup failed."
-            ) from lookup_error
-        if not existing or existing.get("user_id") is None:
-            raise SupabaseAdminOperationError(
-                "Supabase Auth reported an existing user, but the trusted lookup "
-                "did not return that exact email."
-            ) from invite_error
-        if not existing.get("email_confirmed"):
-            raise AuthzError(
-                "This email already has an unconfirmed Auth account. "
-                "Complete its existing confirmation flow before accepting an employee invitation."
-            ) from invite_error
-        auth_user_id = str(existing["user_id"]).strip()
-        delivery_status = "existing_account"
-        password_setup_required = False
-
+    # New invitations are disposable application records. Do not call the
+    # Supabase Auth Admin invite API here: that API creates auth.users before
+    # the employee has accepted the invitation.
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active":
@@ -582,18 +557,62 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
             raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
+
+        # A new invitation supersedes older unaccepted invitations for the
+        # same organization/email. No Auth account exists to clean up.
+        db.execute(text("""UPDATE invitations
+            SET status='revoked', revoked_at=now()
+            WHERE organization_id=:org
+              AND lower(email)=:email
+              AND status='invited'"""),
+                   {"org": workspace_id, "email": email})
+
+        employee = _allocate_employee_id(db, workspace_id)
         db.execute(text("""INSERT INTO invitations
-            (invitation_id, organization_id, email, role_id, status,
+            (invitation_id, organization_id, email, employee_id, role_id, status,
              expires_at, created_by_principal_id, auth_user_id, location_id,
-             email_delivery_status, email_delivery_started_at)
-            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,:location,
-                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
+             email_delivery_status, email_delivery_started_at,
+             token_hash, token_created_at)
+            VALUES (:id,:org,:email,:employee,:role,'invited',:expires,:creator,NULL,:location,
+                    'initiated',now(),:token_hash,now())"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
-                    "role": role_id, "expires": expiry, "creator": actor["principal_id"],
-                    "auth_user": auth_user_id, "location": location_id, "delivery_status": delivery_status})
-    return {"invitation_id": invitation_id, "status": "invited",
-            "email_delivery_status": delivery_status,
-            "password_setup_required": password_setup_required}
+                    "employee": employee, "role": role_id, "expires": expiry,
+                    "creator": actor["principal_id"], "location": location_id,
+                    "token_hash": token_hash})
+
+    try:
+        send_invitation_email(
+            recipient=email,
+            organization_name=organization_name,
+            role_id=role_id,
+            invitation_url=invitation_url,
+            expires_at=expiry,
+        )
+    except (InvitationEmailConfigurationError, InvitationEmailDeliveryError):
+        with SessionLocal.begin() as db:
+            db.execute(
+                text("""UPDATE invitations
+                    SET email_delivery_status='failed'
+                    WHERE invitation_id=:id AND status='invited'"""),
+                {"id": invitation_id},
+            )
+        raise
+
+    with SessionLocal.begin() as db:
+        db.execute(
+            text("""UPDATE invitations
+                SET email_delivery_status='sent'
+                WHERE invitation_id=:id AND status='invited'"""),
+            {"id": invitation_id},
+        )
+
+    return {
+        "invitation_id": invitation_id,
+        "status": "invited",
+        "email_delivery_status": "sent",
+        "password_setup_required": True,
+        "auth_user_created": False,
+    }
 
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
