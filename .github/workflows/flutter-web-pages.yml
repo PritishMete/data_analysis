@@ -37,6 +37,13 @@ jobs:
         working-directory: flutter_detail_source
         run: flutter pub get
 
+      - name: Run backend invitation regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input pytest
+          python -m pytest -q tests/test_employee_invitation_flow.py
+
       - name: Run auth and onboarding regression tests
         working-directory: flutter_detail_source
         run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
