@@ -67,6 +67,21 @@ class _EmployeeInvitationPasswordSetupScreenState
     });
 
     try {
+      final authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
+      final invitedAuthUserId = widget.invitation['auth_user_id']?.toString().trim() ?? '';
+      final invitedEmail = widget.invitation['email']?.toString().trim().toLowerCase() ?? '';
+      final authenticatedEmail = authenticatedUser?.email?.trim().toLowerCase() ?? '';
+      if (authenticatedUser == null || authenticatedUser.uid.isEmpty) {
+        throw StateError('Open this invitation in a signed-in Supabase session for the invited email, then retry.');
+      }
+      // Do not change any account password until the invitation identity is verified.
+      if (invitedAuthUserId.isNotEmpty && authenticatedUser.uid != invitedAuthUserId) {
+        throw StateError('This invitation belongs to a different Supabase account. Sign out, reopen the invitation link, and retry.');
+      }
+      if (invitedEmail.isNotEmpty && authenticatedEmail != invitedEmail) {
+        throw StateError('This invitation was sent to $invitedEmail. Sign out, reopen the invitation link, and use that account.');
+      }
+      debugPrint('invitation_lifecycle identity_verified=true');
       debugPrint('invitation_lifecycle password_setup_started');
       await InsightFlowSupabaseAuthService.setPassword(
         password,
