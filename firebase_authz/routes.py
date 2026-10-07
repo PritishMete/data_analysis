@@ -414,10 +414,12 @@ class InvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
     workspace_id: str | None = None
+    token: str | None = None
 
 class InvitationPasswordSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
+    token: str | None = None
 
 class MembershipStatusRequest(BaseModel):
     workspace_id: str
@@ -449,6 +451,16 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
 
+@router.get("/invitations/preview")
+def invitation_preview(token: str):
+    try:
+        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+            raise AuthzError("Employee invitation preview is available only for Supabase authentication.")
+        from .supabase_provider import get_invitation_by_token
+        return get_invitation_by_token(token)
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
     logger.info(
@@ -462,6 +474,7 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
                 verify_id_token(_token(authorization)),
                 req.workspace_id,
                 req.invitation_id,
+                req.token,
             )
         else:
             result = accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
@@ -489,7 +502,7 @@ def invitation_password_setup_complete(
         claims = require_email_verified(verify_id_token(_token(authorization)))
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
-            return provider_mark_password_setup(claims, req.invitation_id)
+            return provider_mark_password_setup(claims, req.invitation_id, req.token)
         raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
