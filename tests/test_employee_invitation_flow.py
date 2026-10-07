@@ -15,6 +15,12 @@ class _FakeResult:
     def scalar_one_or_none(self):
         return self._scalar
 
+    def scalars(self):
+        return self
+
+    def all(self):
+        return [self._scalar] if self._scalar is not None else []
+
 
 class _FakeDb:
     def __init__(self, actor, *, fail_insert=False):
