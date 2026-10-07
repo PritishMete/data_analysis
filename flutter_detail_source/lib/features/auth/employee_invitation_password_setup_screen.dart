@@ -75,12 +75,22 @@ class _EmployeeInvitationPasswordSetupScreenState
           widget.invitation['token']?.toString().trim() ??
           Uri.base.queryParameters['token']?.trim() ??
           '';
-      if (invitedEmail.isEmpty || invitationId.isEmpty || invitationToken.isEmpty) {
+      final legacyInvitation =
+          widget.invitation['auth_user_id']?.toString().trim().isNotEmpty == true;
+      if (invitedEmail.isEmpty ||
+          invitationId.isEmpty ||
+          (!legacyInvitation && invitationToken.isEmpty)) {
         throw StateError('This invitation is incomplete. Please request a new invitation.');
       }
 
       var authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
       var signedUpNow = false;
+
+      if (authenticatedUser == null && legacyInvitation) {
+        throw StateError(
+          'Open this legacy invitation in the existing Supabase account for the invited email.',
+        );
+      }
 
       if (authenticatedUser == null) {
         final redirect = Uri.base.replace(
