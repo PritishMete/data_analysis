@@ -34,10 +34,18 @@ class _FakeDb:
             return _FakeResult(mapping=self.actor)
         if "role_permissions" in sql:
             return _FakeResult(scalar=1)
+        if "SELECT DISTINCT location_id" in sql and "FROM organizational_assignments" in sql:
+            return _FakeResult(scalar="loc_main")
+        if "SELECT 1 FROM organizational_assignments" in sql:
+            return _FakeResult(scalar=1)
         if "FROM locations" in sql:
-            return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
+            if "SELECT location_id, status" in sql:
+                return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
+            return _FakeResult(scalar="loc_main")
         if "FROM member_roles" in sql:
             return _FakeResult(scalar="organization_owner")
+        if "FROM organizations" in sql:
+            return _FakeResult(scalar="Test Organization")
         if "INSERT INTO invitations" in sql:
             if self.fail_insert:
                 raise RuntimeError("database insert failed")
@@ -96,7 +104,7 @@ def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     monkeypatch.setattr(
         provider,
         "invite_user_by_email",
-        lambda email, redirect_to: {
+        lambda email, redirect_to, **kwargs: {
             "user_id": "auth-new-user",
             "email_confirmed": False,
         },
@@ -131,7 +139,7 @@ def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkey
 
     calls = {"invite": 0}
 
-    def duplicate_invite(email, redirect_to):
+    def duplicate_invite(email, redirect_to, **kwargs):
         calls["invite"] += 1
         raise DuplicateError()
 
@@ -191,7 +199,7 @@ def test_database_insertion_failure_does_not_return_success(monkeypatch):
     monkeypatch.setattr(
         provider,
         "invite_user_by_email",
-        lambda email, redirect_to: {"user_id": "auth-new-user", "email_confirmed": False},
+        lambda email, redirect_to, **kwargs: {"user_id": "auth-new-user", "email_confirmed": False},
     )
 
     with pytest.raises(RuntimeError, match="database insert failed"):
