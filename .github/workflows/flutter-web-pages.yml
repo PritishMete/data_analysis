@@ -19,13 +19,13 @@ concurrency:
 
 jobs:
   build-and-publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: github-pages
     timeout-minutes: 45
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -37,11 +37,17 @@ jobs:
         working-directory: flutter_detail_source
         run: flutter pub get
 
+      - name: Install backend test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+          python -m pip install --disable-pip-version-check --no-input pytest
+
       - name: Run backend invitation regression tests
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-input pytest
           python -m pytest -q tests/test_employee_invitation_flow.py
 
       - name: Run auth and onboarding regression tests
