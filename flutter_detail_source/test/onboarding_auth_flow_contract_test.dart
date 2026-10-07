@@ -264,4 +264,33 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(physical, contains('def physical_table_name(version_pk: str)'));
   });
 
+
+  test('invitation password setup verifies the exact Supabase identity before changing the password', () {
+    final screen =
+        File('lib/features/auth/employee_invitation_password_setup_screen.dart')
+            .readAsStringSync();
+    final identityCheck = screen.indexOf('invitedAuthUserId');
+    final passwordChange = screen.indexOf('setPassword(', identityCheck);
+    expect(identityCheck, greaterThanOrEqualTo(0));
+    expect(passwordChange, greaterThan(identityCheck));
+    expect(screen.substring(identityCheck, passwordChange),
+        contains('authenticatedUser.uid != invitedAuthUserId'));
+    expect(screen.substring(identityCheck, passwordChange),
+        contains('authenticatedEmail != invitedEmail'));
+  });
+
+  test('invitation password setup backend binds completion to auth_user_id', () {
+    final provider =
+        File('../firebase_authz/supabase_provider.py').readAsStringSync();
+    final marker = provider.indexOf('def mark_invitation_password_setup');
+    expect(marker, greaterThanOrEqualTo(0));
+    final blockEnd = provider.indexOf('def set_membership_status', marker);
+    expect(blockEnd, greaterThan(marker));
+    final block = provider.substring(marker, blockEnd);
+    expect(block, contains('auth_user_id'));
+    expect(block, contains('authenticated_uid'));
+    expect(block,
+        contains('Invitation identity does not match the authenticated account.'));
+  });
+
 }
