@@ -176,7 +176,7 @@ def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(mon
         def __str__(self):
             return "A user with this email address has already been registered"
 
-    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_: (_ for _ in ()).throw(DuplicateError()))
+    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_, **__: (_ for _ in ()).throw(DuplicateError()))
     monkeypatch.setattr(
         provider,
         "find_user_by_email",
