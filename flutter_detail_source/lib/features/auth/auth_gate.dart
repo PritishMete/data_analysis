@@ -48,6 +48,11 @@ class AuthGate extends StatelessWidget {
     if (redirectError != null) {
       return _SupabaseRedirectErrorScreen(message: redirectError);
     }
+    final invitationToken = Uri.base.queryParameters['token']?.trim() ?? '';
+    if (invitationToken.isNotEmpty &&
+        InsightFlowSupabaseAuthService.currentUser == null) {
+      return _UnauthenticatedInvitationEntry(token: invitationToken);
+    }
     return StreamBuilder<AuthState>(
       stream: InsightFlowSupabaseAuthService.authStateChanges,
       builder: (context, snapshot) {
@@ -612,6 +617,97 @@ class _AuthError extends StatelessWidget {
               'Authentication could not be initialized. Please reload the add-in.',
         ),
       ],
+    );
+  }
+}
+
+class _UnauthenticatedInvitationEntry extends StatefulWidget {
+  const _UnauthenticatedInvitationEntry({required this.token});
+  final String token;
+  @override
+  State<_UnauthenticatedInvitationEntry> createState() =>
+      _UnauthenticatedInvitationEntryState();
+}
+
+class _UnauthenticatedInvitationEntryState
+    extends State<_UnauthenticatedInvitationEntry> {
+  bool _loading = true;
+  bool _completed = false;
+  String? _error;
+  Map<String, dynamic>? _invitation;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '$insightFlowBackendBaseUrl/v1/authz/invitations/preview'
+              '?token=${Uri.encodeQueryComponent(widget.token)}',
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {}
+      if (response.statusCode != 200 || decoded is! Map) {
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'This invitation is invalid or has expired.',
+        );
+      }
+      setState(() {
+        _invitation = {
+          ...Map<String, dynamic>.from(decoded),
+          'token': widget.token,
+        };
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error is StateError
+            ? error.message.toString()
+            : 'The invitation could not be loaded. Please request a new invitation.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_completed) {
+      final user = InsightFlowSupabaseAuthService.currentUser;
+      if (user != null) return _AuthenticatedGate(user: user);
+    }
+    if (_loading) return const _AuthLoading();
+    if (_error != null) {
+      return AuthGlassScaffold(
+        title: 'INVITATION / INVALID',
+        subtitle: 'INSIGHTFLOW',
+        children: [
+          AuthGlassMessage(text: _error!, error: true),
+          const SizedBox(height: 12),
+          const Text(
+            'Ask the Organization Owner or Branch Head to send a new invitation.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 11),
+          ),
+        ],
+      );
+    }
+    return EmployeeInvitationPasswordSetupScreen(
+      invitation: _invitation!,
+      onCompleted: () async {
+        if (!mounted) return;
+        setState(() => _completed = true);
+      },
     );
   }
 }
