@@ -724,7 +724,7 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
         raise AuthzError("Verified email is required.")
     with SessionLocal.begin() as db:
         invitation = db.execute(
-            text("""SELECT invitation_id, organization_id, email, status, expires_at
+            text("""SELECT invitation_id, organization_id, email, status, expires_at, auth_user_id
                     FROM invitations WHERE invitation_id=:id FOR UPDATE"""),
             {"id": invitation_id},
         ).mappings().first()
@@ -734,6 +734,10 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
+        authenticated_uid = str(claims.get("uid") or claims.get("sub") or "").strip()
+        invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
+        if invited_auth_user_id and invited_auth_user_id != authenticated_uid:
+            raise AuthzError("Invitation identity does not match the authenticated account.")
         db.execute(
             text("""UPDATE invitations SET password_setup_at=now()
                     WHERE invitation_id=:id"""),
