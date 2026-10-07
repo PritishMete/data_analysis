@@ -614,6 +614,24 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         "auth_user_created": False,
     }
 
+def get_invitation_by_token(token: str) -> dict[str, Any]:
+    raw_token = str(token or "").strip()
+    if not raw_token or len(raw_token) < 20 or len(raw_token) > 200:
+        raise AuthzError("Invitation link is invalid.")
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    with SessionLocal() as db:
+        row = db.execute(text("""SELECT i.invitation_id, i.organization_id,
+                o.name AS organization_name, i.email, i.employee_id,
+                i.role_id, i.status, i.expires_at
+            FROM invitations i
+            JOIN organizations o ON o.organization_id=i.organization_id
+            WHERE i.token_hash=:token_hash"""), {"token_hash": token_hash}).mappings().first()
+    if not row or row["status"] != "invited":
+        raise AuthzError("Invitation is no longer active.")
+    if row["expires_at"] is not None and row["expires_at"] <= datetime.now(timezone.utc):
+        raise AuthzError("Invitation has expired.")
+    return dict(row)
+
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
     with SessionLocal() as db:
@@ -625,7 +643,7 @@ def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str) -> dict[str, Any]:
+def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str, token: str | None = None) -> dict[str, Any]:
     provider, subject = _identity(claims)
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     email = str(claims.get("email") or "").strip().lower()
@@ -661,6 +679,16 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
         if invited_auth_user_id and invited_auth_user_id != uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
+        invitation_token_hash = str(invitation.get("token_hash") or "").strip()
+        if invitation_token_hash:
+            raw_token = str(token or "").strip()
+            if not raw_token:
+                raise AuthzError("Invitation token is required.")
+            if not secrets.compare_digest(
+                invitation_token_hash,
+                hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            ):
+                raise AuthzError("Invitation token is invalid.")
         workspace_id = str(invitation["organization_id"])
         location_id = str(invitation.get("location_id") or "").strip()
         if not location_id and invitation.get("created_by_principal_id"):
