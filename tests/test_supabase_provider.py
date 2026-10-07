@@ -209,7 +209,25 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
         pending = pending_invitations(guest)
         assert pending[0]["invitation_id"] == invitation["invitation_id"]
         assert pending[0]["organization_name"] == "Invitation Test"
-        accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
+        assert invitation["auth_user_created"] is False
+        assert invitation["invitation_token"]
+        with SessionLocal() as db:
+            auth_row = db.execute(
+                text("SELECT auth_user_id, token_hash FROM invitations WHERE invitation_id=:id"),
+                {"id": invitation["invitation_id"]},
+            ).one()
+        assert auth_row.auth_user_id is None
+        assert auth_row.token_hash
+        with pytest.raises(AuthzError, match="token"):
+            accept_invitation(
+                guest, workspace, invitation["invitation_id"], "wrong-token"
+            )
+        accepted = accept_invitation(
+            guest,
+            workspace,
+            invitation["invitation_id"],
+            invitation["invitation_token"],
+        )
         assert accepted["accepted"] is True
         with SessionLocal() as db:
             row = db.execute(text("""SELECT m.status, mr.role_id FROM organization_members m
