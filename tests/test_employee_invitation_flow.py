@@ -146,7 +146,8 @@ def test_invitation_email_failure_leaves_retryable_local_invitation(monkeypatch)
             location_id="loc_main",
         )
 
-    assert db.inserts[0]["auth_user"] is None
+    assert "auth_user" not in db.inserts[0]
+    assert "auth_user_id" not in db.inserts[0]
 
 
 def test_database_insertion_failure_does_not_send_invitation(monkeypatch):
