@@ -102,7 +102,7 @@ def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     )
 
     result = provider.create_invitation(
-        _claims(), "org_test", "new@example.com", "employee", location_id="loc_main"
+        _claims(), "org_test", "new@example.com", "data_analyst", location_id="loc_main"
     )
 
     assert result["status"] == "invited"
@@ -140,7 +140,7 @@ def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkey
     )
 
     result = provider.create_invitation(
-        _claims(), "org_test", "existing@example.com", "employee"
+        _claims(), "org_test", "existing@example.com", "data_analyst"
     )
 
     assert calls["invite"] == 1
@@ -171,7 +171,7 @@ def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(mon
 
     with pytest.raises(AuthzError, match="unconfirmed Auth account"):
         provider.create_invitation(
-            _claims(), "org_test", "unconfirmed@example.com", "employee", location_id="loc_main"
+            _claims(), "org_test", "unconfirmed@example.com", "data_analyst", location_id="loc_main"
         )
 
     assert db.inserts == []
@@ -190,5 +190,5 @@ def test_database_insertion_failure_does_not_return_success(monkeypatch):
 
     with pytest.raises(RuntimeError, match="database insert failed"):
         provider.create_invitation(
-            _claims(), "org_test", "db-failure@example.com", "employee"
+            _claims(), "org_test", "db-failure@example.com", "data_analyst"
         )
