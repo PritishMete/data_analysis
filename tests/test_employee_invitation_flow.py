@@ -120,7 +120,7 @@ def test_new_invitation_does_not_create_supabase_auth_user(monkeypatch):
     assert result["password_setup_required"] is True
     assert result["auth_user_created"] is False
     assert result["invitation_token"]
-    assert db.inserts[0]["auth_user"] is None
+    assert db.inserts[0]["auth_user_id"] is None
     assert db.inserts[0]["token_hash"] == hashlib.sha256(
         result["invitation_token"].encode()
     ).hexdigest()
