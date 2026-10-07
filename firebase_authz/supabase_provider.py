@@ -639,6 +639,7 @@ def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
             i.role_id, i.status, i.expires_at, i.auth_user_id, i.email_delivery_status, i.password_setup_at FROM invitations i
             JOIN organizations o ON o.organization_id=i.organization_id
             WHERE lower(i.email)=:email AND i.status='invited'
+              AND i.email_delivery_status IN ('initiated','sent')
               AND (expires_at IS NULL OR expires_at > now())"""), {"email": email}).mappings().all()
     return [dict(row) for row in rows]
 
