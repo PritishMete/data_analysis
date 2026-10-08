@@ -16,7 +16,7 @@ import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSetti
 import 'authorization_management_screen.dart';
 import 'managed_dataset_access_workspace.dart';
 
-enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }
+enum ManagementSection { overview, organization, people, invitations, dataAccess, companySettings, audit }
 
 class _ManagementGlassDialog extends StatelessWidget {
   const _ManagementGlassDialog({
@@ -306,6 +306,9 @@ class _ManagementShellState extends State<ManagementShell> {
           case 'dataAccess':
             sections.add(ManagementSection.dataAccess);
             break;
+          case 'companySettings':
+            sections.add(ManagementSection.companySettings);
+            break;
           case 'invitations':
             sections.add(ManagementSection.invitations);
             break;
@@ -325,6 +328,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ManagementSection.organization,
           ManagementSection.people,
           ManagementSection.dataAccess,
+          ManagementSection.companySettings,
           ManagementSection.invitations,
           ManagementSection.audit,
         ];
@@ -386,6 +390,17 @@ class _ManagementShellState extends State<ManagementShell> {
         SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
       );
     }
+  }
+
+  Future<Map<String, dynamic>> _companySettings(String locationId) async =>
+      request('/company-settings?location_id=' + Uri.encodeQueryComponent(locationId));
+
+  Future<void> _saveCompanySettings(String locationId, Map<String, dynamic> values) async {
+    await request(
+      '/company-settings?location_id=' + Uri.encodeQueryComponent(locationId),
+      method: 'PUT',
+      body: values,
+    );
   }
 
   Future<Map<String, dynamic>> _emailSettings(String locationId) async {
@@ -2436,6 +2451,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.people => 'People Registry',
     ManagementSection.invitations => 'Invitations',
     ManagementSection.dataAccess => 'Access',
+    ManagementSection.companySettings => 'Company Settings',
     ManagementSection.audit => 'Audit',
   };
 
@@ -2445,6 +2461,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
     ManagementSection.invitations => 'Manage invitations sent to people in your organization and review their current status.',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
+    ManagementSection.companySettings => 'COMPANY / BRANCH / EMAIL IDENTITY',
     ManagementSection.audit => 'Review recent organization activity and understand who performed important management actions.',
   };
 
@@ -2454,6 +2471,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.people => Icons.people_outline,
     ManagementSection.invitations => Icons.mail_outline,
     ManagementSection.dataAccess => Icons.lock_outline,
+    ManagementSection.companySettings => Icons.settings_outlined,
     ManagementSection.audit => Icons.history_rounded,
   };
 
@@ -2464,10 +2482,58 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.people: return peopleView();
       case ManagementSection.invitations: return invitationView();
       case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
+      case ManagementSection.companySettings: return companySettingsView();
       case ManagementSection.audit: return auditView();
     }
   }
 
+  Widget companySettingsView() {
+    if (!_canUi('organization.structure.manage')) {
+      return surface(const Text('Company Settings are available only to the organization owner or Branch Head.', style: TextStyle(color: TechColors.textMuted, height: 1.4)));
+    }
+    if (locations.isEmpty) return surface(const Text('Create an active branch before configuring Company Settings.', style: TextStyle(color: TechColors.textMuted)));
+    final locationId = selectedLocation ?? locations.first['location_id'].toString();
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _companySettings(locationId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return surface(const Center(child: CupertinoActivityIndicator()));
+        final data = snapshot.data!;
+        final companyName = TextEditingController(text: data['company_name']?.toString() ?? '');
+        final companyId = TextEditingController(text: data['company_identifier']?.toString() ?? '');
+        final companyEmail = TextEditingController(text: data['company_email']?.toString() ?? '');
+        final companyDomain = TextEditingController(text: data['company_domain']?.toString() ?? '');
+        final emailDomain = TextEditingController(text: data['email_domain']?.toString() ?? '');
+        final branchName = TextEditingController(text: data['branch_name']?.toString() ?? '');
+        final branchId = TextEditingController(text: data['branch_identifier']?.toString() ?? '');
+        final branchEmail = TextEditingController(text: data['branch_email']?.toString() ?? '');
+        return surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('EMAIL & INVITATIONS', style: TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          const Text('The generated InsightFlow identity is separate from the authenticated Gmail transport account.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+          const SizedBox(height: 14),
+          TextField(controller: companyName, decoration: input('Company name')),
+          const SizedBox(height: 10), TextField(controller: companyId, decoration: input('Company identifier')),
+          const SizedBox(height: 10), TextField(controller: companyEmail, decoration: input('Company email')),
+          const SizedBox(height: 10), TextField(controller: companyDomain, decoration: input('Company domain')),
+          const SizedBox(height: 10), TextField(controller: emailDomain, decoration: input('Email domain')),
+          const SizedBox(height: 10), TextField(controller: branchName, decoration: input('Branch name')),
+          const SizedBox(height: 10), TextField(controller: branchId, decoration: input('Branch identifier')),
+          const SizedBox(height: 10), TextField(controller: branchEmail, decoration: input('Branch email')),
+          const SizedBox(height: 16), _eyebrow('GENERATED INSIGHTFLOW IDENTITY'), const SizedBox(height: 5),
+          Text(data['sender_identity']?.toString() ?? '—', style: const TextStyle(color: TechColors.borderActive, fontSize: 14, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+          const SizedBox(height: 12),
+          Text('Sending account: ' + (data['gmail_connected'] == true ? (data['connected_gmail']?.toString() ?? 'Connected Gmail') : 'Not connected'), style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+          const SizedBox(height: 5),
+          Text(data['sender_identity_mode'] == 'display_only' ? 'Transport mode: authenticated Gmail account. The generated identity is display-only until a legitimate verified Gmail Send-As alias exists.' : 'Transport mode: ' + (data['sender_identity_mode']?.toString() ?? 'unknown'), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
+          const SizedBox(height: 14),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            GlassButton.custom(onTap: () async { try { await _saveCompanySettings(locationId, {'company_name': companyName.text.trim(), 'company_identifier': companyId.text.trim(), 'company_email': companyEmail.text.trim(), 'company_domain': companyDomain.text.trim(), 'email_domain': emailDomain.text.trim(), 'branch_name': branchName.text.trim(), 'branch_identifier': branchId.text.trim(), 'branch_email': branchEmail.text.trim()}); if (mounted) feedback('Company settings saved.'); } catch (e) { feedback(e); } }, height: 40, shape: const LiquidRoundedSuperellipse(borderRadius: 12), child: const Text('Save settings', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+            GlassButton.custom(onTap: () async { try { await _connectBranchGmail(locationId); } catch (e) { feedback(e); } }, height: 40, shape: const LiquidRoundedSuperellipse(borderRadius: 12), child: Text(data['gmail_connected'] == true ? 'Reconnect Gmail' : 'Configure Email', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+          ]),
+        ]));
+      },
+    );
+  }
   Widget actions() {
     final canManagePeople = _canUi('manager.assign') ||
         _canUi('team_lead.assign') ||
@@ -3533,6 +3599,7 @@ class _ManagementShellState extends State<ManagementShell> {
       const MapEntry(ManagementSection.organization, 'ORGANIZATION'),
       const MapEntry(ManagementSection.people, 'PEOPLE'),
       const MapEntry(ManagementSection.dataAccess, 'ACCESS'),
+      const MapEntry(ManagementSection.companySettings, 'COMPANY SETTINGS'),
       const MapEntry(ManagementSection.invitations, 'INVITATIONS'),
       const MapEntry(ManagementSection.audit, 'AUDIT'),
     ].where((tab) => _sectionAllowed(tab.key)).toList();
