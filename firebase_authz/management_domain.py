@@ -383,7 +383,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "scope_label": "Organization-wide",
             "sections": [
                 "overview", "organization", "people",
-                "dataAccess", "invitations", "audit",
+                "dataAccess", "companySettings", "invitations", "audit",
             ],
             "capabilities": [
                 "organization.structure.manage",
