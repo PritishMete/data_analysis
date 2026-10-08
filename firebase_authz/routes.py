@@ -20,6 +20,7 @@ class FounderOrganizationRegistration(BaseModel):
     # Authentication is checked before request-field validation so an
     # unauthenticated caller cannot learn registration schema details.
     organization_name: str | None = None
+    company_identifier: str | None = None
     branch_name: str | None = None
     branch_identifier: str | None = None
     full_name: str | None = None
@@ -326,6 +327,7 @@ def founder_organization_register(
                 req.organization_name,
                 req.branch_name,
                 req.branch_identifier,
+                company_identifier=req.company_identifier,
                 full_name=req.full_name,
                 phone=req.phone,
                 phone_country_calling_code=req.phone_country_calling_code,
