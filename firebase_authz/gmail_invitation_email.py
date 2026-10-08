@@ -227,6 +227,108 @@ def complete_gmail_connection(code: str, state: str) -> dict:
     return {"sender_email": sender_email, "connected": True, "sender_identity": sender_identity}
 
 
+def get_company_settings(claims: dict, workspace_id: str, location_id: str) -> dict:
+    principal_id = str(claims.get("uid") or claims.get("sub") or "").strip()
+    _actor_for_location(workspace_id, location_id, principal_id)
+    with SessionLocal() as db:
+        row = db.execute(text("""
+            SELECT o.name AS organization_name, l.name AS branch_name,
+                   l.branch_identifier, bes.company_name, bes.company_identifier,
+                   bes.company_email, bes.company_domain, bes.email_domain,
+                   bes.branch_email, bes.sender_identity, bes.sender_identity_mode,
+                   bes.sender_email AS connected_gmail,
+                   (bes.gmail_refresh_token_encrypted IS NOT NULL) AS gmail_connected
+            FROM organizations o
+            JOIN locations l ON l.organization_id=o.organization_id
+            LEFT JOIN branch_email_settings bes
+              ON bes.organization_id=o.organization_id AND bes.location_id=l.location_id
+            WHERE o.organization_id=:org AND l.location_id=:location
+        """), {"org": workspace_id, "location": location_id}).mappings().first()
+    if not row:
+        raise AuthzError("Location is not part of your organization.")
+    result = dict(row)
+    company_identifier = result.get("company_identifier") or result.get("organization_name") or "company"
+    branch_identifier = result.get("branch_identifier") or result.get("branch_name") or "branch"
+    result["company_name"] = result.get("company_name") or result["organization_name"]
+    result["branch_name"] = result.get("branch_name") or result["branch_name"]
+    result["company_identifier"] = company_identifier
+    result["sender_identity"] = result.get("sender_identity") or generate_sender_identity(
+        company_identifier, branch_identifier
+    )
+    result["sender_identity_mode"] = result.get("sender_identity_mode") or "display_only"
+    return result
+
+
+def update_company_settings(
+    claims: dict, workspace_id: str, location_id: str, values: dict
+) -> dict:
+    principal_id = str(claims.get("uid") or claims.get("sub") or "").strip()
+    _actor_for_location(workspace_id, location_id, principal_id)
+    company_name = str(values.get("company_name") or "").strip()
+    company_identifier = normalize_sender_identifier(
+        values.get("company_identifier") or company_name
+    )
+    branch_name = str(values.get("branch_name") or "").strip()
+    branch_identifier = normalize_sender_identifier(
+        values.get("branch_identifier") or branch_name, fallback="branch"
+    )
+    if not company_name or len(company_name) > 120:
+        raise ValueError("Company name is required and must be at most 120 characters.")
+    if not branch_name or len(branch_name) > 160:
+        raise ValueError("Branch name is required and must be at most 160 characters.")
+    for field in ("company_email", "company_domain", "email_domain", "branch_email"):
+        value = values.get(field)
+        if value is not None and len(str(value).strip()) > 320:
+            raise ValueError(f"{field} is too long.")
+    sender_identity = generate_sender_identity(company_identifier, branch_identifier)
+    with SessionLocal.begin() as db:
+        result = db.execute(text("""
+            INSERT INTO branch_email_settings
+              (organization_id, location_id, company_name, company_identifier,
+               company_email, company_domain, email_domain, branch_name,
+               branch_identifier, branch_email, sender_identity,
+               sender_identity_mode, updated_at)
+            VALUES
+              (:org, :location, :company_name, :company_identifier,
+               :company_email, :company_domain, :email_domain, :branch_name,
+               :branch_identifier, :branch_email, :sender_identity,
+               'display_only', now())
+            ON CONFLICT (organization_id, location_id) DO UPDATE SET
+              company_name=excluded.company_name,
+              company_identifier=excluded.company_identifier,
+              company_email=excluded.company_email,
+              company_domain=excluded.company_domain,
+              email_domain=excluded.email_domain,
+              branch_name=excluded.branch_name,
+              branch_identifier=excluded.branch_identifier,
+              branch_email=excluded.branch_email,
+              sender_identity=excluded.sender_identity,
+              sender_identity_mode='display_only',
+              updated_at=now()
+        """), {
+            "org": workspace_id, "location": location_id,
+            "company_name": company_name, "company_identifier": company_identifier,
+            "company_email": str(values.get("company_email") or "").strip() or None,
+            "company_domain": str(values.get("company_domain") or "").strip() or None,
+            "email_domain": str(values.get("email_domain") or "").strip() or None,
+            "branch_name": branch_name, "branch_identifier": branch_identifier,
+            "branch_email": str(values.get("branch_email") or "").strip() or None,
+            "sender_identity": sender_identity,
+        })
+        db.execute(text("""
+            UPDATE organizations SET name=:name
+            WHERE organization_id=:org
+        """), {"name": company_name, "org": workspace_id})
+        db.execute(text("""
+            UPDATE locations SET name=:name, branch_identifier=:identifier
+            WHERE organization_id=:org AND location_id=:location
+        """), {
+            "name": branch_name, "identifier": branch_identifier,
+            "org": workspace_id, "location": location_id,
+        })
+    return get_company_settings(claims, workspace_id, location_id)
+
+
 def get_branch_email_settings(claims: dict, workspace_id: str, location_id: str) -> dict:
     principal_id = str(claims.get("uid") or claims.get("sub") or "").strip()
     _actor_for_location(workspace_id, location_id, principal_id)
