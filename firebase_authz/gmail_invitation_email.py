@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import EmailMessage
+from email.utils import formataddr
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
@@ -418,7 +419,7 @@ def send_invitation_email(*, recipient: str, organization_name: str, role_id: st
     # sender; the generated identity is shown in the display name.
     display_name = f"InsightFlow • {sender_identity}"
     message = EmailMessage()
-    message["From"] = f"{display_name} <{sender_email}>"
+    message["From"] = formataddr((display_name, sender_email))
     message["To"] = recipient
     message["Subject"] = f"You're invited to InsightFlow - {organization_name.strip() or 'your organization'}"
     message.set_content(
