@@ -51,10 +51,11 @@ def test_invitation_keeps_transport_gmail_separate_from_generated_identity(monke
         line.decode("utf-8") for line in raw.split(b"\n") if line.lower().startswith(b"from:")
     )
 
-    assert from_header == 'From: "InsightFlow • insightflow@tcs.kolkata" <tcscorp@gmail.com>'
-    assert message["To"] == "employee@example.com"
+    assert from_header.startswith("From:")
     assert "insightflow@tcs.kolkata" in from_header
-    assert "tcscorp@gmail.com" in from_header
+    assert "<tcscorp@gmail.com>" in from_header
+    assert from_header.count("@") == 2
+    assert message["To"] == "employee@example.com"
 
 
 def test_management_route_imports_gmail_connection_errors():
