@@ -486,14 +486,48 @@ class _ManagementShellState extends State<ManagementShell> {
                   const SizedBox(height: 8),
                   Text(connected ? 'Sending from: ' + (data['sender_email']?.toString() ?? 'connected Gmail') : 'No Gmail account is connected for this branch.', style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
                   const SizedBox(height: 8),
-                  Wrap(spacing: 8, children: [
-                    GlassDialogAction(label: connected ? 'Reconnect Gmail' : 'Connect Gmail', onPressed: () async {
-                      try { await _connectBranchGmail(locationId); setDialogState(() {}); } catch (e) { feedback(e); }
-                    }),
-                    if (connected) GlassDialogAction(label: 'Save sender name', onPressed: () async {
-                      try { await _saveBranchSenderName(locationId, senderNameController.text.trim()); feedback(StateError('Branch sender name saved.')); } catch (e) { feedback(e); }
-                    }),
-                  ]),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      GlassButton.custom(
+                        onTap: () async {
+                          try {
+                            await _connectBranchGmail(locationId);
+                            setDialogState(() {});
+                          } catch (e) {
+                            feedback(e);
+                          }
+                        },
+                        height: 40,
+                        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+                        child: Text(
+                          connected ? 'Reconnect Gmail' : 'Connect Gmail',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (connected)
+                        GlassButton.custom(
+                          onTap: () async {
+                            try {
+                              await _saveBranchSenderName(
+                                locationId,
+                                senderNameController.text.trim(),
+                              );
+                              feedback(StateError('Branch sender name saved.'));
+                            } catch (e) {
+                              feedback(e);
+                            }
+                          },
+                          height: 40,
+                          shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+                          child: const Text(
+                            'Save sender name',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                    ],
+                  ),
                 ]);
               },
             ),
