@@ -269,9 +269,9 @@ def update_company_settings(
         values.get("company_identifier") or company_name
     )
     branch_name = str(values.get("branch_name") or "").strip()
-    branch_identifier = normalize_sender_identifier(
-        values.get("branch_identifier") or branch_name, fallback="branch"
-    )
+    branch_identifier = str(values.get("branch_identifier") or "").strip()
+    if not branch_identifier:
+        raise ValueError("Branch identifier is required.")
     if not company_name or len(company_name) > 120:
         raise ValueError("Company name is required and must be at most 120 characters.")
     if not branch_name or len(branch_name) > 160:
