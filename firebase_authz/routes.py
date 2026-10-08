@@ -7,7 +7,7 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
-from .invitation_email import InvitationEmailConfigurationError, InvitationEmailDeliveryError
+from .gmail_invitation_email import GmailConfigurationError, GmailConnectionError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -449,7 +449,7 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
         logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
-    except (InvitationEmailConfigurationError, InvitationEmailDeliveryError) as exc:
+    except (GmailConfigurationError, GmailConnectionError) as exc:
         logger.error("invitation_email_failure_safe_response error=%s", str(exc))
         raise HTTPException(503, "Employee invitation email service is not configured or unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
