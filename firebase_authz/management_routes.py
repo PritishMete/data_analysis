@@ -34,8 +34,10 @@ from .management_domain import (
 )
 from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, list_dataset_catalog
 from .gmail_invitation_email import (
+    GmailConfigurationError, GmailConnectionError,
     gmail_connection_url, complete_gmail_connection, get_branch_email_settings,
     update_branch_sender_name,
+    get_company_settings, update_company_settings,
 )
 
 router = APIRouter(prefix="/v1/authz/management", tags=["management"])
@@ -322,6 +324,42 @@ def working_copy_assignment(
 class SenderNameRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sender_name: str
+
+
+class CompanySettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    company_name: str
+    company_identifier: str
+    company_email: str | None = None
+    company_domain: str | None = None
+    email_domain: str | None = None
+    branch_name: str
+    branch_identifier: str
+    branch_email: str | None = None
+
+
+@router.get("/company-settings")
+def company_settings(
+    location_id: str = Query(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        get_company_settings, _claims(authorization), _workspace(workspace_id), location_id
+    )
+
+
+@router.put("/company-settings")
+def company_settings_update(
+    req: CompanySettingsRequest,
+    location_id: str = Query(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        update_company_settings, _claims(authorization), _workspace(workspace_id),
+        location_id, req.model_dump(),
+    )
 
 
 @router.get("/email-settings")
