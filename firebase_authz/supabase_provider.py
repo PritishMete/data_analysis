@@ -88,6 +88,7 @@ def register_organization(
     organization_name: str,
     branch_name: str,
     branch_identifier: str,
+    company_identifier: str | None = None,
     *,
     full_name: str,
     phone: str,
@@ -112,9 +113,12 @@ def register_organization(
     if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
         raise ValueError("Branch name must be between 1 and 160 characters.")
 
-    branch_id = str(branch_identifier or "")
+    branch_id = str(branch_identifier or "").strip()
     if not branch_id:
         raise ValueError("Branch identifier is required.")
+    company_id = str(company_identifier or name).strip()
+    if not company_id or len(company_id) > 120:
+        raise ValueError("Company identifier must be between 1 and 120 characters.")
 
     profile_name = _clean_profile_text(full_name, "Full name", 160)
     profile_fields = validate_profile_fields(
@@ -267,6 +271,40 @@ def register_organization(
             },
         )
         registration_diagnostics.stage("LOCATION_CREATED")
+        from .gmail_invitation_email import generate_sender_identity, normalize_sender_identifier
+        sender_identity = generate_sender_identity(
+            normalize_sender_identifier(company_id),
+            branch_id,
+        )
+        db.execute(
+            text("""
+                INSERT INTO branch_email_settings
+                  (organization_id, location_id, company_name, company_identifier,
+                   branch_name, branch_identifier, sender_identity,
+                   sender_identity_mode, updated_at)
+                VALUES
+                  (:organization, :location, :company_name, :company_identifier,
+                   :branch_name, :branch_identifier, :sender_identity,
+                   'display_only', now())
+                ON CONFLICT (organization_id, location_id) DO UPDATE SET
+                  company_name=excluded.company_name,
+                  company_identifier=excluded.company_identifier,
+                  branch_name=excluded.branch_name,
+                  branch_identifier=excluded.branch_identifier,
+                  sender_identity=excluded.sender_identity,
+                  sender_identity_mode='display_only',
+                  updated_at=now()
+            """),
+            {
+                "organization": organization_id,
+                "location": location_id,
+                "company_name": name,
+                "company_identifier": normalize_sender_identifier(company_id),
+                "branch_name": branch,
+                "branch_identifier": branch_id,
+                "sender_identity": sender_identity,
+            },
+        )
         employee = _allocate_employee_id(db, organization_id)
 
         db.execute(
