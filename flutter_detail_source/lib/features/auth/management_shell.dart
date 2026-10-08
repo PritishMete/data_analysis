@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -387,8 +388,32 @@ class _ManagementShellState extends State<ManagementShell> {
     }
   }
 
+  Future<Map<String, dynamic>> _emailSettings(String locationId) async {
+    return request('/email-settings?location_id=' + Uri.encodeQueryComponent(locationId));
+  }
+
+  Future<void> _connectBranchGmail(String locationId) async {
+    final response = await request(
+      '/email-settings/connect?location_id=' + Uri.encodeQueryComponent(locationId),
+      method: 'POST',
+    );
+    final url = response['authorization_url']?.toString() ?? '';
+    if (url.isEmpty || !await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+      throw StateError('Google Gmail authorization could not be opened.');
+    }
+    feedback(StateError('Gmail authorization opened in a new browser tab. Complete it, then return to InsightFlow.'));
+  }
+
+  Future<void> _saveBranchSenderName(String locationId, String senderName) async {
+    await request(
+      '/email-settings?location_id=' + Uri.encodeQueryComponent(locationId),
+      method: 'PUT',
+      body: {'sender_name': senderName},
+    );
+  }
   Future<void> _inviteEmployee() async {
     final emailController = TextEditingController();
+    final senderNameController = TextEditingController(text: 'InsightFlow');
     // Generic `employee` is intentionally not a valid invitation role.
     const roleOptions = <String>[
       'manager',
@@ -443,7 +468,36 @@ class _ManagementShellState extends State<ManagementShell> {
               items: locations.map((value) => DropdownMenuItem<String>(value: value['location_id'].toString(), child: Text(value['name'].toString()))).toList(),
               onChanged: (value) { if (value != null) setDialogState(() => locationId = value); },
             ),
-            const SizedBox(height: 12),
+            FutureBuilder<Map<String, dynamic>>(
+              future: _emailSettings(locationId),
+              builder: (context, snapshot) {
+                final data = snapshot.data ?? const <String, dynamic>{};
+                final connected = data['connected'] == true;
+                if (snapshot.hasData) {
+                  final name = data['sender_name']?.toString().trim() ?? '';
+                  if (name.isNotEmpty && senderNameController.text == 'InsightFlow') {
+                    senderNameController.text = name;
+                  }
+                }
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  const Text('EMAIL SENDER', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                  const SizedBox(height: 8),
+                  TextField(controller: senderNameController, enabled: connected, decoration: input('Sender name')),
+                  const SizedBox(height: 8),
+                  Text(connected ? 'Sending from: ' + (data['sender_email']?.toString() ?? 'connected Gmail') : 'No Gmail account is connected for this branch.', style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, children: [
+                    GlassDialogAction(label: connected ? 'Reconnect Gmail' : 'Connect Gmail', onPressed: () async {
+                      try { await _connectBranchGmail(locationId); setDialogState(() {}); } catch (e) { feedback(e); }
+                    }),
+                    if (connected) GlassDialogAction(label: 'Save sender name', onPressed: () async {
+                      try { await _saveBranchSenderName(locationId, senderNameController.text.trim()); feedback(StateError('Branch sender name saved.')); } catch (e) { feedback(e); }
+                    }),
+                  ]),
+                ]);
+              },
+            ),
+            const SizedBox(height: 12),            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: role,
               decoration: input('Role'),
