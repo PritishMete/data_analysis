@@ -428,7 +428,6 @@ class _ManagementShellState extends State<ManagementShell> {
   }
   Future<void> _inviteEmployee() async {
     final emailController = TextEditingController();
-    final senderNameController = TextEditingController(text: 'InsightFlow');
     // Generic `employee` is intentionally not a valid invitation role.
     const roleOptions = <String>[
       'manager',
@@ -488,23 +487,61 @@ class _ManagementShellState extends State<ManagementShell> {
               builder: (context, snapshot) {
                 final data = snapshot.data ?? const <String, dynamic>{};
                 final connected = data['connected'] == true;
-                if (snapshot.hasData) {
-                  final name = data['sender_name']?.toString().trim() ?? '';
-                  if (name.isNotEmpty && senderNameController.text == 'InsightFlow') {
-                    senderNameController.text = name;
-                  }
-                }
-                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  const Text('EMAIL SENDER', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
-                  const SizedBox(height: 8),
-                  TextField(controller: senderNameController, enabled: connected, decoration: input('Sender name')),
-                  const SizedBox(height: 8),
-                  Text(connected ? 'Sending from: ' + (data['sender_email']?.toString() ?? 'connected Gmail') : 'No Gmail account is connected for this branch.', style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
+                final senderIdentity = data['sender_identity']?.toString() ?? 'Not configured';
+                final sendingAccount = data['sender_email']?.toString() ?? 'Not connected';
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'EMAIL SENDER',
+                      style: TextStyle(
+                        color: TechColors.textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sender identity: $senderIdentity',
+                      style: const TextStyle(
+                        color: TechColors.textPrimary,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Sending account: $sendingAccount',
+                      style: const TextStyle(
+                        color: TechColors.textMuted,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      connected
+                          ? 'Status: Connected'
+                          : 'Status: Not connected',
+                      style: TextStyle(
+                        color: connected
+                            ? TechColors.statusGreen
+                            : TechColors.statusRed,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Configure this from Company Settings → Email & Invitations.',
+                      style: TextStyle(
+                        color: TechColors.textMuted,
+                        fontSize: 10,
+                      ),
+                    ),
+                    if (!connected) ...[
+                      const SizedBox(height: 8),
                       GlassButton.custom(
                         onTap: () async {
                           try {
@@ -516,37 +553,17 @@ class _ManagementShellState extends State<ManagementShell> {
                         },
                         height: 40,
                         shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-                        child: Text(
-                          connected ? 'Reconnect Gmail' : 'Connect Gmail',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        child: const Text(
+                          'Configure Email',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ),
-                      if (connected)
-                        GlassButton.custom(
-                          onTap: () async {
-                            try {
-                              await _saveBranchSenderName(
-                                locationId,
-                                senderNameController.text.trim(),
-                              );
-                              feedback(StateError('Branch sender name saved.'));
-                            } catch (e) {
-                              feedback(e);
-                            }
-                          },
-                          height: 40,
-                          shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-                          child: const Text(
-                            'Save sender name',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
-                        ),
                     ],
-                  ),
-                ]);
+                  ],
+                );
               },
             ),
-            const SizedBox(height: 12),            const SizedBox(height: 12),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: role,
               decoration: input('Role'),
