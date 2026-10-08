@@ -21,9 +21,9 @@ from .service import AuthzError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
-from .invitation_email import (
-    InvitationEmailConfigurationError,
-    InvitationEmailDeliveryError,
+from .gmail_invitation_email import (
+    GmailConfigurationError,
+    GmailConnectionError,
     send_invitation_email,
 )
 
@@ -587,8 +587,10 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
             role_id=role_id,
             invitation_url=invitation_url,
             expires_at=expiry,
+            workspace_id=workspace_id,
+            location_id=location_id,
         )
-    except (InvitationEmailConfigurationError, InvitationEmailDeliveryError):
+    except (GmailConfigurationError, GmailConnectionError):
         with SessionLocal.begin() as db:
             db.execute(
                 text("""UPDATE invitations
