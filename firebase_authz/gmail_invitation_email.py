@@ -9,6 +9,8 @@ import json
 import os
 import secrets
 import time
+import re
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,6 +23,31 @@ from core.db import SessionLocal
 from .service import AuthzError
 
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+
+def normalize_sender_identifier(value: str, *, fallback: str = "company") -> str:
+    """Normalize a company/branch identifier into a safe email label."""
+    normalized = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    normalized = re.sub(r"-{2,}", "-", normalized)
+    return normalized[:63] or fallback
+
+
+def generate_sender_identity(company_identifier: str, branch_identifier: str) -> str:
+    company = normalize_sender_identifier(company_identifier)
+    branch = normalize_sender_identifier(branch_identifier, fallback="branch")
+    return f"insightflow@{company}.{branch}"
+
+
+def _company_sender_settings(workspace_id: str, location_id: str) -> dict:
+    with SessionLocal() as db:
+        row = db.execute(text("""
+            SELECT company_name, company_identifier, company_email, company_domain,
+                   email_domain, branch_name, branch_identifier, branch_email,
+                   sender_identity, sender_identity_mode
+            FROM branch_email_settings
+            WHERE organization_id=:org AND location_id=:location
+        """), {"org": workspace_id, "location": location_id}).mappings().first()
+    return dict(row) if row else {}
 
 
 class GmailConfigurationError(RuntimeError):
@@ -184,7 +211,20 @@ def complete_gmail_connection(code: str, state: str) -> dict:
             "org": payload["workspace_id"], "location": payload["location_id"],
             "email": sender_email, "token": encrypted, "subject": sender_email,
         })
-    return {"sender_email": sender_email, "connected": True}
+    settings = _company_sender_settings(payload["workspace_id"], payload["location_id"])
+    sender_identity = settings.get("sender_identity")
+    if not sender_identity:
+        sender_identity = generate_sender_identity(
+            settings.get("company_identifier") or settings.get("company_name") or "company",
+            settings.get("branch_identifier") or settings.get("branch_name") or "branch",
+        )
+    with SessionLocal.begin() as db:
+        db.execute(text("""
+            UPDATE branch_email_settings
+            SET sender_identity=:identity, sender_identity_mode='display_only', updated_at=now()
+            WHERE organization_id=:org AND location_id=:location
+        """), {"identity": sender_identity, "org": payload["workspace_id"], "location": payload["location_id"]})
+    return {"sender_email": sender_email, "connected": True, "sender_identity": sender_identity}
 
 
 def get_branch_email_settings(claims: dict, workspace_id: str, location_id: str) -> dict:
@@ -192,14 +232,17 @@ def get_branch_email_settings(claims: dict, workspace_id: str, location_id: str)
     _actor_for_location(workspace_id, location_id, principal_id)
     with SessionLocal() as db:
         row = db.execute(text("""
-            SELECT sender_name, sender_email,
+            SELECT sender_name, sender_email, sender_identity, sender_identity_mode,
                    (gmail_refresh_token_encrypted IS NOT NULL) AS connected
             FROM branch_email_settings
             WHERE organization_id=:org AND location_id=:location
         """), {"org": workspace_id, "location": location_id}).mappings().first()
-    return dict(row) if row else {
-        "connected": False, "sender_name": "InsightFlow", "sender_email": None
+    result = dict(row) if row else {
+        "connected": False, "sender_name": "InsightFlow", "sender_email": None,
+        "sender_identity": generate_sender_identity("company", "branch"),
+        "sender_identity_mode": "display_only",
     }
+    return result
 
 
 def update_branch_sender_name(claims: dict, workspace_id: str, location_id: str, sender_name: str) -> dict:
@@ -263,8 +306,17 @@ def send_invitation_email(*, recipient: str, organization_name: str, role_id: st
     organization = html.escape(organization_name.strip() or "your organization")
     role = html.escape(role_id.replace("_", " ").strip().title())
     safe_url = html.escape(invitation_url, quote=True)
+    settings = _company_sender_settings(workspace_id, location_id)
+    sender_identity = settings.get("sender_identity") or generate_sender_identity(
+        settings.get("company_identifier") or settings.get("company_name") or organization_name,
+        settings.get("branch_identifier") or settings.get("branch_name") or "branch",
+    )
+    # Do not put the generated identity in the From address. Gmail only permits
+    # authorized Send-As aliases. The connected Gmail account is the transport
+    # sender; the generated identity is shown in the display name.
+    display_name = f"InsightFlow • {sender_identity}"
     message = EmailMessage()
-    message["From"] = f"{sender_name} <{sender_email}>"
+    message["From"] = f"{display_name} <{sender_email}>"
     message["To"] = recipient
     message["Subject"] = f"You're invited to InsightFlow - {organization_name.strip() or 'your organization'}"
     message.set_content(
