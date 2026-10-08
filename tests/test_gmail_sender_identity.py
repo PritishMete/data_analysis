@@ -48,7 +48,7 @@ def test_invitation_keeps_transport_gmail_separate_from_generated_identity(monke
     raw = base64.urlsafe_b64decode(captured["raw"] + padding)
     message = BytesParser(policy=policy.default).parsebytes(raw)
 
-    assert message["From"] == "InsightFlow • insightflow@tcs.kolkata <tcscorp@gmail.com>"
+    assert message["From"] == "\"InsightFlow • insightflow@tcs.kolkata\" <tcscorp@gmail.com>"
     assert "insightflow@tcs.kolkata" in message["From"]
     assert "tcscorp@gmail.com" in message["From"]
 
