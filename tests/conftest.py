@@ -84,11 +84,3 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.nodeid.endswith("tests/test_end_to_end_learning.py::test_live_student_learning_lifecycle_and_privacy"):
             item.add_marker(marker)
-
-
-@pytest.fixture(autouse=True)
-def isolated_invitation_email_delivery(monkeypatch):
-    """Keep repository tests deterministic without sending real email."""
-    monkeypatch.setenv("INSIGHTFLOW_TESTING", "1")
-    import firebase_authz.supabase_provider as provider
-    monkeypatch.setattr(provider, "send_invitation_email", lambda **_: None)

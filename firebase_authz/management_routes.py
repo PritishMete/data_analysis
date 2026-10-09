@@ -33,12 +33,6 @@ from .management_domain import (
     decide_team_lead_request,
 )
 from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, list_dataset_catalog
-from .gmail_invitation_email import (
-    GmailConfigurationError, GmailConnectionError,
-    gmail_connection_url, complete_gmail_connection, get_branch_email_settings,
-    update_branch_sender_name,
-    get_company_settings, update_company_settings,
-)
 
 router = APIRouter(prefix="/v1/authz/management", tags=["management"])
 
@@ -319,99 +313,6 @@ def working_copy_assignment(
         assign_working_copy, _claims(authorization), _workspace(workspace_id),
         req.working_copy_id, req.target_uid,
     )
-
-
-class SenderNameRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    sender_name: str
-
-
-class CompanySettingsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    company_name: str
-    company_identifier: str
-    company_email: str | None = None
-    company_domain: str | None = None
-    email_domain: str | None = None
-    branch_name: str
-    branch_identifier: str
-    branch_email: str | None = None
-
-
-@router.get("/company-settings")
-def company_settings(
-    location_id: str = Query(...),
-    authorization: str = Header(default=None),
-    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
-):
-    return _dispatch(
-        get_company_settings, _claims(authorization), _workspace(workspace_id), location_id
-    )
-
-
-@router.put("/company-settings")
-def company_settings_update(
-    req: CompanySettingsRequest,
-    location_id: str = Query(...),
-    authorization: str = Header(default=None),
-    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
-):
-    return _dispatch(
-        update_company_settings, _claims(authorization), _workspace(workspace_id),
-        location_id, req.model_dump(),
-    )
-
-
-@router.get("/email-settings")
-def email_settings(
-    location_id: str = Query(...),
-    authorization: str = Header(default=None),
-    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
-):
-    return _dispatch(
-        get_branch_email_settings, _claims(authorization), _workspace(workspace_id), location_id
-    )
-
-
-@router.post("/email-settings/connect")
-def email_settings_connect(
-    location_id: str = Query(...),
-    authorization: str = Header(default=None),
-    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
-):
-    claims = _claims(authorization)
-    workspace = _workspace(workspace_id)
-    principal = str(claims.get("uid") or claims.get("sub") or "")
-    try:
-        return {"authorization_url": gmail_connection_url(workspace, location_id, principal)}
-    except (GmailConfigurationError, GmailConnectionError, AuthzError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.put("/email-settings")
-def email_settings_update(
-    req: SenderNameRequest,
-    location_id: str = Query(...),
-    authorization: str = Header(default=None),
-    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
-):
-    return _dispatch(
-        update_branch_sender_name, _claims(authorization), _workspace(workspace_id),
-        location_id, req.sender_name
-    )
-
-
-@router.get("/email-settings/callback")
-def email_settings_callback(code: str = Query(...), state: str = Query(...)):
-    try:
-        result = complete_gmail_connection(code, state)
-        return {
-            "status": "connected",
-            "sender_email": result["sender_email"],
-            "message": "Gmail connected. Return to InsightFlow and set the sender name.",
-        }
-    except (GmailConfigurationError, GmailConnectionError, AuthzError) as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/audit")

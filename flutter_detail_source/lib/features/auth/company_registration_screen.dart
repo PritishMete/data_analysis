@@ -26,7 +26,6 @@ class CompanyRegistrationScreen extends StatefulWidget {
 class _CompanyRegistrationScreenState
     extends State<CompanyRegistrationScreen> {
   final _organization = TextEditingController();
-  final _companyIdentifier = TextEditingController();
   final _branch = TextEditingController();
   final _branchIdentifier = TextEditingController();
   final _fullName = TextEditingController();
@@ -61,7 +60,6 @@ class _CompanyRegistrationScreenState
   void dispose() {
     for (final controller in [
       _organization,
-      _companyIdentifier,
       _branch,
       _branchIdentifier,
       _fullName,
@@ -192,10 +190,9 @@ class _CompanyRegistrationScreenState
   void _next() {
     if (_step == 0 &&
         (_organization.text.trim().isEmpty ||
-            _companyIdentifier.text.trim().isEmpty ||
             _branch.text.trim().isEmpty ||
             _branchIdentifier.text.trim().isEmpty)) {
-      _fail('Enter company name, company identifier, branch name, and branch identifier.');
+      _fail('Enter company name, branch name, and branch identifier.');
       return;
     }
 
@@ -256,7 +253,6 @@ class _CompanyRegistrationScreenState
           headers: headers,
           body: jsonEncode({
             'organization_name': _organization.text.trim(),
-            'company_identifier': _companyIdentifier.text.trim(),
             'branch_name': _branch.text.trim(),
             'branch_identifier': _branchIdentifier.text,
             'full_name': _fullName.text.trim(),
@@ -588,7 +584,6 @@ class _CompanyRegistrationScreenState
           ),
           const SizedBox(height: 12),
           _review('COMPANY', _organization.text.trim()),
-          _review('COMPANY ID', _companyIdentifier.text.trim()),
           _review('BRANCH', _branch.text.trim()),
           _review('BRANCH ID', _branchIdentifier.text.trim()),
           _review('BRANCH HEAD', _fullName.text.trim()),
@@ -741,13 +736,6 @@ class _CompanyRegistrationScreenState
           ),
           const SizedBox(height: 12),
           _field('Company / Organization Name', _organization),
-          const SizedBox(height: 10),
-          _field(
-            'Company Identifier',
-            _companyIdentifier,
-            placeholder: 'e.g. tcs',
-            helper: 'Used for the generated InsightFlow sender identity. Letters, numbers and punctuation are normalized server-side.',
-          ),
           const SizedBox(height: 10),
           _field('Branch Name', _branch),
           const SizedBox(height: 10),

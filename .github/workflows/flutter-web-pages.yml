@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pytest -q tests/test_employee_invitation_flow.py tests/test_gmail_sender_identity.py
+          python -m pytest -q tests/test_employee_invitation_flow.py
 
       - name: Run auth and onboarding regression tests
         working-directory: flutter_detail_source

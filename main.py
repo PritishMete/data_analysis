@@ -371,30 +371,6 @@ app.add_event_handler("startup", _initialize_production_database)
 
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
-# Flutter Web calls the authorization API cross-origin from GitHub Pages.
-# Keep the allow-list explicit and configurable; never enable wildcard origins
-# for authenticated browser requests.
-_cors_origins = [
-    origin.strip()
-    for origin in os.environ.get(
-        "INSIGHTFLOW_CORS_ORIGINS",
-        "https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://localhost:8080",
-    ).split(",")
-    if origin.strip()
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "X-InsightFlow-Workspace-ID",
-        "X-InsightFlow-Resource-ID",
-    ],
-)
-
 
 @app.get("/health")
 async def health_check():
