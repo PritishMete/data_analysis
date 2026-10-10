@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
-from .profile_validation import validate_profile_fields
+from .profile_validation import normalize_id_proof_number, validate_profile_fields
 from .service import AuthzError
 
 
@@ -195,95 +196,126 @@ def upsert_my_profile(
         timezone.utc
     )
 
-    with SessionLocal.begin() as db:
-        member = _member(db, claims, workspace_id)
-        existing = db.execute(text("""
-            SELECT phone_e164, phone_verified_at
-            FROM organization_member_profiles
-            WHERE organization_id=:org AND principal_id=:principal
-        """), {
-            "org": member["organization_id"],
-            "principal": member["principal_id"],
-        }).mappings().first()
-        exists = existing is not None
-        existing_phone_verified_at = (
-            existing["phone_verified_at"]
-            if existing and existing["phone_e164"] == fields["phone_e164"]
-            else None
-        )
-
-        db.execute(text("""
-            INSERT INTO organization_member_profiles
-              (organization_id, principal_id, full_name, email, email_verified_at,
-               phone_e164, phone_verified_at, address_line1, address_line2,
-               state, state_code, postal_code, country, country_code,
-               id_proof_type, id_proof_number, id_proof_provided_at,
-               created_at, updated_at)
-            VALUES
-              (:org, :principal, :full_name, :email, :email_verified_at,
-               :phone, :phone_verified_at, :address_line1, :address_line2,
-               :state, :state_code, :postal_code, :country, :country_code,
-               :id_proof_type, :id_proof_number, now(),
-               coalesce(
-                 (SELECT created_at
-                  FROM organization_member_profiles
-                  WHERE organization_id=:org AND principal_id=:principal),
-                 now()),
-               now())
-            ON CONFLICT (organization_id, principal_id)
-            DO UPDATE SET
-              full_name=EXCLUDED.full_name,
-              email=EXCLUDED.email,
-              email_verified_at=EXCLUDED.email_verified_at,
-              phone_e164=EXCLUDED.phone_e164,
-              phone_verified_at=EXCLUDED.phone_verified_at,
-              address_line1=EXCLUDED.address_line1,
-              address_line2=EXCLUDED.address_line2,
-              state=EXCLUDED.state,
-              state_code=EXCLUDED.state_code,
-              postal_code=EXCLUDED.postal_code,
-              country=EXCLUDED.country,
-              country_code=EXCLUDED.country_code,
-              id_proof_type=EXCLUDED.id_proof_type,
-              id_proof_number=EXCLUDED.id_proof_number,
-              id_proof_provided_at=EXCLUDED.id_proof_provided_at,
-              updated_at=now()
-        """), {
-            "org": member["organization_id"],
-            "principal": member["principal_id"],
-            "full_name": fields["full_name"],
-            "email": email,
-            "email_verified_at": email_time,
-            "phone": fields["phone_e164"],
-            "phone_verified_at": existing_phone_verified_at,
-            "address_line1": fields["address_line1"],
-            "address_line2": fields["address_line2"],
-            "state": fields["state"],
-            "state_code": fields["state_code"],
-            "postal_code": fields["postal_code"],
-            "country": fields["country"],
-            "country_code": fields["country_code"],
-            "id_proof_type": fields["id_proof_type"],
-            "id_proof_number": fields["id_proof_number"],
-        })
-
-        db.execute(text("""
-            INSERT INTO audit_events
-              (event_id, organization_id, actor_principal_id, action, outcome, metadata)
-            VALUES (:event, :org, :actor, :action, 'succeeded', CAST(:metadata AS jsonb))
-        """), {
-            "event": "evt_" + uuid.uuid4().hex,
-            "org": member["organization_id"],
-            "actor": member["principal_id"],
-            "action": (
-                "people.profile.updated"
-                if exists
-                else "people.profile.created"
-            ),
-            "metadata": json.dumps({
-                "principal_id": member["principal_id"],
-                "employee_id": member["employee_id"],
-            }),
-        })
+    try:
+        with SessionLocal.begin() as db:
+            member = _member(db, claims, workspace_id)
+            existing = db.execute(text("""
+                SELECT phone_e164, phone_verified_at
+                FROM organization_member_profiles
+                WHERE organization_id=:org AND principal_id=:principal
+            """), {
+                "org": member["organization_id"],
+                "principal": member["principal_id"],
+            }).mappings().first()
+            exists = existing is not None
+            normalized_proof = normalize_id_proof_number(fields["id_proof_number"])
+            duplicate = db.execute(text("""
+                SELECT 1
+                FROM organization_member_profiles
+                WHERE organization_id=:org
+                  AND principal_id<>:principal
+                  AND upper(regexp_replace(id_proof_number, '[[:space:]-]', '', 'g'))=:proof
+                  AND id_proof_type=:proof_type
+                  AND country_code=:country_code
+                LIMIT 1
+            """), {
+                "org": member["organization_id"],
+                "principal": member["principal_id"],
+                "proof": normalized_proof,
+                "proof_type": fields["id_proof_type"],
+                "country_code": fields["country_code"],
+            }).first()
+            if duplicate:
+                raise AuthzError(
+                    "This ID proof is already registered to another user in this organization. "
+                    "Check the document type and number."
+                )
+            existing_phone_verified_at = (
+                existing["phone_verified_at"]
+                if existing and existing["phone_e164"] == fields["phone_e164"]
+                else None
+            )
+    
+            db.execute(text("""
+                INSERT INTO organization_member_profiles
+                  (organization_id, principal_id, full_name, email, email_verified_at,
+                   phone_e164, phone_verified_at, address_line1, address_line2,
+                   state, state_code, postal_code, country, country_code,
+                   id_proof_type, id_proof_number, id_proof_provided_at,
+                   created_at, updated_at)
+                VALUES
+                  (:org, :principal, :full_name, :email, :email_verified_at,
+                   :phone, :phone_verified_at, :address_line1, :address_line2,
+                   :state, :state_code, :postal_code, :country, :country_code,
+                   :id_proof_type, :id_proof_number, now(),
+                   coalesce(
+                     (SELECT created_at
+                      FROM organization_member_profiles
+                      WHERE organization_id=:org AND principal_id=:principal),
+                     now()),
+                   now())
+                ON CONFLICT (organization_id, principal_id)
+                DO UPDATE SET
+                  full_name=EXCLUDED.full_name,
+                  email=EXCLUDED.email,
+                  email_verified_at=EXCLUDED.email_verified_at,
+                  phone_e164=EXCLUDED.phone_e164,
+                  phone_verified_at=EXCLUDED.phone_verified_at,
+                  address_line1=EXCLUDED.address_line1,
+                  address_line2=EXCLUDED.address_line2,
+                  state=EXCLUDED.state,
+                  state_code=EXCLUDED.state_code,
+                  postal_code=EXCLUDED.postal_code,
+                  country=EXCLUDED.country,
+                  country_code=EXCLUDED.country_code,
+                  id_proof_type=EXCLUDED.id_proof_type,
+                  id_proof_number=EXCLUDED.id_proof_number,
+                  id_proof_provided_at=EXCLUDED.id_proof_provided_at,
+                  updated_at=now()
+            """), {
+                "org": member["organization_id"],
+                "principal": member["principal_id"],
+                "full_name": fields["full_name"],
+                "email": email,
+                "email_verified_at": email_time,
+                "phone": fields["phone_e164"],
+                "phone_verified_at": existing_phone_verified_at,
+                "address_line1": fields["address_line1"],
+                "address_line2": fields["address_line2"],
+                "state": fields["state"],
+                "state_code": fields["state_code"],
+                "postal_code": fields["postal_code"],
+                "country": fields["country"],
+                "country_code": fields["country_code"],
+                "id_proof_type": fields["id_proof_type"],
+                "id_proof_number": fields["id_proof_number"],
+            })
+    
+            db.execute(text("""
+                INSERT INTO audit_events
+                  (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+                VALUES (:event, :org, :actor, :action, 'succeeded', CAST(:metadata AS jsonb))
+            """), {
+                "event": "evt_" + uuid.uuid4().hex,
+                "org": member["organization_id"],
+                "actor": member["principal_id"],
+                "action": (
+                    "people.profile.updated"
+                    if exists
+                    else "people.profile.created"
+                ),
+                "metadata": json.dumps({
+                    "principal_id": member["principal_id"],
+                    "employee_id": member["employee_id"],
+                }),
+            })
+    except IntegrityError as exc:
+        # The database trigger is the final guard against concurrent submissions.
+        message = str(getattr(getattr(exc, "orig", None), "args", [""])[0]).lower()
+        if "duplicate employee id proof" in message:
+            raise AuthzError(
+                "This ID proof is already registered to another user in this organization."
+            ) from exc
+        raise
 
     return get_my_profile(claims, workspace_id)
