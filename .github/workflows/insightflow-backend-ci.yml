@@ -131,19 +131,18 @@ jobs:
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
-      - name: Run Flutter Auth tests
+      - name: Run Supabase auth and onboarding tests
         run: >-
           flutter test
-          test/firebase_auth_service_test.dart
-          test/management_shell_contract_test.dart
+          test/auth_screens_test.dart
+          test/onboarding_auth_flow_contract_test.dart
+          test/auth_gate_management_landing_test.dart
+          test/management_navigation_context_test.dart
           test/managed_dataset_upload_contract_test.dart
 
       - name: Build Flutter web
         run: >-
           flutter build web --release
           --no-wasm-dry-run
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=insightflow-5a23d
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=ci-placeholder.firebaseapp.com
+          --dart-define=INSIGHTFLOW_SUPABASE_URL=https://example.supabase.co
+          --dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=ci-placeholder
