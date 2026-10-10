@@ -7,6 +7,7 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
+from .gmail_invitation_email import GmailConfigurationError, GmailConnectionError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -719,3 +720,32 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
         raise HTTPException(403, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+class GmailConnectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    workspace_id: str
+    location_id: str
+
+@router.post("/management/email-settings/connect")
+def gmail_connect(req: GmailConnectionRequest, authorization: str = Header(default=None)):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+            raise AuthzError("Gmail connection requires Supabase authentication.")
+        from .gmail_invitation_email import gmail_connection_url
+        principal = str(claims.get("uid") or claims.get("sub") or "").strip()
+        return {"authorization_url": gmail_connection_url(req.workspace_id, req.location_id, principal)}
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc: raise HTTPException(503, str(exc))
+
+@router.get("/management/email-settings/callback")
+def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if error: raise HTTPException(400, "Google Gmail authorization was cancelled or denied.")
+    if not code or not state: raise HTTPException(400, "Google Gmail authorization response is incomplete.")
+    try:
+        from .gmail_invitation_email import complete_gmail_connection
+        return complete_gmail_connection(code, state)
+    except AuthzError as exc: raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc: raise HTTPException(503, str(exc))
+    except GmailConnectionError as exc: raise HTTPException(400, str(exc))

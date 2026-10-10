@@ -603,12 +603,16 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
             invitation_url=invitation_url,
             organization_name=organization_name,
             role_id=role_id,
+            workspace_id=workspace_id,
+            location_id=location_id,
         )
         delivery_status = "sent"
     except InvitationEmailSenderNotConfigured:
         logger.warning("invitation_delivery_blocked reason=sender_not_configured invitation_id=%s", invitation_id)
-    except Exception:
-        logger.exception("invitation_delivery_failed invitation_id=%s", invitation_id)
+        delivery_status = "sender_configuration_required"
+    except Exception as exc:
+        logger.error("invitation_delivery_failed invitation_id=%s exception_class=%s",
+                     invitation_id, exc.__class__.__name__)
         delivery_status = "failed"
 
     with SessionLocal.begin() as db:

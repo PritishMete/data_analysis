@@ -89,6 +89,8 @@ def test_sender_fails_closed_without_configuration(monkeypatch):
             invitation_url="https://example.invalid/employee-invite?token=opaque",
             organization_name="Example",
             role_id="data_analyst",
+            workspace_id="org_test",
+            location_id="loc_main",
         )
 
 
