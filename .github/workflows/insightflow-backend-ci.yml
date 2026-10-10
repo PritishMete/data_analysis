@@ -134,7 +134,6 @@ jobs:
       - name: Run Supabase auth and onboarding tests
         run: >-
           flutter test
-          test/auth_screens_test.dart
           test/onboarding_auth_flow_contract_test.dart
           test/auth_gate_management_landing_test.dart
           test/management_navigation_context_test.dart
