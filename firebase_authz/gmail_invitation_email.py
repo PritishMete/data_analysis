@@ -248,6 +248,13 @@ def get_company_settings(claims: dict, workspace_id: str, location_id: str) -> d
     if not row:
         raise AuthzError("Location is not part of your organization.")
     result = dict(row)
+    centralized_sender_configured = bool(
+        os.environ.get("RESEND_API_KEY", "").strip()
+        and os.environ.get("RESEND_FROM_EMAIL", "").strip()
+    )
+    result["gmail_connected"] = centralized_sender_configured
+    result["connected_gmail"] = os.environ.get("RESEND_FROM_EMAIL", "").strip() or None
+    result["sender_identity_mode"] = "centralized"
     company_identifier = result.get("company_identifier") or result.get("organization_name") or "company"
     branch_identifier = result.get("branch_identifier") or result.get("branch_name") or "branch"
     result["company_name"] = result.get("company_name") or result["organization_name"]
