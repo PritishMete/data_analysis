@@ -302,3 +302,28 @@ def delete_auth_user(user_id: str) -> None:
         "delete_user",
         lambda client: client.auth.admin.delete_user(normalized_id),
     )
+
+
+def create_user_with_password(email: str, password: str) -> dict[str, Any]:
+    """Create an Auth user only after the application invitation was validated."""
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email or "@" not in normalized_email:
+        raise ValueError("A valid invitation email is required.")
+    if len(password) < 8:
+        raise ValueError("Password must contain at least 8 characters.")
+    response = _run_admin_operation(
+        "create_user",
+        lambda client: client.auth.admin.create_user({
+            "email": normalized_email,
+            "password": password,
+            "email_confirm": True,
+        }),
+    )
+    user = getattr(response, "user", None)
+    if user is None and isinstance(response, dict):
+        user = response.get("user")
+    user_id = _user_field(user, "id") if user is not None else None
+    user_id = str(user_id or "").strip()
+    if not user_id:
+        raise SupabaseAdminOperationError("Supabase Auth did not return the created user ID.")
+    return {"user_id": user_id, "email": normalized_email}
