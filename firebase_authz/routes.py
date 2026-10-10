@@ -7,6 +7,7 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
+from .gmail_invitation_email import GmailConfigurationError, GmailConnectionError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class FounderOrganizationRegistration(BaseModel):
     # Authentication is checked before request-field validation so an
     # unauthenticated caller cannot learn registration schema details.
     organization_name: str | None = None
+    company_identifier: str | None = None
     branch_name: str | None = None
     branch_identifier: str | None = None
     full_name: str | None = None
@@ -325,6 +327,7 @@ def founder_organization_register(
                 req.organization_name,
                 req.branch_name,
                 req.branch_identifier,
+                company_identifier=req.company_identifier,
                 full_name=req.full_name,
                 phone=req.phone,
                 phone_country_calling_code=req.phone_country_calling_code,
@@ -414,10 +417,12 @@ class InvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
     workspace_id: str | None = None
+    token: str | None = None
 
 class InvitationPasswordSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
+    token: str | None = None
 
 class MembershipStatusRequest(BaseModel):
     workspace_id: str
@@ -446,8 +451,21 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
         logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
+    except (GmailConfigurationError, GmailConnectionError) as exc:
+        logger.error("invitation_email_failure_safe_response error=%s", str(exc))
+        raise HTTPException(503, "Employee invitation email service is not configured or unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
+
+@router.get("/invitations/preview")
+def invitation_preview(token: str):
+    try:
+        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+            raise AuthzError("Employee invitation preview is available only for Supabase authentication.")
+        from .supabase_provider import get_invitation_by_token
+        return get_invitation_by_token(token)
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
 
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
@@ -462,6 +480,7 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
                 verify_id_token(_token(authorization)),
                 req.workspace_id,
                 req.invitation_id,
+                req.token,
             )
         else:
             result = accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
@@ -489,7 +508,7 @@ def invitation_password_setup_complete(
         claims = require_email_verified(verify_id_token(_token(authorization)))
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
-            return provider_mark_password_setup(claims, req.invitation_id)
+            return provider_mark_password_setup(claims, req.invitation_id, req.token)
         raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
