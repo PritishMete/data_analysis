@@ -199,6 +199,11 @@ def normalize_id_proof_type(country_code: str, value: str) -> str:
     return key
 
 
+def normalize_id_proof_number(value: str) -> str:
+    """Canonical form used only for duplicate matching, not for display."""
+    return re.sub(r"[\\s-]", "", str(value or "")).upper()
+
+
 def validate_profile_fields(
     *,
     full_name: str,
