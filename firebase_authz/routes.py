@@ -415,6 +415,12 @@ class InvitationAcceptRequest(BaseModel):
     invitation_id: str
     workspace_id: str | None = None
 
+class InvitationRedeemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str
+    password: str
+
+
 class InvitationPasswordSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
@@ -448,6 +454,26 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
+
+@router.post("/invitations/redeem")
+def invitation_redeem(req: InvitationRedeemRequest):
+    """Redeem a single-use application token and create Auth only after validation."""
+    try:
+        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+            raise AuthzError("Application invitation redemption requires Supabase authentication.")
+        from .supabase_provider import redeem_invitation
+        return redeem_invitation(req.token, req.password)
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
+        logger.error("invitation_redemption_admin_failure error=%s", str(exc))
+        raise HTTPException(503, "Invitation could not be completed. Please try again.")
+    except Exception:
+        logger.exception("invitation_redemption_failed")
+        raise HTTPException(500, "Invitation could not be activated. Please try again.")
+
 
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):

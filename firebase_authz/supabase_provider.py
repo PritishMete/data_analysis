@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +24,8 @@ from .profile_validation import normalize_phone_submission, validate_profile_fie
 from .supabase_admin import (
     SupabaseAdminConfigurationError,
     SupabaseAdminOperationError,
+    create_user_with_password,
+    delete_auth_user,
     find_user_by_email,
     invite_user_by_email,
     is_existing_auth_user_error,
@@ -533,45 +537,17 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
                 raise AuthzError("Only an Organization Owner or Branch Head can invite a Manager.")
 
     invitation_id = _id("inv")
-    redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
+    redirect_to = os.environ.get(
+        "INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT",
+        "https://pritishmete.github.io/data_analysis/employee-invite",
+    ).strip()
     if not redirect_to:
         raise AuthzError("Employee invitation redirect is not configured.")
 
-    auth_user_id = ""
-    delivery_status = "initiated"
-    password_setup_required = True
-    try:
-        invited = invite_user_by_email(email, redirect_to, organization_name=organization_name)
-        auth_user_id = invited["user_id"]
-        if not auth_user_id:
-            raise SupabaseAdminOperationError("Supabase Auth did not return an invited user ID.")
-    except Exception as invite_error:
-        if not is_existing_auth_user_error(invite_error):
-            raise
-        try:
-            existing = find_user_by_email(email)
-        except (SupabaseAdminConfigurationError, SupabaseAdminOperationError):
-            # Keep trusted Admin failures distinct from application authorization
-            # failures. The route converts these to a safe 503 response.
-            raise
-        except Exception as lookup_error:
-            raise SupabaseAdminOperationError(
-                "Supabase Auth existing-user lookup failed."
-            ) from lookup_error
-        if not existing or existing.get("user_id") is None:
-            raise SupabaseAdminOperationError(
-                "Supabase Auth reported an existing user, but the trusted lookup "
-                "did not return that exact email."
-            ) from invite_error
-        if not existing.get("email_confirmed"):
-            raise AuthzError(
-                "This email already has an unconfirmed Auth account. "
-                "Complete its existing confirmation flow before accepting an employee invitation."
-            ) from invite_error
-        auth_user_id = str(existing["user_id"]).strip()
-        delivery_status = "existing_account"
-        password_setup_required = False
-
+    # The raw token exists only in this request and is passed only to the
+    # configured server-side sender. PostgreSQL stores its SHA-256 digest.
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active":
@@ -582,18 +558,157 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
             raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
-        db.execute(text("""INSERT INTO invitations
-            (invitation_id, organization_id, email, role_id, status,
-             expires_at, created_by_principal_id, auth_user_id, location_id,
-             email_delivery_status, email_delivery_started_at)
-            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,:location,
-                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
-                   {"id": invitation_id, "org": workspace_id, "email": email,
-                    "role": role_id, "expires": expiry, "creator": actor["principal_id"],
-                    "auth_user": auth_user_id, "location": location_id, "delivery_status": delivery_status})
-    return {"invitation_id": invitation_id, "status": "invited",
-            "email_delivery_status": delivery_status,
-            "password_setup_required": password_setup_required}
+        if "organization_owner" not in actor_roles:
+            scoped = db.execute(text("""
+                SELECT 1 FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND location_id=:location AND status='active'
+                LIMIT 1
+            """), {"org": workspace_id, "principal": actor["principal_id"],
+                    "location": location_id}).scalar_one_or_none()
+            if scoped is None:
+                raise AuthzError("Selected branch/location is outside your management scope.")
+
+        # A resend revokes prior pending tokens for the same recipient and branch.
+        db.execute(text("""
+            UPDATE invitations
+               SET status='revoked'
+             WHERE organization_id=:org AND lower(email)=:email
+               AND location_id=:location AND status IN ('invited','pending_delivery')
+        """), {"org": workspace_id, "email": email, "location": location_id})
+        db.execute(text("""
+            INSERT INTO invitations
+              (invitation_id, organization_id, email, role_id, status, expires_at,
+               created_by_principal_id, auth_user_id, location_id,
+               email_delivery_status, token_hash, token_created_at)
+            VALUES
+              (:id, :org, :email, :role, 'invited', :expires, :creator, NULL,
+               :location, 'pending_delivery', :token_hash, now())
+        """), {"id": invitation_id, "org": workspace_id, "email": email,
+                "role": role_id, "expires": expiry, "creator": actor["principal_id"],
+                "location": location_id, "token_hash": token_hash})
+
+    # Never fall back to Supabase Auth's invite API: it creates the Auth user.
+    delivery_status = "sender_configuration_required"
+    try:
+        from .invitation_email_sender import send_invitation_email
+        from .invitation_email_sender import InvitationEmailSenderNotConfigured
+        invitation_url = redirect_to + ("&" if "?" in redirect_to else "?") + "token=" + raw_token
+        send_invitation_email(
+            email=email,
+            invitation_url=invitation_url,
+            organization_name=organization_name,
+            role_id=role_id,
+        )
+        delivery_status = "sent"
+    except InvitationEmailSenderNotConfigured:
+        logger.warning("invitation_delivery_blocked reason=sender_not_configured invitation_id=%s", invitation_id)
+    except Exception:
+        logger.exception("invitation_delivery_failed invitation_id=%s", invitation_id)
+        delivery_status = "failed"
+
+    with SessionLocal.begin() as db:
+        db.execute(text("""
+            UPDATE invitations SET email_delivery_status=:delivery
+            WHERE invitation_id=:id
+        """), {"delivery": delivery_status, "id": invitation_id})
+    return {
+        "invitation_id": invitation_id,
+        "status": "invited",
+        "email_delivery_status": delivery_status,
+        "password_setup_required": True,
+    }
+
+
+
+def redeem_invitation(token: str, password: str) -> dict[str, Any]:
+    """Validate a single-use token before creating a Supabase Auth user."""
+    raw_token = str(token or "").strip()
+    if len(raw_token) < 40 or len(raw_token) > 512:
+        raise AuthzError("Invitation token is invalid or expired.")
+    if len(str(password or "")) < 8:
+        raise ValueError("Password must contain at least 8 characters.")
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    with SessionLocal.begin() as db:
+        invitation = db.execute(text("""
+            SELECT invitation_id, organization_id, email, status, expires_at,
+                   auth_user_id, token_hash
+              FROM invitations WHERE token_hash=:token_hash FOR UPDATE
+        """), {"token_hash": token_hash}).mappings().first()
+        if not invitation or invitation["status"] not in {"invited", "redeeming"}:
+            raise AuthzError("Invitation token is invalid, revoked, or already used.")
+        if invitation["status"] == "redeeming":
+            raise AuthzError("This invitation is already being redeemed. Please retry shortly.")
+        if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
+            raise AuthzError("Invitation has expired.")
+        db.execute(text("""
+            UPDATE invitations SET status='redeeming', redemption_started_at=now()
+             WHERE invitation_id=:id AND status='invited'
+        """), {"id": invitation["invitation_id"]})
+
+    email = str(invitation["email"]).strip().lower()
+    if find_user_by_email(email):
+        with SessionLocal.begin() as db:
+            db.execute(text("""
+                UPDATE invitations SET status='invited', redemption_started_at=NULL
+                 WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
+            """), {"id": invitation["invitation_id"]})
+        raise AuthzError(
+            "This email already has a Supabase account. Sign in with that account and ask your Branch Head to reissue an invitation compatible with existing accounts."
+        )
+
+    try:
+        created = create_user_with_password(email, password)
+    except Exception:
+        with SessionLocal.begin() as db:
+            db.execute(text("""
+                UPDATE invitations SET status='invited', redemption_started_at=NULL
+                 WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
+            """), {"id": invitation["invitation_id"]})
+        raise
+
+    uid = str(created["user_id"])
+    try:
+        with SessionLocal.begin() as db:
+            locked = db.execute(text("""
+                SELECT status, token_hash FROM invitations
+                 WHERE invitation_id=:id FOR UPDATE
+            """), {"id": invitation["invitation_id"]}).mappings().first()
+            if not locked or locked["status"] != "redeeming" or locked["token_hash"] != token_hash:
+                raise AuthzError("Invitation redemption is no longer active.")
+            db.execute(text("""
+                UPDATE invitations SET auth_user_id=:uid
+                 WHERE invitation_id=:id AND status='redeeming'
+            """), {"uid": uid, "id": invitation["invitation_id"]})
+
+        claims = {
+            "uid": uid, "sub": uid, "email": email,
+            "email_verified": True, "provider": "supabase",
+        }
+        result = accept_invitation(
+            claims, str(invitation["organization_id"]), str(invitation["invitation_id"])
+        )
+    except Exception:
+        # Compensate only the Auth user created by this failed redemption. This
+        # is not a resend workaround and never deletes pre-existing accounts.
+        try:
+            delete_auth_user(uid)
+        finally:
+            with SessionLocal.begin() as db:
+                db.execute(text("""
+                    UPDATE invitations
+                       SET status='invited', auth_user_id=NULL, redemption_started_at=NULL
+                     WHERE invitation_id=:id AND status='redeeming'
+                """), {"id": invitation["invitation_id"]})
+        raise
+    return {
+        "accepted": True,
+        "organization_id": result["organization_id"],
+        "employee_id": result["employee_id"],
+        "location_id": result.get("location_id"),
+    }
+
 
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
@@ -633,13 +748,15 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
             invitation is not None,
             bool(workspace_id),
         )
-        if not invitation or invitation["status"] != "invited":
+        if not invitation or invitation["status"] not in {"invited", "redeeming"}:
             raise AuthzError("Invitation is no longer active.")
         if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
         invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
+        if invitation.get("token_hash") and not invited_auth_user_id:
+            raise AuthzError("Invitation token redemption is required.")
         if invited_auth_user_id and invited_auth_user_id != uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
         workspace_id = str(invitation["organization_id"])

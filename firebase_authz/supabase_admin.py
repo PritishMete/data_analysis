@@ -291,3 +291,14 @@ def find_user_by_email(email: str) -> dict[str, Any] | None:
         if next_page is None:
             return None
         page = next_page
+
+
+def delete_auth_user(user_id: str) -> None:
+    """Compensate only a user created by a failed invitation redemption."""
+    normalized_id = str(user_id or "").strip()
+    if not normalized_id:
+        return
+    _run_admin_operation(
+        "delete_user",
+        lambda client: client.auth.admin.delete_user(normalized_id),
+    )
