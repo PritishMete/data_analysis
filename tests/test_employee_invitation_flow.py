@@ -119,7 +119,7 @@ def test_invitation_creation_does_not_call_supabase_auth_or_store_raw_token(monk
     )
     assert result["status"] == "invited"
     assert result["email_delivery_status"] == "sender_configuration_required"
-    assert db.inserts[0]["auth_user"] is None
+    assert "auth_user" not in db.inserts[0]
     assert len(db.inserts[0]["token_hash"]) == 64
     assert "token" not in db.inserts[0]
 
