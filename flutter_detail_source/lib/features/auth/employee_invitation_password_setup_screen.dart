@@ -83,6 +83,31 @@ class _EmployeeInvitationPasswordSetupScreenState
         throw StateError('This invitation is incomplete. Please request a new invitation.');
       }
 
+      // Revalidate the one-time invitation immediately before creating an Auth
+      // account. A page may have been open after its token expired or was revoked;
+      // never create auth.users for an invalid invitation.
+      final previewResponse = await http
+          .get(
+            Uri.parse(
+              '$insightFlowBackendBaseUrl/v1/authz/invitations/preview',
+            ).replace(queryParameters: {'token': invitationToken}),
+          )
+          .timeout(const Duration(seconds: 10));
+      dynamic previewDecoded;
+      try {
+        previewDecoded = jsonDecode(previewResponse.body);
+      } catch (_) {}
+      if (previewResponse.statusCode != 200 ||
+          previewDecoded is! Map ||
+          previewDecoded['invitation_id']?.toString() != invitationId ||
+          previewDecoded['email']?.toString().trim().toLowerCase() != invitedEmail) {
+        throw StateError(
+          previewDecoded is Map && previewDecoded['detail'] != null
+              ? previewDecoded['detail'].toString()
+              : 'This invitation is invalid, expired, or no longer active. Request a new invitation.',
+        );
+      }
+
       var authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
       var signedUpNow = false;
 
