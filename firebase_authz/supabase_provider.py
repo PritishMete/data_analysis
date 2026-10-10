@@ -625,12 +625,12 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
 
 
 
-def redeem_invitation(token: str, password: str) -> dict[str, Any]:
+def redeem_invitation(token: str, password: str, existing_claims: dict[str, Any] | None = None) -> dict[str, Any]:
     """Validate a single-use token before creating a Supabase Auth user."""
     raw_token = str(token or "").strip()
     if len(raw_token) < 40 or len(raw_token) > 512:
         raise AuthzError("Invitation token is invalid or expired.")
-    if len(str(password or "")) < 8:
+    if existing_claims is None and len(str(password or "")) < 8:
         raise ValueError("Password must contain at least 8 characters.")
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
@@ -652,15 +652,63 @@ def redeem_invitation(token: str, password: str) -> dict[str, Any]:
         """), {"id": invitation["invitation_id"]})
 
     email = str(invitation["email"]).strip().lower()
-    if find_user_by_email(email):
+    try:
+        existing = find_user_by_email(email)
+    except Exception:
         with SessionLocal.begin() as db:
             db.execute(text("""
                 UPDATE invitations SET status='invited', redemption_started_at=NULL
                  WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
             """), {"id": invitation["invitation_id"]})
-        raise AuthzError(
-            "This email already has a Supabase account. Sign in with that account and ask your Branch Head to reissue an invitation compatible with existing accounts."
-        )
+        raise
+
+    if existing:
+        uid = str((existing_claims or {}).get("uid") or (existing_claims or {}).get("sub") or "").strip()
+        authenticated_email = str((existing_claims or {}).get("email") or "").strip().lower()
+        if (
+            not existing_claims
+            or not bool(existing_claims.get("email_verified"))
+            or uid != str(existing["user_id"])
+            or authenticated_email != email
+        ):
+            with SessionLocal.begin() as db:
+                db.execute(text("""
+                    UPDATE invitations SET status='invited', redemption_started_at=NULL
+                     WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
+                """), {"id": invitation["invitation_id"]})
+            raise AuthzError(
+                "This email already has a Supabase account. Sign in with that exact verified account and reopen the invitation."
+            )
+        try:
+            with SessionLocal.begin() as db:
+                db.execute(text("""
+                    UPDATE invitations SET auth_user_id=:uid
+                     WHERE invitation_id=:id AND status='redeeming' AND token_hash=:token_hash
+                """), {"uid": uid, "id": invitation["invitation_id"], "token_hash": token_hash})
+            result = accept_invitation(
+                existing_claims, str(invitation["organization_id"]), str(invitation["invitation_id"])
+            )
+        except Exception:
+            with SessionLocal.begin() as db:
+                db.execute(text("""
+                    UPDATE invitations SET status='invited', auth_user_id=NULL, redemption_started_at=NULL
+                     WHERE invitation_id=:id AND status='redeeming'
+                """), {"id": invitation["invitation_id"]})
+            raise
+        return {
+            "accepted": True,
+            "organization_id": result["organization_id"],
+            "employee_id": result["employee_id"],
+            "location_id": result.get("location_id"),
+        }
+
+    if existing_claims:
+        with SessionLocal.begin() as db:
+            db.execute(text("""
+                UPDATE invitations SET status='invited', redemption_started_at=NULL
+                 WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
+            """), {"id": invitation["invitation_id"]})
+        raise AuthzError("The signed-in account does not match an existing invited email.")
 
     try:
         created = create_user_with_password(email, password)

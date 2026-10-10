@@ -210,3 +210,26 @@ def test_existing_registered_email_is_not_duplicated_or_auto_linked(monkeypatch)
     monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("existing account must not be duplicated"))
     with pytest.raises(AuthzError, match="already has a Supabase account"):
         provider.redeem_invitation(token, "valid-password")
+
+
+def test_existing_verified_session_redeems_invitation_without_creating_user(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+
+    token = secrets.token_urlsafe(32)
+    db = FakeDb(invitation={
+        "invitation_id": "inv_existing", "organization_id": "org_1",
+        "email": "existing@example.com", "status": "invited",
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+    })
+    patch_db(monkeypatch, db)
+    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "existing-user", "email_confirmed": True})
+    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("existing user must not be created again"))
+    accepted = {"accepted": True, "organization_id": "org_1", "employee_id": "EMP010", "location_id": "loc_main"}
+    monkeypatch.setattr(provider, "accept_invitation", lambda claims, org, invitation_id: accepted)
+    claims = {"uid": "existing-user", "sub": "existing-user", "email": "existing@example.com", "email_verified": True, "provider": "supabase"}
+
+    result = provider.redeem_invitation(token, "", claims)
+
+    assert result["accepted"] is True
+    assert any("SET auth_user_id=:uid" in sql for sql, _ in db.statements)

@@ -45,20 +45,7 @@ class _EmployeeInvitationPasswordSetupScreenState
   Future<void> _complete() async {
     final password = _password.text;
     final confirm = _confirm.text;
-    if (password.length < 8) {
-      setState(() {
-        _error = true;
-        _message = 'Choose a password with at least 8 characters.';
-      });
-      return;
-    }
-    if (password != confirm) {
-      setState(() {
-        _error = true;
-        _message = 'The passwords do not match.';
-      });
-      return;
-    }
+    final existingSessionUser = InsightFlowSupabaseAuthService.currentUser;
 
     setState(() {
       _busy = true;
@@ -76,13 +63,29 @@ class _EmployeeInvitationPasswordSetupScreenState
       if (invitationToken.isEmpty || invitedEmail.isEmpty) {
         throw StateError('This invitation link is incomplete or expired. Request a new invitation.');
       }
+      if (existingSessionUser == null && password.length < 8) {
+        throw StateError('Choose a password with at least 8 characters.');
+      }
+      if (existingSessionUser == null && password != confirm) {
+        throw StateError('The passwords do not match.');
+      }
+      if (existingSessionUser != null &&
+          existingSessionUser.email?.trim().toLowerCase() != invitedEmail) {
+        throw StateError('Sign in with the exact email address this invitation was sent to.');
+      }
 
       // The backend validates the token before creating the Auth user. The
       // password is never sent to a privileged endpoint or stored by Flutter.
+      final redeemHeaders = <String, String>{
+        'Content-Type': 'application/json',
+      };
+      if (existingSessionUser != null) {
+        redeemHeaders.addAll(await supabaseAuthHeaders());
+      }
       final redeemResponse = await http
           .post(
             Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/redeem'),
-            headers: const {'Content-Type': 'application/json'},
+            headers: redeemHeaders,
             body: jsonEncode({'token': invitationToken, 'password': password}),
           )
           .timeout(const Duration(seconds: 20));
@@ -100,10 +103,12 @@ class _EmployeeInvitationPasswordSetupScreenState
 
       // Redemption creates the account server-side; sign in only after the
       // backend has finalized organization and branch membership.
-      await InsightFlowSupabaseAuthService.signInWithPassword(
-        email: invitedEmail,
-        password: password,
-      ).timeout(const Duration(seconds: 10));
+      if (existingSessionUser == null) {
+        await InsightFlowSupabaseAuthService.signInWithPassword(
+          email: invitedEmail,
+          password: password,
+        ).timeout(const Duration(seconds: 10));
+      }
       final session = await InsightFlowSupabaseAuthService.ensureSession(
         timeout: const Duration(seconds: 5),
       );

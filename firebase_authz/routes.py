@@ -456,13 +456,17 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except ValueError as exc: raise HTTPException(400, str(exc))
 
 @router.post("/invitations/redeem")
-def invitation_redeem(req: InvitationRedeemRequest):
-    """Redeem a single-use application token and create Auth only after validation."""
+def invitation_redeem(
+    req: InvitationRedeemRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Redeem a token; an existing account must present its verified session."""
     try:
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
             raise AuthzError("Application invitation redemption requires Supabase authentication.")
+        claims = require_email_verified(verify_id_token(_token(authorization))) if authorization else None
         from .supabase_provider import redeem_invitation
-        return redeem_invitation(req.token, req.password)
+        return redeem_invitation(req.token, req.password, claims)
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
