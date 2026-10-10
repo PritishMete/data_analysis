@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 
@@ -13,6 +15,9 @@ class _FakeResult:
         return self._mapping
 
     def scalar_one_or_none(self):
+        return self._scalar
+
+    def scalar_one(self):
         return self._scalar
 
     def scalars(self):
@@ -46,6 +51,8 @@ class _FakeDb:
             return _FakeResult(scalar="organization_owner")
         if "FROM organizations" in sql:
             return _FakeResult(scalar="Test Organization")
+        if "organization_employee_id_counters" in sql:
+            return _FakeResult(scalar=2)
         if "INSERT INTO invitations" in sql:
             if self.fail_insert:
                 raise RuntimeError("database insert failed")
@@ -96,110 +103,61 @@ def _actor():
     return {"principal_id": "prn_actor", "employee_id": "EMP001", "status": "active"}
 
 
-def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
+def test_new_invitation_does_not_create_supabase_auth_user(monkeypatch):
     import firebase_authz.supabase_provider as provider
 
     db = _FakeDb(_actor())
     _patch_invitation_db(monkeypatch, db)
-    monkeypatch.setattr(
-        provider,
-        "invite_user_by_email",
-        lambda email, redirect_to, **kwargs: {
-            "user_id": "auth-new-user",
-            "email_confirmed": False,
-        },
-    )
-    monkeypatch.setattr(
-        provider,
-        "find_user_by_email",
-        lambda email: pytest.fail("existing-user lookup must not run for a new Auth user"),
-    )
+    monkeypatch.setattr(provider, "send_invitation_email", lambda **_: None)
+    monkeypatch.setenv("INSIGHTFLOW_TESTING", "1")
 
     result = provider.create_invitation(
         _claims(), "org_test", "new@example.com", "data_analyst", location_id="loc_main"
     )
 
     assert result["status"] == "invited"
-    assert result["email_delivery_status"] == "initiated"
+    assert result["email_delivery_status"] == "sent"
     assert result["password_setup_required"] is True
-    assert db.inserts[0]["auth_user"] == "auth-new-user"
+    assert result["auth_user_created"] is False
+    assert result["invitation_token"]
+    assert db.inserts[0].get("auth_user_id") is None
+    assert db.inserts[0]["token_hash"] == hashlib.sha256(
+        result["invitation_token"].encode()
+    ).hexdigest()
 
 
-def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkeypatch):
+def test_invitation_email_failure_leaves_retryable_local_invitation(monkeypatch):
     import firebase_authz.supabase_provider as provider
+    from firebase_authz.gmail_invitation_email import GmailConnectionError
 
     db = _FakeDb(_actor())
     _patch_invitation_db(monkeypatch, db)
-
-    class DuplicateError(Exception):
-        status_code = 422
-
-        def __str__(self):
-            return "A user with this email address has already been registered"
-
-    calls = {"invite": 0}
-
-    def duplicate_invite(email, redirect_to, **kwargs):
-        calls["invite"] += 1
-        raise DuplicateError()
-
-    monkeypatch.setattr(provider, "invite_user_by_email", duplicate_invite)
     monkeypatch.setattr(
         provider,
-        "find_user_by_email",
-        lambda email: {
-            "user_id": "auth-existing-user",
-            "email_confirmed": True,
-        },
+        "send_invitation_email",
+        lambda **_: (_ for _ in ()).throw(
+            GmailConnectionError("mail provider unavailable")
+        ),
     )
 
-    result = provider.create_invitation(
-        _claims(), "org_test", "existing@example.com", "data_analyst"
-    )
-
-    assert calls["invite"] == 1
-    assert result["email_delivery_status"] == "existing_account"
-    assert result["password_setup_required"] is False
-    assert db.inserts[0]["auth_user"] == "auth-existing-user"
-
-
-def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-    from firebase_authz.service import AuthzError
-
-    db = _FakeDb(_actor())
-    _patch_invitation_db(monkeypatch, db)
-
-    class DuplicateError(Exception):
-        status_code = 422
-
-        def __str__(self):
-            return "A user with this email address has already been registered"
-
-    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_, **__: (_ for _ in ()).throw(DuplicateError()))
-    monkeypatch.setattr(
-        provider,
-        "find_user_by_email",
-        lambda email: {"user_id": "auth-unconfirmed", "email_confirmed": False},
-    )
-
-    with pytest.raises(AuthzError, match="unconfirmed Auth account"):
+    with pytest.raises(GmailConnectionError):
         provider.create_invitation(
-            _claims(), "org_test", "unconfirmed@example.com", "data_analyst", location_id="loc_main"
+            _claims(), "org_test", "mail-failure@example.com", "data_analyst",
+            location_id="loc_main",
         )
 
-    assert db.inserts == []
+    assert "auth_user" not in db.inserts[0]
 
 
-def test_database_insertion_failure_does_not_return_success(monkeypatch):
+def test_database_insertion_failure_does_not_send_invitation(monkeypatch):
     import firebase_authz.supabase_provider as provider
 
     db = _FakeDb(_actor(), fail_insert=True)
     _patch_invitation_db(monkeypatch, db)
     monkeypatch.setattr(
         provider,
-        "invite_user_by_email",
-        lambda email, redirect_to, **kwargs: {"user_id": "auth-new-user", "email_confirmed": False},
+        "send_invitation_email",
+        lambda **_: pytest.fail("email must not be sent when invitation persistence fails"),
     )
 
     with pytest.raises(RuntimeError, match="database insert failed"):
