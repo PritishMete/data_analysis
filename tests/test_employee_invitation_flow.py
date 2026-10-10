@@ -235,3 +235,39 @@ def test_existing_verified_session_redeems_invitation_without_creating_user(monk
 
     assert result["accepted"] is True
     assert any("SET auth_user_id=:uid" in sql for sql, _ in db.statements)
+
+def test_stale_redemption_is_reclaimed_without_duplicate_account_creation(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+    from firebase_authz.service import AuthzError
+
+    token = secrets.token_urlsafe(32)
+    stale = {
+        "invitation_id": "inv_stale", "organization_id": "org_1",
+        "email": "existing@example.com", "status": "redeeming",
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "redemption_started_at": datetime.now(timezone.utc) - timedelta(minutes=31),
+        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+    }
+    class Result(FakeResult):
+        def __init__(self, mapping=None, scalar=None, rowcount=1):
+            super().__init__(mapping=mapping, scalar=scalar)
+            self.rowcount = rowcount
+    class CrashDb(FakeDb):
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            self.statements.append((sql, dict(params or {})))
+            if "SELECT invitation_id, organization_id, email, status, expires_at, redemption_started_at" in sql:
+                return Result(mapping=stale)
+            if "UPDATE invitations SET status='invited', redemption_started_at=NULL" in sql:
+                return Result(rowcount=1)
+            if "UPDATE invitations SET status='redeeming', redemption_started_at=now()" in sql:
+                return Result(rowcount=1)
+            return Result()
+    db = CrashDb(invitation=stale)
+    patch_db(monkeypatch, db)
+    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "existing-user"})
+    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("must not duplicate an existing Auth user"))
+    with pytest.raises(AuthzError, match="already has a Supabase account"):
+        provider.redeem_invitation(token, "valid-password")
+    assert any("interval '30 minutes'" in sql for sql, _ in db.statements)
+    assert any("status='redeeming'" in sql and "redemption_started_at=now()" in sql for sql, _ in db.statements)
