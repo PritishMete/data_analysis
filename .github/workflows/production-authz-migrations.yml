@@ -1,13 +1,7 @@
 name: InsightFlow Production Authz Migrations
 
 on:
-  push:
-    branches: [feature/data-workspace, feature/employee-management-cell]
-    paths:
-      - 'migrations/**'
-      - 'tools/run_authz_migrations.py'
-      - '.github/workflows/production-authz-migrations.yml'
-      - 'render.yaml'
+  # Production migrations must be explicitly dispatched after target verification and approval.
   workflow_dispatch:
 
 jobs:
