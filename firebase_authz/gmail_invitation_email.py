@@ -331,20 +331,28 @@ def update_company_settings(
 
 
 def get_branch_email_settings(claims: dict, workspace_id: str, location_id: str) -> dict:
+    """Report the shared server-side invitation sender, not per-branch Gmail OAuth."""
     principal_id = str(claims.get("uid") or claims.get("sub") or "").strip()
     _actor_for_location(workspace_id, location_id, principal_id)
+    configured = bool(
+        os.environ.get("RESEND_API_KEY", "").strip()
+        and os.environ.get("RESEND_FROM_EMAIL", "").strip()
+    )
     with SessionLocal() as db:
         row = db.execute(text("""
-            SELECT sender_name, sender_email, sender_identity, sender_identity_mode,
-                   (gmail_refresh_token_encrypted IS NOT NULL) AS connected
+            SELECT sender_name, sender_identity, sender_identity_mode
             FROM branch_email_settings
             WHERE organization_id=:org AND location_id=:location
         """), {"org": workspace_id, "location": location_id}).mappings().first()
-    result = dict(row) if row else {
-        "connected": False, "sender_name": "InsightFlow", "sender_email": None,
-        "sender_identity": generate_sender_identity("company", "branch"),
-        "sender_identity_mode": "display_only",
-    }
+    result = dict(row) if row else {}
+    result.update({
+        "connected": configured,
+        "sender_email": os.environ.get("RESEND_FROM_EMAIL", "").strip() or None,
+        "sender_name": result.get("sender_name") or os.environ.get("RESEND_FROM_NAME", "InsightFlow").strip(),
+        "sender_identity": result.get("sender_identity") or generate_sender_identity("company", "branch"),
+        "sender_identity_mode": "centralized",
+        "provider": "centralized",
+    })
     return result
 
 
@@ -398,42 +406,62 @@ def _refresh_access_token(refresh_token: str) -> str:
 def send_invitation_email(*, recipient: str, organization_name: str, role_id: str,
                           invitation_url: str, expires_at: object | None,
                           workspace_id: str, location_id: str) -> None:
-    sender_name, sender_email, refresh = _connection(workspace_id, location_id)
-    access = _refresh_access_token(refresh)
+    """Send through InsightFlow's centralized Resend account; no branch OAuth required."""
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    from_email = os.environ.get("RESEND_FROM_EMAIL", "").strip()
+    from_name = os.environ.get("RESEND_FROM_NAME", "InsightFlow").strip() or "InsightFlow"
+    if not api_key or not from_email:
+        raise GmailConfigurationError(
+            "The centralized invitation email sender is not configured on the backend."
+        )
     expires_text = ""
     if expires_at is not None:
         try:
             expires_text = expires_at.strftime("%B %d, %Y at %I:%M %p UTC")
         except AttributeError:
             expires_text = str(expires_at)
-    organization = html.escape(organization_name.strip() or "your organization")
-    role = html.escape(role_id.replace("_", " ").strip().title())
+    organization_name = organization_name.strip() or "your organization"
+    role_label = role_id.replace("_", " ").strip().title()
+    organization = html.escape(organization_name)
+    role = html.escape(role_label)
     safe_url = html.escape(invitation_url, quote=True)
-    settings = _company_sender_settings(workspace_id, location_id)
-    sender_identity = settings.get("sender_identity") or generate_sender_identity(
-        settings.get("company_identifier") or settings.get("company_name") or organization_name,
-        settings.get("branch_identifier") or settings.get("branch_name") or "branch",
-    )
-    # Do not put the generated identity in the From address. Gmail only permits
-    # authorized Send-As aliases. The connected Gmail account is the transport
-    # sender; the generated identity is shown in the display name.
-    display_name = f"InsightFlow • {sender_identity}"
-    message = EmailMessage()
-    message["From"] = formataddr((display_name, sender_email))
-    message["To"] = recipient
-    message["Subject"] = f"You're invited to InsightFlow - {organization_name.strip() or 'your organization'}"
-    message.set_content(
-        f"You have been invited to join {organization_name.strip() or 'your organization'} "
-        f"as {role_id.replace('_', ' ').strip().title()}.\n\n"
+    plain_text = (
+        f"You have been invited to join {organization_name} as {role_label}.\n\n"
         f"Accept invitation: {invitation_url}\n\n"
         "No InsightFlow account is created until you accept the invitation and complete signup."
     )
-    message.add_alternative(f"""<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
+    html_content = f"""<!doctype html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033">
 <h2>You're invited to InsightFlow</h2>
 <p>You have been invited to join <strong>{organization}</strong> as <strong>{role}</strong>.</p>
 <p>No InsightFlow account is created until you accept this invitation and complete signup.</p>
 <p><a href="{safe_url}" style="display:inline-block;padding:12px 18px;background:#1677ff;color:#fff;text-decoration:none;border-radius:8px">Accept invitation</a></p>
 <p>This invitation is one-time use{(" and expires on " + html.escape(expires_text)) if expires_text else ""}.</p>
-</body></html>""", subtype="html")
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
-    _gmail_json("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", access, {"raw": raw})
+</body></html>"""
+    payload = json.dumps({
+        "from": formataddr((from_name, from_email)),
+        "to": [recipient],
+        "subject": f"You're invited to InsightFlow - {organization_name}",
+        "text": plain_text,
+        "html": html_content,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if not result.get("id"):
+                raise GmailConnectionError("The centralized email provider did not confirm delivery.")
+    except urllib.error.HTTPError as exc:
+        raise GmailConnectionError(
+            f"The centralized email provider rejected the invitation (HTTP {exc.code})."
+        ) from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise GmailConnectionError("The centralized email provider could not send the invitation.") from exc
