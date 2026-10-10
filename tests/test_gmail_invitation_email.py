@@ -70,7 +70,7 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
     actor=[]
     monkeypatch.setattr(gmail,"_actor_for_location",lambda *args:actor.append(args))
     monkeypatch.setattr(gmail,"_post_form",lambda url,data:{"access_token":"access","refresh_token":"refresh-secret"})
-    monkeypatch.setattr(gmail,"_gmail_json",lambda *args:{"emailAddress":"branch-head@gmail.com"})
+    monkeypatch.setattr(gmail,"_gmail_json",lambda *args:{"sendAs":[{"sendAsEmail":"branch-head@gmail.com","isPrimary":True,"verificationStatus":"accepted"}]})
     captured={}
     class Context:
         def __enter__(self): return self
