@@ -8,7 +8,7 @@ from sqlalchemy import text
 from core.db import SessionLocal
 from .service import AuthzError
 
-GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.settings.basic"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
 
@@ -93,9 +93,10 @@ def complete_gmail_connection(code: str, state: str) -> dict:
       "grant_type":"authorization_code"})
     refresh,access=tokens.get("refresh_token"),tokens.get("access_token")
     if not refresh or not access: raise GmailConnectionError("Google did not return an offline refresh token. Reconnect Gmail.")
-    profile=_gmail_json(f"{GMAIL_API}/profile",access)
-    account=str(profile.get("emailAddress") or "").strip().lower()
-    if "@" not in account: raise GmailConnectionError("Google did not return a valid Gmail account address.")
+    send_as=_gmail_json(f"{GMAIL_API}/settings/sendAs",access).get("sendAs",[])
+    primary=next((item for item in send_as if isinstance(item,dict) and item.get("isPrimary")),None)
+    account=str((primary or {}).get("sendAsEmail") or "").strip().lower()
+    if "@" not in account: raise GmailConnectionError("Google did not return a verified primary Gmail sender address.")
     encrypted=_fernet().encrypt(refresh.encode()).decode()
     with SessionLocal.begin() as db:
         valid=db.execute(text("""SELECT 1 FROM locations WHERE organization_id=:o AND location_id=:l AND status='active'"""),
