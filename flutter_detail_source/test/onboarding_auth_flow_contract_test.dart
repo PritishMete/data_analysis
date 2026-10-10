@@ -265,18 +265,21 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
   });
 
 
-  test('invitation password setup verifies the exact Supabase identity before changing the password', () {
+  test('invitation password setup verifies the exact Supabase identity before accepting the invitation', () {
     final screen =
         File('lib/features/auth/employee_invitation_password_setup_screen.dart')
             .readAsStringSync();
-    final identityCheck = screen.indexOf('invitedAuthUserId');
-    final passwordChange = screen.indexOf('setPassword(', identityCheck);
+    final identityCheck = screen.indexOf('authenticatedUser.uid.isEmpty');
+    final acceptance = screen.indexOf('/v1/authz/invitations/accept');
     expect(identityCheck, greaterThanOrEqualTo(0));
-    expect(passwordChange, greaterThan(identityCheck));
-    expect(screen.substring(identityCheck, passwordChange),
-        contains('authenticatedUser.uid != invitedAuthUserId'));
-    expect(screen.substring(identityCheck, passwordChange),
-        contains('authenticatedEmail != invitedEmail'));
+    expect(acceptance, greaterThan(identityCheck));
+    expect(
+      screen.substring(identityCheck, acceptance),
+      contains('authenticatedEmail != invitedEmail'),
+    );
+    expect(screen.substring(identityCheck, acceptance), contains('supabaseAuthHeaders()'));
+    expect(screen.substring(identityCheck, acceptance), contains('ensureSession('));
+    expect(screen.substring(identityCheck, acceptance), isNot(contains('setPassword(')));
   });
 
   test('invitation password setup backend binds completion to auth_user_id', () {
