@@ -67,121 +67,69 @@ class _EmployeeInvitationPasswordSetupScreenState
     });
 
     try {
-      final invitedEmail =
-          widget.invitation['email']?.toString().trim().toLowerCase() ?? '';
-      final invitationId =
-          widget.invitation['invitation_id']?.toString().trim() ?? '';
-      final invitationToken =
-          widget.invitation['token']?.toString().trim() ??
-          Uri.base.queryParameters['token']?.trim() ??
-          '';
-      final legacyInvitation =
-          widget.invitation['auth_user_id']?.toString().trim().isNotEmpty == true;
-      if (invitedEmail.isEmpty ||
-          invitationId.isEmpty ||
-          (!legacyInvitation && invitationToken.isEmpty)) {
-        throw StateError('This invitation is incomplete. Please request a new invitation.');
+      final authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
+      final invitedAuthUserId = widget.invitation['auth_user_id']?.toString().trim() ?? '';
+      final invitedEmail = widget.invitation['email']?.toString().trim().toLowerCase() ?? '';
+      final authenticatedEmail = authenticatedUser?.email?.trim().toLowerCase() ?? '';
+      if (authenticatedUser == null || authenticatedUser.uid.isEmpty) {
+        throw StateError('Open this invitation in a signed-in Supabase session for the invited email, then retry.');
       }
-
-      if (!legacyInvitation) {
-        // Revalidate the one-time invitation immediately before creating an
-        // Auth account. A page may have been open after its token expired or
-        // was revoked; never create auth.users for an invalid invitation.
-        final previewResponse = await http
-            .get(
-              Uri.parse(
-                '$insightFlowBackendBaseUrl/v1/authz/invitations/preview',
-              ).replace(queryParameters: {'token': invitationToken}),
-            )
-            .timeout(const Duration(seconds: 10));
-        dynamic previewDecoded;
-        try {
-          previewDecoded = jsonDecode(previewResponse.body);
-        } catch (_) {}
-        if (previewResponse.statusCode != 200 ||
-            previewDecoded is! Map ||
-            previewDecoded['invitation_id']?.toString() != invitationId ||
-            previewDecoded['email']?.toString().trim().toLowerCase() != invitedEmail) {
-          throw StateError(
-            previewDecoded is Map && previewDecoded['detail'] != null
-                ? previewDecoded['detail'].toString()
-                : 'This invitation is invalid, expired, or no longer active. Request a new invitation.',
-          );
-        }
+      // Do not change any account password until the invitation identity is verified.
+      if (invitedAuthUserId.isNotEmpty && authenticatedUser.uid != invitedAuthUserId) {
+        throw StateError('This invitation belongs to a different Supabase account. Sign out, reopen the invitation link, and retry.');
       }
-
-      var authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
-      var signedUpNow = false;
-
-      if (authenticatedUser == null && legacyInvitation) {
-        throw StateError(
-          'Open this legacy invitation in the existing Supabase account for the invited email.',
-        );
+      if (invitedEmail.isNotEmpty && authenticatedEmail != invitedEmail) {
+        throw StateError('This invitation was sent to $invitedEmail. Sign out, reopen the invitation link, and use that account.');
       }
-
-      if (authenticatedUser == null) {
-        final redirect = Uri.base.replace(
-          queryParameters: <String, String>{
-            ...Uri.base.queryParameters,
-            'token': invitationToken,
-          },
-        ).toString();
-        final signup = await InsightFlowSupabaseAuthService.signUp(
-          email: invitedEmail,
-          password: password,
-          emailRedirectTo: redirect,
-        );
-        signedUpNow = signup.user != null;
-        authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
-
-        if (signup.session == null || authenticatedUser == null) {
-          if (!mounted) return;
-          setState(() {
-            _busy = false;
-            _error = false;
-            _message =
-                'Your account has been created. Open the Supabase verification email, then return to this invitation link to finish activation.';
-          });
-          return;
-        }
-      }
-
-      final authenticatedEmail =
-          authenticatedUser.email?.trim().toLowerCase() ?? '';
-      if (authenticatedUser.uid.isEmpty || authenticatedEmail != invitedEmail) {
-        throw StateError(
-          'This invitation was sent to $invitedEmail. Sign out, reopen the invitation link, and use that account.',
-        );
-      }
-
+      debugPrint('invitation_lifecycle identity_verified=true');
+      debugPrint('invitation_lifecycle password_setup_started');
+      await InsightFlowSupabaseAuthService.setPassword(
+        password,
+        timeout: const Duration(seconds: 10),
+      );
+      debugPrint('invitation_lifecycle password_setup_response status=success');
       final session = await InsightFlowSupabaseAuthService.ensureSession(
         timeout: const Duration(seconds: 5),
       );
       if (session == null || session.accessToken.isEmpty) {
+        debugPrint('invitation_lifecycle session_available=false');
         throw StateError('Your authenticated session could not be restored.');
       }
+      debugPrint('invitation_lifecycle session_available=true');
+      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail?.trim().isNotEmpty == true}');
 
-      // Legacy invitations created before the disposable-token model still
-      // use password setup. New invitations already set the password during
-      // signUp(), so never overwrite an existing account password.
-      if (!signedUpNow && widget.invitation['auth_user_id'] != null) {
-        await http
-            .post(
-              Uri.parse(
-                '$insightFlowBackendBaseUrl/v1/authz/invitations/password-setup-complete',
-              ),
-              headers: {
-                ...await supabaseAuthHeaders(),
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({
-                'invitation_id': invitationId,
-                'token': invitationToken,
-              }),
-            )
-            .timeout(const Duration(seconds: 10));
+      final response = await http
+          .post(
+            Uri.parse(
+              '$insightFlowBackendBaseUrl/v1/authz/invitations/password-setup-complete',
+            ),
+        headers: {
+          ...await supabaseAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+            body: jsonEncode({
+              'invitation_id': widget.invitation['invitation_id']?.toString() ?? '',
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      debugPrint('invitation_lifecycle password_setup_response status=${response.statusCode}');
+      if (response.statusCode != 200) {
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Password setup could not be completed.',
+        );
       }
-
+      final invitationId = widget.invitation['invitation_id']?.toString() ?? '';
+      if (invitationId.isEmpty) {
+        throw StateError('This invitation is incomplete. Please request a new invitation.');
+      }
+      debugPrint('invitation_lifecycle pending_invitation_loaded=true');
+      debugPrint('invitation_lifecycle invitation_acceptance_started');
       final acceptResponse = await http
           .post(
             Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/accept'),
@@ -189,13 +137,10 @@ class _EmployeeInvitationPasswordSetupScreenState
               ...await supabaseAuthHeaders(),
               'Content-Type': 'application/json',
             },
-            body: jsonEncode({
-              'invitation_id': invitationId,
-              'token': invitationToken,
-            }),
+            body: jsonEncode({'invitation_id': invitationId}),
           )
           .timeout(const Duration(seconds: 10));
-
+      debugPrint('invitation_lifecycle invitation_acceptance_response status=${acceptResponse.statusCode}');
       dynamic acceptDecoded;
       try {
         acceptDecoded = acceptResponse.body.trim().isEmpty
@@ -209,7 +154,7 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Invitation could not be activated. Please try again.',
         );
       }
-      debugPrint('invitation_lifecycle invitation_acceptance_response status=200');
+      debugPrint('invitation_lifecycle onboarding_navigation_started');
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error, stackTrace) {
       debugPrint('invitation_lifecycle failure error_class=${error.runtimeType}');

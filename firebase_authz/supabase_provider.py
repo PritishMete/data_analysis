@@ -5,11 +5,9 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
-import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -21,10 +19,12 @@ from .service import AuthzError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
-from .gmail_invitation_email import (
-    GmailConfigurationError,
-    GmailConnectionError,
-    send_invitation_email,
+from .supabase_admin import (
+    SupabaseAdminConfigurationError,
+    SupabaseAdminOperationError,
+    find_user_by_email,
+    invite_user_by_email,
+    is_existing_auth_user_error,
 )
 
 
@@ -88,7 +88,6 @@ def register_organization(
     organization_name: str,
     branch_name: str,
     branch_identifier: str,
-    company_identifier: str | None = None,
     *,
     full_name: str,
     phone: str,
@@ -113,12 +112,9 @@ def register_organization(
     if not 1 <= len(branch) <= 160 or any(ord(c) < 32 or ord(c) == 127 for c in branch):
         raise ValueError("Branch name must be between 1 and 160 characters.")
 
-    branch_id = str(branch_identifier or "").strip()
+    branch_id = str(branch_identifier or "")
     if not branch_id:
         raise ValueError("Branch identifier is required.")
-    company_id = str(company_identifier or name).strip()
-    if not company_id or len(company_id) > 120:
-        raise ValueError("Company identifier must be between 1 and 120 characters.")
 
     profile_name = _clean_profile_text(full_name, "Full name", 160)
     profile_fields = validate_profile_fields(
@@ -271,40 +267,6 @@ def register_organization(
             },
         )
         registration_diagnostics.stage("LOCATION_CREATED")
-        from .gmail_invitation_email import generate_sender_identity, normalize_sender_identifier
-        sender_identity = generate_sender_identity(
-            normalize_sender_identifier(company_id),
-            branch_id,
-        )
-        db.execute(
-            text("""
-                INSERT INTO branch_email_settings
-                  (organization_id, location_id, company_name, company_identifier,
-                   branch_name, branch_identifier, sender_identity,
-                   sender_identity_mode, updated_at)
-                VALUES
-                  (:organization, :location, :company_name, :company_identifier,
-                   :branch_name, :branch_identifier, :sender_identity,
-                   'display_only', now())
-                ON CONFLICT (organization_id, location_id) DO UPDATE SET
-                  company_name=excluded.company_name,
-                  company_identifier=excluded.company_identifier,
-                  branch_name=excluded.branch_name,
-                  branch_identifier=excluded.branch_identifier,
-                  sender_identity=excluded.sender_identity,
-                  sender_identity_mode='display_only',
-                  updated_at=now()
-            """),
-            {
-                "organization": organization_id,
-                "location": location_id,
-                "company_name": name,
-                "company_identifier": normalize_sender_identifier(company_id),
-                "branch_name": branch,
-                "branch_identifier": branch_id,
-                "sender_identity": sender_identity,
-            },
-        )
         employee = _allocate_employee_id(db, organization_id)
 
         db.execute(
@@ -571,20 +533,45 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
                 raise AuthzError("Only an Organization Owner or Branch Head can invite a Manager.")
 
     invitation_id = _id("inv")
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    redirect_base = os.environ.get(
-        "INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT",
-        "https://pritishmete.github.io/data_analysis/employee-invite",
-    ).strip()
-    if not redirect_base:
+    redirect_to = os.environ.get("INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT", "https://pritishmete.github.io/data_analysis/employee-invite").strip()
+    if not redirect_to:
         raise AuthzError("Employee invitation redirect is not configured.")
-    separator = "&" if "?" in redirect_base else "?"
-    invitation_url = f"{redirect_base}{separator}token={raw_token}"
 
-    # New invitations are disposable application records. Do not call the
-    # Supabase Auth Admin invite API here: that API creates auth.users before
-    # the employee has accepted the invitation.
+    auth_user_id = ""
+    delivery_status = "initiated"
+    password_setup_required = True
+    try:
+        invited = invite_user_by_email(email, redirect_to, organization_name=organization_name)
+        auth_user_id = invited["user_id"]
+        if not auth_user_id:
+            raise SupabaseAdminOperationError("Supabase Auth did not return an invited user ID.")
+    except Exception as invite_error:
+        if not is_existing_auth_user_error(invite_error):
+            raise
+        try:
+            existing = find_user_by_email(email)
+        except (SupabaseAdminConfigurationError, SupabaseAdminOperationError):
+            # Keep trusted Admin failures distinct from application authorization
+            # failures. The route converts these to a safe 503 response.
+            raise
+        except Exception as lookup_error:
+            raise SupabaseAdminOperationError(
+                "Supabase Auth existing-user lookup failed."
+            ) from lookup_error
+        if not existing or existing.get("user_id") is None:
+            raise SupabaseAdminOperationError(
+                "Supabase Auth reported an existing user, but the trusted lookup "
+                "did not return that exact email."
+            ) from invite_error
+        if not existing.get("email_confirmed"):
+            raise AuthzError(
+                "This email already has an unconfirmed Auth account. "
+                "Complete its existing confirmation flow before accepting an employee invitation."
+            ) from invite_error
+        auth_user_id = str(existing["user_id"]).strip()
+        delivery_status = "existing_account"
+        password_setup_required = False
+
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         if not actor or actor["status"] != "active":
@@ -595,85 +582,18 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
             raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
-
-        # A new invitation supersedes older unaccepted invitations for the
-        # same organization/email. No Auth account exists to clean up.
-        db.execute(text("""UPDATE invitations
-            SET status='revoked', revoked_at=now()
-            WHERE organization_id=:org
-              AND lower(email)=:email
-              AND status='invited'"""),
-                   {"org": workspace_id, "email": email})
-
-        employee = _allocate_employee_id(db, workspace_id)
         db.execute(text("""INSERT INTO invitations
-            (invitation_id, organization_id, email, employee_id, role_id, status,
+            (invitation_id, organization_id, email, role_id, status,
              expires_at, created_by_principal_id, auth_user_id, location_id,
-             email_delivery_status, email_delivery_started_at,
-             token_hash, token_created_at)
-            VALUES (:id,:org,:email,:employee,:role,'invited',:expires,:creator,NULL,:location,
-                    'initiated',now(),:token_hash,now())"""),
+             email_delivery_status, email_delivery_started_at)
+            VALUES (:id,:org,:email,:role,'invited',:expires,:creator,:auth_user,:location,
+                    :delivery_status, CASE WHEN :delivery_status='initiated' THEN now() ELSE NULL END)"""),
                    {"id": invitation_id, "org": workspace_id, "email": email,
-                    "employee": employee, "role": role_id, "expires": expiry,
-                    "creator": actor["principal_id"], "location": location_id,
-                    "token_hash": token_hash})
-
-    try:
-        send_invitation_email(
-            recipient=email,
-            organization_name=organization_name,
-            role_id=role_id,
-            invitation_url=invitation_url,
-            expires_at=expiry,
-            workspace_id=workspace_id,
-            location_id=location_id,
-        )
-    except (GmailConfigurationError, GmailConnectionError):
-        with SessionLocal.begin() as db:
-            db.execute(
-                text("""UPDATE invitations
-                    SET email_delivery_status='failed'
-                    WHERE invitation_id=:id AND status='invited'"""),
-                {"id": invitation_id},
-            )
-        raise
-
-    with SessionLocal.begin() as db:
-        db.execute(
-            text("""UPDATE invitations
-                SET email_delivery_status='sent'
-                WHERE invitation_id=:id AND status='invited'"""),
-            {"id": invitation_id},
-        )
-
-    result = {
-        "invitation_id": invitation_id,
-        "status": "invited",
-        "email_delivery_status": "sent",
-        "password_setup_required": True,
-        "auth_user_created": False,
-    }
-    if os.environ.get("INSIGHTFLOW_TESTING", "").strip() == "1":
-        result["invitation_token"] = raw_token
-    return result
-
-def get_invitation_by_token(token: str) -> dict[str, Any]:
-    raw_token = str(token or "").strip()
-    if not raw_token or len(raw_token) < 20 or len(raw_token) > 200:
-        raise AuthzError("Invitation link is invalid.")
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    with SessionLocal() as db:
-        row = db.execute(text("""SELECT i.invitation_id, i.organization_id,
-                o.name AS organization_name, i.email, i.employee_id,
-                i.role_id, i.status, i.expires_at
-            FROM invitations i
-            JOIN organizations o ON o.organization_id=i.organization_id
-            WHERE i.token_hash=:token_hash"""), {"token_hash": token_hash}).mappings().first()
-    if not row or row["status"] != "invited":
-        raise AuthzError("Invitation is no longer active.")
-    if row["expires_at"] is not None and row["expires_at"] <= datetime.now(timezone.utc):
-        raise AuthzError("Invitation has expired.")
-    return dict(row)
+                    "role": role_id, "expires": expiry, "creator": actor["principal_id"],
+                    "auth_user": auth_user_id, "location": location_id, "delivery_status": delivery_status})
+    return {"invitation_id": invitation_id, "status": "invited",
+            "email_delivery_status": delivery_status,
+            "password_setup_required": password_setup_required}
 
 def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     email = str(claims.get("email") or "").strip().lower()
@@ -682,12 +602,11 @@ def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
             i.role_id, i.status, i.expires_at, i.auth_user_id, i.email_delivery_status, i.password_setup_at FROM invitations i
             JOIN organizations o ON o.organization_id=i.organization_id
             WHERE lower(i.email)=:email AND i.status='invited'
-              AND i.email_delivery_status IN ('initiated','sent')
               AND (expires_at IS NULL OR expires_at > now())"""), {"email": email}).mappings().all()
     return [dict(row) for row in rows]
 
 
-def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str, token: str | None = None) -> dict[str, Any]:
+def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str) -> dict[str, Any]:
     provider, subject = _identity(claims)
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
     email = str(claims.get("email") or "").strip().lower()
@@ -723,17 +642,6 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
         if invited_auth_user_id and invited_auth_user_id != uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
-        invitation_token_hash = str(invitation.get("token_hash") or "").strip()
-        if invitation_token_hash:
-            raw_token = str(token or "").strip()
-            if not raw_token:
-                if os.environ.get("INSIGHTFLOW_TESTING", "").strip() != "1":
-                    raise AuthzError("Invitation token is required.")
-            if not secrets.compare_digest(
-                invitation_token_hash,
-                hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
-            ):
-                raise AuthzError("Invitation token is invalid.")
         workspace_id = str(invitation["organization_id"])
         location_id = str(invitation.get("location_id") or "").strip()
         if not location_id and invitation.get("created_by_principal_id"):
@@ -810,7 +718,7 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
     return {"accepted": True, "organization_id": workspace_id, "employee_id": employee_id, "location_id": location_id or None}
 
 
-def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str, token: str | None = None) -> dict[str, Any]:
+def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -> dict[str, Any]:
     email = str(claims.get("email") or "").strip().lower()
     if not bool(claims.get("email_verified")):
         raise AuthzError("Verified email is required.")
@@ -830,14 +738,6 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str, t
         invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
         if invited_auth_user_id and invited_auth_user_id != authenticated_uid:
             raise AuthzError("Invitation identity does not match the authenticated account.")
-        invitation_token_hash = str(invitation.get("token_hash") or "").strip()
-        if invitation_token_hash:
-            raw_token = str(token or "").strip()
-            if not raw_token or not secrets.compare_digest(
-                invitation_token_hash,
-                hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
-            ):
-                raise AuthzError("Invitation token is invalid.")
         db.execute(
             text("""UPDATE invitations SET password_setup_at=now()
                     WHERE invitation_id=:id"""),

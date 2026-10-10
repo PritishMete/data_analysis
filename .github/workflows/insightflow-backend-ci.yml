@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell]
+    branches: [main, feature/data-workspace]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -88,8 +88,12 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Supabase Auth Flutter sources
-        run: dart analyze lib/core/auth/supabase_auth_service.dart lib/core/auth/insightflow_auth_service.dart lib/core/auth/authenticated_http.dart
+      - name: Analyze Firebase Auth Flutter sources
+        run: >-
+          dart analyze
+          lib/firebase_options.dart
+          lib/core/auth/insightflow_auth_service.dart
+          lib/core/auth/authenticated_http.dart
 
       - name: Check auth UI Dart formatting
         run: >-
