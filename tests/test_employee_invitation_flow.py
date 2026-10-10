@@ -171,3 +171,42 @@ def test_password_minimum_is_enforced_before_auth_user_creation(monkeypatch):
 
     with pytest.raises(ValueError, match="at least 8"):
         provider.redeem_invitation("x" * 48, "short")
+
+
+def test_repeated_invitation_rotates_token_and_revokes_previous_pending(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+
+    db = FakeDb()
+    patch_db(monkeypatch, db)
+    monkeypatch.delenv("INSIGHTFLOW_INVITATION_EMAIL_SENDER", raising=False)
+    monkeypatch.setattr(provider, "_principal_for_claims", lambda *a, **k: {"principal_id": "prn_actor", "status": "active"})
+    monkeypatch.setattr(provider, "invite_user_by_email", lambda *a, **k: pytest.fail("must not create Auth user"))
+    claims = {
+        "uid": "actor", "sub": "actor", "email": "owner@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": ["actor"]}},
+    }
+    provider.create_invitation(claims, "org_test", "new@example.com", "data_analyst", location_id="loc_main")
+    provider.create_invitation(claims, "org_test", "new@example.com", "data_analyst", location_id="loc_main")
+
+    hashes = [params["token_hash"] for params in db.inserts]
+    assert len(hashes) == 2
+    assert hashes[0] != hashes[1]
+    assert any("SET status='revoked'" in sql for sql, _ in db.statements)
+
+
+def test_existing_registered_email_is_not_duplicated_or_auto_linked(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+    from firebase_authz.service import AuthzError
+
+    token = secrets.token_urlsafe(32)
+    db = FakeDb(invitation={
+        "invitation_id": "inv_existing", "organization_id": "org_1",
+        "email": "existing@example.com", "status": "invited",
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+    })
+    patch_db(monkeypatch, db)
+    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "already-registered", "email_confirmed": True})
+    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("existing account must not be duplicated"))
+    with pytest.raises(AuthzError, match="already has a Supabase account"):
+        provider.redeem_invitation(token, "valid-password")
