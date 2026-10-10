@@ -1,8 +1,17 @@
 name: InsightFlow Production Authz Migrations
 
 on:
-  # Production migrations must be explicitly dispatched after target verification and approval.
+  # Read-only inspection is the default. Production changes require an explicit apply selection.
   workflow_dispatch:
+    inputs:
+      operation:
+        description: "Inspect the configured database (read-only) or apply pending migrations after approval"
+        required: true
+        type: choice
+        options:
+          - inspect
+          - apply
+        default: inspect
 
 jobs:
   migrate:
@@ -36,5 +45,10 @@ jobs:
             *) echo "::error::DATABASE_URL is not a PostgreSQL connection URL."; exit 1 ;;
           esac
 
+      - name: Inspect target and invitation schema (read-only)
+        if: ${{ inputs.operation == 'inspect' }}
+        run: python tools/run_authz_migrations.py --inspect
+
       - name: Apply and verify authz migrations
+        if: ${{ inputs.operation == 'apply' }}
         run: python tools/run_authz_migrations.py
