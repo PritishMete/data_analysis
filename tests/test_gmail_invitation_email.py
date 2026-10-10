@@ -61,3 +61,63 @@ def test_gmail_mime_payload_and_confirmed_message_id(monkeypatch):
 def test_gmail_api_failure_is_sanitized(monkeypatch):
     monkeypatch.setattr(gmail,"_http_json",lambda *a,**k:(_ for _ in ()).throw(gmail.GmailConnectionError("failed")))
     with pytest.raises(gmail.GmailConnectionError): gmail._gmail_json("https://gmail.invalid/send","token",{"raw":"x"})
+
+def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
+    setup_env(monkeypatch)
+    payload={"workspace_id":"org-1","location_id":"loc-9","principal_id":"principal-2",
+             "exp":4_000_000_000,"nonce":"random-state"}
+    state=gmail._encode_state(payload)
+    actor=[]
+    monkeypatch.setattr(gmail,"_actor_for_location",lambda *args:actor.append(args))
+    monkeypatch.setattr(gmail,"_post_form",lambda url,data:{"access_token":"access","refresh_token":"refresh-secret"})
+    monkeypatch.setattr(gmail,"_gmail_json",lambda *args:{"emailAddress":"branch-head@gmail.com"})
+    captured={}
+    class Context:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def execute(self,statement,params=None):
+            captured["sql"]=str(statement)
+            captured["params"]=dict(params or {})
+            class Result:
+                def scalar_one_or_none(self): return 1
+            return Result()
+    class Factory:
+        def begin(self): return Context()
+    monkeypatch.setattr(gmail,"SessionLocal",Factory())
+    result=gmail.complete_gmail_connection("one-time-code",state)
+    assert result["connected"] is True
+    assert actor==[("org-1","loc-9","principal-2")]
+    assert captured["params"]["o"]=="org-1" and captured["params"]["l"]=="loc-9"
+    encrypted=captured["params"]["t"]
+    assert encrypted!="refresh-secret"
+    assert gmail._fernet().decrypt(encrypted.encode()).decode()=="refresh-secret"
+
+def test_connection_refuses_unconfigured_or_wrong_branch(monkeypatch):
+    setup_env(monkeypatch)
+    class Result:
+        def mappings(self): return self
+        def first(self): return None
+    class DB:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def execute(self,statement,params=None):
+            self.params=dict(params or {})
+            self.sql=str(statement)
+            return Result()
+    db=DB()
+    monkeypatch.setattr(gmail,"SessionLocal",lambda:db)
+    with pytest.raises(gmail.GmailConfigurationError,match="Connect a Gmail account"):
+        gmail._connection("org-a","loc-b")
+    assert db.params=={"o":"org-a","l":"loc-b"}
+    assert "o.organization_id=:o" in db.sql and "l.location_id=:l" in db.sql
+
+def test_gmail_api_without_message_id_is_not_success(monkeypatch):
+    setup_env(monkeypatch)
+    monkeypatch.setattr(gmail,"_connection",lambda *args:({"organization_name":"Org","branch_name":"Branch",
+      "sender_email":"owner@gmail.com","sender_identity":"owner@gmail.com"},"refresh"))
+    monkeypatch.setattr(gmail,"_refresh_access_token",lambda token:"access")
+    monkeypatch.setattr(gmail,"_authorized_sender",lambda *args:"owner@gmail.com")
+    monkeypatch.setattr(gmail,"_gmail_json",lambda *args:{})
+    with pytest.raises(gmail.GmailConnectionError,match="did not confirm acceptance"):
+        gmail.send_invitation_email(email="person@example.com",invitation_url="https://app.invalid/invite",
+          organization_name="ignored",role_id="analyst",workspace_id="org-a",location_id="loc-a")
