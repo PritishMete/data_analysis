@@ -503,7 +503,7 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Sender identity: $senderIdentity',
+                      'Verified sender address: $senderIdentity',
                       style: const TextStyle(
                         color: TechColors.textPrimary,
                         fontSize: 11,
@@ -2518,7 +2518,7 @@ class _ManagementShellState extends State<ManagementShell> {
           const SizedBox(height: 10), TextField(controller: branchName, decoration: input('Branch name')),
           const SizedBox(height: 10), TextField(controller: branchId, decoration: input('Branch identifier')),
           const SizedBox(height: 10), TextField(controller: branchEmail, decoration: input('Branch email')),
-          const SizedBox(height: 16), _eyebrow('GENERATED INSIGHTFLOW IDENTITY'), const SizedBox(height: 5),
+          const SizedBox(height: 16), _eyebrow('VERIFIED CENTRAL SENDER ADDRESS'), const SizedBox(height: 5),
           Text(data['sender_identity']?.toString() ?? '—', style: const TextStyle(color: TechColors.borderActive, fontSize: 14, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
           const SizedBox(height: 12),
           Text('Central sender: ' + (data['gmail_connected'] == true ? (data['connected_gmail']?.toString() ?? 'Configured on server') : 'Not configured on server'), style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
