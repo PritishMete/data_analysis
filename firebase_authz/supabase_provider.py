@@ -11,7 +11,7 @@ import logging
 import os
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -462,7 +462,11 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
     }
     if role_id not in invitation_roles:
         raise AuthzError("Unsupported invitation role.")
-    expiry = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc) if expires_at is not None else None
+    expiry = (
+        datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc)
+        if expires_at is not None
+        else datetime.now(timezone.utc) + timedelta(days=7)
+    )
     if expiry is not None and expiry <= datetime.now(timezone.utc):
         raise ValueError("Invitation expiry must be in the future.")
 
