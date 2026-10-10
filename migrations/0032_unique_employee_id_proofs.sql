@@ -49,7 +49,7 @@ DROP TRIGGER IF EXISTS trg_reject_duplicate_employee_id_proof
     ON public.organization_member_profiles;
 
 CREATE TRIGGER trg_reject_duplicate_employee_id_proof
-BEFORE INSERT OR UPDATE OF id_proof_type, id_proof_number, country_code
+BEFORE INSERT OR UPDATE
 ON public.organization_member_profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.reject_duplicate_employee_id_proof();
