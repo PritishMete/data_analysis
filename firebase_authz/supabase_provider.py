@@ -640,14 +640,27 @@ def redeem_invitation(token: str, password: str, existing_claims: dict[str, Any]
 
     with SessionLocal.begin() as db:
         invitation = db.execute(text("""
-            SELECT invitation_id, organization_id, email, status, expires_at,
+            SELECT invitation_id, organization_id, email, status, expires_at, redemption_started_at,
                    auth_user_id, token_hash
               FROM invitations WHERE token_hash=:token_hash FOR UPDATE
         """), {"token_hash": token_hash}).mappings().first()
         if not invitation or invitation["status"] not in {"invited", "redeeming"}:
             raise AuthzError("Invitation token is invalid, revoked, or already used.")
         if invitation["status"] == "redeeming":
-            raise AuthzError("This invitation is already being redeemed. Please retry shortly.")
+            # Recover only a stale attempt with no Auth user attached. The invitation
+            # row is locked above and the conditional update is a compare-and-set.
+            started = invitation.get("redemption_started_at")
+            stale_before = datetime.now(timezone.utc) - timedelta(minutes=30)
+            if invitation.get("auth_user_id") is not None or not started or started > stale_before:
+                raise AuthzError("This invitation is already being redeemed. Please retry shortly.")
+            reclaimed = db.execute(text("""
+                UPDATE invitations SET status='invited', redemption_started_at=NULL
+                 WHERE invitation_id=:id AND status='redeeming' AND auth_user_id IS NULL
+                   AND redemption_started_at < now() - interval '30 minutes'
+            """), {"id": invitation["invitation_id"]})
+            if getattr(reclaimed, "rowcount", 0) != 1:
+                raise AuthzError("This invitation is already being redeemed. Please retry shortly.")
+            invitation = {**dict(invitation), "status": "invited", "redemption_started_at": None}
         if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
             raise AuthzError("Invitation has expired.")
         db.execute(text("""
