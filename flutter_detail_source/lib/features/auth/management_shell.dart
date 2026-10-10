@@ -534,31 +534,13 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                     const SizedBox(height: 5),
                     const Text(
-                      'Configure this from Company Settings → Email & Invitations.',
+                      'InsightFlow uses a centralized invitation sender. No branch Gmail connection is required.',
                       style: TextStyle(
                         color: TechColors.textMuted,
                         fontSize: 10,
                       ),
                     ),
-                    if (!connected) ...[
-                      const SizedBox(height: 8),
-                      GlassButton.custom(
-                        onTap: () async {
-                          try {
-                            await _connectBranchGmail(locationId);
-                            setDialogState(() {});
-                          } catch (e) {
-                            feedback(e);
-                          }
-                        },
-                        height: 40,
-                        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-                        child: const Text(
-                          'Configure Email',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
+
                   ],
                 );
               },
@@ -2539,13 +2521,13 @@ class _ManagementShellState extends State<ManagementShell> {
           const SizedBox(height: 16), _eyebrow('GENERATED INSIGHTFLOW IDENTITY'), const SizedBox(height: 5),
           Text(data['sender_identity']?.toString() ?? '—', style: const TextStyle(color: TechColors.borderActive, fontSize: 14, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
           const SizedBox(height: 12),
-          Text('Sending account: ' + (data['gmail_connected'] == true ? (data['connected_gmail']?.toString() ?? 'Connected Gmail') : 'Not connected'), style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
+          Text('Central sender: ' + (data['gmail_connected'] == true ? (data['connected_gmail']?.toString() ?? 'Configured on server') : 'Not configured on server'), style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
           const SizedBox(height: 5),
-          Text(data['sender_identity_mode'] == 'display_only' ? 'Transport mode: authenticated Gmail account. The generated identity is display-only until a legitimate verified Gmail Send-As alias exists.' : 'Transport mode: ' + (data['sender_identity_mode']?.toString() ?? 'unknown'), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
+          Text(data['sender_identity_mode'] == 'centralized' ? 'Transport mode: centralized server-side invitation sender. Branch Heads do not connect personal Gmail accounts.' : 'Transport mode: ' + (data['sender_identity_mode']?.toString() ?? 'centralized'), style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
           const SizedBox(height: 14),
           Wrap(spacing: 8, runSpacing: 8, children: [
             GlassButton.custom(onTap: () async { try { await _saveCompanySettings(locationId, {'company_name': companyName.text.trim(), 'company_identifier': companyId.text.trim(), 'company_email': companyEmail.text.trim(), 'company_domain': companyDomain.text.trim(), 'email_domain': emailDomain.text.trim(), 'branch_name': branchName.text.trim(), 'branch_identifier': branchId.text.trim(), 'branch_email': branchEmail.text.trim()}); if (mounted) feedback('Company settings saved.'); } catch (e) { feedback(e); } }, height: 40, shape: const LiquidRoundedSuperellipse(borderRadius: 12), child: const Text('Save settings', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
-            GlassButton.custom(onTap: () async { try { await _connectBranchGmail(locationId); } catch (e) { feedback(e); } }, height: 40, shape: const LiquidRoundedSuperellipse(borderRadius: 12), child: Text(data['gmail_connected'] == true ? 'Reconnect Gmail' : 'Configure Email', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+
           ]),
         ]));
       },
