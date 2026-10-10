@@ -110,7 +110,7 @@ class _EmployeeInvitationPasswordSetupScreenState
       if (session == null || session.accessToken.isEmpty) {
         throw StateError('Your account was created, but sign-in could not be completed. Sign in with your new password.');
       }
-      debugPrint('invitation_lifecycle redemption_response status=\${redeemResponse.statusCode}');
+      debugPrint('invitation_lifecycle redemption_response status=${redeemResponse.statusCode}');
       debugPrint('invitation_lifecycle onboarding_navigation_started');
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error, stackTrace) {
