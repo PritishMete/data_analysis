@@ -174,11 +174,12 @@ class InsightFlowSupabaseAuthService {
     required String email,
     required String password,
     String? displayName,
+    String? emailRedirectTo,
   }) {
     return client.auth.signUp(
       email: email,
       password: password,
-      emailRedirectTo: 'https://pritishmete.github.io/data_analysis/',
+      emailRedirectTo: emailRedirectTo ?? 'https://pritishmete.github.io/data_analysis/',
       data: displayName == null ? null : {'display_name': displayName},
     );
   }
