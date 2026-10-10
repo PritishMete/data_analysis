@@ -209,6 +209,18 @@ def upsert_my_profile(
             }).mappings().first()
             exists = existing is not None
             normalized_proof = normalize_id_proof_number(fields["id_proof_number"])
+            lock_key = ":".join((
+                str(member["organization_id"]),
+                fields["country_code"],
+                fields["id_proof_type"],
+                normalized_proof,
+            ))
+            # Serialize simultaneous requests for the same proof even before
+            # the database trigger migration is installed.
+            db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
             duplicate = db.execute(text("""
                 SELECT 1
                 FROM organization_member_profiles
