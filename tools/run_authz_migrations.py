@@ -295,10 +295,42 @@ def main() -> int:
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
     tables, applied = inspect_database(engine)
+    # Emit only non-secret target identity fields; never print DATABASE_URL or credentials.
     print("POSTGRESQL_CONNECTION=PASS")
+    print("DATABASE_HOST=" + (engine.url.host or "unknown"))
+    print("DATABASE_NAME=" + (engine.url.database or "unknown"))
     print("HISTORY_TABLE=" + ("EXISTS" if HISTORY_TABLE in tables else "MISSING"))
     print("AUTHORIZATION_TABLES_PRESENT=" + str(len(tables & EXPECTED_TABLES)))
     print("AUTHORIZATION_TABLES_EXPECTED=" + str(len(EXPECTED_TABLES)))
+    print("MIGRATION_0030_APPLICATION_INVITATION_TOKENS=" + (
+        "APPLIED" if "0030_application_invitation_tokens" in applied else "NOT_RECORDED"
+    ))
+    print("MIGRATION_0033_BRANCH_EMAIL_SETTINGS=" + (
+        "APPLIED" if "0033_branch_email_settings" in applied else "NOT_RECORDED"
+    ))
+    if "invitations" in tables:
+        invitation_columns = {column["name"] for column in inspect(engine).get_columns("invitations")}
+        expected_invitation_columns = {
+            "token_hash", "token_created_at", "redemption_started_at",
+            "email_delivery_status", "expires_at", "location_id",
+        }
+        print("INVITATION_COLUMNS_PRESENT=" + ",".join(sorted(expected_invitation_columns & invitation_columns)))
+        print("INVITATION_COLUMNS_MISSING=" + ",".join(sorted(expected_invitation_columns - invitation_columns)))
+        invitation_indexes = {item["name"] for item in inspect(engine).get_indexes("invitations")}
+        expected_indexes = {"invitations_token_hash_unique", "invitations_pending_email_expiry"}
+        print("INVITATION_INDEXES_PRESENT=" + ",".join(sorted(expected_indexes & invitation_indexes)))
+        print("INVITATION_INDEXES_MISSING=" + ",".join(sorted(expected_indexes - invitation_indexes)))
+    else:
+        print("INVITATION_TABLE=MISSING")
+    if "branch_email_settings" in tables:
+        sender_columns = {column["name"] for column in inspect(engine).get_columns("branch_email_settings")}
+        expected_sender_columns = {
+            "organization_id", "location_id", "sender_email", "sender_identity",
+            "gmail_refresh_token_encrypted", "gmail_google_subject", "updated_at",
+        }
+        print("GMAIL_SETTINGS_COLUMNS_MISSING=" + ",".join(sorted(expected_sender_columns - sender_columns)))
+    else:
+        print("GMAIL_SETTINGS_TABLE=MISSING")
     if args.inspect:
         return 0
     applied_now, already = apply_pending(engine)
