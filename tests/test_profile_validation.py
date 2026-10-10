@@ -4,6 +4,7 @@ import pytest
 from firebase_authz.profile_validation import (
     ProfileValidationError,
     normalize_id_proof_type,
+    normalize_id_proof_number,
     normalize_location,
     validate_profile_fields,
 )
@@ -107,3 +108,8 @@ def test_country_aware_id_documents():
     assert normalize_id_proof_type("US", "passport") == "passport"
     with pytest.raises(ProfileValidationError):
         normalize_id_proof_type("US", "aadhaar")
+
+
+def test_id_proof_duplicate_normalization_ignores_case_spaces_and_hyphens():
+    assert normalize_id_proof_number(" ab-c 123 ") == "ABC123"
+    assert normalize_id_proof_number("ABC123") == "ABC123"
