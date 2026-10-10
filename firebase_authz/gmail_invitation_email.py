@@ -255,6 +255,14 @@ def get_company_settings(claims: dict, workspace_id: str, location_id: str) -> d
     result["gmail_connected"] = centralized_sender_configured
     result["connected_gmail"] = os.environ.get("RESEND_FROM_EMAIL", "").strip() or None
     result["sender_identity_mode"] = "centralized"
+    result["sender_identity"] = (
+        os.environ.get("RESEND_FROM_EMAIL", "").strip()
+        or result.get("sender_identity")
+        or generate_sender_identity(
+            result.get("company_identifier") or result.get("organization_name") or "company",
+            result.get("branch_identifier") or result.get("branch_name") or "branch",
+        )
+    )
     company_identifier = result.get("company_identifier") or result.get("organization_name") or "company"
     branch_identifier = result.get("branch_identifier") or result.get("branch_name") or "branch"
     result["company_name"] = result.get("company_name") or result["organization_name"]
@@ -356,7 +364,7 @@ def get_branch_email_settings(claims: dict, workspace_id: str, location_id: str)
         "connected": configured,
         "sender_email": os.environ.get("RESEND_FROM_EMAIL", "").strip() or None,
         "sender_name": result.get("sender_name") or os.environ.get("RESEND_FROM_NAME", "InsightFlow").strip(),
-        "sender_identity": result.get("sender_identity") or generate_sender_identity("company", "branch"),
+        "sender_identity": os.environ.get("RESEND_FROM_EMAIL", "").strip() or result.get("sender_identity") or generate_sender_identity("company", "branch"),
         "sender_identity_mode": "centralized",
         "provider": "centralized",
     })
@@ -417,6 +425,11 @@ def send_invitation_email(*, recipient: str, organization_name: str, role_id: st
     api_key = os.environ.get("RESEND_API_KEY", "").strip()
     from_email = os.environ.get("RESEND_FROM_EMAIL", "").strip()
     from_name = os.environ.get("RESEND_FROM_NAME", "InsightFlow").strip() or "InsightFlow"
+    settings = _company_sender_settings(workspace_id, location_id)
+    company_label = str(settings.get("company_name") or organization_name or "").strip()
+    branch_label = str(settings.get("branch_name") or "").strip()
+    brand_parts = [part for part in (from_name, company_label, branch_label) if part]
+    from_name = " · ".join(brand_parts)[:120]
     if not api_key or not from_email:
         raise GmailConfigurationError(
             "The centralized invitation email sender is not configured on the backend."
