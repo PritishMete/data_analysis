@@ -43,7 +43,7 @@ def test_sender_address_must_be_primary_or_verified_alias(monkeypatch):
 def test_gmail_mime_payload_and_confirmed_message_id(monkeypatch):
     setup_env(monkeypatch)
     monkeypatch.setattr(gmail,"_connection",lambda *args:({"organization_name":"Org","branch_name":"Kolkata",
-      "sender_email":"owner@gmail.com","sender_identity":"owner@gmail.com"},"refresh-token"))
+      "sender_name":"Branch Sender","sender_email":"owner@gmail.com","sender_identity":"owner@gmail.com"},"refresh-token"))
     monkeypatch.setattr(gmail,"_refresh_access_token",lambda token:"access-token")
     monkeypatch.setattr(gmail,"_authorized_sender",lambda *args:"owner@gmail.com")
     captured={}
@@ -57,6 +57,7 @@ def test_gmail_mime_payload_and_confirmed_message_id(monkeypatch):
     raw=base64.urlsafe_b64decode(captured["body"]["raw"]+"===")
     msg=email.message_from_bytes(raw,policy=policy.default)
     assert msg["To"]=="employee@example.com" and "Org" in msg["From"]
+    assert "Branch Sender" in msg["From"] and msg["From"].endswith("<owner@gmail.com>")
     assert "Resend" not in captured["url"]
     assert "opaque" in msg.get_body(preferencelist=("plain",)).get_content()
 
@@ -96,6 +97,9 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
     assert len(state_sql)==2
     assert "INSERT INTO gmail_oauth_states" in state_sql[0]
     assert "DELETE FROM gmail_oauth_states" in state_sql[1]
+    settings_sql=[statement for statement,params in captured["statements"] if "INSERT INTO branch_email_settings" in statement][0]
+    assert "sender_identity=excluded.sender_identity" not in settings_sql
+    assert "sender_name=excluded.sender_name" not in settings_sql
     state_params=captured["statements"][0][1]
     assert "random-state" not in repr(state_params)
     encrypted=captured["params"]["t"]
