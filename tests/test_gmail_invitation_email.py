@@ -19,6 +19,8 @@ def test_oauth_state_signature_expiry_and_scope(monkeypatch):
     assert gmail._decode_state(state)["location_id"]=="loc-a"
     with pytest.raises(gmail.GmailConnectionError): gmail._decode_state(state+"tampered")
     with pytest.raises(gmail.GmailConnectionError): gmail._decode_state("bad-state")
+    expired=gmail._encode_state({"workspace_id":"org-a","location_id":"loc-a","principal_id":"p-a","exp":1,"nonce":"old"})
+    with pytest.raises(gmail.GmailConnectionError): gmail._decode_state(expired)
 
 def test_callback_rejects_missing_code(monkeypatch):
     setup_env(monkeypatch)
@@ -81,6 +83,7 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
             captured["statements"].append((str(statement),dict(params or {})))
             class Result:
                 def scalar_one_or_none(self): return 1
+                def scalar_one(self): return "branch-head@gmail.com"
             return Result()
     class Factory:
         def begin(self): return Context()
