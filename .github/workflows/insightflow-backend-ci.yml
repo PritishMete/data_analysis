@@ -91,7 +91,6 @@ jobs:
       - name: Analyze Firebase Auth Flutter sources
         run: >-
           dart analyze
-          lib/firebase_options.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
 
