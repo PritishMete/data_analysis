@@ -5,6 +5,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from core.db import SessionLocal
 from .service import AuthzError
 
@@ -36,11 +37,48 @@ def _decode_state(state: str) -> dict:
         expected=hmac.new(_required("INSIGHTFLOW_GMAIL_STATE_SECRET").encode(),encoded.encode(),hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig,expected): raise ValueError
         payload=json.loads(base64.urlsafe_b64decode(encoded+"="*((4-len(encoded)%4)%4)))
-        if int(payload["exp"])<int(time.time()) or not payload.get("nonce"): raise ValueError
+        if int(payload["exp"])<=int(time.time()) or not payload.get("nonce"): raise ValueError
         if any(not str(payload.get(k) or "").strip() for k in ("workspace_id","location_id","principal_id")): raise ValueError
         return payload
     except (ValueError,KeyError,TypeError,json.JSONDecodeError) as exc:
         raise GmailConnectionError("Gmail connection state is invalid or expired.") from exc
+
+def _nonce_hash(nonce: str) -> str:
+    return hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+
+def _persist_oauth_state(payload: dict) -> None:
+    """Persist only a nonce hash and its authorization context; fail closed if unavailable."""
+    try:
+        with SessionLocal.begin() as db:
+            db.execute(text("""INSERT INTO gmail_oauth_states
+              (nonce_hash, organization_id, location_id, principal_id, expires_at)
+              VALUES (:nonce_hash, :organization_id, :location_id, :principal_id, to_timestamp(:expires_at))"""),
+              {"nonce_hash":_nonce_hash(str(payload["nonce"])),
+               "organization_id":payload["workspace_id"],"location_id":payload["location_id"],
+               "principal_id":payload["principal_id"],"expires_at":int(payload["exp"])})
+    except SQLAlchemyError as exc:
+        raise GmailConfigurationError(
+            "Gmail OAuth state storage is unavailable. Apply the Gmail OAuth state migration before connecting Gmail."
+        ) from exc
+
+def _consume_oauth_state(payload: dict) -> None:
+    """Atomically consume a matching, unexpired state exactly once across workers."""
+    try:
+        with SessionLocal.begin() as db:
+            row=db.execute(text("""DELETE FROM gmail_oauth_states
+              WHERE nonce_hash=:nonce_hash AND organization_id=:organization_id
+                AND location_id=:location_id AND principal_id=:principal_id
+                AND expires_at > now()
+              RETURNING nonce_hash"""),
+              {"nonce_hash":_nonce_hash(str(payload["nonce"])),
+               "organization_id":payload["workspace_id"],"location_id":payload["location_id"],
+               "principal_id":payload["principal_id"]}).scalar_one_or_none()
+    except SQLAlchemyError as exc:
+        raise GmailConfigurationError(
+            "Gmail OAuth state storage is unavailable. Apply the Gmail OAuth state migration before completing Gmail connection."
+        ) from exc
+    if not row:
+        raise GmailConnectionError("Gmail connection state is unknown, expired, already used, or does not match this workspace.")
 
 def _actor_for_location(workspace_id: str, location_id: str, principal_id: str) -> None:
     with SessionLocal() as db:
@@ -57,8 +95,10 @@ def _actor_for_location(workspace_id: str, location_id: str, principal_id: str) 
 
 def gmail_connection_url(workspace_id: str, location_id: str, principal_id: str) -> str:
     _actor_for_location(workspace_id,location_id,principal_id)
-    state=_encode_state({"workspace_id":workspace_id,"location_id":location_id,"principal_id":principal_id,
-      "exp":int(time.time())+600,"nonce":secrets.token_urlsafe(24)})
+    payload={"workspace_id":workspace_id,"location_id":location_id,"principal_id":principal_id,
+      "exp":int(time.time())+600,"nonce":secrets.token_urlsafe(32)}
+    state=_encode_state(payload)
+    _persist_oauth_state(payload)
     params=urllib.parse.urlencode({"client_id":_required("INSIGHTFLOW_GMAIL_CLIENT_ID"),
       "redirect_uri":_required("INSIGHTFLOW_GMAIL_REDIRECT_URI"),"response_type":"code","scope":GMAIL_SCOPE,
       "access_type":"offline","prompt":"consent","include_granted_scopes":"true","state":state})
@@ -88,6 +128,7 @@ def complete_gmail_connection(code: str, state: str) -> dict:
     if not str(code or "").strip(): raise GmailConnectionError("Google did not return an authorization code.")
     payload=_decode_state(state)
     _actor_for_location(payload["workspace_id"],payload["location_id"],payload["principal_id"])
+    _consume_oauth_state(payload)
     tokens=_post_form(TOKEN_URL,{"code":code,"client_id":_required("INSIGHTFLOW_GMAIL_CLIENT_ID"),
       "client_secret":_required("INSIGHTFLOW_GMAIL_CLIENT_SECRET"),"redirect_uri":_required("INSIGHTFLOW_GMAIL_REDIRECT_URI"),
       "grant_type":"authorization_code"})
@@ -102,14 +143,15 @@ def complete_gmail_connection(code: str, state: str) -> dict:
         valid=db.execute(text("""SELECT 1 FROM locations WHERE organization_id=:o AND location_id=:l AND status='active'"""),
           {"o":payload["workspace_id"],"l":payload["location_id"]}).scalar_one_or_none()
         if not valid: raise AuthzError("Workspace authorization denied.")
-        db.execute(text("""INSERT INTO branch_email_settings
+        saved_identity=db.execute(text("""INSERT INTO branch_email_settings
           (organization_id,location_id,sender_name,sender_email,gmail_refresh_token_encrypted,gmail_google_subject,sender_identity,updated_at)
           VALUES (:o,:l,'InsightFlow',:e,:t,:s,:e,now())
           ON CONFLICT (organization_id,location_id) DO UPDATE SET sender_email=excluded.sender_email,
           gmail_refresh_token_encrypted=excluded.gmail_refresh_token_encrypted,
-          gmail_google_subject=excluded.gmail_google_subject,sender_identity=excluded.sender_identity,updated_at=now()"""),
-          {"o":payload["workspace_id"],"l":payload["location_id"],"e":account,"t":encrypted,"s":account})
-    return {"connected":True,"sender_email":account,"sender_identity":account}
+          gmail_google_subject=excluded.gmail_google_subject,updated_at=now()
+          RETURNING sender_identity"""),
+          {"o":payload["workspace_id"],"l":payload["location_id"],"e":account,"t":encrypted,"s":account}).scalar_one()
+    return {"connected":True,"sender_email":account,"sender_identity":saved_identity}
 
 def _connection(workspace_id: str, location_id: str) -> tuple[dict,str]:
     with SessionLocal() as db:
@@ -151,7 +193,10 @@ def send_invitation_email(*, email: str, invitation_url: str, organization_name:
     sender=_authorized_sender(access,requested,primary)
     company=str(settings["organization_name"]).strip()
     branch=str(settings["branch_name"]).strip()
-    brand=" · ".join(x for x in ("InsightFlow",company,branch) if x)[:120]
+    # sender_name is the recipient-facing display identity; sender_identity is an
+    # actual Gmail Send-As address and is validated independently below.
+    display_identity=str(settings.get("sender_name") or "InsightFlow").strip()
+    brand=" · ".join(x for x in (display_identity,company,branch) if x)[:120]
     role=str(role_id or "").replace("_"," ").strip().title()
     msg=EmailMessage()
     msg["To"]=recipient
