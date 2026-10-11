@@ -114318,8 +114318,7 @@ case 8:h=b7
 if(h==null||h.c.length===0){A.ef().$1("invitation_lifecycle session_available=false")
 g=A.a1("Your authenticated session could not be restored.")
 throw A.e(g)}A.ef().$1("invitation_lifecycle session_available=true")
-a2=i
-A.ef().$1("invitation_lifecycle authenticated_email_available="+((a2==null?null:J.buU(a2).length!==0)===!0))
+A.ef().$1("invitation_lifecycle authenticated_email_available="+(J.buU(i).length!==0))
 a2=A.cb("https://data-analysis-oajs.onrender.com/v1/authz/invitations/password-setup-complete",0,null)
 a6=t.N
 b4=A
