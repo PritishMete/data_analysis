@@ -71,13 +71,14 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
     monkeypatch.setattr(gmail,"_actor_for_location",lambda *args:actor.append(args))
     monkeypatch.setattr(gmail,"_post_form",lambda url,data:{"access_token":"access","refresh_token":"refresh-secret"})
     monkeypatch.setattr(gmail,"_gmail_json",lambda *args:{"sendAs":[{"sendAsEmail":"branch-head@gmail.com","isPrimary":True,"verificationStatus":"accepted"}]})
-    captured={}
+    captured={"statements":[]}
     class Context:
         def __enter__(self): return self
         def __exit__(self,*args): return False
         def execute(self,statement,params=None):
             captured["sql"]=str(statement)
             captured["params"]=dict(params or {})
+            captured["statements"].append((str(statement),dict(params or {})))
             class Result:
                 def scalar_one_or_none(self): return 1
             return Result()
@@ -88,6 +89,12 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
     assert result["connected"] is True
     assert actor==[("org-1","loc-9","principal-2")]
     assert captured["params"]["o"]=="org-1" and captured["params"]["l"]=="loc-9"
+    state_sql=[statement for statement,params in captured["statements"] if "gmail_oauth_states" in statement]
+    assert len(state_sql)==2
+    assert "INSERT INTO gmail_oauth_states" in state_sql[0]
+    assert "DELETE FROM gmail_oauth_states" in state_sql[1]
+    state_params=captured["statements"][0][1]
+    assert "random-state" not in repr(state_params)
     encrypted=captured["params"]["t"]
     assert encrypted!="refresh-secret"
     assert gmail._fernet().decrypt(encrypted.encode()).decode()=="refresh-secret"
@@ -121,3 +128,47 @@ def test_gmail_api_without_message_id_is_not_success(monkeypatch):
     with pytest.raises(gmail.GmailConnectionError,match="did not confirm acceptance"):
         gmail.send_invitation_email(email="person@example.com",invitation_url="https://app.invalid/invite",
           organization_name="ignored",role_id="analyst",workspace_id="org-a",location_id="loc-a")
+
+
+def test_oauth_state_consumption_rejects_replay(monkeypatch):
+    setup_env(monkeypatch)
+    payload={"workspace_id":"org-a","location_id":"branch-a","principal_id":"principal-a","exp":4_000_000_000,"nonce":"nonce-a"}
+    class Result:
+        def scalar_one_or_none(self): return None
+    class Context:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def execute(self,statement,params=None):
+            assert "DELETE FROM gmail_oauth_states" in str(statement)
+            assert params["nonce_hash"]==gmail._nonce_hash("nonce-a")
+            assert params["organization_id"]=="org-a"
+            assert params["location_id"]=="branch-a"
+            assert params["principal_id"]=="principal-a"
+            return Result()
+    class Factory:
+        def begin(self): return Context()
+    monkeypatch.setattr(gmail,"SessionLocal",Factory())
+    with pytest.raises(gmail.GmailConnectionError,match="unknown, expired, already used"):
+        gmail._consume_oauth_state(payload)
+
+
+def test_oauth_state_storage_failure_fails_closed(monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+    setup_env(monkeypatch)
+    payload={"workspace_id":"org-a","location_id":"branch-a","principal_id":"principal-a","exp":4_000_000_000,"nonce":"nonce-a"}
+    class Context:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def execute(self,*args,**kwargs): raise SQLAlchemyError("database unavailable")
+    class Factory:
+        def begin(self): return Context()
+    monkeypatch.setattr(gmail,"SessionLocal",Factory())
+    with pytest.raises(gmail.GmailConfigurationError,match="state storage is unavailable"):
+        gmail._persist_oauth_state(payload)
+
+
+def test_oauth_state_nonce_is_hashed():
+    nonce="sensitive-raw-nonce"
+    digest=gmail._nonce_hash(nonce)
+    assert digest != nonce
+    assert len(digest)==64
