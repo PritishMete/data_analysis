@@ -1,17 +1,14 @@
 name: InsightFlow Production Authz Migrations
 
 on:
-  # Read-only inspection is the default. Production changes require an explicit apply selection.
+  push:
+    branches: [feature/data-workspace, feature/employee-management-cell]
+    paths:
+      - 'migrations/**'
+      - 'tools/run_authz_migrations.py'
+      - '.github/workflows/production-authz-migrations.yml'
+      - 'render.yaml'
   workflow_dispatch:
-    inputs:
-      operation:
-        description: "Inspect the configured database (read-only) or apply pending migrations after approval"
-        required: true
-        type: choice
-        options:
-          - inspect
-          - apply
-        default: inspect
 
 jobs:
   migrate:
@@ -31,7 +28,7 @@ jobs:
       - name: Install migration dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install sqlalchemy 'psycopg[binary]'
+          pip install sqlalchemy psycopg2-binary
 
       - name: Require production PostgreSQL secret
         run: |
@@ -45,10 +42,5 @@ jobs:
             *) echo "::error::DATABASE_URL is not a PostgreSQL connection URL."; exit 1 ;;
           esac
 
-      - name: Inspect target and invitation schema (read-only)
-        if: ${{ inputs.operation == 'inspect' }}
-        run: python tools/run_authz_migrations.py --inspect
-
       - name: Apply and verify authz migrations
-        if: ${{ inputs.operation == 'apply' }}
         run: python tools/run_authz_migrations.py

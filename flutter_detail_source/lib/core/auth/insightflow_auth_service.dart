@@ -51,7 +51,7 @@ class InsightFlowAuthService {
       if (error.message.trim().isNotEmpty) return error.message;
     }
     if (error is StateError) return error.message;
-    debugPrint('[supabase-auth] ${error.runtimeType}: $error');
+    debugPrint('[supabase-auth] ' + error.runtimeType.toString() + ': ' + error.toString());
     return 'Authentication could not be completed. Please try again.';
   }
 }

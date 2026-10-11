@@ -7,7 +7,6 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
-from .gmail_invitation_email import GmailConfigurationError, GmailConnectionError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -416,12 +415,6 @@ class InvitationAcceptRequest(BaseModel):
     invitation_id: str
     workspace_id: str | None = None
 
-class InvitationRedeemRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    token: str
-    password: str
-
-
 class InvitationPasswordSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
@@ -455,30 +448,6 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
-
-@router.post("/invitations/redeem")
-def invitation_redeem(
-    req: InvitationRedeemRequest,
-    authorization: str | None = Header(default=None),
-):
-    """Redeem a token; an existing account must present its verified session."""
-    try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
-            raise AuthzError("Application invitation redemption requires Supabase authentication.")
-        claims = require_email_verified(verify_id_token(_token(authorization))) if authorization else None
-        from .supabase_provider import redeem_invitation
-        return redeem_invitation(req.token, req.password, claims)
-    except AuthzError as exc:
-        raise HTTPException(403, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
-        logger.error("invitation_redemption_admin_failure error=%s", str(exc))
-        raise HTTPException(503, "Invitation could not be completed. Please try again.")
-    except Exception:
-        logger.exception("invitation_redemption_failed")
-        raise HTTPException(500, "Invitation could not be activated. Please try again.")
-
 
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
@@ -720,32 +689,3 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
         raise HTTPException(403, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-
-class GmailConnectionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    workspace_id: str
-    location_id: str
-
-@router.post("/management/email-settings/connect")
-def gmail_connect(req: GmailConnectionRequest, authorization: str = Header(default=None)):
-    try:
-        claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
-            raise AuthzError("Gmail connection requires Supabase authentication.")
-        from .gmail_invitation_email import gmail_connection_url
-        principal = str(claims.get("uid") or claims.get("sub") or "").strip()
-        return {"authorization_url": gmail_connection_url(req.workspace_id, req.location_id, principal)}
-    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
-    except AuthzError as exc: raise HTTPException(403, str(exc))
-    except GmailConfigurationError as exc: raise HTTPException(503, str(exc))
-
-@router.get("/management/email-settings/callback")
-def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
-    if error: raise HTTPException(400, "Google Gmail authorization was cancelled or denied.")
-    if not code or not state: raise HTTPException(400, "Google Gmail authorization response is incomplete.")
-    try:
-        from .gmail_invitation_email import complete_gmail_connection
-        return complete_gmail_connection(code, state)
-    except AuthzError as exc: raise HTTPException(403, str(exc))
-    except GmailConfigurationError as exc: raise HTTPException(503, str(exc))
-    except GmailConnectionError as exc: raise HTTPException(400, str(exc))

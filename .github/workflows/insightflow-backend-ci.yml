@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell]
+    branches: [main, feature/data-workspace]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -88,10 +88,10 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Supabase Auth Flutter sources
+      - name: Analyze Firebase Auth Flutter sources
         run: >-
           dart analyze
-          lib/core/auth/supabase_auth_service.dart
+          lib/firebase_options.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
 
@@ -131,17 +131,19 @@ jobs:
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
-      - name: Run Supabase auth and onboarding tests
+      - name: Run Flutter Auth tests
         run: >-
           flutter test
-          test/onboarding_auth_flow_contract_test.dart
-          test/auth_gate_management_landing_test.dart
-          test/management_navigation_context_test.dart
+          test/firebase_auth_service_test.dart
+          test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
 
       - name: Build Flutter web
         run: >-
           flutter build web --release
           --no-wasm-dry-run
-          --dart-define=INSIGHTFLOW_SUPABASE_URL=https://example.supabase.co
-          --dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=ci-placeholder
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=insightflow-5a23d
+          --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=ci-placeholder.firebaseapp.com

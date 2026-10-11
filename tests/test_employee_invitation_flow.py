@@ -1,61 +1,60 @@
-import hashlib
-import secrets
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
-from firebase_authz.invitation_email_sender import (
-    InvitationEmailSenderNotConfigured,
-    send_invitation_email,
-)
 
-
-class FakeResult:
+class _FakeResult:
     def __init__(self, mapping=None, scalar=None):
-        self.mapping = mapping
-        self.scalar = scalar
+        self._mapping = mapping
+        self._scalar = scalar
 
     def mappings(self):
         return self
 
     def first(self):
-        return self.mapping
+        return self._mapping
 
     def scalar_one_or_none(self):
-        return self.scalar
+        return self._scalar
 
     def scalars(self):
         return self
 
     def all(self):
-        return [self.scalar] if self.scalar is not None else []
+        return [self._scalar] if self._scalar is not None else []
 
 
-class FakeDb:
-    def __init__(self, *, invitation=None):
-        self.invitation = invitation
-        self.statements = []
+class _FakeDb:
+    def __init__(self, actor, *, fail_insert=False):
+        self.actor = actor
+        self.fail_insert = fail_insert
         self.inserts = []
 
     def execute(self, statement, params=None):
         sql = str(statement)
-        self.statements.append((sql, dict(params or {})))
         if "SELECT b.principal_id" in sql:
-            return FakeResult(mapping={"principal_id": "prn_actor", "status": "active"})
+            return _FakeResult(mapping=self.actor)
+        if "role_permissions" in sql:
+            return _FakeResult(scalar=1)
+        if "SELECT DISTINCT location_id" in sql and "FROM organizational_assignments" in sql:
+            return _FakeResult(scalar="loc_main")
+        if "SELECT 1 FROM organizational_assignments" in sql:
+            return _FakeResult(scalar=1)
+        if "FROM locations" in sql:
+            if "SELECT location_id, status" in sql:
+                return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
+            return _FakeResult(scalar="loc_main")
         if "FROM member_roles" in sql:
-            return FakeResult(scalar="organization_owner")
+            return _FakeResult(scalar="organization_owner")
         if "FROM organizations" in sql:
-            return FakeResult(scalar="Example Org")
-        if "SELECT location_id, status FROM locations" in sql:
-            return FakeResult(mapping={"location_id": "loc_main", "status": "active"})
-        if "FROM invitations" in sql and "WHERE token_hash=:token_hash" in sql:
-            return FakeResult(mapping=self.invitation)
+            return _FakeResult(scalar="Test Organization")
         if "INSERT INTO invitations" in sql:
+            if self.fail_insert:
+                raise RuntimeError("database insert failed")
             self.inserts.append(dict(params or {}))
-        return FakeResult()
+            return _FakeResult()
+        return _FakeResult()
 
 
-class FakeContext:
+class _FakeContext:
     def __init__(self, db):
         self.db = db
 
@@ -66,208 +65,144 @@ class FakeContext:
         return False
 
 
-def patch_db(monkeypatch, db):
+def _patch_invitation_db(monkeypatch, db):
     import firebase_authz.supabase_provider as provider
 
-    monkeypatch.setattr(provider, "SessionLocal", lambda: FakeContext(db))
+    monkeypatch.setattr(provider, "SessionLocal", lambda: _FakeContext(db))
 
-    class Begin:
+    class _Begin:
         def __enter__(self):
             return db
 
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(provider.SessionLocal, "begin", lambda: Begin(), raising=False)
+    monkeypatch.setattr(provider.SessionLocal, "begin", lambda: _Begin(), raising=False)
 
 
-def test_sender_fails_closed_without_configuration(monkeypatch):
-    monkeypatch.delenv("INSIGHTFLOW_INVITATION_EMAIL_SENDER", raising=False)
-    with pytest.raises(InvitationEmailSenderNotConfigured):
-        send_invitation_email(
-            email="employee@example.com",
-            invitation_url="https://example.invalid/employee-invite?token=opaque",
-            organization_name="Example",
-            role_id="data_analyst",
-            workspace_id="org_test",
-            location_id="loc_main",
-        )
+def _claims():
+    return {
+        "uid": "actor-user",
+        "sub": "actor-user",
+        "email": "actor@example.com",
+        "firebase": {
+            "sign_in_provider": "password",
+            "identities": {"password": ["actor-user"]},
+        },
+    }
 
 
-def test_token_hash_is_fixed_length_and_does_not_equal_raw_token():
-    token = secrets.token_urlsafe(32)
-    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    assert len(token) >= 40
-    assert digest != token
-    assert len(digest) == 64
+def _actor():
+    return {"principal_id": "prn_actor", "employee_id": "EMP001", "status": "active"}
 
 
-def test_invitation_creation_does_not_call_supabase_auth_or_store_raw_token(monkeypatch):
+def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     import firebase_authz.supabase_provider as provider
 
-    db = FakeDb()
-    patch_db(monkeypatch, db)
-    monkeypatch.delenv("INSIGHTFLOW_INVITATION_EMAIL_SENDER", raising=False)
-    monkeypatch.setattr(provider, "invite_user_by_email", lambda *a, **k: pytest.fail("must not create Auth user at send time"))
-    monkeypatch.setattr(provider, "find_user_by_email", lambda *a, **k: pytest.fail("must not look up/create Auth user at send time"))
-    monkeypatch.setattr(provider, "_principal_for_claims", lambda *a, **k: {"principal_id": "prn_actor", "status": "active"})
+    db = _FakeDb(_actor())
+    _patch_invitation_db(monkeypatch, db)
+    monkeypatch.setattr(
+        provider,
+        "invite_user_by_email",
+        lambda email, redirect_to, **kwargs: {
+            "user_id": "auth-new-user",
+            "email_confirmed": False,
+        },
+    )
+    monkeypatch.setattr(
+        provider,
+        "find_user_by_email",
+        lambda email: pytest.fail("existing-user lookup must not run for a new Auth user"),
+    )
 
     result = provider.create_invitation(
-        {
-            "uid": "actor", "sub": "actor", "email": "owner@example.com",
-            "firebase": {"sign_in_provider": "password", "identities": {"password": ["actor"]}},
-        },
-        "org_test", "new@example.com", "data_analyst", location_id="loc_main",
+        _claims(), "org_test", "new@example.com", "data_analyst", location_id="loc_main"
     )
+
     assert result["status"] == "invited"
-    assert result["email_delivery_status"] == "sender_configuration_required"
-    assert "auth_user" not in db.inserts[0]
-    assert len(db.inserts[0]["token_hash"]) == 64
-    assert "token" not in db.inserts[0]
+    assert result["email_delivery_status"] == "initiated"
+    assert result["password_setup_required"] is True
+    assert db.inserts[0]["auth_user"] == "auth-new-user"
 
 
-@pytest.mark.parametrize("status", ["accepted", "revoked", "redeeming"])
-def test_redeem_rejects_used_revoked_or_concurrently_redeemed_tokens(monkeypatch, status):
+def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+
+    db = _FakeDb(_actor())
+    _patch_invitation_db(monkeypatch, db)
+
+    class DuplicateError(Exception):
+        status_code = 422
+
+        def __str__(self):
+            return "A user with this email address has already been registered"
+
+    calls = {"invite": 0}
+
+    def duplicate_invite(email, redirect_to, **kwargs):
+        calls["invite"] += 1
+        raise DuplicateError()
+
+    monkeypatch.setattr(provider, "invite_user_by_email", duplicate_invite)
+    monkeypatch.setattr(
+        provider,
+        "find_user_by_email",
+        lambda email: {
+            "user_id": "auth-existing-user",
+            "email_confirmed": True,
+        },
+    )
+
+    result = provider.create_invitation(
+        _claims(), "org_test", "existing@example.com", "data_analyst"
+    )
+
+    assert calls["invite"] == 1
+    assert result["email_delivery_status"] == "existing_account"
+    assert result["password_setup_required"] is False
+    assert db.inserts[0]["auth_user"] == "auth-existing-user"
+
+
+def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(monkeypatch):
     import firebase_authz.supabase_provider as provider
     from firebase_authz.service import AuthzError
 
-    token = secrets.token_urlsafe(32)
-    db = FakeDb(invitation={
-        "invitation_id": "inv_1", "organization_id": "org_1",
-        "email": "employee@example.com", "status": status,
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-    })
-    patch_db(monkeypatch, db)
-    with pytest.raises(AuthzError):
-        provider.redeem_invitation(token, "valid-password")
+    db = _FakeDb(_actor())
+    _patch_invitation_db(monkeypatch, db)
+
+    class DuplicateError(Exception):
+        status_code = 422
+
+        def __str__(self):
+            return "A user with this email address has already been registered"
+
+    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_, **__: (_ for _ in ()).throw(DuplicateError()))
+    monkeypatch.setattr(
+        provider,
+        "find_user_by_email",
+        lambda email: {"user_id": "auth-unconfirmed", "email_confirmed": False},
+    )
+
+    with pytest.raises(AuthzError, match="unconfirmed Auth account"):
+        provider.create_invitation(
+            _claims(), "org_test", "unconfirmed@example.com", "data_analyst", location_id="loc_main"
+        )
+
+    assert db.inserts == []
 
 
-def test_redeem_rejects_expired_token_before_auth_user_creation(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-    from firebase_authz.service import AuthzError
-
-    token = secrets.token_urlsafe(32)
-    db = FakeDb(invitation={
-        "invitation_id": "inv_1", "organization_id": "org_1",
-        "email": "employee@example.com", "status": "invited",
-        "expires_at": datetime.now(timezone.utc) - timedelta(seconds=1),
-        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-    })
-    patch_db(monkeypatch, db)
-    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("expired token must not create user"))
-    with pytest.raises(AuthzError, match="expired"):
-        provider.redeem_invitation(token, "valid-password")
-
-
-def test_redeem_rejects_malformed_token_before_database_access(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-    from firebase_authz.service import AuthzError
-
-    with pytest.raises(AuthzError, match="invalid or expired"):
-        provider.redeem_invitation("short", "valid-password")
-
-
-def test_password_minimum_is_enforced_before_auth_user_creation(monkeypatch):
+def test_database_insertion_failure_does_not_return_success(monkeypatch):
     import firebase_authz.supabase_provider as provider
 
-    with pytest.raises(ValueError, match="at least 8"):
-        provider.redeem_invitation("x" * 48, "short")
+    db = _FakeDb(_actor(), fail_insert=True)
+    _patch_invitation_db(monkeypatch, db)
+    monkeypatch.setattr(
+        provider,
+        "invite_user_by_email",
+        lambda email, redirect_to, **kwargs: {"user_id": "auth-new-user", "email_confirmed": False},
+    )
 
-
-def test_repeated_invitation_rotates_token_and_revokes_previous_pending(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-
-    db = FakeDb()
-    patch_db(monkeypatch, db)
-    monkeypatch.delenv("INSIGHTFLOW_INVITATION_EMAIL_SENDER", raising=False)
-    monkeypatch.setattr(provider, "_principal_for_claims", lambda *a, **k: {"principal_id": "prn_actor", "status": "active"})
-    monkeypatch.setattr(provider, "invite_user_by_email", lambda *a, **k: pytest.fail("must not create Auth user"))
-    claims = {
-        "uid": "actor", "sub": "actor", "email": "owner@example.com",
-        "firebase": {"sign_in_provider": "password", "identities": {"password": ["actor"]}},
-    }
-    provider.create_invitation(claims, "org_test", "new@example.com", "data_analyst", location_id="loc_main")
-    provider.create_invitation(claims, "org_test", "new@example.com", "data_analyst", location_id="loc_main")
-
-    hashes = [params["token_hash"] for params in db.inserts]
-    assert len(hashes) == 2
-    assert hashes[0] != hashes[1]
-    assert any("SET status='revoked'" in sql for sql, _ in db.statements)
-
-
-def test_existing_registered_email_is_not_duplicated_or_auto_linked(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-    from firebase_authz.service import AuthzError
-
-    token = secrets.token_urlsafe(32)
-    db = FakeDb(invitation={
-        "invitation_id": "inv_existing", "organization_id": "org_1",
-        "email": "existing@example.com", "status": "invited",
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-    })
-    patch_db(monkeypatch, db)
-    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "already-registered", "email_confirmed": True})
-    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("existing account must not be duplicated"))
-    with pytest.raises(AuthzError, match="already has a Supabase account"):
-        provider.redeem_invitation(token, "valid-password")
-
-
-def test_existing_verified_session_redeems_invitation_without_creating_user(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-
-    token = secrets.token_urlsafe(32)
-    db = FakeDb(invitation={
-        "invitation_id": "inv_existing", "organization_id": "org_1",
-        "email": "existing@example.com", "status": "invited",
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-    })
-    patch_db(monkeypatch, db)
-    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "existing-user", "email_confirmed": True})
-    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("existing user must not be created again"))
-    accepted = {"accepted": True, "organization_id": "org_1", "employee_id": "EMP010", "location_id": "loc_main"}
-    monkeypatch.setattr(provider, "accept_invitation", lambda claims, org, invitation_id: accepted)
-    claims = {"uid": "existing-user", "sub": "existing-user", "email": "existing@example.com", "email_verified": True, "provider": "supabase"}
-
-    result = provider.redeem_invitation(token, "", claims)
-
-    assert result["accepted"] is True
-    assert any("SET auth_user_id=:uid" in sql for sql, _ in db.statements)
-
-def test_stale_redemption_is_reclaimed_without_duplicate_account_creation(monkeypatch):
-    import firebase_authz.supabase_provider as provider
-    from firebase_authz.service import AuthzError
-
-    token = secrets.token_urlsafe(32)
-    stale = {
-        "invitation_id": "inv_stale", "organization_id": "org_1",
-        "email": "existing@example.com", "status": "redeeming",
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
-        "redemption_started_at": datetime.now(timezone.utc) - timedelta(minutes=31),
-        "auth_user_id": None, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-    }
-    class Result(FakeResult):
-        def __init__(self, mapping=None, scalar=None, rowcount=1):
-            super().__init__(mapping=mapping, scalar=scalar)
-            self.rowcount = rowcount
-    class CrashDb(FakeDb):
-        def execute(self, statement, params=None):
-            sql = str(statement)
-            self.statements.append((sql, dict(params or {})))
-            if "SELECT invitation_id, organization_id, email, status, expires_at, redemption_started_at" in sql:
-                return Result(mapping=stale)
-            if "UPDATE invitations SET status='invited', redemption_started_at=NULL" in sql:
-                return Result(rowcount=1)
-            if "UPDATE invitations SET status='redeeming', redemption_started_at=now()" in sql:
-                return Result(rowcount=1)
-            return Result()
-    db = CrashDb(invitation=stale)
-    patch_db(monkeypatch, db)
-    monkeypatch.setattr(provider, "find_user_by_email", lambda email: {"user_id": "existing-user"})
-    monkeypatch.setattr(provider, "create_user_with_password", lambda *a: pytest.fail("must not duplicate an existing Auth user"))
-    with pytest.raises(AuthzError, match="already has a Supabase account"):
-        provider.redeem_invitation(token, "valid-password")
-    assert any("interval '30 minutes'" in sql for sql, _ in db.statements)
-    assert any("status='redeeming'" in sql and "redemption_started_at=now()" in sql for sql, _ in db.statements)
+    with pytest.raises(RuntimeError, match="database insert failed"):
+        provider.create_invitation(
+            _claims(), "org_test", "db-failure@example.com", "data_analyst"
+        )

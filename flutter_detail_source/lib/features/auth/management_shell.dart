@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -350,10 +349,10 @@ class _ManagementShellState extends State<ManagementShell> {
       _allowedSections().contains(value);
 
   String _roleWorkspaceTitle() =>
-      '${_uiRoleLabel().toUpperCase()} / MANAGEMENT';
+      _uiRoleLabel().toUpperCase() + ' / MANAGEMENT';
 
   String _roleWorkspaceSubtitle() =>
-      '${_uiScopeLabel()} management workspace';
+      _uiScopeLabel() + ' management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
@@ -385,43 +384,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
       );
-    }
-  }
-
-  Future<void> _connectBranchGmail(String locationId) async {
-    if (insightFlowWorkspaceId.trim().isEmpty) {
-      feedback(StateError('Workspace authorization context is unavailable. Refresh the management workspace.'));
-      return;
-    }
-    try {
-      final headers = await supabaseAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      final response = await http.post(
-        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management/email-settings/connect'),
-        headers: headers,
-        body: jsonEncode({
-          'workspace_id': insightFlowWorkspaceId,
-          'location_id': locationId,
-        }),
-      ).timeout(_managementRequestTimeout);
-      dynamic data;
-      try { data = jsonDecode(response.body); } catch (_) {}
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError(data is Map && data['detail'] != null
-            ? data['detail'].toString()
-            : 'Gmail could not be connected for this branch.');
-      }
-      final authorizationUrl = data is Map ? data['authorization_url']?.toString() : null;
-      final uri = authorizationUrl == null ? null : Uri.tryParse(authorizationUrl);
-      if (uri == null || uri.scheme != 'https' || uri.host != 'accounts.google.com') {
-        throw StateError('The backend returned an invalid Gmail authorization URL.');
-      }
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw StateError('Could not open Google authorization. Please try again.');
-      }
-      feedback(StateError('Complete Google authorization in the opened browser, then return here to send the invitation.'));
-    } catch (e) {
-      feedback(e);
     }
   }
 
@@ -518,12 +480,6 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
       actions: [
         GlassDialogAction(
-          label: 'Connect Gmail',
-          onPressed: () async {
-            await _connectBranchGmail(locationId);
-          },
-        ),
-        GlassDialogAction(
           label: 'Cancel',
           onPressed: () => Navigator.pop(context, null),
         ),
@@ -596,22 +552,17 @@ class _ManagementShellState extends State<ManagementShell> {
 
       final deliveryStatus =
           data is Map ? data['email_delivery_status']?.toString() : null;
-      if (deliveryStatus == 'sent') {
-        feedback(StateError('Gmail accepted the invitation message.'));
-      } else if (deliveryStatus == 'sender_configuration_required') {
-        feedback(StateError(
-          'Invitation record created, but no email was sent. Connect Gmail for this branch and resend the invitation.',
-        ));
-      } else if (deliveryStatus == 'failed') {
-        feedback(StateError(
-          'Invitation record created, but Gmail did not confirm acceptance. Check the connection and resend the invitation.',
-        ));
+      if (deliveryStatus == 'initiated') {
+        feedback(StateError('Invitation email initiated successfully.'));
       } else if (deliveryStatus == 'existing_account') {
-        feedback(StateError(
-          'The email already belongs to an existing confirmed account; no duplicate Auth account was created.',
-        ));
+        feedback(
+          StateError(
+            'The email already belongs to an existing confirmed account; '
+            'no duplicate Auth account was created.',
+          ),
+        );
       } else {
-        feedback(StateError('Invitation created, but email delivery has not been confirmed.'));
+        feedback(StateError('Invitation created.'));
       }
       await loadAll();
     } catch (e) {
@@ -2488,7 +2439,7 @@ class _ManagementShellState extends State<ManagementShell> {
         );
         if (approve == null) continue;
         await request(
-          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=$approve',
+          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=${approve}',
           method: 'POST',
         );
         feedback(approve ? 'Team Lead request approved.' : 'Team Lead request rejected.');

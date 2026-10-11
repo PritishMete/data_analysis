@@ -265,15 +265,18 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
   });
 
 
-  test('invitation password setup redeems application token before signing in', () {
+  test('invitation password setup verifies the exact Supabase identity before changing the password', () {
     final screen =
         File('lib/features/auth/employee_invitation_password_setup_screen.dart')
             .readAsStringSync();
-    expect(screen, contains('/v1/authz/invitations/redeem'));
-    expect(screen, contains("'token': invitationToken"));
-    expect(screen, contains("'password': password"));
-    expect(screen, contains('signInWithPassword('));
-    expect(screen, isNot(contains('setPassword(')));
+    final identityCheck = screen.indexOf('invitedAuthUserId');
+    final passwordChange = screen.indexOf('setPassword(', identityCheck);
+    expect(identityCheck, greaterThanOrEqualTo(0));
+    expect(passwordChange, greaterThan(identityCheck));
+    expect(screen.substring(identityCheck, passwordChange),
+        contains('authenticatedUser.uid != invitedAuthUserId'));
+    expect(screen.substring(identityCheck, passwordChange),
+        contains('authenticatedEmail != invitedEmail'));
   });
 
   test('invitation password setup backend binds completion to auth_user_id', () {
