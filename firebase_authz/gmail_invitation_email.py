@@ -143,14 +143,15 @@ def complete_gmail_connection(code: str, state: str) -> dict:
         valid=db.execute(text("""SELECT 1 FROM locations WHERE organization_id=:o AND location_id=:l AND status='active'"""),
           {"o":payload["workspace_id"],"l":payload["location_id"]}).scalar_one_or_none()
         if not valid: raise AuthzError("Workspace authorization denied.")
-        db.execute(text("""INSERT INTO branch_email_settings
+        saved_identity=db.execute(text("""INSERT INTO branch_email_settings
           (organization_id,location_id,sender_name,sender_email,gmail_refresh_token_encrypted,gmail_google_subject,sender_identity,updated_at)
           VALUES (:o,:l,'InsightFlow',:e,:t,:s,:e,now())
           ON CONFLICT (organization_id,location_id) DO UPDATE SET sender_email=excluded.sender_email,
           gmail_refresh_token_encrypted=excluded.gmail_refresh_token_encrypted,
-          gmail_google_subject=excluded.gmail_google_subject,updated_at=now()"""),
-          {"o":payload["workspace_id"],"l":payload["location_id"],"e":account,"t":encrypted,"s":account})
-    return {"connected":True,"sender_email":account,"sender_identity":account}
+          gmail_google_subject=excluded.gmail_google_subject,updated_at=now()
+          RETURNING sender_identity"""),
+          {"o":payload["workspace_id"],"l":payload["location_id"],"e":account,"t":encrypted,"s":account}).scalar_one()
+    return {"connected":True,"sender_email":account,"sender_identity":saved_identity}
 
 def _connection(workspace_id: str, location_id: str) -> tuple[dict,str]:
     with SessionLocal() as db:
