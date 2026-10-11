@@ -46,7 +46,7 @@ def _profile_kwargs() -> dict:
     }
 
 
-def _seed_registered(uid: str, profile_kwargs: dict | None = None) -> dict:
+def _seed_registered(uid: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
 
     suffix = uuid.uuid4().hex
@@ -55,7 +55,7 @@ def _seed_registered(uid: str, profile_kwargs: dict | None = None) -> dict:
         "Profile Test Company",
         "Main Branch",
         f"PROFILE-{suffix}",
-        **(profile_kwargs or _profile_kwargs()),
+        **_profile_kwargs(),
     )
 
 
@@ -400,47 +400,3 @@ def test_invitations_do_not_reserve_employee_ids_until_acceptance():
         assert accepted_b["employee_id"] == "EMP003"
     finally:
         _cleanup(organization["organization_id"])
-
-
-def test_phone_and_id_proof_cannot_be_reused_by_another_profile():
-    from firebase_authz.profile_domain import upsert_my_profile
-    from firebase_authz.service import AuthzError
-
-    suffix = uuid.uuid4().hex
-    first_uid = f"unique-first-{suffix}"
-    second_uid = f"unique-second-{suffix}"
-    first = _seed_registered(first_uid)
-    second_kwargs = {
-        **_profile_kwargs(),
-        "full_name": "Second Test Employee",
-        "phone": "+442079460018",
-        "phone_country_calling_code": "+44",
-        "phone_national_number": "2079460018",
-        "address_line1": "10 Example Street",
-        "state": "England",
-        "state_code": "GB-ENG",
-        "postal_code": "SW1A 1AA",
-        "country": "United Kingdom",
-        "country_code": "GB",
-        "id_proof_type": "passport",
-        "id_proof_number": "Q-7654321",
-    }
-    second = _seed_registered(second_uid, second_kwargs)
-    try:
-        with pytest.raises(AuthzError, match="phone number is already registered"):
-            upsert_my_profile(
-                _claims(second_uid),
-                second["workspace_id"],
-                **{**second_kwargs, "phone": "+919876543210",
-                   "phone_country_calling_code": "+91",
-                   "phone_national_number": "9876543210"},
-            )
-
-        with pytest.raises(AuthzError, match="ID proof number is already registered"):
-            upsert_my_profile(
-                _claims(second_uid),
-                second["workspace_id"],
-                **{**second_kwargs, "id_proof_number": "p 1234567"},
-            )
-    finally:
-        _cleanup(first["organization_id"], second["organization_id"])

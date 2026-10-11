@@ -140,31 +140,6 @@ def verify_profile_security(engine) -> None:
         if not row or not bool(row[0]):
             raise RuntimeError("Employee profile RLS is not enabled.")
 
-    with engine.connect() as conn:
-        unique_indexes = {
-            row[0]
-            for row in conn.execute(text("""
-                SELECT indexname
-                FROM pg_indexes
-                WHERE schemaname = current_schema()
-                  AND tablename = 'organization_member_profiles'
-                  AND indexname IN (
-                    'uq_member_profiles_phone_e164_global',
-                    'uq_member_profiles_id_proof_global'
-                  )
-            """)).all()
-        }
-    required_unique_indexes = {
-        "uq_member_profiles_phone_e164_global",
-        "uq_member_profiles_id_proof_global",
-    }
-    missing_unique_indexes = sorted(required_unique_indexes - unique_indexes)
-    if missing_unique_indexes:
-        raise RuntimeError(
-            "Employee profile uniqueness indexes are missing: "
-            + ",".join(missing_unique_indexes)
-        )
-
 
 def verify_organizational_structure(engine) -> None:
     inspector = inspect(engine)

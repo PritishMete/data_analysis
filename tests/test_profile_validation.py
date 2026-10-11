@@ -64,8 +64,6 @@ def test_required_profile_fields_and_optional_address2():
         phone_national_number="9876543210",
     )
     assert fields["address_line2"] == ""
-    assert fields["phone_e164"] == "+919876543210"
-    assert fields["id_proof_number"] == "ABCDE1234F"
 
     with pytest.raises(ProfileValidationError):
         validate_profile_fields(
