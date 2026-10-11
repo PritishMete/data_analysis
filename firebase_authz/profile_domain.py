@@ -205,6 +205,33 @@ def upsert_my_profile(
             "org": member["organization_id"],
             "principal": member["principal_id"],
         }).mappings().first()
+
+        duplicate_phone = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE phone_e164=:phone
+              AND NOT (organization_id=:org AND principal_id=:principal)
+            LIMIT 1
+        """), {
+            "phone": fields["phone_e164"],
+            "org": member["organization_id"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already registered to another profile.")
+
+        duplicate_proof = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE upper(regexp_replace(id_proof_number, '[[:space:]-]+', '', 'g'))=:proof
+              AND NOT (organization_id=:org AND principal_id=:principal)
+            LIMIT 1
+        """), {
+            "proof": fields["id_proof_number"],
+            "org": member["organization_id"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_proof:
+            raise AuthzError("This ID proof number is already registered to another profile.")
+
         exists = existing is not None
         existing_phone_verified_at = (
             existing["phone_verified_at"]
