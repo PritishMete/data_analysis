@@ -341,7 +341,10 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
-    assert service.authorize_dataset("employee", "org", "ds_opaque", "dataset.view_original")["allowed"] is True
+    # A resource grant cannot elevate an employee into viewing the original/master dataset.
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_dataset("employee", "org", "ds_opaque", "dataset.view_original")
+    assert service.authorize_dataset("employee", "org", "ds_opaque", "dataset.create_working_copy")["allowed"] is True
     with pytest.raises(service.PermissionDenied):
         service.authorize_dataset("employee", "org", "ds_opaque", "dataset.delete")
 
