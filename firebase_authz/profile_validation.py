@@ -223,6 +223,17 @@ def validate_profile_fields(
         state=state,
     )
 
+    raw_id_proof_number = _clean(
+        id_proof_number,
+        "ID Proof Number",
+        160,
+    )
+    # Store a canonical form so spacing, hyphens, and letter case cannot be
+    # used to submit the same document identifier twice.
+    normalized_id_proof_number = re.sub(r"[\\s-]+", "", raw_id_proof_number).upper()
+    if not normalized_id_proof_number:
+        raise ProfileValidationError("ID Proof Number is required.")
+
     return {
         **location,
         "full_name": name,
@@ -243,9 +254,5 @@ def validate_profile_fields(
             location["country_code"],
             id_proof_type,
         ),
-        "id_proof_number": _clean(
-            id_proof_number,
-            "ID Proof Number",
-            160,
-        ),
+        "id_proof_number": normalized_id_proof_number,
     }
