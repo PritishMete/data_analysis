@@ -96,7 +96,7 @@ class _EmployeeInvitationPasswordSetupScreenState
         throw StateError('Your authenticated session could not be restored.');
       }
       debugPrint('invitation_lifecycle session_available=true');
-      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail?.trim().isNotEmpty == true}');
+      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail.trim().isNotEmpty}');
 
       final response = await http
           .post(
