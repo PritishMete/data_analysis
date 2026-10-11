@@ -227,6 +227,21 @@ def register_organization(
             )
         registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
 
+        duplicate_phone = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE phone_e164=:phone LIMIT 1
+        """), {"phone": profile_phone}).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already registered to another profile.")
+
+        duplicate_proof = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE upper(regexp_replace(id_proof_number, '[[:space:]-]+', '', 'g'))=:proof
+            LIMIT 1
+        """), {"proof": proof_number}).scalar_one_or_none()
+        if duplicate_proof:
+            raise AuthzError("This ID proof number is already registered to another profile.")
+
         db.execute(
             text(
                 """INSERT INTO organizations(organization_id, name, created_by_principal_id)
