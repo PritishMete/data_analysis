@@ -146,7 +146,7 @@ def test_authz_me_reports_pending_unregistered_user(monkeypatch):
 def test_membership_endpoint_returns_membership_only_for_authenticated_user(monkeypatch):
     from firebase_authz import routes
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "employee-1", "email_verified": True})
-    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda *args, **kwargs: {
         "organization_id": "abc",
         "workspace_id": "abc",
         "employee_id": "emp_1",
@@ -214,7 +214,7 @@ def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monke
         "email": "new@example.com",
         "email_verified": True,
     })
-    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda *args, **kwargs: {
         "email_verified": True,
         "account_status": "pending",
         "membership_status": "none",
