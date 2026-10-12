@@ -645,6 +645,74 @@ def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def revoke_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: str) -> dict[str, Any]:
+    """Revoke a pending invitation within the actor's organization/branch scope."""
+    workspace_id = str(workspace_id or "").strip()
+    invitation_id = str(invitation_id or "").strip()
+    if not workspace_id or not invitation_id:
+        raise ValueError("Workspace and invitation IDs are required.")
+
+    with SessionLocal.begin() as db:
+        actor = _principal_for_claims(db, claims, workspace_id)
+        if not actor or actor["status"] != "active":
+            raise AuthzError("Workspace authorization denied.")
+        actor_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an Organization Owner or Branch Head can revoke invitations.")
+
+        invitation = db.execute(text("""
+            SELECT invitation_id, organization_id, email, status, expires_at, location_id
+            FROM invitations
+            WHERE invitation_id=:invitation AND organization_id=:org
+            FOR UPDATE
+        """), {"invitation": invitation_id, "org": workspace_id}).mappings().first()
+        if not invitation or invitation["status"] != "invited":
+            raise AuthzError("Invitation is no longer active.")
+        if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
+            db.execute(text("""
+                UPDATE invitations SET status='expired'
+                WHERE invitation_id=:invitation AND organization_id=:org AND status='invited'
+            """), {"invitation": invitation_id, "org": workspace_id})
+            raise AuthzError("Invitation has expired.")
+
+        location_id = str(invitation.get("location_id") or "").strip()
+        if "organization_owner" not in actor_roles:
+            scoped = db.execute(text("""
+                SELECT 1 FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND location_id=:location AND status='active'
+                LIMIT 1
+            """), {
+                "org": workspace_id,
+                "principal": actor["principal_id"],
+                "location": location_id,
+            }).scalar_one_or_none() if location_id else None
+            if scoped is None:
+                raise AuthzError("Invitation is outside your branch scope.")
+
+        db.execute(text("""
+            UPDATE invitations
+            SET status='revoked'
+            WHERE invitation_id=:invitation AND organization_id=:org AND status='invited'
+        """), {"invitation": invitation_id, "org": workspace_id})
+        import json
+        db.execute(text("""
+            INSERT INTO audit_events
+              (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+            VALUES (:event, :org, :actor, 'invitation.revoked', 'succeeded', CAST(:metadata AS jsonb))
+        """), {
+            "event": _id("evt"),
+            "org": workspace_id,
+            "actor": actor["principal_id"],
+            "metadata": json.dumps({"invitation_id": invitation_id, "email": invitation["email"]}),
+        })
+
+    return {"success": True, "invitation_id": invitation_id, "status": "revoked"}
+
+
 def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str) -> dict[str, Any]:
     provider, subject = _identity(claims)
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
