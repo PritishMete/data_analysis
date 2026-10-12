@@ -1,5 +1,7 @@
 import os
 import unittest
+
+import pytest
 from unittest.mock import patch
 
 from firebase_authz import supabase_admin

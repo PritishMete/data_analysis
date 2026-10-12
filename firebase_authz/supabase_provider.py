@@ -159,19 +159,10 @@ def register_organization(
     # require Supabase phone authentication or phone verification during onboarding.
     confirmed_phone_at = None
 
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(
-        claims.get("provider")
-        or firebase.get("sign_in_provider")
-        or "firebase"
-    ).strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    subjects = identities.get(provider)
-    subject = (
-        str(subjects[0])
-        if isinstance(subjects, list) and subjects
-        else str(claims.get("sub") or uid)
-    )
+    provider = "supabase"
+    subject = str(claims.get("sub") or "").strip()
+    if not subject or subject != uid:
+        raise AuthzError("Verified Supabase identity is required for registration.")
 
     principal_id = _id("prn")
     organization_id = _id("org")
@@ -181,6 +172,25 @@ def register_organization(
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
+        # Cross-account checks are global and transactional; migration 0026 adds
+        # unique indexes to prevent concurrent requests from racing these checks.
+        duplicate_phone = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE phone_e164=:phone LIMIT 1"""),
+            {"phone": profile_phone},
+        ).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already associated with another account.")
+        duplicate_id = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE id_proof_type=:proof_type
+                      AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')=:proof_number
+                    LIMIT 1"""),
+            {"proof_type": proof_type, "proof_number": proof_number},
+        ).scalar_one_or_none()
+        if duplicate_id:
+            raise AuthzError("This ID proof is already associated with another account.")
+
         existing = db.execute(
             text(
                 "SELECT principal_id FROM identity_bindings "
@@ -1737,38 +1747,25 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
-    # Original/master operations are role-scoped. Managers may upload into
-    # their own branch, while Branch Heads may manage the branch's originals.
+    # Original/master dataset upload and direct viewing are restricted to
+    # Organization Owners and the Branch Head assigned to that branch.
+    # Managers and lower roles work from explicitly authorized working copies.
     if action == "dataset.upload":
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-        elif "manager" in actor_roles:
-            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
-                    WHERE organization_id=:org AND principal_id=:principal
-                      AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
-                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
+            raise AuthzError("Only a Branch Head or Organization Owner can upload original datasets.")
     elif action == "dataset.view_original":
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-        elif "manager" in actor_roles:
-            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:principal
-                  AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
-                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
+            raise AuthzError("Only a Branch Head or Organization Owner can view an original dataset.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
         if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
             raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")

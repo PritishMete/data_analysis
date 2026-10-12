@@ -6,7 +6,7 @@ void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
 
-    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationStart = source.indexOf('final tabs = <MapEntry<ManagementSection, String>>[');
     final navigationEnd = source.indexOf('];', navigationStart);
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
@@ -287,7 +287,6 @@ void main() {
     for (final role in [
       'manager',
       'team_lead',
-      'employee',
       'data_analyst',
       'senior_data_analyst',
       'business_analyst',
@@ -325,17 +324,17 @@ void main() {
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
     expect(access, contains("Text('Access'"));
-    expect(access, contains('People and dataset access'));
+    expect(access, contains('Review managed resources and the access levels available to people in your organization.'));
     expect(access, contains('Search managed resources'));
     expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this scope yet.'));
     expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
-    expect(access, contains('People and dataset access'));
-    expect(access, contains("['dataset.view_original']"));
-    expect(access, contains("'dataset.create_working_copy'"));
-    expect(access, contains("'dataset.edit_working_copy'"));
+    expect(access, contains('Review managed resources and the access levels available to people in your organization.'));
+    expect(access, contains('The backend management policy is the authoritative UI capability source.'));
+    expect(access, contains("uiCapabilities.contains('dataset.upload')"));
+    expect(access, contains("_post('/v1/authz/datasets/grants'"));
     expect(access, contains('_accessPanel'));
     expect(access, isNot(contains('ORGANIZATION CONTROL PLANE')));
 
@@ -351,8 +350,8 @@ void main() {
     expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
     expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
     expect(header, contains('InsightFlow'));
-    expect(header, contains('ORGANIZATION / MANAGEMENT'));
-    expect(header, contains('MANAGEMENT WORKSPACE'));
+    expect(header, contains('_roleWorkspaceTitle()'));
+    expect(header, contains('_roleWorkspaceSubtitle()'));
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 

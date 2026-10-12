@@ -48,10 +48,11 @@ class InsightFlowAuthService {
         case 'too_many_requests':
           return 'Too many attempts. Please try again later.';
       }
-      if (error.message.trim().isNotEmpty) return error.message;
+      debugPrint('[supabase-auth] unclassified AuthException code=$code');
+      return 'Authentication could not be completed. Please try again.';
     }
     if (error is StateError) return error.message;
-    debugPrint('[supabase-auth] ' + error.runtimeType.toString() + ': ' + error.toString());
+    debugPrint('[supabase-auth] ${error.runtimeType}: $error');
     return 'Authentication could not be completed. Please try again.';
   }
 }

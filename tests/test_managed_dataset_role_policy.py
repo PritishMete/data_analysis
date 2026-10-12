@@ -32,6 +32,12 @@ class _Db:
         self.manager_locations = manager_locations or []
         self.branch_locations = branch_locations or []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
     def execute(self, statement, params=None):
         sql = str(statement)
         if "FROM authorization_resources" in sql:
@@ -68,7 +74,7 @@ def _context(roles):
     }
 
 
-def test_manager_can_upload_within_assigned_branch(monkeypatch):
+def test_manager_cannot_upload_original_dataset(monkeypatch):
     db = _Db(["manager"], manager_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
@@ -77,8 +83,29 @@ def test_manager_can_upload_within_assigned_branch(monkeypatch):
         lambda claims, workspace_id: _context(["manager"]),
     )
 
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only a Branch Head or Organization Owner can upload original datasets",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.upload",
+        )
+
+
+def test_branch_head_can_upload_within_assigned_branch(monkeypatch):
+    db = _Db(["branch_head"], branch_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
     result = supabase_provider.authorize_dataset(
-        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+        {"uid": "branch-head-1", "sub": "branch-head-1", "provider": "supabase"},
         "workspace-1",
         "dataset-1",
         "dataset.upload",
@@ -88,7 +115,7 @@ def test_manager_can_upload_within_assigned_branch(monkeypatch):
     assert result["location_id"] == "branch-1"
 
 
-@pytest.mark.parametrize("role", ["employee", "team_lead", "data_analyst", "data_scientist", "data_quality_analyst"])
+@pytest.mark.parametrize("role", ["external_viewer", "team_lead", "data_analyst", "data_scientist", "data_quality_analyst"])
 def test_non_manager_roles_cannot_upload(monkeypatch, role):
     db = _Db([role])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
@@ -98,7 +125,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only a Manager, Branch Head, or Organization Owner"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only a Branch Head or Organization Owner can upload original datasets"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",

@@ -14,16 +14,11 @@ from .service import AuthzError
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    provider = str(claims.get("provider") or "").strip().lower()
-    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    if not provider:
-        provider = str(firebase.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    values = identities.get(provider)
-    if isinstance(values, list) and values:
-        subject = str(values[0])
-    return provider, subject
+    """Bind profile access to a verified Supabase subject only."""
+    subject = str(claims.get("sub") or "").strip()
+    if not subject:
+        raise AuthzError("Supabase identity is missing.")
+    return "supabase", subject
 
 
 def _auth_time(value: Any) -> datetime | None:
@@ -206,6 +201,33 @@ def upsert_my_profile(
             "principal": member["principal_id"],
         }).mappings().first()
         exists = existing is not None
+
+        # Enforce global identity uniqueness in the write transaction. Database
+        # unique indexes in migration 0026 close the concurrent-write race.
+        duplicate_phone = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE phone_e164=:phone AND principal_id<>:principal
+            LIMIT 1
+        """), {
+            "phone": fields["phone_e164"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already associated with another account.")
+
+        duplicate_id = db.execute(text("""
+            SELECT 1 FROM organization_member_profiles
+            WHERE id_proof_type=:proof_type
+              AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')=:proof_number
+              AND principal_id<>:principal
+            LIMIT 1
+        """), {
+            "proof_type": fields["id_proof_type"],
+            "proof_number": fields["id_proof_number"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_id:
+            raise AuthzError("This ID proof is already associated with another account.")
         existing_phone_verified_at = (
             existing["phone_verified_at"]
             if existing and existing["phone_e164"] == fields["phone_e164"]

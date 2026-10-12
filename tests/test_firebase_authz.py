@@ -316,14 +316,17 @@ def test_owner_can_manage_lower_roles_but_not_self_promote():
 
 
 def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
+    # Dataset capabilities are deliberately granted to the supported Branch Head
+    # role here; a data analyst must not gain these capabilities from a dataset
+    # grant alone.
     workspace = {
         "members": {
             "owner": {"status": "active", "roles": {"organization_owner": True}},
-            "employee": {"status": "active", "roles": {"employee": True}},
+            "branch_head": {"status": "active", "roles": {"branch_head": True}},
         },
         "roles": {
             "organization_owner": {"permissions": sorted(service.ACTIONS)},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "branch_head": {"permissions": sorted(service.DEFAULT_ROLES["branch_head"])},
         },
         "datasets": {
             "ds_opaque": {
@@ -332,7 +335,7 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
                 "owner_uid": "owner",
                 "protected_original": True,
                 "grants": {
-                    "employee": {
+                    "branch_head": {
                         "permissions": ["dataset.view_original", "dataset.create_working_copy"]
                     }
                 },
@@ -341,9 +344,37 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
-    assert service.authorize_dataset("employee", "org", "ds_opaque", "dataset.view_original")["allowed"] is True
+    assert service.authorize_dataset("branch_head", "org", "ds_opaque", "dataset.view_original")["allowed"] is True
     with pytest.raises(service.PermissionDenied):
-        service.authorize_dataset("employee", "org", "ds_opaque", "dataset.delete")
+        service.authorize_dataset("branch_head", "org", "ds_opaque", "dataset.delete")
+
+
+def test_data_analyst_cannot_gain_dataset_capability_from_grant_alone(monkeypatch):
+    workspace = {
+        "members": {
+            "analyst": {"status": "active", "roles": {"data_analyst": True}},
+        },
+        "roles": {
+            "data_analyst": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
+        },
+        "datasets": {
+            "ds_opaque": {
+                "dataset_id": "ds_opaque",
+                "owner_uid": "owner",
+                "protected_original": True,
+                "grants": {
+                    "analyst": {"permissions": ["dataset.view_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    # A resource grant cannot substitute for the role-level capability.
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_dataset(
+            "analyst", "org", "ds_opaque", "dataset.view_original"
+        )
 
 
 def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
@@ -369,7 +400,7 @@ def test_team_lead_delegation_requires_approved_employees(monkeypatch):
         "roles": {
             "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
             "team_lead": {"permissions": sorted(service.DEFAULT_ROLES["team_lead"])},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "datasets": {"ds": {"dataset_id": "ds", "owner_uid": "manager", "grants": {}}},
         "approved_employees": {},
@@ -415,12 +446,14 @@ def test_delegated_dataset_share_is_scope_bound(monkeypatch):
 
 
 def test_working_copy_provenance_is_metadata_only(monkeypatch):
+    # Use a supported role with the existing dataset-copy capability so this
+    # test isolates provenance metadata rather than an unrelated role denial.
     workspace = {
         "members": {
-            "employee": {"status": "active", "roles": {"employee": True}},
+            "branch_head": {"status": "active", "roles": {"branch_head": True}},
         },
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "branch_head": {"permissions": sorted(service.DEFAULT_ROLES["branch_head"])},
         },
         "datasets": {
             "ds1": {
@@ -428,14 +461,14 @@ def test_working_copy_provenance_is_metadata_only(monkeypatch):
                 "owner_uid": "owner",
                 "protected_original": True,
                 "grants": {
-                    "employee": {"permissions": ["dataset.create_working_copy"]}
+                    "branch_head": {"permissions": ["dataset.create_working_copy"]}
                 },
             }
         },
     }
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
-    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "employee", "email_verified": True})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {"uid": "branch_head", "email_verified": True})
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     captured = {}
     class Ref:
@@ -444,7 +477,7 @@ def test_working_copy_provenance_is_metadata_only(monkeypatch):
     result = service.create_working_copy("org", "ds1", "token", "wc_test", "7")
     assert result["working_copy_id"] == "wc_test"
     assert captured["source_dataset_id"] == "ds1"
-    assert captured["created_by_uid"] == "employee"
+    assert captured["created_by_uid"] == "branch_head"
     assert "rows" not in captured
     assert "values" not in captured
     assert "workbook" not in captured
@@ -500,7 +533,7 @@ def test_employee_cannot_mutate_original_excel_even_if_operation_capability_exis
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
@@ -535,7 +568,7 @@ def test_suspended_membership_is_immediately_denied_after_revocation(monkeypatch
     workspace = {
         "members": {"employee": {"status": "suspended", "roles": {"employee": True}}},
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
@@ -571,7 +604,7 @@ def test_audit_event_filters_workbook_sensitive_metadata(monkeypatch):
 def test_original_mutation_requires_dataset_view_grant(monkeypatch):
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
-        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])}},
         "datasets": {
             "ds_opaque": {
                 "owner_uid": "owner",
@@ -591,7 +624,7 @@ def test_original_mutation_requires_dataset_view_grant(monkeypatch):
 def test_working_copy_mutation_uses_copy_grant(monkeypatch):
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
-        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])}},
         "working_copies": {
             "wc_123": {
                 "created_by_uid": "employee",
@@ -665,7 +698,7 @@ def test_team_lead_promotion_requires_approved_active_employee(monkeypatch):
         },
         "roles": {
             "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "approved_employees": {},
     }
@@ -1005,7 +1038,7 @@ def test_relinked_identity_keeps_existing_resource_acl(monkeypatch):
             }
         },
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "resources": {
             "ds_1": {
