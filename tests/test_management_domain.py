@@ -173,12 +173,17 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
             other_employee = _add_member(
                 session, org["organization_id"], other_employee_uid, "EMP-OTHER"
             )
-        second = create_location(
-            owner,
-            org["workspace_id"],
-            "Other Branch",
-            f"OTHER-{suffix}",
-        )
+        # Seed a second branch as test data; a Branch Head cannot create branches.
+        second_location_id = f"loc_{uuid.uuid4().hex}"
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("""INSERT INTO locations
+                    (location_id, organization_id, name, branch_identifier)
+                    VALUES (:location, :org, 'Other Branch', :identifier)"""),
+                {"location": second_location_id, "org": org["organization_id"],
+                 "identifier": f"OTHER-{suffix}"},
+            )
+        second = {"location_id": second_location_id}
 
         with SessionLocal.begin() as session:
             session.execute(
