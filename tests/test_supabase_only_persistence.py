@@ -70,17 +70,11 @@ def test_routes_and_middleware_fail_closed_for_legacy_persistence(monkeypatch, l
 
 def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_path():
     production_paths = [
-        ROOT / "firebase_authz" / "service.py",
-        ROOT / "firebase_authz" / "routes.py",
-        ROOT / "firebase_authz" / "middleware.py",
-        ROOT / "firebase_authz" / "management_domain.py",
-        ROOT / "firebase_authz" / "supabase_provider.py",
-        ROOT / "firebase_authz" / "auth.py",
-        ROOT / "firebase_authz" / "management_routes.py",
-        ROOT / "firebase_authz" / "profile_domain.py",
-        ROOT / "dataset_storage" / "routes.py",
-        ROOT / "dataset_storage" / "service.py",
-        ROOT / "main.py",
+        path
+        for path in ROOT.rglob("*.py")
+        if "tests" not in path.relative_to(ROOT).parts
+        and not path.name.startswith(("test_", "tempCodeRunner"))
+        and not any(part in {".git", ".venv", "frontend", "flutter_detail_source"} for part in path.relative_to(ROOT).parts)
     ]
     forbidden_runtime_patterns = (
         "firebase_admin",
