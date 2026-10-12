@@ -88,11 +88,11 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Firebase Auth Flutter sources
+      - name: Analyze Supabase Auth Flutter sources
         run: >-
           dart analyze
-          lib/firebase_options.dart
           lib/core/auth/insightflow_auth_service.dart
+          lib/core/auth/supabase_auth_service.dart
           lib/core/auth/authenticated_http.dart
 
       - name: Check auth UI Dart formatting
@@ -134,7 +134,8 @@ jobs:
       - name: Run Flutter Auth tests
         run: >-
           flutter test
-          test/firebase_auth_service_test.dart
+          test/auth_screens_test.dart
+          test/onboarding_auth_flow_contract_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
 
