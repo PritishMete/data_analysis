@@ -91,10 +91,6 @@ def my_profile(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if not _supabase_persistence_enabled():
-            raise AuthzError(
-                "Profile onboarding is available only for the configured Supabase authentication provider."
-            )
         return get_my_profile(claims, workspace_id.strip())
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
@@ -114,10 +110,6 @@ def my_profile_update(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if not _supabase_persistence_enabled():
-            raise AuthzError(
-                "Profile onboarding is available only for the configured Supabase authentication provider."
-            )
         return upsert_my_profile(
             claims,
             workspace_id.strip(),
@@ -300,7 +292,7 @@ def founder_organization_register(
     try:
         registration_diagnostics.begin()
         registration_diagnostics.stage("REGISTRATION_START")
-        provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+        provider = "supabase"
         logger.info("organization_register provider=%s", provider)
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
