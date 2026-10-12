@@ -102,12 +102,16 @@ def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_pat
 def test_production_dependencies_and_ci_do_not_configure_firebase_auth_or_emulator():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "insightflow-backend-ci.yml").read_text(encoding="utf-8")
+    excel_workflow = (ROOT / ".github" / "workflows" / "excel-addin-deploy.yml").read_text(encoding="utf-8")
     pubspec = (ROOT / "flutter_detail_source" / "pubspec.yaml").read_text(encoding="utf-8")
     lockfile = (ROOT / "flutter_detail_source" / "pubspec.lock").read_text(encoding="utf-8")
     assert "firebase-admin" not in requirements
     assert "firebase emulators:exec" not in workflow
     assert "npm run test:rules" not in workflow
     assert "INSIGHTFLOW_FIREBASE_WEB_" not in workflow
+    assert "INSIGHTFLOW_FIREBASE_WEB_" not in excel_workflow
+    assert not (ROOT / "firebase.json").exists()
+    assert not (ROOT / "database.rules.json").exists()
     assert "firebase_auth:" not in pubspec
     assert "firebase_core:" not in pubspec
     assert "firebase_auth:" not in lockfile
