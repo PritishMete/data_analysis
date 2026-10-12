@@ -287,7 +287,6 @@ void main() {
     for (final role in [
       'manager',
       'team_lead',
-      'employee',
       'data_analyst',
       'senior_data_analyst',
       'business_analyst',
