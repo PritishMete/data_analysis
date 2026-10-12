@@ -138,6 +138,7 @@ jobs:
           lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
           test/profile_onboarding_contract_test.dart
+          test/supabase_auth_service_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -158,11 +159,13 @@ jobs:
           lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
           test/profile_onboarding_contract_test.dart
+          test/supabase_auth_service_test.dart
 
       - name: Run Flutter Auth tests
         run: >-
           flutter test
           test/supabase_auth_service_contract_test.dart
+          test/supabase_auth_service_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/profile_onboarding_contract_test.dart
