@@ -32,6 +32,12 @@ class _Db:
         self.manager_locations = manager_locations or []
         self.branch_locations = branch_locations or []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
     def execute(self, statement, params=None):
         sql = str(statement)
         if "FROM authorization_resources" in sql:
