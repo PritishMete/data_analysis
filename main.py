@@ -290,7 +290,7 @@ from firebase_authz.management_routes import router as management_router
 from dataset_storage.routes import router as managed_dataset_router
 from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import SupabaseAuthorizationMiddleware
-from firebase_authz.service import AuthzError as AuthorizationDenied
+from firebase_authz.auth import AuthzError as AuthorizationDenied
 from firebase_authz.supabase_provider import authorize as authorize_workspace_action
 from secure_excel.service import list_supported_transforms
 
