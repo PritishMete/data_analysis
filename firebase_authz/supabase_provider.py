@@ -177,6 +177,14 @@ def register_organization(
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
+        # Serialize organization bootstrap for the same Supabase subject.
+        # The transaction-scoped lock closes the race between identity lookup
+        # and insertion; the losing request then observes the active membership
+        # and returns a domain conflict instead of leaking a uniqueness error.
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"insightflow-registration:{subject}"},
+        )
         existing = db.execute(
             text(
                 "SELECT principal_id FROM identity_bindings "
