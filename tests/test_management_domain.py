@@ -95,7 +95,7 @@ def test_management_reads_are_organization_scoped():
         list_sections,
         management_overview,
     )
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     a = _seed_org(f"management-owner-a-{suffix}", "Management A", f"MGMT-A-{suffix}")
@@ -333,7 +333,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
 
 def test_manager_assignment_conflict_replacement_and_audit_are_atomic():
     from firebase_authz.management_domain import assign_manager, replace_manager, list_audit_events
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"manager-owner-{suffix}"
@@ -391,7 +391,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
         create_section,
         set_reporting_relationship,
     )
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"scope-owner-{suffix}"
@@ -496,7 +496,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
 
 def test_cross_company_mutations_and_invalid_members_are_rejected():
     from firebase_authz.management_domain import assign_manager, create_section
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_a_uid = f"cross-owner-a-{suffix}"
@@ -528,7 +528,7 @@ def test_unauthorized_suspended_removed_and_invalid_targets_are_rejected():
         create_section,
         set_reporting_relationship,
     )
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"state-owner-{suffix}"
