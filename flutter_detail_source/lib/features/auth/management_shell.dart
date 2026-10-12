@@ -349,10 +349,10 @@ class _ManagementShellState extends State<ManagementShell> {
       _allowedSections().contains(value);
 
   String _roleWorkspaceTitle() =>
-      _uiRoleLabel().toUpperCase() + ' / MANAGEMENT';
+      '${_uiRoleLabel().toUpperCase()} / MANAGEMENT';
 
   String _roleWorkspaceSubtitle() =>
-      _uiScopeLabel() + ' management workspace';
+      '${_uiScopeLabel()} management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
