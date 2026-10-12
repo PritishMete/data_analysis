@@ -251,7 +251,7 @@ def _next_user_page(response: Any, page: int, user_count: int) -> int | None:
     total = _response_value(response, "total")
     if total is not None:
         try:
-            return page + 1 if page * 1000 < int(total) else None
+            return page + 1 if (page - 1) * 1000 + user_count < int(total) else None
         except (TypeError, ValueError):
             pass
 
