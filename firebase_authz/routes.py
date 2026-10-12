@@ -354,6 +354,8 @@ def founder_organization_register(
         return result
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
+    except ProfileFieldError as exc:
+        raise HTTPException(409, detail={"field": exc.field, "message": str(exc)})
     except (BootstrapDenied, AuthzError) as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
