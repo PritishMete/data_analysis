@@ -189,7 +189,7 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
                 text("""
                     INSERT INTO organizational_assignments
                       (assignment_id, organization_id, principal_id, location_id, role_id, status)
-                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
+                    VALUES (:assignment, :org, :principal, :location, 'data_analyst', 'active')
                 """),
                 {
                     "assignment": f"asg_branch_{uuid.uuid4().hex}",
@@ -202,7 +202,7 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
                 text("""
                     INSERT INTO organizational_assignments
                       (assignment_id, organization_id, principal_id, location_id, role_id, status)
-                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
+                    VALUES (:assignment, :org, :principal, :location, 'data_analyst', 'active')
                 """),
                 {
                     "assignment": f"asg_other_{uuid.uuid4().hex}",
