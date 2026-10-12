@@ -103,6 +103,8 @@ def test_production_dependencies_and_ci_do_not_configure_firebase_auth_or_emulat
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "insightflow-backend-ci.yml").read_text(encoding="utf-8")
     excel_workflow = (ROOT / ".github" / "workflows" / "excel-addin-deploy.yml").read_text(encoding="utf-8")
+    render_config = (ROOT / "render.yaml").read_text(encoding="utf-8")
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
     pubspec = (ROOT / "flutter_detail_source" / "pubspec.yaml").read_text(encoding="utf-8")
     lockfile = (ROOT / "flutter_detail_source" / "pubspec.lock").read_text(encoding="utf-8")
     assert "firebase-admin" not in requirements
@@ -110,6 +112,8 @@ def test_production_dependencies_and_ci_do_not_configure_firebase_auth_or_emulat
     assert "npm run test:rules" not in workflow
     assert "INSIGHTFLOW_FIREBASE_WEB_" not in workflow
     assert "INSIGHTFLOW_FIREBASE_WEB_" not in excel_workflow
+    assert "AUTHN_PROVIDER_MODE" not in render_config
+    assert "AUTHN_PROVIDER_MODE" not in env_example
     assert not (ROOT / "firebase.json").exists()
     assert not (ROOT / "database.rules.json").exists()
     assert "firebase_auth:" not in pubspec
