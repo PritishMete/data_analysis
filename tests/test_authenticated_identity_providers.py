@@ -1,4 +1,4 @@
-from firebase_authz.service import authenticated_identity
+from firebase_authz.auth import authenticated_identity
 
 
 def test_supabase_identity_comes_only_from_verified_supabase_claims():
