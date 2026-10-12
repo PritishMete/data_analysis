@@ -6,7 +6,7 @@ void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
 
-    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationStart = source.indexOf('final tabs = <MapEntry<ManagementSection, String>>[');
     final navigationEnd = source.indexOf('];', navigationStart);
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
