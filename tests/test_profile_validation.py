@@ -107,3 +107,21 @@ def test_country_aware_id_documents():
     assert normalize_id_proof_type("US", "passport") == "passport"
     with pytest.raises(ProfileValidationError):
         normalize_id_proof_type("US", "aadhaar")
+
+
+
+def test_id_proof_number_normalizes_case_whitespace_and_separators():
+    from firebase_authz.profile_validation import normalize_id_proof_number
+
+    assert normalize_id_proof_number(" abcd-1234 ef ") == "ABCD1234EF"
+    assert normalize_id_proof_number("ABCD 1234-EF") == "ABCD1234EF"
+
+
+def test_id_proof_number_rejects_separator_only_value():
+    from firebase_authz.profile_validation import (
+        ProfileValidationError,
+        normalize_id_proof_number,
+    )
+
+    with pytest.raises(ProfileValidationError):
+        normalize_id_proof_number(" - . ")
