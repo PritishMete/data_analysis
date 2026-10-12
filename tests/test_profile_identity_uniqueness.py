@@ -115,7 +115,8 @@ def test_profile_update_rejects_duplicate_identity(
 
     assert db.identity_queries
     sql, params = db.identity_queries[-1]
-    assert "principal_id<>:principal" in sql
+    assert "NOT (organization_id=:org AND principal_id=:principal)" in sql
     assert params["principal"] == "principal-current"
+    assert params["org"] == "org-1"
     if duplicate_id:
         assert "regexp_replace(upper(:proof_number)" in sql
