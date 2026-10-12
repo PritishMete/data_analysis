@@ -246,3 +246,51 @@ def test_invalid_jwt_signature_is_rejected_without_auth_api_fallback(monkeypatch
 
     with pytest.raises(AuthenticationRequired):
         supabase_auth.verify_supabase_access_token(token)
+
+
+def test_expired_supabase_jwt_is_rejected_before_auth_user_lookup(monkeypatch):
+    import time
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = signing_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_pem = signing_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+    class Key:
+        key = public_pem
+
+    class Jwks:
+        def get_signing_key_from_jwt(self, token):
+            return Key()
+
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setattr(supabase_auth, "_jwks_client", lambda url: Jwks())
+    monkeypatch.setattr(
+        supabase_auth,
+        "_fetch_supabase_user",
+        lambda *args, **kwargs: pytest.fail("Expired JWT must be rejected before user lookup."),
+    )
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": "10000000-0000-4000-8000-000000000003",
+            "aud": "authenticated",
+            "iss": "https://project.supabase.co/auth/v1",
+            "iat": now - 600,
+            "exp": now - 300,
+        },
+        private_pem,
+        algorithm="RS256",
+        headers={"kid": "expired-token"},
+    )
+
+    with pytest.raises(supabase_auth.AuthenticationRequired):
+        supabase_auth.verify_supabase_access_token(token)
