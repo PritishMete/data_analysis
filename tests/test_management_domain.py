@@ -478,7 +478,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             session.execute(
                 text("""INSERT INTO organizational_assignments
                         (assignment_id, organization_id, principal_id, location_id, role_id, section_id, status)
-                        VALUES (:assignment, :org, :principal, :location, 'employee', :section, 'active')"""),
+                        VALUES (:assignment, :org, :principal, :location, 'data_analyst', :section, 'active')"""),
                 {
                     "assignment": employee_assignment_id,
                     "org": org["organization_id"],
