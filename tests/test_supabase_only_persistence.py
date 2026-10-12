@@ -98,10 +98,32 @@ def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_pat
 def test_production_dependencies_and_ci_do_not_configure_firebase_auth_or_emulator():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "insightflow-backend-ci.yml").read_text(encoding="utf-8")
+    pubspec = (ROOT / "flutter_detail_source" / "pubspec.yaml").read_text(encoding="utf-8")
+    lockfile = (ROOT / "flutter_detail_source" / "pubspec.lock").read_text(encoding="utf-8")
     assert "firebase-admin" not in requirements
     assert "firebase emulators:exec" not in workflow
     assert "npm run test:rules" not in workflow
     assert "INSIGHTFLOW_FIREBASE_WEB_" not in workflow
+    assert "firebase_auth:" not in pubspec
+    assert "firebase_core:" not in pubspec
+    assert "firebase_auth:" not in lockfile
+    assert "firebase_core:" not in lockfile
+
+    forbidden_flutter_patterns = (
+        "package:firebase_auth/",
+        "package:firebase_core/",
+        "FirebaseAuth.instance",
+        "Firebase.initializeApp",
+        "FirebaseDatabase.instance",
+    )
+    flutter_root = ROOT / "flutter_detail_source" / "lib"
+    findings = []
+    for path in flutter_root.rglob("*.dart"):
+        source = path.read_text(encoding="utf-8")
+        for pattern in forbidden_flutter_patterns:
+            if pattern in source:
+                findings.append(f"{path.relative_to(ROOT)} contains {pattern!r}")
+    assert not findings, "Firebase Auth/RTDB Flutter references remain: " + "; ".join(findings)
 
 
 def test_active_auth_user_cleanup_migration_uses_only_supabase_subject():
