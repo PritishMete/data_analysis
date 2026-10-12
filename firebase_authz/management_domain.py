@@ -34,7 +34,7 @@ def _id(prefix: str) -> str:
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
     """Resolve identity only from the already-verified Supabase Auth subject."""
-    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    subject = str(claims.get("sub") or "").strip()
     if not subject:
         raise AuthzError("Authenticated Supabase identity is required.")
     return "supabase", subject
