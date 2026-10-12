@@ -50,6 +50,9 @@ jobs:
           python -m py_compile tools/run_authz_migrations.py
           python tools/run_authz_migrations.py --help >/dev/null
 
+      - name: Reject active Firebase Auth or RTDB persistence references
+        run: python tools/check_no_active_firebase.py
+
       - name: Run Supabase identity and persistence-boundary regression tests
         run: pytest -q tests/test_supabase_only_persistence.py
 
