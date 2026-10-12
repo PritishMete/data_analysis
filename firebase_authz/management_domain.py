@@ -1186,7 +1186,11 @@ def set_reporting_relationship(claims: dict[str, Any], workspace_id: str,
             UPDATE organizational_assignments
             SET reports_to_assignment_id=:parent, updated_at=now()
             WHERE organization_id=:org AND assignment_id=:assignment
-        """), {"parent": parent["assignment_id"] if parent else None, "assignment": assignment_id})
+        """), {
+            "org": org,
+            "parent": parent["assignment_id"] if parent else None,
+            "assignment": assignment_id,
+        })
         _audit(db, org, actor["principal_id"], "management.assignment.changed", "succeeded", {
             "assignment_id": assignment_id,
             "reports_to_assignment_id": parent["assignment_id"] if parent else None,
