@@ -33,16 +33,11 @@ def _id(prefix: str) -> str:
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    uid = str(claims.get("uid") or claims.get("sub") or "").strip()
-    provider = str(claims.get("provider") or "").strip().lower()
-    if provider:
-        return provider, str(claims.get("sub") or uid)
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(firebase.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    values = identities.get(provider)
-    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or uid)
-    return provider, subject
+    """Resolve identity only from the already-verified Supabase Auth subject."""
+    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    if not subject:
+        raise AuthzError("Authenticated Supabase identity is required.")
+    return "supabase", subject
 
 
 def _actor(db, claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
