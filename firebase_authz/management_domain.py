@@ -387,6 +387,7 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
         "branch_head": dict(branch_head) if branch_head else None,
         "manager": dict(manager) if manager else None,
         "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
+        "employee_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
         "team_lead_count": counts.get("team_lead", 0),
         "section_count": int(section_count),
     }
