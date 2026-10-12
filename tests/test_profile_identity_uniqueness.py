@@ -147,6 +147,8 @@ class _RegistrationFakeDB:
         sql = str(statement)
         if "SELECT principal_id FROM identity_bindings" in sql:
             return _Result(scalar=None)
+        if "INSERT INTO principals" in sql or "INSERT INTO identity_bindings" in sql:
+            return _Result()
         if "SELECT organization_id, workspace_id" in sql:
             return _Result(row=None)
         if "WHERE phone_e164=:phone" in sql:
