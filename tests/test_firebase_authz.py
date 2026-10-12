@@ -483,7 +483,6 @@ def test_membership_revocation_protects_last_owner(monkeypatch):
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
     monkeypatch.setattr(service, "initialize_firebase", lambda: None)
     monkeypatch.setattr(service, "_get", lambda path: {"suspended": False} if path.startswith("users/") else None)
-    monkeypatch.setattr(service.auth, "revoke_refresh_tokens", lambda uid: None)
     class Ref:
         def set(self, value):
             return None
@@ -698,7 +697,6 @@ def test_account_cleanup_revokes_invitation_matching_authenticated_email(monkeyp
         "auth_time": __import__("time").time(),
     })
     monkeypatch.setattr(service, "last_owner_guard", lambda *args: None)
-    monkeypatch.setattr(service.auth, "revoke_refresh_tokens", lambda uid: None)
     result = service.cleanup_account("user", "token")
     assert result["revoked_workspaces"] == ["org"]
     assert captured["workspaces/org/invitations/inv/status"] == "revoked"
