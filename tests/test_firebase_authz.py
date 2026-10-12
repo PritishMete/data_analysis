@@ -349,6 +349,34 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
         service.authorize_dataset("branch_head", "org", "ds_opaque", "dataset.delete")
 
 
+def test_data_analyst_cannot_gain_dataset_capability_from_grant_alone(monkeypatch):
+    workspace = {
+        "members": {
+            "analyst": {"status": "active", "roles": {"data_analyst": True}},
+        },
+        "roles": {
+            "data_analyst": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
+        },
+        "datasets": {
+            "ds_opaque": {
+                "dataset_id": "ds_opaque",
+                "owner_uid": "owner",
+                "protected_original": True,
+                "grants": {
+                    "analyst": {"permissions": ["dataset.view_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    # A resource grant cannot substitute for the role-level capability.
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_dataset(
+            "analyst", "org", "ds_opaque", "dataset.view_original"
+        )
+
+
 def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
     workspace = {
         "members": {"owner": {"status": "active", "roles": {"organization_owner": True}}},
