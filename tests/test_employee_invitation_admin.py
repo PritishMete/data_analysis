@@ -41,13 +41,17 @@ def test_supabase_admin_invite_uses_server_redirect_and_returns_user(monkeypatch
     result = invite_user_by_email(
         "employee@example.com",
         "https://pritishmete.github.io/data_analysis/employee-invite",
+        organization_name="Test Organization",
     )
 
     assert result == {"user_id": "auth-user-123", "email_confirmed": False}
     assert fake.auth.admin.calls == [
         (
             "employee@example.com",
-            {"redirect_to": "https://pritishmete.github.io/data_analysis/employee-invite"},
+            {
+                "redirect_to": "https://pritishmete.github.io/data_analysis/employee-invite",
+                "data": {"organization_name": "Test Organization"},
+            },
         )
     ]
 
@@ -115,7 +119,7 @@ def test_supabase_admin_falls_back_to_service_role_only_on_auth_rejection(monkey
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr("firebase_authz.supabase_admin._credential_client", fake_client)
 
-    result = invite_user_by_email("employee@example.com", "https://example.com/invite")
+    result = invite_user_by_email("employee@example.com", "https://example.com/invite", organization_name="Test Organization")
     assert result == {"user_id": "legacy-user-456", "email_confirmed": False}
     assert calls == ["SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "service_role"]
 
