@@ -161,7 +161,7 @@ jobs:
       - name: Run Flutter Auth tests
         run: >-
           flutter test
-          test/firebase_auth_service_test.dart
+          test/supabase_auth_service_contract_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/profile_onboarding_contract_test.dart
