@@ -129,14 +129,14 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
         if not header.startswith("Bearer ") or not header[7:].strip():
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Firebase authentication required."},
+                content={"detail": "Supabase authentication required."},
             )
 
         try:
             claims = verify_id_token(header[7:].strip())
             uid = str(claims.get("uid", "")).strip()
             if not uid:
-                raise AuthenticationRequired("Firebase authentication failed.")
+                raise AuthenticationRequired("Supabase authentication failed.")
             if claims.get("email_verified") is not True:
                 return JSONResponse(
                     status_code=403,
