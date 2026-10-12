@@ -11,6 +11,20 @@ jobs:
   backend-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       INSIGHTFLOW_PRIVACY_MODE: local_only
       SECURE_EXCEL_REMOTE_AI: "false"
@@ -36,6 +50,14 @@ jobs:
         run: |
           python -m py_compile tools/run_authz_migrations.py
           python tools/run_authz_migrations.py --help >/dev/null
+
+      - name: Run duplicate identity regression tests
+        run: pytest -q tests/test_profile_identity_uniqueness.py
+
+      - name: Test identity uniqueness migration against disposable PostgreSQL
+        env:
+          IDENTITY_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+        run: pytest -q tests/test_identity_uniqueness_migration.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -88,10 +110,9 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Firebase Auth Flutter sources
+      - name: Analyze Supabase Auth Flutter sources
         run: >-
           dart analyze
-          lib/firebase_options.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
 
@@ -112,7 +133,10 @@ jobs:
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
+          lib/features/auth/company_registration_screen.dart
+          lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -129,14 +153,18 @@ jobs:
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
+          lib/features/auth/company_registration_screen.dart
+          lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Run Flutter Auth tests
         run: >-
           flutter test
-          test/firebase_auth_service_test.dart
+          test/supabase_auth_service_contract_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Build Flutter web
         run: >-

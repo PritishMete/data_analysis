@@ -48,6 +48,8 @@ class _CompanyRegistrationScreenState
   bool _busy = false;
   String? _message;
   bool _error = false;
+  String? _phoneError;
+  String? _idProofError;
   OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
@@ -239,6 +241,8 @@ class _CompanyRegistrationScreenState
       _busy = true;
       _error = false;
       _message = null;
+      _phoneError = null;
+      _idProofError = null;
     });
 
     try {
@@ -284,8 +288,24 @@ class _CompanyRegistrationScreenState
         decoded = null;
       }
 
-      final detail =
-          decoded is Map ? decoded['detail']?.toString().trim() : null;
+      final rawDetail = decoded is Map ? decoded['detail'] : null;
+      if (response.statusCode == 409 && rawDetail is Map) {
+        final field = rawDetail['field']?.toString();
+        final message = rawDetail['message']?.toString() ?? '';
+        if ((field == 'phone' || field == 'id_proof_number') &&
+            message.isNotEmpty) {
+          setState(() {
+            _busy = false;
+            _step = 1;
+            _message = null;
+            _error = false;
+            if (field == 'phone') _phoneError = message;
+            if (field == 'id_proof_number') _idProofError = message;
+          });
+          return;
+        }
+      }
+      final detail = rawDetail?.toString().trim();
       final businessError =
           organizationServiceBusinessErrorMessage(response);
       if (businessError != null) throw StateError(businessError);
@@ -359,6 +379,7 @@ class _CompanyRegistrationScreenState
     TextInputType type = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
     String? helper,
+    String? errorText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -383,6 +404,13 @@ class _CompanyRegistrationScreenState
               fontSize: 9,
               height: 1.3,
             ),
+          ),
+        ],
+        if (errorText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
           ),
         ],
       ],
@@ -498,6 +526,7 @@ class _CompanyRegistrationScreenState
                 'ID Proof Number',
                 _proofNumber,
                 placeholder: 'Government ID number',
+                errorText: _idProofError,
               ),
             ],
           ];
@@ -542,7 +571,7 @@ class _CompanyRegistrationScreenState
       label: 'COUNTRY CODE *',
       value: _phoneCountry == null
           ? null
-          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+          : '${_phoneCountry!.label}  ${_phoneCountry!.subtitle}',
       placeholder: 'Select calling code',
       onTap: _busy ? null : _pickPhoneCountry,
     );
@@ -562,6 +591,13 @@ class _CompanyRegistrationScreenState
             ],
           ),
         ),
+        if (_phoneError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _phoneError!,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+          ),
+        ],
       ],
     );
     return Row(
@@ -588,7 +624,7 @@ class _CompanyRegistrationScreenState
           _review('BRANCH ID', _branchIdentifier.text.trim()),
           _review('BRANCH HEAD', _fullName.text.trim()),
           _review('EMPLOYEE ID', 'AUTO-GENERATED'),
-          _review('EMAIL', (_email ?? '—') + '  ✓'),
+          _review('EMAIL', '${_email ?? '—'}  ✓'),
           _review('PHONE', _phoneE164() ?? '—'),
           _review('ADDRESS LINE 1', _address1.text.trim()),
           _review('STATE', _state?.label ?? ''),
@@ -596,7 +632,7 @@ class _CompanyRegistrationScreenState
           _review('PIN / POSTAL CODE', _postal.text.trim()),
           _review(
             'ID PROOF',
-            (_proofType?.label ?? '') + '  ' + _mask(_proofNumber.text),
+            '${_proofType?.label ?? ''}  ${_mask(_proofNumber.text)}',
           ),
           const SizedBox(height: 6),
           const Text(
@@ -770,10 +806,7 @@ class _CompanyRegistrationScreenState
           shape: const LiquidRoundedSuperellipse(borderRadius: 10),
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
           child: Text(
-            (index + 1).toString() +
-                '  ' +
-                labels[index] +
-                (complete ? '  ✓' : ''),
+            '${index + 1}  ${labels[index]}${complete ? '  ✓' : ''}',
             style: TextStyle(
               color: active || complete
                   ? TechColors.textPrimary

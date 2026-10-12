@@ -32,10 +32,8 @@ class _OrganizationOnboardingScreenState
   String? _message;
 
   Future<void> _acceptInvitation(Map<String, dynamic> invitation) async {
-    final workspaceId = invitation['workspace_id']?.toString() ??
-        invitation['organization_id']?.toString() ?? '';
     final invitationId = invitation['invitation_id']?.toString() ?? '';
-    if (workspaceId.isEmpty || invitationId.isEmpty) return;
+    if (invitationId.isEmpty) return;
 
     setState(() {
       _busy = true;
@@ -64,10 +62,8 @@ class _OrganizationOnboardingScreenState
               : 'Invitation could not be accepted.',
         );
       }
-      final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
-      if (uid != null) {
-        await setInsightFlowWorkspaceId(uid, workspaceId);
-      }
+      // The server resolves the accepted invitation's organization and workspace.
+      // Refresh authenticated onboarding state instead of trusting a client-supplied ID.
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error) {
       if (!mounted) return;

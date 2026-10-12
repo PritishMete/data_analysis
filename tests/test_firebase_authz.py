@@ -323,7 +323,7 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
         },
         "roles": {
             "organization_owner": {"permissions": sorted(service.ACTIONS)},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": ["data.view", "dataset.view_original", "dataset.create_working_copy"]},
         },
         "datasets": {
             "ds_opaque": {
@@ -420,7 +420,7 @@ def test_working_copy_provenance_is_metadata_only(monkeypatch):
             "employee": {"status": "active", "roles": {"employee": True}},
         },
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": ["dataset.create_working_copy"]},
         },
         "datasets": {
             "ds1": {

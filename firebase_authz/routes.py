@@ -5,7 +5,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
 from . import registration_diagnostics
-from .profile_domain import get_my_profile, upsert_my_profile
+from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
@@ -122,6 +122,8 @@ def my_profile_update(
         )
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
+    except ProfileFieldError as exc:
+        raise HTTPException(409, detail={"field": exc.field, "message": str(exc)})
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -352,6 +354,8 @@ def founder_organization_register(
         return result
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
+    except ProfileFieldError as exc:
+        raise HTTPException(409, detail={"field": exc.field, "message": str(exc)})
     except (BootstrapDenied, AuthzError) as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:

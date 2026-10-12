@@ -51,6 +51,8 @@ class _EmployeeProfileOnboardingScreenState
   String _email = '';
   String? _message;
   bool _error = false;
+  String? _phoneError;
+  String? _idProofError;
 
   @override
   void initState() {
@@ -66,6 +68,7 @@ class _EmployeeProfileOnboardingScreenState
       _address1,
       _address2,
       _postal,
+      _proofNumber,
     ]) {
       controller.dispose();
     }
@@ -265,6 +268,8 @@ class _EmployeeProfileOnboardingScreenState
       _busy = true;
       _error = false;
       _message = null;
+      _phoneError = null;
+      _idProofError = null;
     });
 
     try {
@@ -298,7 +303,24 @@ class _EmployeeProfileOnboardingScreenState
       } catch (_) {}
 
       if (response.statusCode != 200) {
-        final detail = data?['detail']?.toString();
+        final rawDetail = data?['detail'];
+        if (rawDetail is Map) {
+          final field = rawDetail['field']?.toString();
+          final message = rawDetail['message']?.toString() ?? '';
+          if ((field == 'phone' || field == 'id_proof_number') &&
+              message.isNotEmpty) {
+            setState(() {
+              _busy = false;
+              _step = 0;
+              _message = null;
+              _error = false;
+              if (field == 'phone') _phoneError = message;
+              if (field == 'id_proof_number') _idProofError = message;
+            });
+            return;
+          }
+        }
+        final detail = rawDetail?.toString();
         throw StateError(
           detail != null && detail.isNotEmpty
               ? detail
@@ -339,6 +361,13 @@ class _EmployeeProfileOnboardingScreenState
             ],
           ),
         ),
+        if (_phoneError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _phoneError!,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+          ),
+        ],
       ],
     );
     return Row(
@@ -414,6 +443,7 @@ class _EmployeeProfileOnboardingScreenState
                     'ID Proof Number',
                     _proofNumber,
                     placeholder: 'Government ID number',
+                    errorText: _idProofError,
                   ),
                 ],
               ];
@@ -537,6 +567,7 @@ class _EmployeeProfileOnboardingScreenState
     bool required = true,
     TextInputType type = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
+    String? errorText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -552,6 +583,13 @@ class _EmployeeProfileOnboardingScreenState
             inputFormatters: inputFormatters,
           ),
         ),
+        if (errorText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+          ),
+        ],
       ],
     );
   }
