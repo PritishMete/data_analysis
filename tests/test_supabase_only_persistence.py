@@ -140,3 +140,15 @@ def test_active_auth_user_cleanup_migration_uses_only_supabase_subject():
     assert "ib.provider_subject = OLD.id::text" in migration
     assert "provider = 'firebase'" not in migration
     assert "firebase_uid" not in migration
+
+
+def test_protected_api_path_fails_closed_when_bearer_is_missing(monkeypatch):
+    import os
+    from fastapi.testclient import TestClient
+    from main import app
+
+    monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    assert os.environ.get("INSIGHTFLOW_AUTH_REQUIRED", "").lower() == "true"
+    response = TestClient(app).post("/smart_query", json={"query": "test"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Supabase authentication required."
