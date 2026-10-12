@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 import pytest
@@ -9,6 +10,35 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _register_organization(claims, organization_name, branch_name, branch_identifier, **overrides):
+    from firebase_authz.supabase_provider import register_organization
+
+    normalized_claims = dict(claims)
+    subject = str(normalized_claims.get("sub") or normalized_claims.get("uid") or "")
+    normalized_claims["sub"] = subject
+    normalized_claims["uid"] = subject
+    digest = hashlib.sha256(subject.encode("utf-8")).hexdigest().upper()
+    phone = "+1" + f"{2_000_000_000 + int(digest[:8], 16) % 7_000_000_000:010d}"
+    profile = {
+        "full_name": f"Test Owner {digest[:8]}",
+        "phone": phone,
+        "address_line1": "1 Test Way",
+        "state": "California",
+        "state_code": "US-CA",
+        "postal_code": "90210",
+        "country": "United States",
+        "country_code": "US",
+        "id_proof_type": "passport",
+        "id_proof_number": f"TEST{digest[:16]}",
+        "phone_country_calling_code": "+1",
+        "phone_national_number": phone[2:],
+    }
+    profile.update(overrides)
+    return register_organization(
+        normalized_claims, organization_name, branch_name, branch_identifier, **profile
+    )
+
+
 def test_supabase_registration_persists_branch_head_context():
     from firebase_authz.supabase_provider import register_organization
     from core.db import SessionLocal
@@ -17,7 +47,7 @@ def test_supabase_registration_persists_branch_head_context():
         "uid": "integration-test-user",
         "sub": "integration-test-user",
     }
-    result = register_organization(claims, "ABC", "Kolkata Branch A", "ABC-KOL-A")
+    result = _register_organization(claims, "ABC", "Kolkata Branch A", "ABC-KOL-A")
     assert result["organization_id"].startswith("org_")
     assert result["workspace_id"] == result["organization_id"]
     assert result["role_ids"] == ["branch_head"]
@@ -54,9 +84,9 @@ def test_supabase_registration_rejects_invalid_organization_or_branch_names():
     from firebase_authz.supabase_provider import register_organization
 
     with pytest.raises(ValueError):
-        register_organization({"uid": "u"}, "bad\nname", "Main Branch", "BAD-01")
+        _register_organization({"uid": "u"}, "bad\nname", "Main Branch", "BAD-01")
     with pytest.raises(ValueError):
-        register_organization({"uid": "u"}, "ABC", "bad\nbranch", "BAD-01")
+        _register_organization({"uid": "u"}, "ABC", "bad\nbranch", "BAD-01")
 
 
 def test_supabase_registration_allows_special_branch_identifier_characters():
@@ -64,7 +94,7 @@ def test_supabase_registration_allows_special_branch_identifier_characters():
     from core.db import SessionLocal
 
     identifier = "tcs@singur_1!#$%^&*+=?"
-    result = register_organization(
+    result = _register_organization(
         {"uid": "special-branch-id-test"},
         "Special Identifier Test",
         "Singur",
@@ -97,7 +127,7 @@ def test_supabase_registration_rolls_back_when_final_registration_stage_fails(mo
     monkeypatch.setattr("firebase_authz.registration_diagnostics.stage", fail_final_stage)
 
     with pytest.raises(RuntimeError, match="simulated final registration failure"):
-        register_organization(
+        _register_organization(
             {"uid": "registration-rollback-test"},
             "Rollback Test",
             "Rollback Branch",
@@ -119,7 +149,7 @@ def test_supabase_registration_rejects_existing_active_membership():
     from firebase_authz.supabase_provider import OrganizationRegistrationConflict, register_organization
     from core.db import SessionLocal
 
-    result = register_organization(
+    result = _register_organization(
         {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
         "Existing Membership",
         "Main Branch",
@@ -127,7 +157,7 @@ def test_supabase_registration_rejects_existing_active_membership():
     )
     try:
         with pytest.raises(OrganizationRegistrationConflict):
-            register_organization(
+            _register_organization(
                 {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
                 "Second Organization",
                 "Second Branch",
@@ -151,10 +181,10 @@ def test_supabase_registration_rejects_duplicate_active_branch_identifier():
     from firebase_authz.service import AuthzError
     from core.db import SessionLocal
 
-    first = register_organization({"uid": "branch-id-one"}, "Branch ID One", "Kolkata A", "UNIQUE-BRANCH-01")
+    first = _register_organization({"uid": "branch-id-one"}, "Branch ID One", "Kolkata A", "UNIQUE-BRANCH-01")
     try:
         with pytest.raises((ValueError, AuthzError)):
-            register_organization({"uid": "branch-id-two"}, "Branch ID Two", "Kolkata B", "UNIQUE-BRANCH-01")
+            _register_organization({"uid": "branch-id-two"}, "Branch ID Two", "Kolkata B", "UNIQUE-BRANCH-01")
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": first["organization_id"]})
@@ -172,7 +202,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
     )
 
     claims = {"uid": "dataset-test-user", "sub": "dataset-test-user"}
-    result = register_organization(claims, "Dataset Test", "Main Branch", "DATASET-TEST")
+    result = _register_organization(claims, "Dataset Test", "Main Branch", "DATASET-TEST")
     register_dataset(claims, result["workspace_id"], "ds_test", "dataset-test-user")
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
     create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
@@ -198,7 +228,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     guest_uid = f"invite-guest-{suffix}"
     owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com"}
-    result = register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
+    result = _register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, guest["email"], "employee")
@@ -248,7 +278,7 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
         "sub": guest_uid,
         "email": f"guest-{suffix}@example.com",
     }
-    result = register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
+    result = _register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, guest["email"], "employee")
@@ -300,7 +330,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
     guest_uid = f"expiry-guest-{suffix}"
     owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com"}
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com"}
-    result = register_organization(owner, f"Expiry Test {suffix}", "Main", f"EXPIRY-{suffix}")
+    result = _register_organization(owner, f"Expiry Test {suffix}", "Main", f"EXPIRY-{suffix}")
     workspace = result["workspace_id"]
     try:
         expired = create_invitation(
@@ -347,8 +377,8 @@ def test_supabase_invitation_rejects_cross_company_active_member():
                "email": f"cross-owner-b-{suffix}@example.com"}
     guest_uid = f"cross-guest-{suffix}"
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com"}
-    org_a = register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
-    org_b = register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
+    org_a = _register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
+    org_b = _register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
     invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "employee")
     accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
     invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "employee")
@@ -381,7 +411,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
     member_uid = f"scope-member-{suffix}"
     owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
     member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com"}
-    result = register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
+    result = _register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, member["email"], "team_lead")
@@ -405,7 +435,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
 
 def test_supabase_legacy_registration_alias_uses_transactional_provider():
     from firebase_authz.supabase_provider import register_organization
-    result = register_organization({"uid": "legacy-alias-test", "sub": "legacy-alias-test"}, "Legacy Alias", "Main Branch", "LEGACY-ALIAS")
+    result = _register_organization({"uid": "legacy-alias-test", "sub": "legacy-alias-test"}, "Legacy Alias", "Main Branch", "LEGACY-ALIAS")
     try:
         assert result["membership_status"] == "active"
     finally:
@@ -424,7 +454,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     uid = "cleanup-test-user-" + suffix
     owner = {"uid": owner_uid, "sub": owner_uid, "email": owner_uid + "@example.com"}
     claims = {"uid": uid, "sub": uid, "email": uid + "@example.com"}
-    result = register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
+    result = _register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
     invitation = create_invitation(owner, result["workspace_id"], claims["email"], "employee")
     accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
     try:
