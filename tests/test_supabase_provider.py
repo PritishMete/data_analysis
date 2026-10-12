@@ -35,7 +35,7 @@ def test_supabase_registration_persists_branch_head_context():
         assignment = connection.execute(text("""SELECT oa.location_id, oa.role_id, oa.status
             FROM organizational_assignments oa
             JOIN identity_bindings ib ON ib.principal_id = oa.principal_id
-            WHERE oa.organization_id = :id AND ib.firebase_uid = :principal"""),
+            WHERE oa.organization_id = :id AND ib.provider = 'supabase' AND ib.provider_subject = :principal"""),
                                         {"id": result["organization_id"], "principal": claims["uid"]}).one()
     assert row.name == "ABC"
     assert row.workspace_id == result["workspace_id"]
@@ -215,7 +215,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
             row = db.execute(text("""SELECT m.status, mr.role_id FROM organization_members m
                 JOIN identity_bindings b ON b.principal_id=m.principal_id
                 JOIN member_roles mr ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-                    WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                    WHERE m.organization_id=:org AND b.provider='supabase' AND b.provider_subject=:uid"""),
                            {"org": workspace, "uid": guest_uid}).one()
         assert row.status == "active"
         assert row.role_id == "employee"
@@ -447,7 +447,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
         with SessionLocal() as session:
             row = session.execute(text("""SELECT m.status, b.status AS binding_status
                 FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
-                WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                WHERE m.organization_id=:org AND b.provider='supabase' AND b.provider_subject=:uid"""),
                                   {"org": result["organization_id"], "uid": uid}).one()
         assert row.status == "removed"
         assert row.binding_status == "inactive"
