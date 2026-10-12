@@ -324,14 +324,14 @@ void main() {
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
     expect(access, contains("Text('Access'"));
-    expect(access, contains('People and dataset access'));
+    expect(access, contains('Review managed resources and the access levels available to people in your organization.'));
     expect(access, contains('Search managed resources'));
     expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this scope yet.'));
     expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
-    expect(access, contains('People and dataset access'));
+    expect(access, contains('Review managed resources and the access levels available to people in your organization.'));
     expect(access, contains("['dataset.view_original']"));
     expect(access, contains("'dataset.create_working_copy'"));
     expect(access, contains("'dataset.edit_working_copy'"));
