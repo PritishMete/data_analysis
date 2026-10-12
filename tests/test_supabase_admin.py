@@ -1,5 +1,7 @@
 import os
 import unittest
+
+import pytest
 from unittest.mock import patch
 
 from firebase_authz import supabase_admin
@@ -118,8 +120,8 @@ class _ListResponse:
 def test_find_user_by_email_supports_sdk_response_and_pagination():
     responses = iter(
         [
-            _ListResponse([_ListUser("other", "other@example.com")], total=2),
-            _ListResponse([_ListUser("target", "TARGET@example.com")], total=2),
+            _ListResponse([_ListUser("other", "other@example.com")], last_page=2),
+            _ListResponse([_ListUser("target", "TARGET@example.com")], last_page=2),
         ]
     )
     with patch.object(
