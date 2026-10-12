@@ -55,7 +55,7 @@ class _FakeSessionFactory:
 
 
 @pytest.mark.parametrize(
-    ("duplicate_phone", "duplicate_id", "phone", "proof_number", "message"),
+    ("duplicate_phone", "duplicate_id", "expected_error", "proof_number", "identity_kind"),
     [
         (
             True,
@@ -79,7 +79,8 @@ def test_profile_update_rejects_duplicate_identity(
     duplicate_id,
     phone,
     proof_number,
-    message,
+    expected_error,
+    identity_kind,
 ):
     db = _FakeDB(
         duplicate_phone=duplicate_phone,
@@ -114,12 +115,12 @@ def test_profile_update_rejects_duplicate_identity(
         },
     )
 
-    with pytest.raises(AuthzError, match=message):
+    with pytest.raises(AuthzError, match=expected_error):
         profile_domain.upsert_my_profile(
             {"sub": "supabase-user", "email": "test@example.com", "email_verified": True},
             "workspace-1",
             full_name="Test User",
-            phone=phone,
+            phone="+14155552671",
             phone_country_calling_code="+1",
             phone_national_number="4155552671",
             address_line1="1 Test Street",
@@ -137,5 +138,5 @@ def test_profile_update_rejects_duplicate_identity(
     sql, params = db.identity_queries[-1]
     assert "principal_id<>:principal" in sql
     assert params["principal"] == "principal-current"
-    if message == "id":
+    if identity_kind == "id":
         assert "regexp_replace(upper(:proof_number)" in sql
