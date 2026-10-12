@@ -13,9 +13,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
 from .service import AuthzError
+from .profile_domain import ProfileFieldError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
@@ -227,6 +229,37 @@ def register_organization(
             )
         registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
 
+        duplicate_phone = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE phone_e164=:phone AND principal_id<>:principal
+                    LIMIT 1"""),
+            {"phone": profile_phone, "principal": principal_id},
+        ).scalar_one_or_none()
+        if duplicate_phone:
+            raise ProfileFieldError(
+                "phone",
+                "This phone number is already registered. Please use a different number.",
+            )
+
+        duplicate_id = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE id_proof_type=:proof_type
+                      AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')
+                          =regexp_replace(upper(:proof_number), '[^A-Z0-9]', '', 'g')
+                      AND principal_id<>:principal
+                    LIMIT 1"""),
+            {
+                "proof_type": proof_type,
+                "proof_number": proof_number,
+                "principal": principal_id,
+            },
+        ).scalar_one_or_none()
+        if duplicate_id:
+            raise ProfileFieldError(
+                "id_proof_number",
+                "This ID proof number is already registered. Please check the number or use the correct document.",
+            )
+
         db.execute(
             text(
                 """INSERT INTO organizations(organization_id, name, created_by_principal_id)
@@ -312,39 +345,47 @@ def register_organization(
         email_verified_at = _auth_timestamp(claims.get("email_confirmed_at"))
         if email_verified_at is None:
             email_verified_at = datetime.now(timezone.utc)
-        db.execute(
-            text(
-                """INSERT INTO organization_member_profiles
-                (organization_id, principal_id, full_name, email, email_verified_at,
-                 phone_e164, phone_verified_at, address_line1, address_line2,
-                 city, state, state_code, postal_code, country, country_code,
-                 id_proof_type, id_proof_number, id_proof_provided_at)
-                VALUES
-                (:organization, :principal, :full_name, :email, :email_verified_at,
-                 :phone, :phone_verified_at, :address_line1, :address_line2,
-                 :city, :state, :state_code, :postal_code, :country, :country_code,
-                 :id_proof_type, :id_proof_number, now())"""
-            ),
-            {
-                "organization": organization_id,
-                "principal": principal_id,
-                "full_name": profile_name,
-                "email": authoritative_email,
-                "email_verified_at": email_verified_at,
-                "phone": profile_phone,
-                "phone_verified_at": confirmed_phone_at,
-                "address_line1": address1,
-                "address_line2": address2 or None,
-                "city": profile_city,
-                "state": profile_state,
-                "state_code": profile_state_code,
-                "postal_code": profile_postal,
-                "country": profile_country,
-                "country_code": profile_country_code,
-                "id_proof_type": proof_type,
-                "id_proof_number": proof_number,
-            },
-        )
+        try:
+            db.execute(
+                text(
+                    """INSERT INTO organization_member_profiles
+                    (organization_id, principal_id, full_name, email, email_verified_at,
+                     phone_e164, phone_verified_at, address_line1, address_line2,
+                     city, state, state_code, postal_code, country, country_code,
+                     id_proof_type, id_proof_number, id_proof_provided_at)
+                    VALUES
+                    (:organization, :principal, :full_name, :email, :email_verified_at,
+                     :phone, :phone_verified_at, :address_line1, :address_line2,
+                     :city, :state, :state_code, :postal_code, :country, :country_code,
+                     :id_proof_type, :id_proof_number, now())"""
+                ),
+                {
+                    "organization": organization_id,
+                    "principal": principal_id,
+                    "full_name": profile_name,
+                    "email": authoritative_email,
+                    "email_verified_at": email_verified_at,
+                    "phone": profile_phone,
+                    "phone_verified_at": confirmed_phone_at,
+                    "address_line1": address1,
+                    "address_line2": address2 or None,
+                    "city": profile_city,
+                    "state": profile_state,
+                    "state_code": profile_state_code,
+                    "postal_code": profile_postal,
+                    "country": profile_country,
+                    "country_code": profile_country_code,
+                    "id_proof_type": proof_type,
+                    "id_proof_number": proof_number,
+                },
+            )
+        except IntegrityError as exc:
+            constraint = str(getattr(getattr(exc.orig, "diag", None), "constraint_name", "") or "")
+            if constraint == "uq_member_profiles_phone_e164_global":
+                raise ProfileFieldError("phone", "This phone number is already registered. Please use a different number.") from exc
+            if constraint == "uq_member_profiles_id_proof_type_normalized_global":
+                raise ProfileFieldError("id_proof_number", "This ID proof number is already registered. Please check the number or use the correct document.") from exc
+            raise
         registration_diagnostics.stage("PROFILE_CREATED")
 
         db.execute(
