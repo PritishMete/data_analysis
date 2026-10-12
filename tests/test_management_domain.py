@@ -1,5 +1,6 @@
 import hashlib
 import os
+import threading
 import uuid
 
 import pytest
@@ -11,10 +12,22 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
 )
 
+_PHONE_LOCK = threading.Lock()
+_PHONE_BY_UID: dict[str, str] = {}
+
+
+def _phone_for_uid(uid: str) -> str:
+    with _PHONE_LOCK:
+        if uid not in _PHONE_BY_UID:
+            slot = len(_PHONE_BY_UID)
+            if slot >= 100:
+                raise RuntimeError("Test phone-number fixture pool exhausted.")
+            _PHONE_BY_UID[uid] = f"+120255501{slot:02d}"
+        return _PHONE_BY_UID[uid]
+
 
 def _claims(uid: str) -> dict:
-    digest = hashlib.sha256(uid.encode("utf-8")).hexdigest()
-    phone = "+1" + f"{2_000_000_000 + int(digest[:8], 16) % 7_000_000_000:010d}"
+    phone = _phone_for_uid(uid)
     return {
         "uid": uid,
         "sub": uid,
@@ -27,7 +40,7 @@ def _claims(uid: str) -> dict:
     }
 
 
-def _add_member(session, organization_id: str, uid: str, employee_id: str, role: str = "employee") -> str:
+def _add_member(session, organization_id: str, uid: str, employee_id: str, role: str = "data_analyst") -> str:
     principal_id = f"prn_test_{uuid.uuid4().hex}"
     session.execute(
         text("INSERT INTO principals(principal_id) VALUES (:id)"),
@@ -55,21 +68,22 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
 def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
     digest = hashlib.sha256(owner_uid.encode("utf-8")).hexdigest().upper()
-    phone_number = f"{6_000_000_000 + int(digest[:8], 16) % 4_000_000_000:010d}"
+    phone = _phone_for_uid(owner_uid)
+    phone_number = phone[2:]
     return register_organization(
         _claims(owner_uid),
         name,
         "Main Branch",
         branch_id,
         full_name=f"Owner {owner_uid}",
-        phone="+91" + phone_number,
+        phone=phone,
         address_line1="1 InsightFlow Way",
         state="California",
         state_code="US-CA",
         postal_code="90210",
         country="United States",
         country_code="US",
-        phone_country_calling_code="+91",
+        phone_country_calling_code="+1",
         phone_national_number=phone_number,
         id_proof_type="passport",
         id_proof_number="TEST-" + digest[:16],
