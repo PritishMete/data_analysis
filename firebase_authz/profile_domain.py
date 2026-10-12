@@ -14,16 +14,11 @@ from .service import AuthzError
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    provider = str(claims.get("provider") or "").strip().lower()
-    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    if not provider:
-        provider = str(firebase.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    values = identities.get(provider)
-    if isinstance(values, list) and values:
-        subject = str(values[0])
-    return provider, subject
+    """Bind profile access to a verified Supabase subject only."""
+    subject = str(claims.get("sub") or "").strip()
+    if not subject:
+        raise AuthzError("Supabase identity is missing.")
+    return "supabase", subject
 
 
 def _auth_time(value: Any) -> datetime | None:
