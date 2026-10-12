@@ -37,6 +37,9 @@ jobs:
           python -m py_compile tools/run_authz_migrations.py
           python tools/run_authz_migrations.py --help >/dev/null
 
+      - name: Run duplicate identity regression tests
+        run: pytest -q tests/test_profile_identity_uniqueness.py
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -136,6 +139,7 @@ jobs:
           test/firebase_auth_service_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Build Flutter web
         run: >-
