@@ -30,10 +30,14 @@ mean the complete RTDB migration is finished. Legacy RTDB code remains in
 - Route handlers still contain legacy branches in source (the provider guard prevents
   configured Firebase mode, but dead fallback code has not yet been deleted).
 - `firebase-admin` remains in application dependencies and is imported by legacy service code.
-- CI still starts the Firebase emulator and executes legacy Firebase authorization tests; these
-  cannot be removed responsibly until equivalent PostgreSQL integration coverage replaces them.
+- CI no longer starts the Firebase emulator or runs RTDB rules-emulator tests. Legacy service unit tests
+  remain in the Python suite because the old RTDB service code has not yet been removed; replacing
+  those tests with PostgreSQL integration coverage is still required.
 - The workflow's stock PostgreSQL service is not by itself a full Supabase stack (for example,
   Storage/Auth schemas and RLS policies). Build an isolated Supabase-compatible test environment
   before claiming full migration validation.
+- The current API tests exercise provider dispatch with controlled mocks; they do not establish
+  PostgreSQL transaction semantics. Add database-backed tests for invitation acceptance, bootstrap,
+  concurrency, role changes, revocation, and rollback before removing the remaining legacy tests.
 
 No production database was connected to or changed as part of this audit.
