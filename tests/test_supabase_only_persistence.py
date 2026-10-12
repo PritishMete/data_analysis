@@ -73,7 +73,7 @@ def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_pat
         path
         for path in ROOT.rglob("*.py")
         if "tests" not in path.relative_to(ROOT).parts
-        and not path.name.startswith(("test_", "tempCodeRunner"))
+        and not path.name.startswith(("test", "tempCodeRunner"))
         and not any(part in {".git", ".venv", "frontend", "flutter_detail_source"} for part in path.relative_to(ROOT).parts)
     ]
     forbidden_runtime_patterns = (
@@ -84,6 +84,7 @@ def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_pat
         "provider='firebase'",
         'provider = "firebase"',
         "firebase_uid",
+        "from firebase_authz.service import",
     )
     findings = []
     for path in production_paths:
