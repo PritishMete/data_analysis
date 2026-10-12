@@ -63,12 +63,35 @@ def db_session():
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip only the external student-runtime integration when unavailable.
+    """Enforce test-collection boundaries and gate the external student runtime.
 
-    The test itself remains unchanged and therefore still executes normally
-    on a Windows acceptance machine that supplies INSIGHTFLOW_STUDENT_ROOT.
-    No broad test skip is used.
+    The broad legacy endpoint regression suite can run with middleware auth
+    disabled because its tests exercise endpoint behavior without Supabase
+    credentials. Dedicated auth-boundary suites must never be collected in
+    that mode; those suites run separately with auth required.
     """
+    auth_required = os.environ.get("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    protected_auth_modules = {
+        "test_supabase_authz_api.py",
+        "test_managed_dataset_middleware.py",
+        "test_office_mutation_boundary.py",
+        "test_supabase_only_auth.py",
+        "test_supabase_only_persistence.py",
+    }
+    if not auth_required:
+        collected_protected = sorted({
+            Path(item.nodeid.split("::", 1)[0]).name
+            for item in items
+            if Path(item.nodeid.split("::", 1)[0]).name in protected_auth_modules
+        })
+        if collected_protected:
+            raise pytest.UsageError(
+                "INSIGHTFLOW_AUTH_REQUIRED=false cannot collect protected authorization "
+                "tests: " + ", ".join(collected_protected)
+            )
+
     configured = os.environ.get("INSIGHTFLOW_STUDENT_ROOT")
     student_root = Path(configured) if configured else None
     available = bool(student_root and student_root.is_dir())
