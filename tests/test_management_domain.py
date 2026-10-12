@@ -260,10 +260,10 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
                 session, org["organization_id"], branch_head_uid, "BH-VIS", role="branch_head"
             )
             employee = _add_member(
-                session, org["organization_id"], employee_uid, "EMP-VIS", role="employee"
+                session, org["organization_id"], employee_uid, "EMP-VIS", role="data_analyst"
             )
             _add_member(
-                session, org["organization_id"], other_recipient_uid, "EMP-OTHER-VIS", role="employee"
+                session, org["organization_id"], other_recipient_uid, "EMP-OTHER-VIS", role="data_analyst"
             )
             session.execute(
                 text("""
