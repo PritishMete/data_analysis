@@ -77,7 +77,6 @@ def test_profile_update_rejects_duplicate_identity(
     monkeypatch,
     duplicate_phone,
     duplicate_id,
-    phone,
     proof_number,
     expected_error,
     identity_kind,
