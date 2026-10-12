@@ -2,10 +2,19 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace]
+    branches:
+      - main
+      - feature/data-workspace
+      - feature/employee-management-cell
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - feature/data-workspace
+      - feature/employee-management-cell
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   backend-tests:
@@ -16,7 +25,6 @@ jobs:
       SECURE_EXCEL_REMOTE_AI: "false"
       DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
       DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
-      INSIGHTFLOW_AUTH_REQUIRED: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
