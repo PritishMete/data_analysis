@@ -334,7 +334,7 @@ def _member_key_for_workspace(workspace: dict[str, Any], uid: str, user: dict[st
             return str(matches[0])
     return None
 
-def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False, email: str | None = None, provider: str = "firebase", provider_subject: str | None = None) -> dict[str, Any]:
+def authentication_context(uid: str, workspace_id: str | None = None, email_verified: bool = False, email: str | None = None, provider: str = "supabase", provider_subject: str | None = None) -> dict[str, Any]:
     validate_id(uid, "user ID")
     if workspace_id:
         validate_id(workspace_id, "workspace ID")
