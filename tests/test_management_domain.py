@@ -151,6 +151,7 @@ def test_management_reads_are_organization_scoped():
 
 def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplied():
     from firebase_authz.management_domain import (
+        create_location,
         list_assignments,
         list_locations,
         list_people,
@@ -304,9 +305,9 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
                       (invitation_id, organization_id, email, role_id, status,
                        created_by_principal_id, location_id)
                     VALUES
-                      (:main_id, :org, :main_email, 'employee', 'invited', :creator, :main_location),
+                      (:main_id, :org, :main_email, 'data_analyst', 'invited', :creator, :main_location),
                       (:other_id, :org, :other_email, 'manager', 'invited', :creator, :other_location),
-                      (:recipient_id, :org, :recipient_email, 'employee', 'invited', :creator, :other_location)
+                      (:recipient_id, :org, :recipient_email, 'data_analyst', 'invited', :creator, :other_location)
                 """),
                 {
                     "main_id": f"inv_{uuid.uuid4().hex}",
