@@ -194,7 +194,7 @@ def test_unsupported_jwt_algorithm_is_rejected_without_auth_api_fallback(monkeyp
         headers={"kid": "unsupported-algorithm"},
     )
 
-    with pytest.raises(AuthenticationRequired):
+    with pytest.raises(supabase_auth.AuthenticationRequired):
         supabase_auth.verify_supabase_access_token(token)
 
 
@@ -244,7 +244,7 @@ def test_invalid_jwt_signature_is_rejected_without_auth_api_fallback(monkeypatch
         headers={"kid": "wrong-signature"},
     )
 
-    with pytest.raises(AuthenticationRequired):
+    with pytest.raises(supabase_auth.AuthenticationRequired):
         supabase_auth.verify_supabase_access_token(token)
 
 
