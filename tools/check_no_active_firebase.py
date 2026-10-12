@@ -22,14 +22,14 @@ SCAN_FILES = (
     ROOT / "flutter_detail_source" / "pubspec.yaml",
 )
 FORBIDDEN = (
-    re.compile(r"\bimport\s+firebase_admin\b"),
-    re.compile(r"\bfrom\s+firebase_admin\b"),
+    re.compile(r"\bimport\s+firebase" + r"_admin\b"),
+    re.compile(r"\bfrom\s+firebase" + r"_admin\b"),
     re.compile(r"\binitialize_firebase\s*\("),
     re.compile(r"\bdb\.reference\s*\("),
     re.compile(r"\bFirebaseAuth\b"),
     re.compile(r"\bFirebaseDatabase\b"),
     re.compile(r"Firebase\.initializeApp"),
-    re.compile(r"firebase-admin"),
+    re.compile(r"firebase" + r"-admin"),
     re.compile(r"AUTHZ_PERSISTENCE_PROVIDER\s*[,=]\s*[\"']firebase[\"']"),
 )
 
