@@ -350,8 +350,8 @@ void main() {
     expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
     expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
     expect(header, contains('InsightFlow'));
-    expect(header, contains('ORGANIZATION / MANAGEMENT'));
-    expect(header, contains('MANAGEMENT WORKSPACE'));
+    expect(header, contains('_roleWorkspaceTitle()'));
+    expect(header, contains('_roleWorkspaceSubtitle()'));
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 
