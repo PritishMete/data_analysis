@@ -19,6 +19,8 @@ ACTIONS = frozenset({
 ROLE_ALIASES = {
     "owner": "organization_owner",
     "viewer": "external_viewer",
+    # Backward-compatible role identifier retained for existing authorization records.
+    "employee": "data_analyst",
 }
 
 ROLE_LEVELS = {
@@ -60,6 +62,10 @@ DEFAULT_ROLES = {
     "data_quality_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "data_governance_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
 }
+# Legacy test fixtures and existing records may still refer to the generic employee role.
+DEFAULT_ROLES["employee"] = DEFAULT_ROLES["data_analyst"]
+ROLE_LEVELS["employee"] = ROLE_LEVELS["data_analyst"]
+
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 def validate_id(value: str, field: str) -> str:
