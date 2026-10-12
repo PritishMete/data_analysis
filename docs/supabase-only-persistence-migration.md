@@ -24,20 +24,12 @@ mean the complete RTDB migration is finished. Legacy RTDB code remains in
 | Management Cell / `/v1/authz/me` | route provider selector and legacy service | `authorization_context`, `management_snapshot`, management domain | Routes default to PostgreSQL and fail closed for legacy provider configuration; verify every endpoint and first-screen contract. |
 | Middleware protected routes | legacy `service.authorization` fallback | `supabase_provider.authorize` | Legacy fallback now fails closed; comprehensive protected-route integration tests still required. |
 
-## Explicit blockers before completion
+## Remaining validation before completion
 
-- `firebase_authz/service.py` still contains RTDB reads, writes, queries and transactions.
-- Route handlers still contain legacy branches in source (the provider guard prevents
-  configured Firebase mode, but dead fallback code has not yet been deleted).
-- `firebase-admin` remains in application dependencies and is imported by legacy service code.
-- CI no longer starts the Firebase emulator or runs RTDB rules-emulator tests. Legacy service unit tests
-  remain in the Python suite because the old RTDB service code has not yet been removed; replacing
-  those tests with PostgreSQL integration coverage is still required.
-- The workflow's stock PostgreSQL service is not by itself a full Supabase stack (for example,
-  Storage/Auth schemas and RLS policies). Build an isolated Supabase-compatible test environment
-  before claiming full migration validation.
-- The current API tests exercise provider dispatch with controlled mocks; they do not establish
-  PostgreSQL transaction semantics. Add database-backed tests for invitation acceptance, bootstrap,
-  concurrency, role changes, revocation, and rollback before removing the remaining legacy tests.
+- The active application no longer imports the legacy RTDB service. `firebase_authz/service.py` is now a compatibility export module for Supabase auth/error helpers; the old RTDB implementation and emulator tests have been removed from the application/test discovery path.
+- The active Auth-user cleanup trigger is replaced by migration `0032_supabase_only_auth_user_cleanup.sql`, which resolves only `provider='supabase'` and the Supabase Auth UUID. Earlier migrations retain historical Firebase references because migration history is immutable.
+- The PostgreSQL integration job now creates a disposable Supabase-compatible schema surface, applies the repository migrations, and runs `tests/test_supabase_provider.py` and `tests/test_management_domain.py`. This validates database transactions and schema on an isolated PostgreSQL service, not a production database.
+- Full acceptance still depends on the final GitHub Actions run passing, and on additional concurrency/security tests covering concurrent invitation acceptance and employee-ID allocation, invalid JWT algorithms/signatures, role escalation, and all requested invitation replay/revocation edge cases.
+- Historical-data migration/import is not executed by this branch. If production RTDB contains required legacy authorization records, a separately reviewed, idempotent export/import and reconciliation plan is required before any production rollout.
 
-No production database was connected to or changed as part of this audit.
+No production database was connected to or changed as part of this work. No production secrets were changed and no Render deployment was triggered.
