@@ -88,14 +88,14 @@ jobs:
       - name: Run managed dataset ingestion and storage tests
         run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
 
-      - name: Run non-auth backend regression suite
-        # Protected-path suites are run separately above with auth explicitly
-        # enabled. This step disables only middleware gating for functional
-        # endpoint regressions and excludes every dedicated auth-boundary suite.
+      - name: Run backend regression suite with authentication required
+        # Keep auth enabled for every test collection. Dedicated protected-path
+        # suites above provide focused coverage; this broader suite must not
+        # lower the authentication requirement for any route exercised by tests.
         env:
-          INSIGHTFLOW_AUTH_REQUIRED: "false"
+          INSIGHTFLOW_AUTH_REQUIRED: "true"
         run: |
-          test "$INSIGHTFLOW_AUTH_REQUIRED" = "false"
+          test "$INSIGHTFLOW_AUTH_REQUIRED" = "true"
           pytest -q \
             --ignore=tests/test_supabase_authz_api.py \
             --ignore=tests/test_managed_dataset_middleware.py \
