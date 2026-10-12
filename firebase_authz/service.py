@@ -11,9 +11,9 @@ except ImportError:
 
 try:
     import firebase_admin
-    from firebase_admin import auth, db
+    from firebase_admin import db
 except ImportError:
-    firebase_admin = auth = db = None
+    firebase_admin = db = None
 
 from .schema import ACTIONS, DEFAULT_ROLES, ROLE_ALIASES, ROLE_LEVELS, validate_action, validate_id
 
@@ -64,20 +64,11 @@ def initialize_firebase():
         return firebase_admin.initialize_app(cred, options)
 
 def verify_id_token(id_token: str) -> dict[str, Any]:
+    """Verify every bearer token with Supabase Auth; Firebase tokens are never accepted."""
     if not id_token:
-        raise AuthenticationRequired("Firebase authentication required.")
-    mode = os.getenv("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
-    if mode in {"supabase", "dual"}:
-        # Supabase JWTs have three dot-separated segments. Firebase remains the
-        # default and is selected for all other tokens in dual mode.
-        if mode == "supabase" or id_token.count(".") == 2:
-            from .supabase_auth import verify_supabase_access_token
-            return verify_supabase_access_token(id_token)
-    initialize_firebase()
-    try:
-        return auth.verify_id_token(id_token, check_revoked=True)
-    except Exception as exc:
-        raise AuthenticationRequired("Firebase authentication failed.") from exc
+        raise AuthenticationRequired("Supabase authentication required.")
+    from .supabase_auth import verify_supabase_access_token
+    return verify_supabase_access_token(id_token)
 
 def _get(path: str):
     initialize_firebase()
@@ -88,33 +79,9 @@ def _raw_user(uid: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 def _user(uid: str):
+    # Authorization records are still read from the legacy RTDB store, but
+    # authentication is exclusively Supabase. Never query Firebase Auth here.
     value = _raw_user(uid)
-    if not value:
-        # Resolve a recreated Firebase account at the authorization boundary too.
-        # This keeps Web/Power BI/future clients independent from an earlier /me call.
-        initialize_firebase()
-        try:
-            firebase_user = auth.get_user(uid)
-        except auth.UserNotFoundError:
-            firebase_user = None
-        if firebase_user is not None:
-            provider = "firebase"
-            provider_subject = uid
-            for provider_data in (firebase_user.provider_data or []):
-                if provider_data.provider_id:
-                    provider = str(provider_data.provider_id)
-                    provider_subject = str(provider_data.uid or uid)
-                    break
-            resolved = resolve_principal(
-                uid,
-                str(firebase_user.email or ""),
-                provider,
-                provider_subject,
-                bool(firebase_user.email_verified),
-            )
-            if resolved.get("state") in {"suspended", "removed"}:
-                raise PermissionDenied("This account is suspended.")
-            value = _raw_user(uid)
     if not value:
         raise PermissionDenied("No InsightFlow organization access is assigned to this account.")
     status = str(value.get("status") or "").strip().lower()
@@ -169,18 +136,14 @@ def pending_invitations_for_email(email: str) -> list[dict[str, Any]]:
     return matches
 
 def authenticated_identity(claims: dict[str, Any]) -> dict[str, Any]:
-    """Normalize the Firebase-authenticated identity without coupling RBAC to a provider."""
-    firebase_claims = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(firebase_claims.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase_claims.get("identities") if isinstance(firebase_claims.get("identities"), dict) else {}
-    subjects = identities.get(provider) if isinstance(identities, dict) else None
-    provider_subject = str(subjects[0]) if isinstance(subjects, list) and subjects else str(claims.get("sub") or claims.get("uid") or "")
+    """Normalize an already verified Supabase Auth identity."""
+    provider_subject = str(claims.get("sub") or claims.get("uid") or "").strip()
     return {
-        "provider": provider,
+        "provider": "supabase",
         "provider_subject": provider_subject,
         "verified_email": str(claims.get("email") or "").strip().lower(),
-        "firebase_uid": str(claims.get("uid") or ""),
-        "display_name": claims.get("name"),
+        "auth_uid": str(claims.get("uid") or provider_subject),
+        "display_name": claims.get("name") or (claims.get("user_metadata") or {}).get("full_name"),
     }
 
 def _identity_candidates(email: str, provider: str, provider_subject: str) -> list[dict[str, Any]]:
@@ -226,7 +189,7 @@ def _identity_candidates(email: str, provider: str, provider_subject: str) -> li
 def resolve_principal(
     uid: str,
     email: str | None = None,
-    provider: str = "firebase",
+    provider: str = "supabase",
     provider_subject: str | None = None,
     email_verified: bool = False,
 ) -> dict[str, Any]:
