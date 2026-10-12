@@ -190,6 +190,7 @@ def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch)
 
 def test_working_copy_endpoint_does_not_accept_workbook_payloads(monkeypatch):
     from firebase_authz import routes
+    monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "owner", "sub": "owner", "email_verified": True})
     monkeypatch.setattr(supabase_provider, "create_working_copy", lambda claims, workspace_id, dataset_id, working_copy_id, source_version: {
         "working_copy_id": working_copy_id or "wc"
     })
