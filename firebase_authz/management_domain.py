@@ -98,6 +98,34 @@ def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
         "org": actor["organization_id"],
         "principal": actor["principal_id"],
     }).mappings().all()
+    # Organization ownership is a membership-level authority, not a
+    # branch assignment. An owner may also have a Branch Head assignment for
+    # the initial branch, but that must not narrow the owner's organization
+    # scope to that one branch.
+    is_organization_owner = db.execute(text("""
+        SELECT 1
+        FROM organization_members m
+        JOIN member_roles mr
+          ON mr.organization_id=m.organization_id
+         AND mr.principal_id=m.principal_id
+        WHERE m.organization_id=:org
+          AND m.principal_id=:principal
+          AND m.status='active'
+          AND mr.role_id='organization_owner'
+        LIMIT 1
+    """), {
+        "org": actor["organization_id"],
+        "principal": actor["principal_id"],
+    }).scalar_one_or_none()
+    if is_organization_owner:
+        return {
+            "role_id": "organization_owner",
+            "location_id": None,
+            "location_ids": [],
+            "section_id": None,
+            "section_ids": [],
+            "organization_wide": True,
+        }
     if not rows:
         return {
             "role_id": None,
@@ -762,7 +790,7 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
             clauses.append("oa.status=:status")
             params["status"] = status
         rows = db.execute(text(f"""
-            SELECT oa.assignment_id, oa.principal_id, m.employee_id, oa.role_id,
+            SELECT oa.assignment_id, oa.organization_id, oa.principal_id, m.employee_id, oa.role_id,
                    oa.location_id, l.name AS location_name,
                    oa.section_id, s.name AS section_name,
                    oa.reports_to_assignment_id,
