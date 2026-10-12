@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .service import (
+    AuthzError,
     AuthenticationRequired,
     PermissionDenied,
     verify_id_token,
@@ -204,7 +205,7 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             request.state.resource_id = resource_id or None
             request.state.authorization = decision
             return await call_next(request)
-        except (AuthenticationRequired, PermissionDenied, ValueError):
+        except (AuthenticationRequired, PermissionDenied, AuthzError, ValueError):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Permission denied."},
