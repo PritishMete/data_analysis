@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .schema import ROLE_LEVELS
-from .service import AuthzError
+from .auth import AuthzError
 
 
 class ManagementConflict(AuthzError):
