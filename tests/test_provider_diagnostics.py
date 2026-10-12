@@ -68,12 +68,6 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
         "firebase_authz.supabase_provider.register_organization",
         lambda claims, name, branch_name, branch_identifier, **kwargs: calls.append(("supabase", name, branch_name, branch_identifier)) or {"provider": "supabase"},
     )
-    monkeypatch.setattr(
-        routes,
-        "bootstrap_owner",
-        lambda token, name, allow_any_authenticated=False: calls.append(("firebase", name, allow_any_authenticated)) or {"provider": "firebase"},
-    )
-
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     supabase_response = TestClient(app).post(
         "/v1/authz/organizations/register",
@@ -100,14 +94,7 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     assert supabase_response.json() == {"provider": "supabase"}
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase")
-    firebase_response = TestClient(app).post(
-        "/v1/authz/organizations/register",
-        json={"organization_name": "Diagnostic Org", "branch_name": "Main", "branch_identifier": "main"},
-        headers={"Authorization": "Bearer diagnostic-token"},
-    )
-    assert firebase_response.status_code == 200
-    assert firebase_response.json() == {"provider": "firebase"}
-    assert calls == [
-        ("supabase", "Diagnostic Org", "Main", "main"),
-        ("firebase", "Diagnostic Org", False),
-    ]
+    import pytest
+    with pytest.raises(RuntimeError, match="only supported provider"):
+        routes._supabase_persistence_enabled()
+    assert calls == [("supabase", "Diagnostic Org", "Main", "main")]
