@@ -27,11 +27,24 @@ class _Result:
 
 
 class _AuthzSession:
-    def __init__(self, *, resource=None, protected=True, grant=None, owner="principal-owner"):
+    def __init__(
+        self,
+        *,
+        resource=None,
+        protected=True,
+        grant=None,
+        owner="principal-owner",
+        roles=None,
+        branch_locations=None,
+        manager_locations=None,
+    ):
         self.resource = resource
         self.protected = protected
         self.grant = grant
         self.owner = owner
+        self.roles = roles or ["organization_owner"]
+        self.branch_locations = branch_locations or []
+        self.manager_locations = manager_locations or []
         self.calls = []
 
     def execute(self, statement, params=None):
@@ -42,9 +55,20 @@ class _AuthzSession:
         if "FROM authorization_resources" in sql and "SELECT 1" in sql:
             return _Result(scalar=1 if self.resource else None)
         if "FROM dataset_authorization" in sql:
-            return _Result(scalar=self.protected)
+            row = (
+                {"protected_original": self.protected, "location_id": "branch-1"}
+                if self.protected is not None
+                else None
+            )
+            return _Result(row=row)
         if "FROM resource_grants" in sql:
             return _Result(scalar=self.grant)
+        if "FROM member_roles" in sql:
+            return _Result(scalars=self.roles)
+        if "FROM organizational_assignments" in sql and "role_id='branch_head'" in sql:
+            return _Result(scalars=self.branch_locations)
+        if "FROM organizational_assignments" in sql and "role_id='manager'" in sql:
+            return _Result(scalars=self.manager_locations)
         if "FROM identity_bindings" in sql and "JOIN organization_members" in sql:
             return _Result(scalar=self.owner)
         return _Result()
@@ -121,7 +145,7 @@ def test_dataset_from_wrong_organization_is_rejected(monkeypatch):
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context())
 
-    with pytest.raises(supabase_provider.AuthzError, match="Resource is not accessible"):
+    with pytest.raises(supabase_provider.AuthzError, match="Dataset is not accessible"):
         supabase_provider.authorize_dataset(
             {"uid": "owner", "sub": "owner", "provider": "supabase"},
             "workspace-owner",
@@ -138,16 +162,25 @@ def test_revoked_dataset_grant_is_rejected(monkeypatch):
         resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
         protected=True,
         grant=[],
+        roles=["data_analyst"],
     )
+    context = {**_context(), "role_ids": ["data_analyst"]}
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
-    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context())
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: context,
+    )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Permission denied for this resource"):
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="not been authorized for copying",
+    ):
         supabase_provider.authorize_dataset(
             {"uid": "owner", "sub": "owner", "provider": "supabase"},
             "workspace-owner",
             "dataset-owner",
-            "dataset.view_original",
+            "dataset.create_working_copy",
         )
 
 
