@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
-from .service import AuthzError
+from .auth import AuthzError
 from .profile_domain import ProfileFieldError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
