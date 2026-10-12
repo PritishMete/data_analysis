@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
-from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
+from firebase_authz.auth import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
 from firebase_authz.supabase_provider import authorization_context
 from .service import (
     create_managed_working_copy,
