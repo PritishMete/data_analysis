@@ -1747,38 +1747,25 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
-    # Original/master operations are role-scoped. Managers may upload into
-    # their own branch, while Branch Heads may manage the branch's originals.
+    # Original/master dataset upload and direct viewing are restricted to
+    # Organization Owners and the Branch Head assigned to that branch.
+    # Managers and lower roles work from explicitly authorized working copies.
     if action == "dataset.upload":
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-        elif "manager" in actor_roles:
-            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
-                    WHERE organization_id=:org AND principal_id=:principal
-                      AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
-                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
+            raise AuthzError("Only a Branch Head or Organization Owner can upload original datasets.")
     elif action == "dataset.view_original":
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-        elif "manager" in actor_roles:
-            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:principal
-                  AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
-                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
+            raise AuthzError("Only a Branch Head or Organization Owner can view an original dataset.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
         if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
             raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")
