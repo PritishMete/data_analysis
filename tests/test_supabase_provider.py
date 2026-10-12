@@ -20,7 +20,7 @@ def _stub_supabase_auth_admin_for_database_tests(monkeypatch):
         # Test identities use their email local-part as their stable Supabase
         # subject. The explicit invitation fixture uses "guest-" for its email
         # and "invite-guest-" for its subject.
-        user_id = f"invite-{local}" if local.startswith("guest-") else local
+        user_id = local
         return {"user_id": user_id, "email_confirmed": False}
 
     monkeypatch.setattr(supabase_provider, "invite_user_by_email", invite_user_by_email)
@@ -257,7 +257,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
 
     suffix = uuid.uuid4().hex
     owner_uid = f"invite-owner-{suffix}"
-    guest_uid = f"invite-guest-{suffix}"
+    guest_uid = f"guest-{suffix}"
     owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com"}
     result = _register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
@@ -299,7 +299,7 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
 
     suffix = uuid.uuid4().hex
     owner_uid = f"profile-owner-{suffix}"
-    guest_uid = f"profile-guest-{suffix}"
+    guest_uid = f"guest-{suffix}"
     owner = {
         "uid": owner_uid,
         "sub": owner_uid,
@@ -440,7 +440,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
 
     suffix = uuid.uuid4().hex
     owner_uid = f"scope-owner-{suffix}"
-    member_uid = f"scope-member-{suffix}"
+    member_uid = f"member-{suffix}"
     owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
     member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com"}
     result = _register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
