@@ -3,7 +3,7 @@ import os
 import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
-from .auth import AuthzError, AuthenticationRequired, BootstrapDenied, verify_id_token, require_email_verified
+from .auth import AuthzError, AuthenticationRequired, verify_id_token, require_email_verified
 from . import registration_diagnostics
 from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
@@ -25,9 +25,6 @@ def _supabase_persistence_enabled() -> bool:
 # Reject stale production configuration at application startup, not after a
 # request has already entered an authorization handler.
 _supabase_persistence_enabled()
-
-class BootstrapRequest(BaseModel):
-    organization_name: str
 
 class FounderOrganizationRegistration(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -218,20 +215,6 @@ def membership(
 
 @router.post("/bootstrap-owner")
 @router.post("/register-company")
-def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
-    try:
-        from .supabase_provider import register_organization
-        return register_organization(require_email_verified(verify_id_token(_token(authorization))), req.organization_name)
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
-    except AuthzError as exc:
-        raise HTTPException(403, str(exc))
-    except BootstrapDenied as exc:
-        raise HTTPException(403, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-
-
 @router.post("/organizations/register")
 def founder_organization_register(
     req: FounderOrganizationRegistration,
@@ -308,7 +291,7 @@ def founder_organization_register(
         raise HTTPException(401, str(exc))
     except ProfileFieldError as exc:
         raise HTTPException(409, detail={"field": exc.field, "message": str(exc)})
-    except (BootstrapDenied, AuthzError) as exc:
+    except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
