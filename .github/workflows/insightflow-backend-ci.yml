@@ -133,7 +133,10 @@ jobs:
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
+          lib/features/auth/company_registration_screen.dart
+          lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -150,7 +153,10 @@ jobs:
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
+          lib/features/auth/company_registration_screen.dart
+          lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
+          test/profile_onboarding_contract_test.dart
 
       - name: Run Flutter Auth tests
         run: >-
