@@ -1,3 +1,4 @@
+import hashlib
 import os
 import uuid
 
@@ -12,13 +13,15 @@ pytestmark = pytest.mark.skipif(
 
 
 def _claims(uid: str) -> dict:
+    digest = hashlib.sha256(uid.encode("utf-8")).hexdigest()
+    phone = "+1" + f"{2_000_000_000 + int(digest[:8], 16) % 7_000_000_000:010d}"
     return {
         "uid": uid,
         "sub": uid,
         "email": f"{uid}@example.com",
         "email_verified": True,
         "email_confirmed_at": "2026-10-01T00:00:00Z",
-        "phone": "+919876543210",
+        "phone": phone,
         "phone_confirmed_at": "2026-10-01T00:00:00Z",
         "provider": "supabase",
     }
@@ -51,14 +54,15 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
 
 def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
-    suffix = str(uuid.uuid4().int)[:8]
+    digest = hashlib.sha256(owner_uid.encode("utf-8")).hexdigest().upper()
+    phone_number = f"{6_000_000_000 + int(digest[:8], 16) % 4_000_000_000:010d}"
     return register_organization(
         _claims(owner_uid),
         name,
         "Main Branch",
         branch_id,
         full_name=f"Owner {owner_uid}",
-        phone="+919876543210",
+        phone="+91" + phone_number,
         address_line1="1 InsightFlow Way",
         state="California",
         state_code="US-CA",
@@ -66,9 +70,9 @@ def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
         country="United States",
         country_code="US",
         phone_country_calling_code="+91",
-        phone_national_number="9876543210",
+        phone_national_number=phone_number,
         id_proof_type="passport",
-        id_proof_number="TEST-" + suffix,
+        id_proof_number="TEST-" + digest[:16],
     )
 
 
