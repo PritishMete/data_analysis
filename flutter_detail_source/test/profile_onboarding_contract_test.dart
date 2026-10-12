@@ -198,6 +198,18 @@ void main() {
     expect(employee, isNot(contains('ID PROOF VERIFIED')));
   });
 
+  test('duplicate profile identities return field-specific UI errors', () {
+    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
+    expect(employee, contains("rawDetail['field']"));
+    expect(employee, contains("field == 'phone'"));
+    expect(employee, contains("field == 'id_proof_number'"));
+    expect(employee, contains('_phoneError = message'));
+    expect(employee, contains('_idProofError = message'));
+    expect(employee, contains('_phoneError!'));
+    expect(employee, contains('errorText: _idProofError'));
+    expect(employee, contains('_step = 0'));
+  });
+
   test('confirmation redirect failures get a user-facing route', () {
     final gate = source('lib/features/auth/auth_gate.dart');
     expect(gate, contains('otp_expired'));
