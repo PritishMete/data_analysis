@@ -11,7 +11,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from .service import AuthzError, AuthenticationRequired
+from .auth import AuthzError, AuthenticationRequired
 from .supabase_auth import verify_supabase_access_token
 from .management_domain import (
     ManagementConflict,
