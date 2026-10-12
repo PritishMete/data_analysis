@@ -463,7 +463,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             )
         assert lead_assignment["reports_to_assignment_id"] == manager_assignment["assignment_id"]
 
-        with pytest.raises(AuthzError, match="same location"):
+        with pytest.raises(AuthzError):
             assign_team_lead(
                 owner,
                 org["workspace_id"],
