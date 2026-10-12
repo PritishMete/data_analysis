@@ -2,5 +2,3 @@
 pytest
 playwright
 
-# Temporary test-only dependency for legacy RTDB service tests; not used by the application.
-firebase-admin>=6.9.0
