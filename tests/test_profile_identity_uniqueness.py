@@ -55,14 +55,24 @@ class _FakeSessionFactory:
 
 
 @pytest.mark.parametrize(
-    ("duplicate_phone", "duplicate_id", "expected_error"),
+    ("duplicate_phone", "duplicate_id", "expected_error", "expected_field"),
     [
-        (True, False, "This phone number is already associated with another account."),
-        (False, True, "This ID proof is already associated with another account."),
+        (
+            True,
+            False,
+            "This phone number is already registered. Please use a different number.",
+            "phone",
+        ),
+        (
+            False,
+            True,
+            "This ID proof number is already registered. Please check the number or use the correct document.",
+            "id_proof_number",
+        ),
     ],
 )
 def test_profile_update_rejects_duplicate_identity(
-    monkeypatch, duplicate_phone, duplicate_id, expected_error
+    monkeypatch, duplicate_phone, duplicate_id, expected_error, expected_field
 ):
     db = _FakeDB(duplicate_phone=duplicate_phone, duplicate_id=duplicate_id)
     monkeypatch.setattr(profile_domain, "SessionLocal", _FakeSessionFactory(db))
@@ -94,7 +104,7 @@ def test_profile_update_rejects_duplicate_identity(
         },
     )
 
-    with pytest.raises(AuthzError, match=expected_error):
+    with pytest.raises(profile_domain.ProfileFieldError, match=expected_error) as error:
         profile_domain.upsert_my_profile(
             {"sub": "supabase-user", "email": "test@example.com", "email_verified": True},
             "workspace-1",
@@ -113,6 +123,7 @@ def test_profile_update_rejects_duplicate_identity(
             id_proof_number="ab-123 45",
         )
 
+    assert error.value.field == expected_field
     assert db.identity_queries
     sql, params = db.identity_queries[-1]
     assert "NOT (organization_id=:org AND principal_id=:principal)" in sql
