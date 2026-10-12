@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from firebase_authz import management_domain, supabase_provider
+from firebase_authz import management_domain, middleware, routes, supabase_provider
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,3 +57,12 @@ def test_authz_routes_default_to_postgres_and_reject_legacy_provider_configurati
     assert 'os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase")' not in source
     assert "Unsupported AUTHZ_PERSISTENCE_PROVIDER." in source
     assert '_supabase_persistence_enabled()' in source
+
+
+@pytest.mark.parametrize("legacy_provider", ["firebase", "dual", ""])
+def test_routes_and_middleware_fail_closed_for_legacy_persistence(monkeypatch, legacy_provider):
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", legacy_provider)
+    with pytest.raises(RuntimeError, match="only supported provider"):
+        routes._supabase_persistence_enabled()
+    with pytest.raises(RuntimeError, match="only supported provider"):
+        middleware._require_postgres_persistence()
