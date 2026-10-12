@@ -11,6 +11,21 @@ from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperat
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
 
+
+def _supabase_persistence_enabled() -> bool:
+    """Fail closed if a legacy persistence provider is configured."""
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider != "supabase":
+        raise RuntimeError(
+            "Unsupported AUTHZ_PERSISTENCE_PROVIDER. Supabase/PostgreSQL is the only supported provider."
+        )
+    return True
+
+
+# Reject stale production configuration at application startup, not after a
+# request has already entered an authorization handler.
+_supabase_persistence_enabled()
+
 class BootstrapRequest(BaseModel):
     organization_name: str
 
@@ -76,7 +91,7 @@ def my_profile(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+        if not _supabase_persistence_enabled():
             raise AuthzError(
                 "Profile onboarding is available only for the configured Supabase authentication provider."
             )
@@ -99,7 +114,7 @@ def my_profile_update(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() != "supabase":
+        if not _supabase_persistence_enabled():
             raise AuthzError(
                 "Profile onboarding is available only for the configured Supabase authentication provider."
             )
@@ -137,7 +152,7 @@ def provider_diagnostics(authorization: str = Header(default=None)):
         verify_id_token(_token(authorization))
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+    provider = "supabase"
     return {
         "provider": provider,
         "environment_variable_present": "AUTHZ_PERSISTENCE_PROVIDER" in os.environ,
@@ -153,7 +168,7 @@ def me(
 ):
     try:
         claims = verify_id_token(_token(authorization))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import authorization_context
             return {"uid": claims.get("uid"), "email": claims.get("email"), **authorization_context(claims, workspace_id.strip() if workspace_id else None)}
         uid = str(claims["uid"])
@@ -186,7 +201,7 @@ def management(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import management_snapshot as provider_management_snapshot
             return provider_management_snapshot(claims, workspace_id.strip())
         return management_snapshot(str(claims["uid"]), workspace_id.strip(), claims)
@@ -198,7 +213,7 @@ def management(
 def pending_invitations(authorization: str = Header(default=None)):
     try:
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import pending_invitations
             return {"invitations": pending_invitations(claims)}
         from .service import pending_invitations_for_email
@@ -217,7 +232,7 @@ def membership(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import authorization_context
             context = authorization_context(claims, workspace_id.strip())
             if context["membership_status"] == "none":
@@ -257,7 +272,7 @@ def membership(
 @router.post("/register-company")
 def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import register_organization
             return register_organization(require_email_verified(verify_id_token(_token(authorization))), req.organization_name)
         return bootstrap_owner(_token(authorization), req.organization_name)
@@ -278,7 +293,7 @@ def founder_organization_register(
 ):
     """Public founder registration contract.
 
-    Firebase identity is supplied only in the Authorization bearer token.
+    Supabase Auth identity is supplied only in the Authorization bearer token.
     Organization/workspace IDs, principal identity, Owner role and RBAC are
     generated and assigned by the trusted bootstrap service.
     """
@@ -367,7 +382,7 @@ def founder_organization_register(
 def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):
     try:
         token = _token(authorization)
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import authorize
             try:
                 return authorize(verify_id_token(token), req.workspace_id, req.action, req.resource_id)
@@ -392,7 +407,7 @@ def authorization_check(req: AuthorizationCheck, authorization: str = Header(def
 @router.post("/roles/mutate")
 def role_mutation(req:RoleMutation,authorization: str=Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import mutate_role as provider_mutate_role
             return {"success": provider_mutate_role(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.role_id, req.enabled)}
         return {"success":mutate_role(req.target_uid,req.role_id,req.enabled,_token(authorization),req.workspace_id)}
@@ -431,7 +446,7 @@ class MembershipStatusRequest(BaseModel):
 @router.post("/invitations")
 def invitation_create(req: InvitationRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import create_invitation as provider_create_invitation
             claims = require_email_verified(verify_id_token(_token(authorization)))
             return provider_create_invitation(
@@ -460,7 +475,7 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
         bool(req.workspace_id),
     )
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import accept_invitation as provider_accept_invitation
             result = provider_accept_invitation(
                 verify_id_token(_token(authorization)),
@@ -491,7 +506,7 @@ def invitation_password_setup_complete(
 ):
     try:
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
             return provider_mark_password_setup(claims, req.invitation_id)
         raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
@@ -501,7 +516,7 @@ def invitation_password_setup_complete(
 @router.post("/membership/status")
 def membership_status(req: MembershipStatusRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import set_membership_status as provider_set_membership_status
             return {"success": provider_set_membership_status(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.status)}
         return {"success": set_membership_status(
@@ -520,7 +535,7 @@ class WorkingCopyRequest(BaseModel):
 @router.post("/working-copies")
 def working_copy_create(req: WorkingCopyRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import create_working_copy as provider_create_working_copy
             return provider_create_working_copy(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.working_copy_id, req.source_version)
         return create_working_copy(
@@ -553,7 +568,7 @@ class DelegationRequest(BaseModel):
 @router.post("/approved-employees")
 def approved_employee(req: ApprovedEmployee, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import set_approved_employee as provider_set_approved_employee
             return {"success": provider_set_approved_employee(
                 require_email_verified(verify_id_token(_token(authorization))),
@@ -572,7 +587,7 @@ def approved_employee(req: ApprovedEmployee, authorization: str = Header(default
 @router.post("/delegations")
 def delegation(req: DelegationRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import set_delegation as provider_set_delegation
             return provider_set_delegation(
                 require_email_verified(verify_id_token(_token(authorization))),
@@ -610,7 +625,7 @@ class DatasetGrant(BaseModel):
 @router.post("/datasets/register")
 def dataset_register(req: DatasetRegistration, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import register_dataset as provider_register_dataset
             return provider_register_dataset(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.owner_uid, req.protected_original)
         return register_dataset(
@@ -630,7 +645,7 @@ def dataset_register(req: DatasetRegistration, authorization: str = Header(defau
 @router.post("/datasets/grants")
 def dataset_grant(req: DatasetGrant, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import set_dataset_grant
             return {"success": set_dataset_grant(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.target_uid, req.permissions)}
         return {"success": set_dataset_grant(
@@ -656,7 +671,7 @@ class ResourceGrant(BaseModel):
 @router.post("/roles")
 def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import upsert_role as provider_upsert_role
             return {"success": provider_upsert_role(verify_id_token(_token(authorization)), req.workspace_id, req.role_id, req.name, req.permissions)}
         return {"success": upsert_role(req.workspace_id, req.role_id, req.name, req.permissions, _token(authorization))}
@@ -667,7 +682,7 @@ def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
 @router.post("/resource-grants")
 def resource_grant(req: ResourceGrant, authorization: str=Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import set_resource_grant
             return {"success": set_resource_grant(verify_id_token(_token(authorization)), req.workspace_id, req.resource_id, req.target_uid, req.permissions)}
         return {"success": set_resource_grant(req.workspace_id, req.resource_id, req.target_uid, req.permissions, _token(authorization))}
@@ -682,7 +697,7 @@ class AccountCleanupRequest(BaseModel):
 @router.post("/account/cleanup")
 def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(default=None)):
     try:
-        if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+        if _supabase_persistence_enabled():
             from .supabase_provider import cleanup_account as provider_cleanup_account
             claims = require_email_verified(verify_id_token(_token(authorization)))
             return provider_cleanup_account(claims, req.uid)
