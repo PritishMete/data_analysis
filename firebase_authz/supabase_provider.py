@@ -194,13 +194,12 @@ def register_organization(
             )
             db.execute(
                 text(
-                    """INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
-                    VALUES (:provider, :subject, :uid, :principal)"""
+                    """INSERT INTO identity_bindings(provider, provider_subject, principal_id)
+                    VALUES (:provider, :subject, :principal)"""
                 ),
                 {
                     "provider": provider,
                     "subject": subject,
-                    "uid": uid,
                     "principal": principal_id,
                 },
             )
@@ -713,9 +712,9 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         else:
             principal_id = _id("prn")
             db.execute(text("INSERT INTO principals(principal_id) VALUES (:id)"), {"id": principal_id})
-            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
-                VALUES (:provider,:subject,:uid,:principal)"""),
-                       {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
+            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, principal_id)
+                VALUES (:provider,:subject,:principal)"""),
+                       {"provider": provider, "subject": subject, "principal": principal_id})
 
         existing_member = db.execute(
             text("""SELECT employee_id FROM organization_members
