@@ -63,7 +63,7 @@ class ProfileUpsertRequest(BaseModel):
     id_proof_number: str
 
 def _token(value):
-    if not value or not value.startswith("Bearer "): raise HTTPException(401,"Firebase authentication required.")
+    if not value or not value.startswith("Bearer "): raise HTTPException(401,"Supabase authentication required.")
     return value[7:].strip()
 
 
