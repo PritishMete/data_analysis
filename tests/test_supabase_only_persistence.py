@@ -27,7 +27,9 @@ def test_postgres_provider_identity_ignores_firebase_jwt_metadata():
 
 def test_postgres_provider_rejects_missing_stable_subject():
     with pytest.raises(Exception, match="Authenticated Supabase identity is required"):
-        supabase_provider._identity({"email": "employee@example.com"})
+        supabase_provider._identity({"uid": "not-a-verified-subject", "email": "employee@example.com"})
+    with pytest.raises(Exception, match="Authenticated Supabase identity is required"):
+        management_domain._identity({"uid": "not-a-verified-subject", "email": "employee@example.com"})
 
 
 def test_supabase_provider_does_not_query_or_write_legacy_firebase_identity_columns():
