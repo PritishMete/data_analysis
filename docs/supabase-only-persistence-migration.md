@@ -26,6 +26,7 @@ This document records the active runtime path on `fix/supabase-only-auth-2026101
 - Runtime authorization state is intended to be stored in PostgreSQL; application authentication is Supabase Auth.
 - `firebase_authz/service.py` is now a compatibility export module for shared Supabase auth/error primitives. Active routes and middleware call Supabase/PostgreSQL implementations; the retired RTDB service and emulator test were removed from runtime/test discovery.
 - `migrations/0032_supabase_only_auth_user_cleanup.sql` replaces the active auth-user cleanup function without resolving principals through legacy Firebase UID values.
+- `migrations/0033_manager_scoped_users_manage.sql` adds the scoped Manager capability required by branch-management operations; the management domain still checks the Manager's active branch assignment before each mutation.
 - Earlier migration files that mention Firebase are historical migration records and must not be used as a runtime fallback.
 - CI uses a disposable PostgreSQL service and `tests/sql/supabase_compat.sql` to model the Supabase-managed `auth`/`storage` surfaces needed by schema tests. No production credentials or production database are used.
 - Do not apply migrations to production as part of this PR. Any historical data import requires a separately reviewed, idempotent plan after its source format has been verified.
