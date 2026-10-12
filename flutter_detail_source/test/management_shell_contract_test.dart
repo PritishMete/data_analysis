@@ -332,9 +332,9 @@ void main() {
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
     expect(access, contains('Review managed resources and the access levels available to people in your organization.'));
-    expect(access, contains("['dataset.view_original']"));
-    expect(access, contains("'dataset.create_working_copy'"));
-    expect(access, contains("'dataset.edit_working_copy'"));
+    expect(access, contains('The backend management policy is the authoritative UI capability source.'));
+    expect(access, contains("uiCapabilities.contains('dataset.upload')"));
+    expect(access, contains("_post('/v1/authz/datasets/grants'"));
     expect(access, contains('_accessPanel'));
     expect(access, isNot(contains('ORGANIZATION CONTROL PLANE')));
 
