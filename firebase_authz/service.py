@@ -1318,11 +1318,7 @@ def set_membership_status(
         raise PermissionDenied("User is not an organization member.")
     initialize_firebase()
     db.reference(f"workspaces/{workspace_id}/members/{target_uid}/status").set(status)
-    if status in {"suspended", "removed"} and auth is not None:
-        try:
-            auth.revoke_refresh_tokens(target_uid)
-        except Exception:
-            pass
+    # Every protected request rechecks membership status; no Firebase Auth session exists to revoke.
     audit_event(
         workspace_id, actor, "membership.status", "succeeded",
         target_uid=target_uid, metadata={"status": status},
@@ -1380,11 +1376,7 @@ def cleanup_account(uid: str, actor_token: str):
             metadata={"membership_revoked": True, "authorization_state_revoked": True},
         )
         db.reference("/").update(updates)
-    if auth is not None:
-        try:
-            auth.revoke_refresh_tokens(uid)
-        except Exception:
-            pass
+    # Membership status is checked server-side on every request, invalidating authorization immediately.
     db.reference(f"users/{uid}/status").set("removed")
     return {"revoked_workspaces": affected}
 
@@ -1393,17 +1385,16 @@ def protected_context(id_token: str, workspace_id: str, action: str, resource_id
     return claims, authorization(str(claims["uid"]), workspace_id, action, resource_id)
 
 def _claims_identity_binding(claims: dict[str, Any]) -> tuple[str, str]:
-    firebase_claims = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(firebase_claims.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase_claims.get("identities") if isinstance(firebase_claims.get("identities"), dict) else {}
-    values = identities.get(provider) if isinstance(identities, dict) else None
-    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or claims.get("uid") or "")
-    return provider, subject
+    """Return the stable Supabase Auth subject for identity binding."""
+    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    if not subject:
+        raise AuthenticationRequired("Supabase authentication failed.")
+    return "supabase", subject
 
 def bootstrap_owner(id_token: str, organization_name: str, allow_any_authenticated: bool = False):
     """Create an authenticated user's organization and Owner membership.
 
-    Registration is intentionally based only on a valid Firebase bearer token
+    Registration is intentionally based only on a valid Supabase bearer token
     and a safe organization name. The caller cannot choose organization IDs,
     principal IDs, roles, or permissions.
     """
