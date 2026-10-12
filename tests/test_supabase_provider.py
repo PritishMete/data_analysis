@@ -178,7 +178,7 @@ def test_supabase_registration_rejects_existing_active_membership():
 
 def test_supabase_registration_rejects_duplicate_active_branch_identifier():
     from firebase_authz.supabase_provider import register_organization
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     from core.db import SessionLocal
 
     first = _register_organization({"uid": "branch-id-one"}, "Branch ID One", "Kolkata A", "UNIQUE-BRANCH-01")
@@ -207,7 +207,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
     create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
     assert authorize_working_copy(claims, result["workspace_id"], "wc_test", "working_copy.modify")["authorized"]
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     with pytest.raises(AuthzError):
         authorize_dataset(claims, "org_other", "ds_test", "dataset.view_original")
     with SessionLocal.begin() as session:
@@ -216,7 +216,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
 
 def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     import uuid
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     from firebase_authz.supabase_provider import (
         accept_invitation, create_invitation, mutate_role, pending_invitations,
         register_organization, set_membership_status,
@@ -231,7 +231,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     result = _register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
     workspace = result["workspace_id"]
     try:
-        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        invitation = create_invitation(owner, workspace, guest["email"], "data_analyst")
         pending = pending_invitations(guest)
         assert pending[0]["invitation_id"] == invitation["invitation_id"]
         assert pending[0]["organization_name"] == "Invitation Test"
@@ -244,7 +244,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
                     WHERE m.organization_id=:org AND b.provider='supabase' AND b.provider_subject=:uid"""),
                            {"org": workspace, "uid": guest_uid}).one()
         assert row.status == "active"
-        assert row.role_id == "employee"
+        assert row.role_id == "data_analyst"
         assert set_membership_status(owner, workspace, guest_uid, "suspended") is True
         with pytest.raises(AuthzError):
             mutate_role(guest, workspace, owner_uid, "manager", True)
@@ -281,14 +281,14 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
     result = _register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
     workspace = result["workspace_id"]
     try:
-        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        invitation = create_invitation(owner, workspace, guest["email"], "data_analyst")
         accept_invitation(guest, workspace, invitation["invitation_id"])
 
         context = authorization_context(guest, workspace)
         assert context["membership_status"] == "active"
         assert context["workspace_id"] == workspace
         assert context["employee_id"]
-        assert context["role_ids"] == ["employee"]
+        assert context["role_ids"] == ["data_analyst"]
         assert context["profile_complete"] is False
         assert context["workspaces"][0]["membership_status"] == "active"
         assert context["workspaces"][0]["profile_complete"] is False
@@ -304,7 +304,7 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
         assert me_response["membership_status"] == "active"
         assert me_response["workspace_id"] == workspace
         assert me_response["employee_id"] == context["employee_id"]
-        assert me_response["role_ids"] == ["employee"]
+        assert me_response["role_ids"] == ["data_analyst"]
         assert me_response["profile_complete"] is False
     finally:
         with SessionLocal.begin() as session:
@@ -317,7 +317,7 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
 def test_supabase_invitation_rejects_expired_and_revoked():
     import uuid
     from datetime import datetime, timedelta, timezone
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     from firebase_authz.supabase_provider import (
         accept_invitation,
         create_invitation,
@@ -334,7 +334,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
     workspace = result["workspace_id"]
     try:
         expired = create_invitation(
-            owner, workspace, guest["email"], "employee",
+            owner, workspace, guest["email"], "data_analyst",
             int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp() * 1000),
         )
         with SessionLocal.begin() as session:
@@ -346,7 +346,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
             accept_invitation(guest, workspace, expired["invitation_id"])
 
         revoked = create_invitation(
-            owner, workspace, guest["email"], "employee",
+            owner, workspace, guest["email"], "data_analyst",
         )
         with SessionLocal.begin() as session:
             session.execute(
@@ -362,7 +362,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
 
 def test_supabase_invitation_rejects_cross_company_active_member():
     import uuid
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     from firebase_authz.supabase_provider import (
         accept_invitation,
         create_invitation,
@@ -379,9 +379,9 @@ def test_supabase_invitation_rejects_cross_company_active_member():
     guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com"}
     org_a = _register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
     org_b = _register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
-    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "employee")
+    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "data_analyst")
     accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
-    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "employee")
+    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "data_analyst")
     try:
         with pytest.raises(AuthzError):
             accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"])
@@ -445,7 +445,7 @@ def test_supabase_legacy_registration_alias_uses_transactional_provider():
 
 
 def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally():
-    from firebase_authz.service import AuthzError
+    from firebase_authz.auth import AuthzError
     from firebase_authz.supabase_provider import accept_invitation, cleanup_account, create_invitation, register_organization
     from core.db import SessionLocal
 
@@ -455,7 +455,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     owner = {"uid": owner_uid, "sub": owner_uid, "email": owner_uid + "@example.com"}
     claims = {"uid": uid, "sub": uid, "email": uid + "@example.com"}
     result = _register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
-    invitation = create_invitation(owner, result["workspace_id"], claims["email"], "employee")
+    invitation = create_invitation(owner, result["workspace_id"], claims["email"], "data_analyst")
     accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
     try:
         assert cleanup_account(claims, uid) == {"revoked_workspaces": [result["workspace_id"]]}
