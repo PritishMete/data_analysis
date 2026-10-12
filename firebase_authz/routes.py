@@ -3,7 +3,7 @@ import os
 import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, verify_id_token, require_email_verified
+from .auth import AuthzError, AuthenticationRequired, BootstrapDenied, verify_id_token, require_email_verified
 from . import registration_diagnostics
 from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
