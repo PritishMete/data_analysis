@@ -102,7 +102,6 @@ def _cleanup(*organization_ids: str) -> None:
 
 def test_management_reads_are_organization_scoped():
     from firebase_authz.management_domain import (
-        create_location,
         list_assignments,
         list_locations,
         list_people,
@@ -426,7 +425,17 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             lead = _add_member(session, org["organization_id"], lead_uid, "LEAD-SCOPE")
             employee = _add_member(session, org["organization_id"], employee_uid, "EMP-SCOPE")
 
-        second_location = create_location(owner, org["workspace_id"], "North Branch", f"NORTH-{suffix}")
+        # Additional location is fixture data; Branch Heads cannot create branches.
+        second_location_id = f"loc_{uuid.uuid4().hex}"
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("""INSERT INTO locations
+                    (location_id, organization_id, name, branch_identifier)
+                    VALUES (:location, :org, 'North Branch', :identifier)"""),
+                {"location": second_location_id, "org": org["organization_id"],
+                 "identifier": f"NORTH-{suffix}"},
+            )
+        second_location = {"location_id": second_location_id}
         manager_assignment = assign_manager(owner, org["workspace_id"], org["location_id"], manager)
         main_section = create_section(owner, org["workspace_id"], org["location_id"], "Sales")
 
