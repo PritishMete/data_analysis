@@ -30,10 +30,10 @@ def test_original_archive_is_opt_in(monkeypatch):
     assert archive_original_enabled() is True
 
 
-def test_employee_roles_do_not_receive_dataset_upload():
+def test_non_manager_roles_do_not_receive_dataset_upload():
     from firebase_authz.schema import DEFAULT_ROLES
 
-    for role in ("external_viewer", "employee", "team_lead"):
+    for role in ("external_viewer", "data_analyst", "team_lead"):
         assert "dataset.upload" not in DEFAULT_ROLES[role]
 
 
