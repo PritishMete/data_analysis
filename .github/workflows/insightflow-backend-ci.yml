@@ -51,6 +51,9 @@ jobs:
           python -m py_compile tools/run_authz_migrations.py
           python tools/run_authz_migrations.py --help >/dev/null
 
+      - name: Run Supabase identity and persistence-boundary regression tests
+        run: pytest -q tests/test_supabase_only_persistence.py
+
       - name: Run duplicate identity regression tests
         run: pytest -q tests/test_profile_identity_uniqueness.py
 
