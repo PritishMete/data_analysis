@@ -48,6 +48,8 @@ class _CompanyRegistrationScreenState
   bool _busy = false;
   String? _message;
   bool _error = false;
+  String? _phoneError;
+  String? _idProofError;
   OrganizationServiceDiagnostic? _organizationDiagnostic;
 
   @override
@@ -239,6 +241,8 @@ class _CompanyRegistrationScreenState
       _busy = true;
       _error = false;
       _message = null;
+      _phoneError = null;
+      _idProofError = null;
     });
 
     try {
@@ -284,8 +288,24 @@ class _CompanyRegistrationScreenState
         decoded = null;
       }
 
-      final detail =
-          decoded is Map ? decoded['detail']?.toString().trim() : null;
+      final rawDetail = decoded is Map ? decoded['detail'] : null;
+      if (response.statusCode == 409 && rawDetail is Map) {
+        final field = rawDetail['field']?.toString();
+        final message = rawDetail['message']?.toString() ?? '';
+        if ((field == 'phone' || field == 'id_proof_number') &&
+            message.isNotEmpty) {
+          setState(() {
+            _busy = false;
+            _step = 1;
+            _message = null;
+            _error = false;
+            if (field == 'phone') _phoneError = message;
+            if (field == 'id_proof_number') _idProofError = message;
+          });
+          return;
+        }
+      }
+      final detail = rawDetail?.toString().trim();
       final businessError =
           organizationServiceBusinessErrorMessage(response);
       if (businessError != null) throw StateError(businessError);
@@ -359,6 +379,7 @@ class _CompanyRegistrationScreenState
     TextInputType type = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
     String? helper,
+    String? errorText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -383,6 +404,13 @@ class _CompanyRegistrationScreenState
               fontSize: 9,
               height: 1.3,
             ),
+          ),
+        ],
+        if (errorText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
           ),
         ],
       ],
@@ -498,6 +526,7 @@ class _CompanyRegistrationScreenState
                 'ID Proof Number',
                 _proofNumber,
                 placeholder: 'Government ID number',
+                errorText: _idProofError,
               ),
             ],
           ];
@@ -562,6 +591,13 @@ class _CompanyRegistrationScreenState
             ],
           ),
         ),
+        if (_phoneError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _phoneError!,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+          ),
+        ],
       ],
     );
     return Row(
