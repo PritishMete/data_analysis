@@ -323,7 +323,7 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
         },
         "roles": {
             "organization_owner": {"permissions": sorted(service.ACTIONS)},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "datasets": {
             "ds_opaque": {
@@ -369,7 +369,7 @@ def test_team_lead_delegation_requires_approved_employees(monkeypatch):
         "roles": {
             "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
             "team_lead": {"permissions": sorted(service.DEFAULT_ROLES["team_lead"])},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "datasets": {"ds": {"dataset_id": "ds", "owner_uid": "manager", "grants": {}}},
         "approved_employees": {},
@@ -420,7 +420,7 @@ def test_working_copy_provenance_is_metadata_only(monkeypatch):
             "employee": {"status": "active", "roles": {"employee": True}},
         },
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "datasets": {
             "ds1": {
@@ -500,7 +500,7 @@ def test_employee_cannot_mutate_original_excel_even_if_operation_capability_exis
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
@@ -535,7 +535,7 @@ def test_suspended_membership_is_immediately_denied_after_revocation(monkeypatch
     workspace = {
         "members": {"employee": {"status": "suspended", "roles": {"employee": True}}},
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
@@ -571,7 +571,7 @@ def test_audit_event_filters_workbook_sensitive_metadata(monkeypatch):
 def test_original_mutation_requires_dataset_view_grant(monkeypatch):
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
-        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])}},
         "datasets": {
             "ds_opaque": {
                 "owner_uid": "owner",
@@ -591,7 +591,7 @@ def test_original_mutation_requires_dataset_view_grant(monkeypatch):
 def test_working_copy_mutation_uses_copy_grant(monkeypatch):
     workspace = {
         "members": {"employee": {"status": "active", "roles": {"employee": True}}},
-        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])}},
+        "roles": {"employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])}},
         "working_copies": {
             "wc_123": {
                 "created_by_uid": "employee",
@@ -665,7 +665,7 @@ def test_team_lead_promotion_requires_approved_active_employee(monkeypatch):
         },
         "roles": {
             "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "approved_employees": {},
     }
@@ -1005,7 +1005,7 @@ def test_relinked_identity_keeps_existing_resource_acl(monkeypatch):
             }
         },
         "roles": {
-            "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
+            "employee": {"permissions": sorted(service.DEFAULT_ROLES["data_analyst"])},
         },
         "resources": {
             "ds_1": {
