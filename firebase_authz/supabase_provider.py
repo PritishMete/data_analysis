@@ -165,8 +165,8 @@ def register_organization(
     # The stable Supabase Auth UUID is the sole identity key; JWT metadata
     # cannot select a different authentication provider.
     provider = "supabase"
-    subject = str(claims.get("sub") or uid).strip()
-    if not subject:
+    subject = str(claims.get("sub") or "").strip()
+    if not subject or subject != uid:
         raise AuthzError("Authenticated Supabase identity is required.")
 
     principal_id = _id("prn")
@@ -442,7 +442,7 @@ def register_organization(
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
     """Return only the stable subject from an already verified Supabase JWT."""
-    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    subject = str(claims.get("sub") or "").strip()
     if not subject:
         raise AuthzError("Authenticated Supabase identity is required.")
     return "supabase", subject
