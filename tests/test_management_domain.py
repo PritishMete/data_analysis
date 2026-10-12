@@ -20,10 +20,7 @@ def _claims(uid: str) -> dict:
         "email_confirmed_at": "2026-10-01T00:00:00Z",
         "phone": "+919876543210",
         "phone_confirmed_at": "2026-10-01T00:00:00Z",
-        "firebase": {
-            "sign_in_provider": "password",
-            "identities": {"password": [uid]},
-        },
+        "provider": "supabase",
     }
 
 
@@ -34,8 +31,8 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
         {"id": principal_id},
     )
     session.execute(
-        text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
-                VALUES ('firebase', :uid, :uid, :principal)"""),
+        text("""INSERT INTO identity_bindings(provider, provider_subject, principal_id)
+                VALUES ('supabase', :uid, :principal)"""),
         {"uid": uid, "principal": principal_id},
     )
     session.execute(
