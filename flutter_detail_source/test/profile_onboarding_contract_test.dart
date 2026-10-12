@@ -200,14 +200,18 @@ void main() {
 
   test('duplicate profile identities return field-specific UI errors', () {
     final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
-    expect(employee, contains("rawDetail['field']"));
-    expect(employee, contains("field == 'phone'"));
-    expect(employee, contains("field == 'id_proof_number'"));
-    expect(employee, contains('_phoneError = message'));
-    expect(employee, contains('_idProofError = message'));
-    expect(employee, contains('_phoneError!'));
-    expect(employee, contains('errorText: _idProofError'));
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    for (final screen in [employee, company]) {
+      expect(screen, contains("rawDetail['field']"));
+      expect(screen, contains("field == 'phone'"));
+      expect(screen, contains("field == 'id_proof_number'"));
+      expect(screen, contains('_phoneError = message'));
+      expect(screen, contains('_idProofError = message'));
+      expect(screen, contains('_phoneError!'));
+      expect(screen, contains('errorText: _idProofError'));
+    }
     expect(employee, contains('_step = 0'));
+    expect(company, contains('_step = 1'));
   });
 
   test('confirmation redirect failures get a user-facing route', () {
