@@ -199,6 +199,15 @@ def normalize_id_proof_type(country_code: str, value: str) -> str:
     return key
 
 
+def normalize_id_proof_number(value: str) -> str:
+    """Canonical ID value: uppercase alphanumerics; separators are formatting only."""
+    raw = _clean(value, "ID Proof Number", 160)
+    normalized = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+    if not normalized:
+        raise ProfileValidationError("ID Proof Number must contain letters or digits.")
+    return normalized
+
+
 def validate_profile_fields(
     *,
     full_name: str,
@@ -243,9 +252,5 @@ def validate_profile_fields(
             location["country_code"],
             id_proof_type,
         ),
-        "id_proof_number": _clean(
-            id_proof_number,
-            "ID Proof Number",
-            160,
-        ),
+        "id_proof_number": normalize_id_proof_number(id_proof_number),
     }
