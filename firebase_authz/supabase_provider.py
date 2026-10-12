@@ -161,19 +161,13 @@ def register_organization(
     # require Supabase phone authentication or phone verification during onboarding.
     confirmed_phone_at = None
 
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(
-        claims.get("provider")
-        or firebase.get("sign_in_provider")
-        or "firebase"
-    ).strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    subjects = identities.get(provider)
-    subject = (
-        str(subjects[0])
-        if isinstance(subjects, list) and subjects
-        else str(claims.get("sub") or uid)
-    )
+    # This function receives claims only after Supabase Auth verification.
+    # The stable Supabase Auth UUID is the sole identity key; JWT metadata
+    # cannot select a different authentication provider.
+    provider = "supabase"
+    subject = str(claims.get("sub") or uid).strip()
+    if not subject:
+        raise AuthzError("Authenticated Supabase identity is required.")
 
     principal_id = _id("prn")
     organization_id = _id("org")
@@ -448,13 +442,11 @@ def register_organization(
     }
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    uid = str(claims.get("uid") or claims.get("sub") or "").strip()
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(claims.get("provider") or firebase.get("sign_in_provider") or "firebase").strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    values = identities.get(provider)
-    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or uid)
-    return provider, subject
+    """Return only the stable subject from an already verified Supabase JWT."""
+    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    if not subject:
+        raise AuthzError("Authenticated Supabase identity is required.")
+    return "supabase", subject
 
 
 def _principal_for_claims(db, claims: dict[str, Any], organization_id: str | None = None):
@@ -463,8 +455,7 @@ def _principal_for_claims(db, claims: dict[str, Any], organization_id: str | Non
     row = db.execute(text("""SELECT b.principal_id, m.employee_id, m.status
         FROM identity_bindings b
         LEFT JOIN organization_members m ON m.principal_id=b.principal_id
-        WHERE ((b.provider=:provider AND b.provider_subject=:subject)
-               OR (b.provider='firebase' AND b.firebase_uid=:uid))
+        WHERE b.provider=:provider AND b.provider_subject=:subject
           AND (CAST(:org AS TEXT) IS NULL OR m.organization_id=CAST(:org AS TEXT))
           AND b.status='active'
         ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END"""),
@@ -847,7 +838,8 @@ def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid:
 def _principal_for_uid(db, uid: str, organization_id: str):
     return db.execute(text("""SELECT b.principal_id, m.status FROM identity_bindings b
         JOIN organization_members m ON m.principal_id=b.principal_id
-        WHERE b.firebase_uid=:uid AND m.organization_id=:org"""),
+        WHERE b.provider='supabase' AND b.provider_subject=:uid
+          AND m.organization_id=:org"""),
                       {"uid": uid, "org": organization_id}).mappings().first()
 
 
@@ -1054,7 +1046,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             member_scope = "m.principal_id=:actor"
             member_params = {"org": org, "actor": actor}
 
-        members = db.execute(text(f"""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
+        members = db.execute(text(f"""SELECT b.provider_subject AS uid, m.employee_id, m.status,
             COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids
             FROM organization_members m
             JOIN identity_bindings b ON b.principal_id=m.principal_id
@@ -1063,7 +1055,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             LEFT JOIN organizational_assignments oa
               ON oa.organization_id=m.organization_id AND oa.principal_id=m.principal_id AND oa.status='active'
             WHERE m.organization_id=:org AND {member_scope}
-            GROUP BY b.firebase_uid,m.employee_id,m.status"""), member_params).mappings().all()
+            GROUP BY b.provider_subject,m.employee_id,m.status"""), member_params).mappings().all()
 
         if organization_wide:
             dataset_scope = "TRUE"
@@ -1133,7 +1125,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             )"""
         else:
             approved_scope = "a.principal_id=:actor"
-        approved = db.execute(text(f"""SELECT b.firebase_uid AS uid, a.employee_id, a.status
+        approved = db.execute(text(f"""SELECT b.provider_subject AS uid, a.employee_id, a.status
             FROM approved_employees a JOIN identity_bindings b ON b.principal_id=a.principal_id
             WHERE a.organization_id=:org AND a.status='active' AND {approved_scope}"""),
             {"org": org, "actor": actor}).mappings().all()
@@ -1287,7 +1279,8 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
     with SessionLocal.begin() as db:
         memberships = db.execute(text("""SELECT m.organization_id, m.principal_id
             FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
-            WHERE b.firebase_uid=:uid AND m.status IN ('active','approved','suspended')"""),
+            WHERE b.provider='supabase' AND b.provider_subject=:uid
+              AND m.status IN ('active','approved','suspended')"""),
                                   {"uid": uid}).mappings().all()
         affected = []
         for membership in memberships:
@@ -1317,7 +1310,7 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
                        {"event": _id("evt"), "org": org, "principal": principal,
                         "metadata": json.dumps({"membership_revoked": True, "authorization_state_revoked": True})})
         db.execute(text("""UPDATE identity_bindings SET status='inactive', updated_at=now()
-            WHERE firebase_uid=:uid"""), {"uid": uid})
+            WHERE provider='supabase' AND provider_subject=:uid"""), {"uid": uid})
     return {"revoked_workspaces": affected}
 
 
@@ -1458,8 +1451,7 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
     with SessionLocal.begin() as db:
         target = db.execute(text("""SELECT b.principal_id FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE ((b.provider='supabase' AND b.provider_subject=:uid)
-                OR (b.provider='firebase' AND b.firebase_uid=:uid))
+            WHERE b.provider='supabase' AND b.provider_subject=:uid
               AND m.organization_id=:org AND m.status='active'
               AND b.status='active'"""),
                             {"uid": target_uid, "org": organization_id}).scalar_one_or_none()
@@ -1491,8 +1483,7 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
         owner = db.execute(text("""SELECT b.principal_id
             FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE ((b.provider=:provider AND b.provider_subject=:owner_uid)
-                OR (b.provider='firebase' AND b.firebase_uid=:owner_uid))
+            WHERE b.provider=:provider AND b.provider_subject=:owner_uid
               AND m.organization_id=:org AND m.workspace_id=:workspace
               AND m.status='active' AND b.status='active'"""),
                            {"provider": provider, "owner_uid": str(owner_uid),
@@ -1666,27 +1657,15 @@ def audit_dataset_event(
     workspace_id: str, actor_uid: str, action: str, outcome: str,
     *, metadata: dict[str, Any] | None = None,
 ) -> None:
-    provider_mode = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
     with SessionLocal.begin() as db:
-        if provider_mode == "supabase":
-            context = authorization_context(
-                {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"},
-                workspace_id,
-            )
-            if not context.get("workspace_authorized"):
-                return
-            organization_id = str(context["organization_id"])
-            principal_id = str(context["principal_id"])
-        else:
-            actor = _principal_for_claims(
-                db,
-                {"uid": actor_uid, "sub": actor_uid, "provider": "firebase"},
-                workspace_id,
-            )
-            if not actor:
-                return
-            organization_id = str(workspace_id)
-            principal_id = str(actor["principal_id"])
+        context = authorization_context(
+            {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"},
+            workspace_id,
+        )
+        if not context.get("workspace_authorized"):
+            return
+        organization_id = str(context["organization_id"])
+        principal_id = str(context["principal_id"])
         db.execute(text("""INSERT INTO audit_events
             (event_id, organization_id, actor_principal_id, action, outcome, metadata)
             VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),
