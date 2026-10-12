@@ -177,7 +177,7 @@ def test_supabase_admin_diagnostic_logging_never_logs_credentials(monkeypatch, c
 
     with caplog.at_level("WARNING"):
         with pytest.raises(SupabaseAdminCredentialError):
-            invite_user_by_email("employee@example.com", "https://example.com/invite")
+            invite_user_by_email("employee@example.com", "https://example.com/invite", organization_name="Test Organization")
 
     assert secret not in caplog.text
     assert "REDACTED" in caplog.text
