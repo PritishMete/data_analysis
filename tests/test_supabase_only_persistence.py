@@ -92,6 +92,10 @@ def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_pat
         for pattern in forbidden_runtime_patterns:
             if pattern in source:
                 findings.append(f"{path.relative_to(ROOT)} contains {pattern!r}")
+        if path.parent.name == "firebase_authz" and "from .service import" in source:
+            findings.append(f"{path.relative_to(ROOT)} imports the legacy service module")
+        if "from firebase_authz import service" in source or "import firebase_authz.service" in source:
+            findings.append(f"{path.relative_to(ROOT)} imports the legacy service module")
     assert not findings, "Active Firebase/RTDB production references remain: " + "; ".join(findings)
 
 
