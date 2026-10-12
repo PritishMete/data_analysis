@@ -49,7 +49,10 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(http, contains('supabaseAuthHeaders()'));
     expect(onboarding, contains('InsightFlowSupabaseAuthService.ensureSession()'));
     expect(onboarding, contains('final headers = await supabaseAuthHeaders();'));
-    expect(onboarding, contains("invitation['organization_id']?.toString()"));
+    // Organization/workspace identity must be resolved by the backend after acceptance,
+    // not trusted from a client-supplied pending-invitation payload.
+    expect(onboarding, contains("The server resolves the accepted invitation's organization and workspace."));
+    expect(onboarding, isNot(contains("invitation['organization_id']?.toString()")));
     expect(onboarding, isNot(contains('firebaseAuthHeaders(')));
     expect(onboarding, isNot(contains('InsightFlowAuthService.currentUser')));
   });
