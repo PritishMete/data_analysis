@@ -3,7 +3,7 @@ import os
 import sys
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
-from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootstrap_owner, mutate_role, upsert_role, set_resource_grant, protected_context, verify_id_token, require_email_verified, authorization as authorize_workspace, authorize_dataset, authorize_excel_mutation, register_dataset, set_dataset_grant, create_working_copy, authorize_working_copy, management_snapshot, cleanup_account, create_invitation, accept_invitation, set_membership_status, set_approved_employee, set_delegation, _user, workspace_memberships, authentication_context, authenticated_identity
+from .service import AuthzError, AuthenticationRequired, BootstrapDenied, verify_id_token, require_email_verified
 from . import registration_diagnostics
 from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
@@ -160,9 +160,8 @@ def me(
 ):
     try:
         claims = verify_id_token(_token(authorization))
-        if _supabase_persistence_enabled():
-            from .supabase_provider import authorization_context
-            return {"uid": claims.get("uid"), "email": claims.get("email"), **authorization_context(claims, workspace_id.strip() if workspace_id else None)}
+from .supabase_provider import authorization_context
+return {"uid": claims.get("uid"), "email": claims.get("email"), **authorization_context(claims, workspace_id.strip() if workspace_id else None)}
         uid = str(claims["uid"])
         context = authentication_context(
             uid,
@@ -193,9 +192,8 @@ def management(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if _supabase_persistence_enabled():
-            from .supabase_provider import management_snapshot as provider_management_snapshot
-            return provider_management_snapshot(claims, workspace_id.strip())
+from .supabase_provider import management_snapshot as provider_management_snapshot
+return provider_management_snapshot(claims, workspace_id.strip())
         return management_snapshot(str(claims["uid"]), workspace_id.strip(), claims)
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
@@ -205,9 +203,8 @@ def management(
 def pending_invitations(authorization: str = Header(default=None)):
     try:
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if _supabase_persistence_enabled():
-            from .supabase_provider import pending_invitations
-            return {"invitations": pending_invitations(claims)}
+from .supabase_provider import pending_invitations
+return {"invitations": pending_invitations(claims)}
         from .service import pending_invitations_for_email
         return {"invitations": pending_invitations_for_email(str(claims.get("email") or ""))}
     except AuthenticationRequired as exc:
@@ -224,14 +221,13 @@ def membership(
         if not workspace_id:
             raise ValueError("Workspace authorization context required.")
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if _supabase_persistence_enabled():
-            from .supabase_provider import authorization_context
-            context = authorization_context(claims, workspace_id.strip())
-            if context["membership_status"] == "none":
-                raise AuthzError("User is not a member of this organization.")
-            return {"organization_id": context.get("organization_id"), "workspace_id": context.get("workspace_id"),
-                    "employee_id": context.get("employee_id"), "membership_status": context["membership_status"],
-                    "role_ids": context.get("role_ids", [])}
+from .supabase_provider import authorization_context
+context = authorization_context(claims, workspace_id.strip())
+if context["membership_status"] == "none":
+    raise AuthzError("User is not a member of this organization.")
+return {"organization_id": context.get("organization_id"), "workspace_id": context.get("workspace_id"),
+        "employee_id": context.get("employee_id"), "membership_status": context["membership_status"],
+        "role_ids": context.get("role_ids", [])}
         context = authentication_context(
             str(claims["uid"]),
             workspace_id.strip(),
@@ -264,9 +260,8 @@ def membership(
 @router.post("/register-company")
 def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import register_organization
-            return register_organization(require_email_verified(verify_id_token(_token(authorization))), req.organization_name)
+from .supabase_provider import register_organization
+return register_organization(require_email_verified(verify_id_token(_token(authorization))), req.organization_name)
         return bootstrap_owner(_token(authorization), req.organization_name)
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
@@ -295,62 +290,61 @@ def founder_organization_register(
         provider = "supabase"
         logger.info("organization_register provider=%s", provider)
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
-        if provider == "supabase":
-            from .supabase_auth import verify_supabase_access_token
-            from .supabase_provider import (
-                OrganizationRegistrationConflict,
-                register_organization,
-            )
-            claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
-            registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
-            required = {
-                "organization name": req.organization_name,
-                "branch name": req.branch_name,
-                "branch identifier": req.branch_identifier,
-                "full name": req.full_name,
-                "phone": req.phone,
-                "phone country calling code": req.phone_country_calling_code,
-                "phone national number": req.phone_national_number,
-                "address line 1": req.address_line1,
-                "state": req.state,
-                "state code": req.state_code,
-                "postal code": req.postal_code,
-                "country": req.country,
-                "country code": req.country_code,
-                "ID proof type": req.id_proof_type,
-                "ID proof number": req.id_proof_number,
-            }
-            missing = [name for name, value in required.items() if not str(value or "").strip()]
-            if missing:
-                raise ValueError(
-                    "The following registration fields are required: "
-                    + ", ".join(missing)
-                    + "."
-                )
-            # Phone is profile data, not an authentication factor. The provider validates
-            # and normalizes it; email verification remains authoritative.
-            result = register_organization(
-                claims,
-                req.organization_name,
-                req.branch_name,
-                req.branch_identifier,
-                full_name=req.full_name,
-                phone=req.phone,
-                phone_country_calling_code=req.phone_country_calling_code,
-                phone_national_number=req.phone_national_number,
-                address_line1=req.address_line1,
-                address_line2=req.address_line2 or "",
-                city="",
-                state=req.state,
-                state_code=req.state_code,
-                postal_code=req.postal_code,
-                country=req.country,
-                country_code=req.country_code,
-                id_proof_type=req.id_proof_type,
-                id_proof_number=req.id_proof_number,
-            )
-            registration_diagnostics.stage("REGISTRATION_COMPLETE")
-            return result
+from .supabase_auth import verify_supabase_access_token
+from .supabase_provider import (
+    OrganizationRegistrationConflict,
+    register_organization,
+)
+claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
+registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
+required = {
+    "organization name": req.organization_name,
+    "branch name": req.branch_name,
+    "branch identifier": req.branch_identifier,
+    "full name": req.full_name,
+    "phone": req.phone,
+    "phone country calling code": req.phone_country_calling_code,
+    "phone national number": req.phone_national_number,
+    "address line 1": req.address_line1,
+    "state": req.state,
+    "state code": req.state_code,
+    "postal code": req.postal_code,
+    "country": req.country,
+    "country code": req.country_code,
+    "ID proof type": req.id_proof_type,
+    "ID proof number": req.id_proof_number,
+}
+missing = [name for name, value in required.items() if not str(value or "").strip()]
+if missing:
+    raise ValueError(
+        "The following registration fields are required: "
+        + ", ".join(missing)
+        + "."
+    )
+# Phone is profile data, not an authentication factor. The provider validates
+# and normalizes it; email verification remains authoritative.
+result = register_organization(
+    claims,
+    req.organization_name,
+    req.branch_name,
+    req.branch_identifier,
+    full_name=req.full_name,
+    phone=req.phone,
+    phone_country_calling_code=req.phone_country_calling_code,
+    phone_national_number=req.phone_national_number,
+    address_line1=req.address_line1,
+    address_line2=req.address_line2 or "",
+    city="",
+    state=req.state,
+    state_code=req.state_code,
+    postal_code=req.postal_code,
+    country=req.country,
+    country_code=req.country_code,
+    id_proof_type=req.id_proof_type,
+    id_proof_number=req.id_proof_number,
+)
+registration_diagnostics.stage("REGISTRATION_COMPLETE")
+return result
         claims = _token(authorization)
         if not req.organization_name or not req.branch_name or not req.branch_identifier:
             raise ValueError(
@@ -374,12 +368,11 @@ def founder_organization_register(
 def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):
     try:
         token = _token(authorization)
-        if _supabase_persistence_enabled():
-            from .supabase_provider import authorize
-            try:
-                return authorize(verify_id_token(token), req.workspace_id, req.action, req.resource_id)
-            except PermissionError as exc:
-                raise AuthzError(str(exc)) from exc
+from .supabase_provider import authorize
+try:
+    return authorize(verify_id_token(token), req.workspace_id, req.action, req.resource_id)
+except PermissionError as exc:
+    raise AuthzError(str(exc)) from exc
         claims = require_email_verified(verify_id_token(token))
         uid = str(claims["uid"])
         if req.action in {"excel.mutate.original", "excel.mutate.working_copy"}:
@@ -399,9 +392,8 @@ def authorization_check(req: AuthorizationCheck, authorization: str = Header(def
 @router.post("/roles/mutate")
 def role_mutation(req:RoleMutation,authorization: str=Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import mutate_role as provider_mutate_role
-            return {"success": provider_mutate_role(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.role_id, req.enabled)}
+from .supabase_provider import mutate_role as provider_mutate_role
+return {"success": provider_mutate_role(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.role_id, req.enabled)}
         return {"success":mutate_role(req.target_uid,req.role_id,req.enabled,_token(authorization),req.workspace_id)}
     except AuthenticationRequired as exc: raise HTTPException(401,str(exc))
     except AuthzError as exc: raise HTTPException(403,str(exc))
@@ -438,17 +430,16 @@ class MembershipStatusRequest(BaseModel):
 @router.post("/invitations")
 def invitation_create(req: InvitationRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import create_invitation as provider_create_invitation
-            claims = require_email_verified(verify_id_token(_token(authorization)))
-            return provider_create_invitation(
-                claims,
-                req.workspace_id,
-                req.email,
-                req.role_id,
-                req.expires_at,
-                req.location_id,
-            )
+from .supabase_provider import create_invitation as provider_create_invitation
+claims = require_email_verified(verify_id_token(_token(authorization)))
+return provider_create_invitation(
+    claims,
+    req.workspace_id,
+    req.email,
+    req.role_id,
+    req.expires_at,
+    req.location_id,
+)
         return create_invitation(
             req.workspace_id, req.email, req.role_id,
             _token(authorization), req.expires_at
@@ -467,15 +458,12 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
         bool(req.workspace_id),
     )
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import accept_invitation as provider_accept_invitation
-            result = provider_accept_invitation(
-                verify_id_token(_token(authorization)),
-                req.workspace_id,
-                req.invitation_id,
-            )
-        else:
-            result = accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
+from .supabase_provider import accept_invitation as provider_accept_invitation
+result = provider_accept_invitation(
+    verify_id_token(_token(authorization)),
+    req.workspace_id,
+    req.invitation_id,
+)
         logger.info("invitation_acceptance_response status_code=200")
         return result
     except AuthenticationRequired as exc:
@@ -498,9 +486,8 @@ def invitation_password_setup_complete(
 ):
     try:
         claims = require_email_verified(verify_id_token(_token(authorization)))
-        if _supabase_persistence_enabled():
-            from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
-            return provider_mark_password_setup(claims, req.invitation_id)
+from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
+return provider_mark_password_setup(claims, req.invitation_id)
         raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
@@ -508,9 +495,8 @@ def invitation_password_setup_complete(
 @router.post("/membership/status")
 def membership_status(req: MembershipStatusRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import set_membership_status as provider_set_membership_status
-            return {"success": provider_set_membership_status(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.status)}
+from .supabase_provider import set_membership_status as provider_set_membership_status
+return {"success": provider_set_membership_status(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.status)}
         return {"success": set_membership_status(
             req.workspace_id, req.target_uid, req.status, _token(authorization)
         )}
@@ -527,9 +513,8 @@ class WorkingCopyRequest(BaseModel):
 @router.post("/working-copies")
 def working_copy_create(req: WorkingCopyRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import create_working_copy as provider_create_working_copy
-            return provider_create_working_copy(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.working_copy_id, req.source_version)
+from .supabase_provider import create_working_copy as provider_create_working_copy
+return provider_create_working_copy(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.working_copy_id, req.source_version)
         return create_working_copy(
             req.workspace_id,
             req.dataset_id,
@@ -560,12 +545,11 @@ class DelegationRequest(BaseModel):
 @router.post("/approved-employees")
 def approved_employee(req: ApprovedEmployee, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import set_approved_employee as provider_set_approved_employee
-            return {"success": provider_set_approved_employee(
-                require_email_verified(verify_id_token(_token(authorization))),
-                req.workspace_id, req.target_uid, req.employee_id,
-            )}
+from .supabase_provider import set_approved_employee as provider_set_approved_employee
+return {"success": provider_set_approved_employee(
+    require_email_verified(verify_id_token(_token(authorization))),
+    req.workspace_id, req.target_uid, req.employee_id,
+)}
         return {"success": set_approved_employee(
             req.workspace_id, req.target_uid, req.employee_id, _token(authorization)
         )}
@@ -579,13 +563,12 @@ def approved_employee(req: ApprovedEmployee, authorization: str = Header(default
 @router.post("/delegations")
 def delegation(req: DelegationRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import set_delegation as provider_set_delegation
-            return provider_set_delegation(
-                require_email_verified(verify_id_token(_token(authorization))),
-                req.workspace_id, req.team_lead_uid, req.member_ids, req.dataset_ids,
-                req.permissions, req.expires_at,
-            )
+from .supabase_provider import set_delegation as provider_set_delegation
+return provider_set_delegation(
+    require_email_verified(verify_id_token(_token(authorization))),
+    req.workspace_id, req.team_lead_uid, req.member_ids, req.dataset_ids,
+    req.permissions, req.expires_at,
+)
         return set_delegation(
             req.workspace_id,
             req.team_lead_uid,
@@ -617,9 +600,8 @@ class DatasetGrant(BaseModel):
 @router.post("/datasets/register")
 def dataset_register(req: DatasetRegistration, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import register_dataset as provider_register_dataset
-            return provider_register_dataset(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.owner_uid, req.protected_original)
+from .supabase_provider import register_dataset as provider_register_dataset
+return provider_register_dataset(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.owner_uid, req.protected_original)
         return register_dataset(
             req.workspace_id,
             req.dataset_id,
@@ -637,9 +619,8 @@ def dataset_register(req: DatasetRegistration, authorization: str = Header(defau
 @router.post("/datasets/grants")
 def dataset_grant(req: DatasetGrant, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import set_dataset_grant
-            return {"success": set_dataset_grant(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.target_uid, req.permissions)}
+from .supabase_provider import set_dataset_grant
+return {"success": set_dataset_grant(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.target_uid, req.permissions)}
         return {"success": set_dataset_grant(
             req.workspace_id,
             req.dataset_id,
@@ -663,9 +644,8 @@ class ResourceGrant(BaseModel):
 @router.post("/roles")
 def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import upsert_role as provider_upsert_role
-            return {"success": provider_upsert_role(verify_id_token(_token(authorization)), req.workspace_id, req.role_id, req.name, req.permissions)}
+from .supabase_provider import upsert_role as provider_upsert_role
+return {"success": provider_upsert_role(verify_id_token(_token(authorization)), req.workspace_id, req.role_id, req.name, req.permissions)}
         return {"success": upsert_role(req.workspace_id, req.role_id, req.name, req.permissions, _token(authorization))}
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
@@ -674,9 +654,8 @@ def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
 @router.post("/resource-grants")
 def resource_grant(req: ResourceGrant, authorization: str=Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import set_resource_grant
-            return {"success": set_resource_grant(verify_id_token(_token(authorization)), req.workspace_id, req.resource_id, req.target_uid, req.permissions)}
+from .supabase_provider import set_resource_grant
+return {"success": set_resource_grant(verify_id_token(_token(authorization)), req.workspace_id, req.resource_id, req.target_uid, req.permissions)}
         return {"success": set_resource_grant(req.workspace_id, req.resource_id, req.target_uid, req.permissions, _token(authorization))}
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
@@ -689,10 +668,9 @@ class AccountCleanupRequest(BaseModel):
 @router.post("/account/cleanup")
 def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(default=None)):
     try:
-        if _supabase_persistence_enabled():
-            from .supabase_provider import cleanup_account as provider_cleanup_account
-            claims = require_email_verified(verify_id_token(_token(authorization)))
-            return provider_cleanup_account(claims, req.uid)
+from .supabase_provider import cleanup_account as provider_cleanup_account
+claims = require_email_verified(verify_id_token(_token(authorization)))
+return provider_cleanup_account(claims, req.uid)
         return cleanup_account(req.uid, _token(authorization))
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
