@@ -471,3 +471,144 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_concurrent_employee_id_allocation_is_unique():
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from core.db import SessionLocal
+    from firebase_authz.supabase_provider import _allocate_employee_id
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"counter-owner-{suffix}"
+    result = _register_organization(
+        {"uid": owner_uid, "sub": owner_uid},
+        f"Concurrent Counter {suffix}",
+        "Main",
+        f"COUNTER-{suffix}",
+    )
+    try:
+        def allocate(_):
+            with SessionLocal.begin() as db:
+                return _allocate_employee_id(db, result["organization_id"])
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            employee_ids = list(executor.map(allocate, range(8)))
+        assert len(set(employee_ids)) == 8
+        assert sorted(int(value[3:]) for value in employee_ids) == list(range(2, 10))
+    finally:
+        with SessionLocal.begin() as db:
+            db.execute(
+                text("DELETE FROM organizations WHERE organization_id=:org"),
+                {"org": result["organization_id"]},
+            )
+
+
+def test_concurrent_organization_bootstrap_does_not_duplicate_membership():
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from core.db import SessionLocal
+    from firebase_authz.supabase_provider import AuthzError
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"bootstrap-race-{suffix}"
+    claims = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com"}
+    organization_name = f"Concurrent Bootstrap {suffix}"
+    branch_identifier = f"BOOTSTRAP-{suffix}"
+
+    def attempt(_):
+        try:
+            return _register_organization(
+                claims, organization_name, "Main", branch_identifier
+            )
+        except Exception as exc:
+            return exc
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(attempt, range(2)))
+        successes = [value for value in outcomes if isinstance(value, dict)]
+        assert len(successes) == 1
+        assert any(isinstance(value, (AuthzError, ValueError)) for value in outcomes)
+        with SessionLocal() as db:
+            organization_count = db.execute(
+                text("SELECT count(*) FROM organizations WHERE name=:name"),
+                {"name": organization_name},
+            ).scalar_one()
+            identity_memberships = db.execute(
+                text("""
+                    SELECT count(*)
+                    FROM organization_members m
+                    JOIN identity_bindings b ON b.principal_id=m.principal_id
+                    WHERE b.provider='supabase' AND b.provider_subject=:uid
+                """),
+                {"uid": owner_uid},
+            ).scalar_one()
+        assert organization_count == 1
+        assert identity_memberships == 1
+    finally:
+        with SessionLocal.begin() as db:
+            db.execute(
+                text("DELETE FROM organizations WHERE name=:name"),
+                {"name": organization_name},
+            )
+
+
+def test_concurrent_invitation_acceptance_is_transactionally_consistent():
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from core.db import SessionLocal
+    from firebase_authz.supabase_provider import accept_invitation, create_invitation
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"accept-owner-{suffix}"
+    guest_uid = f"accept-guest-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com"}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com"}
+    result = _register_organization(
+        owner, f"Concurrent Acceptance {suffix}", "Main", f"ACCEPT-{suffix}"
+    )
+    invitation = create_invitation(
+        owner, result["workspace_id"], guest["email"], "data_analyst"
+    )
+
+    def accept(_):
+        try:
+            return accept_invitation(guest, result["workspace_id"], invitation["invitation_id"])
+        except Exception as exc:
+            return exc
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(accept, range(2)))
+        successes = [value for value in outcomes if isinstance(value, dict) and value.get("accepted") is True]
+        assert successes
+        with SessionLocal() as db:
+            membership_count = db.execute(
+                text("""
+                    SELECT count(*)
+                    FROM organization_members m
+                    JOIN identity_bindings b ON b.principal_id=m.principal_id
+                    WHERE m.organization_id=:org
+                      AND b.provider='supabase' AND b.provider_subject=:uid
+                """),
+                {"org": result["organization_id"], "uid": guest_uid},
+            ).scalar_one()
+            role_count = db.execute(
+                text("""
+                    SELECT count(*)
+                    FROM member_roles mr
+                    JOIN identity_bindings b ON b.principal_id=mr.principal_id
+                    WHERE mr.organization_id=:org
+                      AND b.provider='supabase' AND b.provider_subject=:uid
+                """),
+                {"org": result["organization_id"], "uid": guest_uid},
+            ).scalar_one()
+        assert membership_count == 1
+        assert role_count == 1
+    finally:
+        with SessionLocal.begin() as db:
+            db.execute(
+                text("DELETE FROM organizations WHERE organization_id=:org"),
+                {"org": result["organization_id"]},
+            )
