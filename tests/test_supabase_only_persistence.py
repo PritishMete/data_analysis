@@ -66,3 +66,52 @@ def test_routes_and_middleware_fail_closed_for_legacy_persistence(monkeypatch, l
         routes._supabase_persistence_enabled()
     with pytest.raises(RuntimeError, match="only supported provider"):
         middleware._require_postgres_persistence()
+
+
+def test_application_authorization_code_has_no_active_rtdb_or_firebase_admin_path():
+    production_paths = [
+        ROOT / "firebase_authz" / "service.py",
+        ROOT / "firebase_authz" / "routes.py",
+        ROOT / "firebase_authz" / "middleware.py",
+        ROOT / "firebase_authz" / "management_domain.py",
+        ROOT / "firebase_authz" / "supabase_provider.py",
+        ROOT / "firebase_authz" / "auth.py",
+        ROOT / "firebase_authz" / "management_routes.py",
+        ROOT / "firebase_authz" / "profile_domain.py",
+        ROOT / "dataset_storage" / "routes.py",
+        ROOT / "dataset_storage" / "service.py",
+        ROOT / "main.py",
+    ]
+    forbidden_runtime_patterns = (
+        "firebase_admin",
+        "db.reference(",
+        "initialize_firebase(",
+        "AUTHN_PROVIDER_MODE",
+        "provider='firebase'",
+        'provider = "firebase"',
+        "firebase_uid",
+    )
+    findings = []
+    for path in production_paths:
+        source = path.read_text(encoding="utf-8")
+        for pattern in forbidden_runtime_patterns:
+            if pattern in source:
+                findings.append(f"{path.relative_to(ROOT)} contains {pattern!r}")
+    assert not findings, "Active Firebase/RTDB production references remain: " + "; ".join(findings)
+
+
+def test_production_dependencies_and_ci_do_not_configure_firebase_auth_or_emulator():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "insightflow-backend-ci.yml").read_text(encoding="utf-8")
+    assert "firebase-admin" not in requirements
+    assert "firebase emulators:exec" not in workflow
+    assert "npm run test:rules" not in workflow
+    assert "INSIGHTFLOW_FIREBASE_WEB_" not in workflow
+
+
+def test_active_auth_user_cleanup_migration_uses_only_supabase_subject():
+    migration = (ROOT / "migrations" / "0032_supabase_only_auth_user_cleanup.sql").read_text(encoding="utf-8")
+    assert "ib.provider = 'supabase'" in migration
+    assert "ib.provider_subject = OLD.id::text" in migration
+    assert "provider = 'firebase'" not in migration
+    assert "firebase_uid" not in migration
