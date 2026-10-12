@@ -78,7 +78,9 @@ jobs:
       - name: Run protected-path tests with authentication required
         env:
           INSIGHTFLOW_AUTH_REQUIRED: "true"
-        run: pytest -q tests/test_supabase_authz_api.py tests/test_managed_dataset_middleware.py
+        run: |
+          test "$INSIGHTFLOW_AUTH_REQUIRED" = "true"
+          pytest -q tests/test_supabase_authz_api.py tests/test_managed_dataset_middleware.py
 
       - name: Run Data Workspace focused tests
         run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
