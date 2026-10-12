@@ -157,6 +157,7 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
         list_sections,
         management_overview,
     )
+    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"branch-head-scope-{suffix}"
@@ -165,6 +166,8 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
     org = _seed_org(owner_uid, "Branch Head Scope", f"BRANCH-SCOPE-{suffix}")
     try:
         owner = _claims(owner_uid)
+        with pytest.raises(AuthzError, match="permission to create locations"):
+            create_location(owner, org["workspace_id"], "Forbidden Branch", f"FORBIDDEN-{suffix}")
         with SessionLocal.begin() as session:
             branch_employee = _add_member(
                 session, org["organization_id"], branch_employee_uid, "EMP-BRANCH"
