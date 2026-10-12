@@ -332,10 +332,13 @@ def _run_production_authz_migrations() -> None:
     The runner is idempotent and uses a PostgreSQL advisory lock, so this does
     not create a second migration system or alter migration files.
     """
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    # Do not implicitly run production schema migrations merely because the
+    # provider default changed. Applying migrations requires an explicit
+    # operator-configured Supabase persistence mode.
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
     if provider != "supabase":
         raise RuntimeError(
-            "Unsupported AUTHZ_PERSISTENCE_PROVIDER. Supabase/PostgreSQL is the only supported provider."
+            "Set AUTHZ_PERSISTENCE_PROVIDER=supabase explicitly before startup migration verification."
         )
     if not os.environ.get("DATABASE_URL", "").strip():
         raise RuntimeError("DATABASE_URL is required for authorization persistence.")
