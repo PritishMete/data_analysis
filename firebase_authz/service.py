@@ -16,16 +16,11 @@ except ImportError:
     firebase_admin = db = None
 
 from .schema import ACTIONS, DEFAULT_ROLES, ROLE_ALIASES, ROLE_LEVELS, validate_action, validate_id
+from .auth import (AuthzError, AuthenticationRequired, EmailVerificationRequired, PermissionDenied, BootstrapDenied, verify_id_token, authenticated_identity, require_email_verified)
 
 PROJECT_ID = "insightflow-5a23d"
 DATABASE_URL = "https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/"
 _init_lock = threading.Lock()
-
-class AuthzError(Exception): pass
-class AuthenticationRequired(AuthzError): pass
-class EmailVerificationRequired(AuthenticationRequired): pass
-class PermissionDenied(AuthzError): pass
-class BootstrapDenied(AuthzError): pass
 
 def _config():
     project = os.environ.get("FIREBASE_PROJECT_ID")
@@ -62,13 +57,6 @@ def initialize_firebase():
         if storage_bucket:
             options["storageBucket"] = storage_bucket
         return firebase_admin.initialize_app(cred, options)
-
-def verify_id_token(id_token: str) -> dict[str, Any]:
-    """Verify every bearer token with Supabase Auth; Firebase tokens are never accepted."""
-    if not id_token:
-        raise AuthenticationRequired("Supabase authentication required.")
-    from .supabase_auth import verify_supabase_access_token
-    return verify_supabase_access_token(id_token)
 
 def _get(path: str):
     initialize_firebase()
@@ -134,17 +122,6 @@ def pending_invitations_for_email(email: str) -> list[dict[str, Any]]:
                 "expires_at": expires_at,
             })
     return matches
-
-def authenticated_identity(claims: dict[str, Any]) -> dict[str, Any]:
-    """Normalize an already verified Supabase Auth identity."""
-    provider_subject = str(claims.get("sub") or claims.get("uid") or "").strip()
-    return {
-        "provider": "supabase",
-        "provider_subject": provider_subject,
-        "verified_email": str(claims.get("email") or "").strip().lower(),
-        "auth_uid": str(claims.get("uid") or provider_subject),
-        "display_name": claims.get("name") or (claims.get("user_metadata") or {}).get("full_name"),
-    }
 
 def _identity_candidates(email: str, provider: str, provider_subject: str) -> list[dict[str, Any]]:
     """Find eligible existing members by verified provider subject only.
@@ -1324,11 +1301,6 @@ def set_membership_status(
         target_uid=target_uid, metadata={"status": status},
     )
     return True
-
-def require_email_verified(claims: dict[str, Any]) -> dict[str, Any]:
-    if claims.get("email_verified") is not True:
-        raise EmailVerificationRequired("Email verification required.")
-    return claims
 
 def cleanup_account(uid: str, actor_token: str):
     validate_id(uid, "user ID")
