@@ -4,7 +4,7 @@ set -euo pipefail
 # Scan runtime application and configuration only. Historical SQL migrations,
 # docs, and test fixtures are intentionally excluded.
 roots=(firebase_authz dataset_storage flutter_detail_source/lib .github/workflows)
-files=(main.py requirements.txt flutter_detail_source/pubspec.yaml)
+files=(main.py requirements.txt .env.example render.yaml flutter_detail_source/pubspec.yaml)
 violations=0
 
 patterns=(
@@ -17,6 +17,7 @@ patterns=(
   'Firebase\.initializeApp'
   'firebase-admin'
   'INSIGHTFLOW_FIREBASE_WEB_'
+  'AUTHN_PROVIDER_MODE'
   'AUTHZ_PERSISTENCE_PROVIDER[[:space:]]*[,=][[:space:]]*["'"'"']firebase["'"'"']'
 )
 
