@@ -16,6 +16,7 @@ patterns=(
   'FirebaseDatabase\.instance'
   'Firebase\.initializeApp'
   'firebase-admin'
+  'INSIGHTFLOW_FIREBASE_WEB_'
   'AUTHZ_PERSISTENCE_PROVIDER[[:space:]]*[,=][[:space:]]*["'"'"']firebase["'"'"']'
 )
 
