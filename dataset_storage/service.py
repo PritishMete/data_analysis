@@ -11,7 +11,7 @@ from typing import Any, BinaryIO, Iterator
 
 from sqlalchemy import delete, select
 
-from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
+from firebase_authz.auth import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
     audit_dataset_event,
     authorization_context,
