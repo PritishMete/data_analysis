@@ -7,10 +7,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
 from .profile_validation import validate_profile_fields
 from .service import AuthzError
+
+
+class ProfileFieldError(AuthzError):
+    """A profile validation failure that belongs to one submitted field."""
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
@@ -221,7 +230,7 @@ def upsert_my_profile(
             "principal": member["principal_id"],
         }).scalar_one_or_none()
         if duplicate_phone:
-            raise AuthzError("This phone number is already associated with another account.")
+            raise ProfileFieldError("phone", "This phone number is already registered. Please use a different number.")
 
         duplicate_id = db.execute(text("""
             SELECT 1
@@ -238,67 +247,75 @@ def upsert_my_profile(
             "principal": member["principal_id"],
         }).scalar_one_or_none()
         if duplicate_id:
-            raise AuthzError("This ID proof is already associated with another account.")
+            raise ProfileFieldError("id_proof_number", "This ID proof number is already registered. Please check the number or use the correct document.")
         existing_phone_verified_at = (
             existing["phone_verified_at"]
             if existing and existing["phone_e164"] == fields["phone_e164"]
             else None
         )
 
-        db.execute(text("""
-            INSERT INTO organization_member_profiles
-              (organization_id, principal_id, full_name, email, email_verified_at,
-               phone_e164, phone_verified_at, address_line1, address_line2,
-               state, state_code, postal_code, country, country_code,
-               id_proof_type, id_proof_number, id_proof_provided_at,
-               created_at, updated_at)
-            VALUES
-              (:org, :principal, :full_name, :email, :email_verified_at,
-               :phone, :phone_verified_at, :address_line1, :address_line2,
-               :state, :state_code, :postal_code, :country, :country_code,
-               :id_proof_type, :id_proof_number, now(),
-               coalesce(
-                 (SELECT created_at
-                  FROM organization_member_profiles
-                  WHERE organization_id=:org AND principal_id=:principal),
-                 now()),
-               now())
-            ON CONFLICT (organization_id, principal_id)
-            DO UPDATE SET
-              full_name=EXCLUDED.full_name,
-              email=EXCLUDED.email,
-              email_verified_at=EXCLUDED.email_verified_at,
-              phone_e164=EXCLUDED.phone_e164,
-              phone_verified_at=EXCLUDED.phone_verified_at,
-              address_line1=EXCLUDED.address_line1,
-              address_line2=EXCLUDED.address_line2,
-              state=EXCLUDED.state,
-              state_code=EXCLUDED.state_code,
-              postal_code=EXCLUDED.postal_code,
-              country=EXCLUDED.country,
-              country_code=EXCLUDED.country_code,
-              id_proof_type=EXCLUDED.id_proof_type,
-              id_proof_number=EXCLUDED.id_proof_number,
-              id_proof_provided_at=EXCLUDED.id_proof_provided_at,
-              updated_at=now()
-        """), {
-            "org": member["organization_id"],
-            "principal": member["principal_id"],
-            "full_name": fields["full_name"],
-            "email": email,
-            "email_verified_at": email_time,
-            "phone": fields["phone_e164"],
-            "phone_verified_at": existing_phone_verified_at,
-            "address_line1": fields["address_line1"],
-            "address_line2": fields["address_line2"],
-            "state": fields["state"],
-            "state_code": fields["state_code"],
-            "postal_code": fields["postal_code"],
-            "country": fields["country"],
-            "country_code": fields["country_code"],
-            "id_proof_type": fields["id_proof_type"],
-            "id_proof_number": fields["id_proof_number"],
-        })
+        try:
+            db.execute(text("""
+                INSERT INTO organization_member_profiles
+                  (organization_id, principal_id, full_name, email, email_verified_at,
+                   phone_e164, phone_verified_at, address_line1, address_line2,
+                   state, state_code, postal_code, country, country_code,
+                   id_proof_type, id_proof_number, id_proof_provided_at,
+                   created_at, updated_at)
+                VALUES
+                  (:org, :principal, :full_name, :email, :email_verified_at,
+                   :phone, :phone_verified_at, :address_line1, :address_line2,
+                   :state, :state_code, :postal_code, :country, :country_code,
+                   :id_proof_type, :id_proof_number, now(),
+                   coalesce(
+                     (SELECT created_at
+                      FROM organization_member_profiles
+                      WHERE organization_id=:org AND principal_id=:principal),
+                     now()),
+                   now())
+                ON CONFLICT (organization_id, principal_id)
+                DO UPDATE SET
+                  full_name=EXCLUDED.full_name,
+                  email=EXCLUDED.email,
+                  email_verified_at=EXCLUDED.email_verified_at,
+                  phone_e164=EXCLUDED.phone_e164,
+                  phone_verified_at=EXCLUDED.phone_verified_at,
+                  address_line1=EXCLUDED.address_line1,
+                  address_line2=EXCLUDED.address_line2,
+                  state=EXCLUDED.state,
+                  state_code=EXCLUDED.state_code,
+                  postal_code=EXCLUDED.postal_code,
+                  country=EXCLUDED.country,
+                  country_code=EXCLUDED.country_code,
+                  id_proof_type=EXCLUDED.id_proof_type,
+                  id_proof_number=EXCLUDED.id_proof_number,
+                  id_proof_provided_at=EXCLUDED.id_proof_provided_at,
+                  updated_at=now()
+            """), {
+                "org": member["organization_id"],
+                "principal": member["principal_id"],
+                "full_name": fields["full_name"],
+                "email": email,
+                "email_verified_at": email_time,
+                "phone": fields["phone_e164"],
+                "phone_verified_at": existing_phone_verified_at,
+                "address_line1": fields["address_line1"],
+                "address_line2": fields["address_line2"],
+                "state": fields["state"],
+                "state_code": fields["state_code"],
+                "postal_code": fields["postal_code"],
+                "country": fields["country"],
+                "country_code": fields["country_code"],
+                "id_proof_type": fields["id_proof_type"],
+                "id_proof_number": fields["id_proof_number"],
+            })
+        except IntegrityError as exc:
+            constraint = str(getattr(getattr(exc.orig, "diag", None), "constraint_name", "") or "")
+            if constraint == "uq_member_profiles_phone_e164_global":
+                raise ProfileFieldError("phone", "This phone number is already registered. Please use a different number.") from exc
+            if constraint == "uq_member_profiles_id_proof_type_normalized_global":
+                raise ProfileFieldError("id_proof_number", "This ID proof number is already registered. Please check the number or use the correct document.") from exc
+            raise
 
         db.execute(text("""
             INSERT INTO audit_events
