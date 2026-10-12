@@ -10,10 +10,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .service import (
     AuthenticationRequired,
     PermissionDenied,
-    authorization,
     verify_id_token,
 )
 from .schema import validate_id
+
+
+def _require_postgres_persistence() -> bool:
+    """Fail closed when legacy Firebase persistence is selected by configuration."""
+    provider = os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider != "supabase":
+        raise RuntimeError(
+            "Unsupported AUTHZ_PERSISTENCE_PROVIDER. Supabase/PostgreSQL is the only supported provider."
+        )
+    return True
+
+
+_require_postgres_persistence()
 
 
 PUBLIC_PATHS = {
@@ -179,7 +191,7 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             # dataset.upload capability may submit file content.
             is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
 
-            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower() == "supabase":
+            if _require_postgres_persistence():
                 from .supabase_provider import authorize as provider_authorize
                 decision = provider_authorize(claims, workspace_id, action, resource_id or None)
                 if is_multipart_upload:
