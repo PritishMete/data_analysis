@@ -289,8 +289,9 @@ from firebase_authz.routes import router as authz_router
 from firebase_authz.management_routes import router as management_router
 from dataset_storage.routes import router as managed_dataset_router
 from dataset_storage.service import load_managed_dataset_dataframe
-from firebase_authz.middleware import FirebaseAuthorizationMiddleware
-from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
+from firebase_authz.middleware import SupabaseAuthorizationMiddleware
+from firebase_authz.service import AuthzError as AuthorizationDenied
+from firebase_authz.supabase_provider import authorize as authorize_workspace_action
 from secure_excel.service import list_supported_transforms
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
@@ -331,12 +332,13 @@ def _run_production_authz_migrations() -> None:
     The runner is idempotent and uses a PostgreSQL advisory lock, so this does
     not create a second migration system or alter migration files.
     """
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
     if provider != "supabase":
-        return
+        raise RuntimeError(
+            "Unsupported AUTHZ_PERSISTENCE_PROVIDER. Supabase/PostgreSQL is the only supported provider."
+        )
     if not os.environ.get("DATABASE_URL", "").strip():
-        logger.error("[authz] DATABASE_URL is missing; production migrations cannot run.")
-        return
+        raise RuntimeError("DATABASE_URL is required for authorization persistence.")
     try:
         from tools.run_authz_migrations import run_migrations
 
@@ -369,7 +371,7 @@ def _initialize_production_database() -> None:
 
 app.add_event_handler("startup", _initialize_production_database)
 
-app.add_middleware(FirebaseAuthorizationMiddleware)
+app.add_middleware(SupabaseAuthorizationMiddleware)
 
 
 @app.get("/health")
@@ -1383,7 +1385,7 @@ async def agentic_command(payload: dict, request: Request):
         # The middleware authorizes the generic analysis.run entry point. The
         # parsed operation can require a narrower permission, so re-authorize
         # the actual operation before returning a plan to the Excel client.
-        if getattr(request.state, "firebase_uid", None):
+        if getattr(request.state, "supabase_uid", None):
             action_name = str(result.get("action") or "").strip().lower()
             action_permission = {
                 "pivot": "pivot.create",
@@ -1397,12 +1399,12 @@ async def agentic_command(payload: dict, request: Request):
             }.get(action_name, "analysis.run")
             try:
                 authorize_workspace_action(
-                    request.state.firebase_uid,
+                    request.state.auth_claims,
                     request.state.workspace_id,
                     action_permission,
                     request.state.resource_id,
                 )
-            except (FirebasePermissionDenied, ValueError):
+            except (AuthorizationDenied, ValueError):
                 raise HTTPException(status_code=403, detail="Permission denied.")
 
         if dataset_id:
