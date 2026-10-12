@@ -102,6 +102,7 @@ def _authenticated_legacy_route_tests(monkeypatch, request):
         "test_memory_engine_exporters.py",
         "test_secure_excel_privacy.py",
         "test_secure_excel_query_fixes.py",
+        "test_smart_query_error_handling.py",
     }
     if request.node.path.name not in route_behavior_modules:
         return
