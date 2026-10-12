@@ -30,7 +30,7 @@ BEGIN
 
   IF duplicate_phone_groups > 0 OR duplicate_id_groups > 0 THEN
     RAISE EXCEPTION
-      'Identity uniqueness migration blocked: % duplicate phone groups and % duplicate ID-proof groups. Run the documented read-only identity conflict audit, remediate with an authorized operator, then retry.',
+      'Identity uniqueness migration blocked: %% duplicate phone groups and %% duplicate ID-proof groups. Run the documented read-only identity conflict audit, remediate with an authorized operator, then retry.',
       duplicate_phone_groups, duplicate_id_groups;
   END IF;
 END $$;
