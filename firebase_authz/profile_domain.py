@@ -213,10 +213,11 @@ def upsert_my_profile(
             SELECT 1
             FROM organization_member_profiles
             WHERE phone_e164=:phone
-              AND principal_id<>:principal
+              AND NOT (organization_id=:org AND principal_id=:principal)
             LIMIT 1
         """), {
             "phone": fields["phone_e164"],
+            "org": member["organization_id"],
             "principal": member["principal_id"],
         }).scalar_one_or_none()
         if duplicate_phone:
@@ -228,11 +229,12 @@ def upsert_my_profile(
             WHERE id_proof_type=:proof_type
               AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')
                   =regexp_replace(upper(:proof_number), '[^A-Z0-9]', '', 'g')
-              AND principal_id<>:principal
+              AND NOT (organization_id=:org AND principal_id=:principal)
             LIMIT 1
         """), {
             "proof_type": fields["id_proof_type"],
             "proof_number": fields["id_proof_number"],
+            "org": member["organization_id"],
             "principal": member["principal_id"],
         }).scalar_one_or_none()
         if duplicate_id:
