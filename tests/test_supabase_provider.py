@@ -16,7 +16,6 @@ def test_supabase_registration_persists_branch_head_context():
     claims = {
         "uid": "integration-test-user",
         "sub": "integration-test-user",
-        "firebase": {"sign_in_provider": "password", "identities": {"password": ["integration-test-user"]}},
     }
     result = register_organization(claims, "ABC", "Kolkata Branch A", "ABC-KOL-A")
     assert result["organization_id"].startswith("org_")
@@ -172,8 +171,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
         register_organization,
     )
 
-    claims = {"uid": "dataset-test-user", "sub": "dataset-test-user",
-              "firebase": {"sign_in_provider": "password", "identities": {"password": ["dataset-test-user"]}}}
+    claims = {"uid": "dataset-test-user", "sub": "dataset-test-user"}
     result = register_organization(claims, "Dataset Test", "Main Branch", "DATASET-TEST")
     register_dataset(claims, result["workspace_id"], "ds_test", "dataset-test-user")
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
@@ -198,10 +196,8 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
     suffix = uuid.uuid4().hex
     owner_uid = f"invite-owner-{suffix}"
     guest_uid = f"invite-guest-{suffix}"
-    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
-    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com"}
     result = register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
     workspace = result["workspace_id"]
     try:
@@ -246,13 +242,11 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
         "uid": owner_uid,
         "sub": owner_uid,
         "email": f"owner-{suffix}@example.com",
-        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
     }
     guest = {
         "uid": guest_uid,
         "sub": guest_uid,
         "email": f"guest-{suffix}@example.com",
-        "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}},
     }
     result = register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
     workspace = result["workspace_id"]
@@ -304,10 +298,8 @@ def test_supabase_invitation_rejects_expired_and_revoked():
     suffix = uuid.uuid4().hex
     owner_uid = f"expiry-owner-{suffix}"
     guest_uid = f"expiry-guest-{suffix}"
-    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
-    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com"}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com"}
     result = register_organization(owner, f"Expiry Test {suffix}", "Main", f"EXPIRY-{suffix}")
     workspace = result["workspace_id"]
     try:
@@ -350,14 +342,11 @@ def test_supabase_invitation_rejects_cross_company_active_member():
 
     suffix = uuid.uuid4().hex
     owner_a = {"uid": f"cross-owner-a-{suffix}", "sub": f"cross-owner-a-{suffix}",
-               "email": f"cross-owner-a-{suffix}@example.com",
-               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-a-{suffix}"]}}}
+               "email": f"cross-owner-a-{suffix}@example.com"}
     owner_b = {"uid": f"cross-owner-b-{suffix}", "sub": f"cross-owner-b-{suffix}",
-               "email": f"cross-owner-b-{suffix}@example.com",
-               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-b-{suffix}"]}}}
+               "email": f"cross-owner-b-{suffix}@example.com"}
     guest_uid = f"cross-guest-{suffix}"
-    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com"}
     org_a = register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
     org_b = register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
     invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "employee")
@@ -390,10 +379,8 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
     suffix = uuid.uuid4().hex
     owner_uid = f"scope-owner-{suffix}"
     member_uid = f"scope-member-{suffix}"
-    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
-    member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com",
-              "firebase": {"sign_in_provider": "password", "identities": {"password": [member_uid]}}}
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com"}
+    member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com"}
     result = register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
     workspace = result["workspace_id"]
     try:
@@ -435,10 +422,8 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     suffix = __import__("uuid").uuid4().hex
     owner_uid = "cleanup-owner-" + suffix
     uid = "cleanup-test-user-" + suffix
-    owner = {"uid": owner_uid, "sub": owner_uid, "email": owner_uid + "@example.com",
-             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
-    claims = {"uid": uid, "sub": uid, "email": uid + "@example.com",
-              "firebase": {"sign_in_provider": "password", "identities": {"password": [uid]}}}
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": owner_uid + "@example.com"}
+    claims = {"uid": uid, "sub": uid, "email": uid + "@example.com"}
     result = register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
     invitation = create_invitation(owner, result["workspace_id"], claims["email"], "employee")
     accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
