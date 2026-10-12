@@ -300,7 +300,7 @@ def founder_organization_register(
     try:
         registration_diagnostics.begin()
         registration_diagnostics.stage("REGISTRATION_START")
-        provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+        provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
         logger.info("organization_register provider=%s", provider)
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
