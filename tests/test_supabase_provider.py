@@ -10,6 +10,21 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
 )
 
+@pytest.fixture(autouse=True)
+def _stub_supabase_auth_admin_for_database_tests(monkeypatch):
+    """Keep PostgreSQL authorization tests isolated from real Supabase/email APIs."""
+    from firebase_authz import supabase_provider
+
+    def invite_user_by_email(email, redirect_to, *, organization_name):
+        local = str(email).strip().lower().split("@", 1)[0]
+        # Test identities use their email local-part as their stable Supabase
+        # subject. The explicit invitation fixture uses "guest-" for its email
+        # and "invite-guest-" for its subject.
+        user_id = f"invite-{local}" if local.startswith("guest-") else local
+        return {"user_id": user_id, "email_confirmed": False}
+
+    monkeypatch.setattr(supabase_provider, "invite_user_by_email", invite_user_by_email)
+
 _PHONE_LOCK = threading.Lock()
 _PHONE_BY_SUBJECT: dict[str, str] = {}
 
