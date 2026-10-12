@@ -106,6 +106,7 @@ def route_policy(path: str) -> tuple[str, bool] | None:
 
 
 class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
+    """Authorization middleware backed only by Supabase Auth and PostgreSQL."""
     async def dispatch(self, request: Request, call_next: Callable):
         if os.getenv("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower() not in {
             "1",
@@ -178,15 +179,14 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             # dataset.upload capability may submit file content.
             is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
 
-            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower() == "supabase":
                 from .supabase_provider import authorize as provider_authorize
                 decision = provider_authorize(claims, workspace_id, action, resource_id or None)
                 if is_multipart_upload:
                     provider_authorize(claims, workspace_id, "dataset.upload", None)
             else:
-                decision = authorization(uid, workspace_id, action, resource_id or None)
-                if is_multipart_upload:
-                    authorization(uid, workspace_id, "dataset.upload", None)
+                # Never fall back to legacy Realtime Database authorization.
+                raise RuntimeError("Supabase/PostgreSQL authorization is required.")
             request.state.firebase_uid = uid
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None
