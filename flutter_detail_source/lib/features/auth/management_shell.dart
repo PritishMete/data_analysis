@@ -348,11 +348,9 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _sectionAllowed(ManagementSection value) =>
       _allowedSections().contains(value);
 
-  String _roleWorkspaceTitle() =>
-      _uiRoleLabel().toUpperCase() + ' / MANAGEMENT';
+  String _roleWorkspaceTitle() => '${_uiRoleLabel().toUpperCase()} / MANAGEMENT';
 
-  String _roleWorkspaceSubtitle() =>
-      _uiScopeLabel() + ' management workspace';
+  String _roleWorkspaceSubtitle() => '${_uiScopeLabel()} management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
@@ -2439,7 +2437,7 @@ class _ManagementShellState extends State<ManagementShell> {
         );
         if (approve == null) continue;
         await request(
-          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=${approve}',
+          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=$approve',
           method: 'POST',
         );
         feedback(approve ? 'Team Lead request approved.' : 'Team Lead request rejected.');
