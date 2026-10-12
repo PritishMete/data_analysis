@@ -131,3 +131,100 @@ def test_profile_update_rejects_duplicate_identity(
     assert params["org"] == "org-1"
     if duplicate_id:
         assert "regexp_replace(upper(:proof_number)" in sql
+
+class _RegistrationFakeDB:
+    def __init__(self, *, duplicate_phone=False, duplicate_id=False):
+        self.duplicate_phone = duplicate_phone
+        self.duplicate_id = duplicate_id
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        if "SELECT principal_id FROM identity_bindings" in sql:
+            return _Result(scalar=None)
+        if "SELECT organization_id, workspace_id" in sql:
+            return _Result(row=None)
+        if "WHERE phone_e164=:phone" in sql:
+            return _Result(scalar=1 if self.duplicate_phone else None)
+        if "WHERE id_proof_type=:proof_type" in sql:
+            return _Result(scalar=1 if self.duplicate_id else None)
+        raise AssertionError(f"Unexpected SQL in registration duplicate test: {sql}")
+
+
+class _RegistrationSessionFactory:
+    def __init__(self, db):
+        self.db = db
+
+    def begin(self):
+        return self.db
+
+
+@pytest.mark.parametrize(
+    ("duplicate_phone", "duplicate_id", "expected_field"),
+    [(True, False, "phone"), (False, True, "id_proof_number")],
+)
+def test_organization_registration_rejects_duplicate_identity(
+    monkeypatch, duplicate_phone, duplicate_id, expected_field
+):
+    from firebase_authz import supabase_provider
+
+    db = _RegistrationFakeDB(
+        duplicate_phone=duplicate_phone,
+        duplicate_id=duplicate_id,
+    )
+    monkeypatch.setattr(
+        supabase_provider, "SessionLocal", _RegistrationSessionFactory(db)
+    )
+    monkeypatch.setattr(supabase_provider, "_id", lambda prefix: f"{prefix}_test")
+    monkeypatch.setattr(
+        supabase_provider,
+        "validate_profile_fields",
+        lambda **_kwargs: {
+            "full_name": "Test User",
+            "phone_e164": "+14155552671",
+            "address_line1": "1 Test Street",
+            "address_line2": "",
+            "country_code": "US",
+            "country": "United States",
+            "state_code": "US-CA",
+            "state": "California",
+            "postal_code": "94105",
+            "id_proof_type": "passport",
+            "id_proof_number": "AB-12345",
+        },
+    )
+
+    with pytest.raises(profile_domain.ProfileFieldError) as error:
+        supabase_provider.register_organization(
+            {
+                "uid": "new-supabase-user",
+                "sub": "new-supabase-user",
+                "provider": "supabase",
+                "email": "new@example.com",
+                "email_verified": True,
+            },
+            "Test Organization",
+            "Main Branch",
+            "TEST-BRANCH",
+            full_name="Test User",
+            phone="+14155552671",
+            phone_country_calling_code="+1",
+            phone_national_number="4155552671",
+            address_line1="1 Test Street",
+            address_line2="",
+            country_code="US",
+            country="United States",
+            state_code="US-CA",
+            state="California",
+            postal_code="94105",
+            id_proof_type="passport",
+            id_proof_number="AB-12345",
+        )
+
+    assert error.value.field == expected_field
+
