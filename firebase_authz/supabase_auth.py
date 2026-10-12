@@ -9,7 +9,7 @@ from typing import Any
 import jwt
 from jwt import PyJWKClient
 
-from .service import AuthenticationRequired
+from .auth import AuthenticationRequired
 from . import registration_diagnostics
 
 JWT_CLOCK_SKEW_LEEWAY_SECONDS = 10
