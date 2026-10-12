@@ -1,5 +1,6 @@
 import hashlib
 import os
+import threading
 
 import pytest
 from sqlalchemy import text
@@ -9,6 +10,19 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
 )
 
+_PHONE_LOCK = threading.Lock()
+_PHONE_BY_SUBJECT: dict[str, str] = {}
+
+
+def _phone_for_subject(subject: str) -> str:
+    with _PHONE_LOCK:
+        if subject not in _PHONE_BY_SUBJECT:
+            slot = len(_PHONE_BY_SUBJECT)
+            if slot >= 100:
+                raise RuntimeError("Test phone-number fixture pool exhausted.")
+            _PHONE_BY_SUBJECT[subject] = f"+120255501{slot:02d}"
+        return _PHONE_BY_SUBJECT[subject]
+
 
 def _register_organization(claims, organization_name, branch_name, branch_identifier, **overrides):
     from firebase_authz.supabase_provider import register_organization
@@ -17,8 +31,11 @@ def _register_organization(claims, organization_name, branch_name, branch_identi
     subject = str(normalized_claims.get("sub") or normalized_claims.get("uid") or "")
     normalized_claims["sub"] = subject
     normalized_claims["uid"] = subject
+    normalized_claims.setdefault("email", f"{subject}@example.com")
+    normalized_claims["email_verified"] = True
+    normalized_claims["email_confirmed_at"] = "2026-10-01T00:00:00Z"
     digest = hashlib.sha256(subject.encode("utf-8")).hexdigest().upper()
-    phone = "+1" + f"{2_000_000_000 + int(digest[:8], 16) % 7_000_000_000:010d}"
+    phone = _phone_for_subject(subject)
     profile = {
         "full_name": f"Test Owner {digest[:8]}",
         "phone": phone,
