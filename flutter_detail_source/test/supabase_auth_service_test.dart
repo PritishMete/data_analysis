@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/auth/insightflow_auth_service.dart';
+import 'package:liquid_glass_widgets/core/auth/insightflow_auth_service.dart';
 
 void main() {
   test('surfaces an explicit safe authentication state message', () {
