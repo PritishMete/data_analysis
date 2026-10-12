@@ -32,8 +32,7 @@ class _OrganizationOnboardingScreenState
   String? _message;
 
   Future<void> _acceptInvitation(Map<String, dynamic> invitation) async {
-    final workspaceId = invitation['workspace_id']?.toString() ??
-        invitation['organization_id']?.toString() ?? '';
+    final workspaceId = invitation['workspace_id']?.toString() ?? '';
     final invitationId = invitation['invitation_id']?.toString() ?? '';
     if (workspaceId.isEmpty || invitationId.isEmpty) return;
 
