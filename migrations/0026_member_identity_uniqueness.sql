@@ -12,7 +12,7 @@ BEGIN
     FROM organization_member_profiles
     WHERE phone_e164 IS NOT NULL AND btrim(phone_e164) <> ''
     GROUP BY phone_e164
-    HAVING count(DISTINCT principal_id) > 1
+    HAVING count(*) > 1
   ) conflicts;
 
   SELECT count(*) INTO duplicate_id_groups
@@ -25,7 +25,7 @@ BEGIN
       AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g') <> ''
     GROUP BY id_proof_type,
              regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')
-    HAVING count(DISTINCT principal_id) > 1
+    HAVING count(*) > 1
   ) conflicts;
 
   IF duplicate_phone_groups > 0 OR duplicate_id_groups > 0 THEN
