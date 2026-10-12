@@ -30,7 +30,7 @@ jobs:
       SECURE_EXCEL_REMOTE_AI: "false"
       DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
       DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
-      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
