@@ -206,6 +206,37 @@ def upsert_my_profile(
             "principal": member["principal_id"],
         }).mappings().first()
         exists = existing is not None
+
+        # Application-level checks provide safe errors; migration 0026 adds matching
+        # global unique indexes to close concurrent-write races.
+        duplicate_phone = db.execute(text("""
+            SELECT 1
+            FROM organization_member_profiles
+            WHERE phone_e164=:phone
+              AND principal_id<>:principal
+            LIMIT 1
+        """), {
+            "phone": fields["phone_e164"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already associated with another account.")
+
+        duplicate_id = db.execute(text("""
+            SELECT 1
+            FROM organization_member_profiles
+            WHERE id_proof_type=:proof_type
+              AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')
+                  =regexp_replace(upper(:proof_number), '[^A-Z0-9]', '', 'g')
+              AND principal_id<>:principal
+            LIMIT 1
+        """), {
+            "proof_type": fields["id_proof_type"],
+            "proof_number": fields["id_proof_number"],
+            "principal": member["principal_id"],
+        }).scalar_one_or_none()
+        if duplicate_id:
+            raise AuthzError("This ID proof is already associated with another account.")
         existing_phone_verified_at = (
             existing["phone_verified_at"]
             if existing and existing["phone_e164"] == fields["phone_e164"]
