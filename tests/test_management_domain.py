@@ -276,7 +276,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
             owner_principal = session.execute(
                 text("""
                     SELECT principal_id FROM identity_bindings
-                    WHERE provider='firebase' AND provider_subject=:uid
+                    WHERE provider='supabase' AND provider_subject=:uid
                 """),
                 {"uid": owner_uid},
             ).scalar_one()
