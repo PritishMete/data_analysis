@@ -3,6 +3,7 @@ import os
 from fastapi.testclient import TestClient
 
 import firebase_authz.middleware as auth_middleware
+from firebase_authz import supabase_provider
 
 
 def test_unauthenticated_protected_api_is_rejected(monkeypatch):
@@ -42,9 +43,9 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
-        auth_middleware,
-        "authorization",
-        lambda *args, **kwargs: (_ for _ in ()).throw(auth_middleware.PermissionDenied("sensitive-internal-detail")),
+        supabase_provider,
+        "authorize",
+        lambda *args, **kwargs: (_ for _ in ()).throw(supabase_provider.AuthzError("sensitive-internal-detail")),
     )
     from main import app
     response = TestClient(app).get(
@@ -63,11 +64,11 @@ def test_authorized_user_reaches_protected_api(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
-        auth_middleware,
-        "authorization",
+        supabase_provider,
+        "authorize",
         lambda *args, **kwargs: {
-            "allowed": True,
-            "uid": "alice",
+            "authorized": True,
+            "principal_id": "alice",
             "workspace_id": "workspace",
             "resource_id": "sheet",
             "action": "history.view",
@@ -121,7 +122,7 @@ def test_unverified_token_is_rejected_before_protected_api(monkeypatch):
 def test_authz_me_reports_pending_unregistered_user(monkeypatch):
     from firebase_authz import routes
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "new-user", "email": "new@example.com", "email_verified": True})
-    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda *args, **kwargs: {
         "email_verified": True,
         "account_status": "pending",
         "membership_status": "none",
@@ -145,7 +146,7 @@ def test_authz_me_reports_pending_unregistered_user(monkeypatch):
 def test_membership_endpoint_returns_membership_only_for_authenticated_user(monkeypatch):
     from firebase_authz import routes
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "employee-1", "email_verified": True})
-    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda *args, **kwargs: {
         "organization_id": "abc",
         "workspace_id": "abc",
         "employee_id": "emp_1",
@@ -167,9 +168,9 @@ def test_membership_endpoint_returns_membership_only_for_authenticated_user(monk
 
 def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch):
     from firebase_authz import routes
-    monkeypatch.setattr(routes, "register_dataset", lambda *args: {
-        "dataset_id": args[1],
-        "organization_id": args[0],
+    monkeypatch.setattr(supabase_provider, "register_dataset", lambda claims, workspace_id, dataset_id, owner_uid, protected: {
+        "dataset_id": dataset_id,
+        "organization_id": workspace_id,
     })
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "owner", "email_verified": True})
     from main import app
@@ -189,8 +190,9 @@ def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch)
 
 def test_working_copy_endpoint_does_not_accept_workbook_payloads(monkeypatch):
     from firebase_authz import routes
-    monkeypatch.setattr(routes, "create_working_copy", lambda *args: {
-        "working_copy_id": args[2] if len(args) > 2 else "wc"
+    monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "owner", "sub": "owner", "email_verified": True})
+    monkeypatch.setattr(supabase_provider, "create_working_copy", lambda claims, workspace_id, dataset_id, working_copy_id, source_version: {
+        "working_copy_id": working_copy_id or "wc"
     })
     from main import app
     response = TestClient(app).post(
@@ -213,7 +215,7 @@ def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monke
         "email": "new@example.com",
         "email_verified": True,
     })
-    monkeypatch.setattr(routes, "authentication_context", lambda *args, **kwargs: {
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda *args, **kwargs: {
         "email_verified": True,
         "account_status": "pending",
         "membership_status": "none",

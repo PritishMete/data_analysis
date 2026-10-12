@@ -7,13 +7,26 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .service import (
+from .auth import (
+    AuthzError,
     AuthenticationRequired,
     PermissionDenied,
-    authorization,
     verify_id_token,
 )
 from .schema import validate_id
+
+
+def _require_postgres_persistence() -> bool:
+    """Fail closed when legacy Firebase persistence is selected by configuration."""
+    provider = os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider != "supabase":
+        raise RuntimeError(
+            "Unsupported AUTHZ_PERSISTENCE_PROVIDER. Supabase/PostgreSQL is the only supported provider."
+        )
+    return True
+
+
+_require_postgres_persistence()
 
 
 PUBLIC_PATHS = {
@@ -105,7 +118,8 @@ def route_policy(path: str) -> tuple[str, bool] | None:
     return "analysis.run", True
 
 
-class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
+class SupabaseAuthorizationMiddleware(BaseHTTPMiddleware):
+    """Authorization middleware backed only by Supabase Auth and PostgreSQL."""
     async def dispatch(self, request: Request, call_next: Callable):
         if os.getenv("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower() not in {
             "1",
@@ -129,14 +143,14 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
         if not header.startswith("Bearer ") or not header[7:].strip():
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Firebase authentication required."},
+                content={"detail": "Supabase authentication required."},
             )
 
         try:
             claims = verify_id_token(header[7:].strip())
             uid = str(claims.get("uid", "")).strip()
             if not uid:
-                raise AuthenticationRequired("Firebase authentication failed.")
+                raise AuthenticationRequired("Supabase authentication failed.")
             if claims.get("email_verified") is not True:
                 return JSONResponse(
                     status_code=403,
@@ -178,21 +192,21 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             # dataset.upload capability may submit file content.
             is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
 
-            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
+            if _require_postgres_persistence():
                 from .supabase_provider import authorize as provider_authorize
                 decision = provider_authorize(claims, workspace_id, action, resource_id or None)
                 if is_multipart_upload:
                     provider_authorize(claims, workspace_id, "dataset.upload", None)
             else:
-                decision = authorization(uid, workspace_id, action, resource_id or None)
-                if is_multipart_upload:
-                    authorization(uid, workspace_id, "dataset.upload", None)
-            request.state.firebase_uid = uid
+                # Never fall back to legacy Realtime Database authorization.
+                raise RuntimeError("Supabase/PostgreSQL authorization is required.")
+            request.state.supabase_uid = uid
+            request.state.auth_claims = claims
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None
             request.state.authorization = decision
             return await call_next(request)
-        except (AuthenticationRequired, PermissionDenied, ValueError):
+        except (AuthenticationRequired, PermissionDenied, AuthzError, ValueError):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Permission denied."},

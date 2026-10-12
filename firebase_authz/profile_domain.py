@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
 from .profile_validation import validate_profile_fields
-from .service import AuthzError
+from .auth import AuthzError
 
 
 class ProfileFieldError(AuthzError):

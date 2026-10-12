@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell]
+    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/supabase-only-auth-20261012]
   pull_request:
     branches: [main, feature/employee-management-cell]
   workflow_dispatch:
@@ -30,7 +30,6 @@ jobs:
       SECURE_EXCEL_REMOTE_AI: "false"
       DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
       DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
-      INSIGHTFLOW_AUTH_REQUIRED: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,33 +50,37 @@ jobs:
           python -m py_compile tools/run_authz_migrations.py
           python tools/run_authz_migrations.py --help >/dev/null
 
+      - name: Reject active Firebase Auth or RTDB persistence references
+        run: bash .github/scripts/check_no_active_firebase.sh
+
+      - name: Run Supabase identity and persistence-boundary regression tests
+        run: pytest -q tests/test_supabase_only_persistence.py
+
       - name: Run duplicate identity regression tests
         run: pytest -q tests/test_profile_identity_uniqueness.py
 
       - name: Test identity uniqueness migration against disposable PostgreSQL
         env:
-          IDENTITY_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+          IDENTITY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
         run: pytest -q tests/test_identity_uniqueness_migration.py
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+      - name: Apply authorization migrations and run PostgreSQL integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -f tests/sql/supabase_compat.sql
+          python tools/run_authz_migrations.py
+          pytest -q tests/test_supabase_provider.py tests/test_management_domain.py
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - name: Run Supabase authentication and authorization API tests
+        run: pytest -q tests/test_supabase_authz_api.py tests/test_supabase_only_auth.py tests/test_supabase_only_persistence.py tests/test_office_mutation_boundary.py
 
-      - name: Install Firebase emulator test dependencies
-        run: npm install
-
-      - name: Run RTDB/Auth emulator security tests
-        run: npm run test:rules
-
-      - name: Run Firebase authorization unit tests
-        run: pytest -q tests/test_firebase_authz.py tests/test_firebase_authz_api.py tests/test_office_mutation_boundary.py
+      - name: Run protected-path tests with authentication required
+        env:
+          INSIGHTFLOW_AUTH_REQUIRED: "true"
+        run: |
+          test "$INSIGHTFLOW_AUTH_REQUIRED" = "true"
+          pytest -q tests/test_supabase_authz_api.py tests/test_managed_dataset_middleware.py tests/test_supabase_only_persistence.py
 
       - name: Run Data Workspace focused tests
         run: pytest -q tests/test_data_workspace_foundation.py tests/test_data_workspace_semantics.py
@@ -85,8 +88,21 @@ jobs:
       - name: Run managed dataset ingestion and storage tests
         run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
 
-      - name: Run backend regression suite
-        run: pytest -q
+      - name: Run backend functional regression suite with protected-test collection guard
+        # Legacy endpoint tests validate functional responses but do not provision
+        # Supabase identity/workspace/resource credentials. Keep auth enforcement
+        # covered by the dedicated suites above and forbid those protected suites
+        # from entering this auth-disabled collection via tests/conftest.py.
+        env:
+          INSIGHTFLOW_AUTH_REQUIRED: "false"
+        run: |
+          test "$INSIGHTFLOW_AUTH_REQUIRED" = "false"
+          pytest -q \
+            --ignore=tests/test_supabase_authz_api.py \
+            --ignore=tests/test_managed_dataset_middleware.py \
+            --ignore=tests/test_office_mutation_boundary.py \
+            --ignore=tests/test_supabase_only_auth.py \
+            --ignore=tests/test_supabase_only_persistence.py
 
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
@@ -137,6 +153,7 @@ jobs:
           lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
           test/profile_onboarding_contract_test.dart
+          test/supabase_auth_service_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -157,11 +174,13 @@ jobs:
           lib/features/auth/employee_profile_onboarding_screen.dart
           test/auth_screens_test.dart
           test/profile_onboarding_contract_test.dart
+          test/supabase_auth_service_test.dart
 
       - name: Run Flutter Auth tests
         run: >-
           flutter test
           test/supabase_auth_service_contract_test.dart
+          test/supabase_auth_service_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/profile_onboarding_contract_test.dart
@@ -170,8 +189,3 @@ jobs:
         run: >-
           flutter build web --release
           --no-wasm-dry-run
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=insightflow-5a23d
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=ci-placeholder.firebaseapp.com

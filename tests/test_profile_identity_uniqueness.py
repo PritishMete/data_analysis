@@ -145,6 +145,8 @@ class _RegistrationFakeDB:
 
     def execute(self, statement, params=None):
         sql = str(statement)
+        if "pg_advisory_xact_lock" in sql:
+            return _Result()
         if "SELECT principal_id FROM identity_bindings" in sql:
             return _Result(scalar=None)
         if "INSERT INTO principals" in sql or "INSERT INTO identity_bindings" in sql:
