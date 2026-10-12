@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 String source(String path) => File(path).readAsStringSync();
 
@@ -94,10 +94,10 @@ void main() {
       }
 
       final nameIndex = layout.indexOf("_field('Full Name'");
-      final employeeIndex = layout.indexOf('_employeeIdInfo()') >= 0
+      final employeeIndex = layout.contains('_employeeIdInfo()')
           ? layout.indexOf('_employeeIdInfo()')
           : layout.indexOf("_readonly('Employee ID'");
-      final emailIndex = layout.indexOf('_emailField()') >= 0
+      final emailIndex = layout.contains('_emailField()')
           ? layout.indexOf('_emailField()')
           : layout.indexOf("_readonly('Email'");
       final phoneIndex = layout.indexOf('_phoneInputRow()');
