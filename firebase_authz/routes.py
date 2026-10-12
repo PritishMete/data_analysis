@@ -302,9 +302,27 @@ def founder_organization_register(
 def authorization_check(req: AuthorizationCheck, authorization: str = Header(default=None)):
     try:
         token = _token(authorization)
-        from .supabase_provider import authorize
+        from .supabase_provider import authorize, authorize_dataset, authorize_working_copy
+        claims = verify_id_token(token)
+        if req.action == "excel.mutate.original":
+            if not req.resource_id:
+                raise ValueError("A dataset ID is required for original-workbook mutation.")
+            decision = authorize(claims, req.workspace_id, "worksheet.modify", None)
+            authorize_dataset(claims, req.workspace_id, req.resource_id, "dataset.view_original")
+            return {
+                **decision,
+                "action": req.action,
+                "resource_id": req.resource_id,
+                "protected_original": True,
+            }
+        if req.action == "excel.mutate.working_copy":
+            if not req.resource_id:
+                raise ValueError("A working-copy ID is required for working-copy mutation.")
+            return authorize_working_copy(
+                claims, req.workspace_id, req.resource_id, "working_copy.modify"
+            )
         try:
-            return authorize(verify_id_token(token), req.workspace_id, req.action, req.resource_id)
+            return authorize(claims, req.workspace_id, req.action, req.resource_id)
         except PermissionError as exc:
             raise AuthzError(str(exc)) from exc
     except AuthenticationRequired as exc:
