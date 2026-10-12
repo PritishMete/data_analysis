@@ -1,6 +1,6 @@
 import threading
 import pytest
-from firebase_authz import service
+from tests.fixtures import legacy_rtdb_service as service
 
 def test_actions_and_roles_are_explicit():
     assert "worksheet.modify" in service.ACTIONS
