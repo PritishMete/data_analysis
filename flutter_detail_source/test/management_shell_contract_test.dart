@@ -6,21 +6,23 @@ void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
 
-    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
-    final navigationEnd = source.indexOf('];', navigationStart);
+    final navigationStart = source.indexOf('List<ManagementSection> _allowedSections()');
+    final navigationEnd = source.indexOf('bool _sectionAllowed', navigationStart);
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
     final navigation = source.substring(navigationStart, navigationEnd);
-    for (final label in [
-      "MapEntry(ManagementSection.overview, 'OVERVIEW')",
-      "MapEntry(ManagementSection.organization, 'ORGANIZATION')",
-      "MapEntry(ManagementSection.people, 'PEOPLE')",
-      "MapEntry(ManagementSection.dataAccess, 'ACCESS')",
-      "MapEntry(ManagementSection.invitations, 'INVITATIONS')",
-      "MapEntry(ManagementSection.audit, 'AUDIT')",
+    for (final section in [
+      'overview',
+      'organization',
+      'people',
+      'dataAccess',
+      'invitations',
+      'audit',
     ]) {
-      expect(navigation, contains(label));
+      expect(navigation, contains('ManagementSection.$section'));
     }
+    expect(navigation, isNot(contains('ManagementSection.locations')));
+    expect(navigation, isNot(contains('ManagementSection.sections')));
     expect(navigation, isNot(contains('LOCATIONS')));
     expect(navigation, isNot(contains('SECTIONS')));
     expect(navigation, isNot(contains('DATA ACCESS')));
