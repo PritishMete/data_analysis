@@ -118,7 +118,7 @@ def route_policy(path: str) -> tuple[str, bool] | None:
     return "analysis.run", True
 
 
-class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
+class SupabaseAuthorizationMiddleware(BaseHTTPMiddleware):
     """Authorization middleware backed only by Supabase Auth and PostgreSQL."""
     async def dispatch(self, request: Request, call_next: Callable):
         if os.getenv("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower() not in {
@@ -200,7 +200,8 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             else:
                 # Never fall back to legacy Realtime Database authorization.
                 raise RuntimeError("Supabase/PostgreSQL authorization is required.")
-            request.state.firebase_uid = uid
+            request.state.supabase_uid = uid
+            request.state.auth_claims = claims
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None
             request.state.authorization = decision
