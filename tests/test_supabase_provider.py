@@ -330,7 +330,10 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
         monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
         monkeypatch.setattr(routes, "verify_id_token", lambda token: guest)
         try:
-            me_response = routes.me("Bearer test-token")
+            me_response = routes.me(
+                authorization="Bearer test-token",
+                workspace_id=workspace,
+            )
         finally:
             monkeypatch.undo()
         assert me_response["membership_status"] == "active"
