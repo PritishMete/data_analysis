@@ -159,19 +159,10 @@ def register_organization(
     # require Supabase phone authentication or phone verification during onboarding.
     confirmed_phone_at = None
 
-    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
-    provider = str(
-        claims.get("provider")
-        or firebase.get("sign_in_provider")
-        or "firebase"
-    ).strip().lower()
-    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
-    subjects = identities.get(provider)
-    subject = (
-        str(subjects[0])
-        if isinstance(subjects, list) and subjects
-        else str(claims.get("sub") or uid)
-    )
+    provider = "supabase"
+    subject = str(claims.get("sub") or "").strip()
+    if not subject or subject != uid:
+        raise AuthzError("Verified Supabase identity is required for registration.")
 
     principal_id = _id("prn")
     organization_id = _id("org")
@@ -181,6 +172,25 @@ def register_organization(
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
+        # Cross-account checks are global and transactional; migration 0026 adds
+        # unique indexes to prevent concurrent requests from racing these checks.
+        duplicate_phone = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE phone_e164=:phone LIMIT 1"""),
+            {"phone": profile_phone},
+        ).scalar_one_or_none()
+        if duplicate_phone:
+            raise AuthzError("This phone number is already associated with another account.")
+        duplicate_id = db.execute(
+            text("""SELECT 1 FROM organization_member_profiles
+                    WHERE id_proof_type=:proof_type
+                      AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')=:proof_number
+                    LIMIT 1"""),
+            {"proof_type": proof_type, "proof_number": proof_number},
+        ).scalar_one_or_none()
+        if duplicate_id:
+            raise AuthzError("This ID proof is already associated with another account.")
+
         existing = db.execute(
             text(
                 "SELECT principal_id FROM identity_bindings "
