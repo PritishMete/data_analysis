@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from core.db import SessionLocal
-from .service import AuthzError
+from .auth import AuthzError
 
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.settings.basic"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
