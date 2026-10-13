@@ -7,6 +7,7 @@ from .auth import AuthzError, AuthenticationRequired, verify_id_token, require_e
 from . import registration_diagnostics
 from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
+from .invitation_email import InvitationEmailConfigurationError, InvitationEmailDeliveryError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -359,10 +360,12 @@ class InvitationAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
     workspace_id: str | None = None
+    token: str | None = None
 
 class InvitationPasswordSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invitation_id: str
+    token: str | None = None
 
 class MembershipStatusRequest(BaseModel):
     workspace_id: str
@@ -386,8 +389,21 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
         logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
+    except (InvitationEmailConfigurationError, InvitationEmailDeliveryError) as exc:
+        logger.warning("invitation_email_failure error_class=%s", exc.__class__.__name__)
+        raise HTTPException(503, "Employee invitation email service is not configured or unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
+
+@router.get("/invitations/preview")
+def invitation_preview(token: str):
+    """Return minimal metadata only after validating the opaque invitation token."""
+    try:
+        from .supabase_provider import get_invitation_by_token
+        return get_invitation_by_token(token)
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+
 
 @router.post("/invitations/accept")
 def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(default=None)):
@@ -401,6 +417,7 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
             verify_id_token(_token(authorization)),
             req.workspace_id,
             req.invitation_id,
+            req.token,
         )
         logger.info("invitation_acceptance_response status_code=200")
         return result
@@ -425,7 +442,7 @@ def invitation_password_setup_complete(
     try:
         claims = require_email_verified(verify_id_token(_token(authorization)))
         from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
-        return provider_mark_password_setup(claims, req.invitation_id)
+        return provider_mark_password_setup(claims, req.invitation_id, req.token)
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
 
