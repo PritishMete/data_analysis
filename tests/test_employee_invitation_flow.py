@@ -164,3 +164,117 @@ def test_database_insertion_failure_does_not_send_invitation(monkeypatch):
         provider.create_invitation(
             _claims(), "org_test", "db-failure@example.com", "data_analyst"
         )
+
+
+from datetime import datetime, timedelta, timezone
+
+
+class _TokenDb:
+    def __init__(self, row):
+        self.row = row
+        self.calls = []
+
+    def execute(self, statement, params=None):
+        self.calls.append((str(statement), dict(params or {})))
+        return _TokenResult(self.row)
+
+
+class _TokenResult:
+    def __init__(self, row):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.row
+
+
+def _patch_token_db(monkeypatch, db):
+    import firebase_authz.supabase_provider as provider
+
+    monkeypatch.setattr(provider, "SessionLocal", lambda: _FakeContext(db))
+
+    class _Begin:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(provider.SessionLocal, "begin", lambda: _Begin(), raising=False)
+
+
+def _invitation_row(*, status="invited", expires_at=None, token_hash=None):
+    return {
+        "invitation_id": "inv_test",
+        "organization_id": "org_test",
+        "organization_name": "Test Organization",
+        "email": "employee@example.com",
+        "employee_id": "EMP002",
+        "role_id": "data_analyst",
+        "status": status,
+        "expires_at": expires_at or (datetime.now(timezone.utc) + timedelta(hours=1)),
+        "auth_user_id": None,
+        "token_hash": token_hash,
+        "location_id": "loc_main",
+        "created_by_principal_id": "prn_actor",
+    }
+
+
+def test_invitation_preview_uses_only_the_token_hash(monkeypatch):
+    import firebase_authz.supabase_provider as provider
+
+    raw_token = "opaque-invitation-token-value-which-is-long-enough"
+    expected_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    db = _TokenDb(_invitation_row(token_hash=expected_hash))
+    _patch_token_db(monkeypatch, db)
+
+    result = provider.get_invitation_by_token(raw_token)
+
+    assert result["invitation_id"] == "inv_test"
+    assert result["email"] == "employee@example.com"
+    assert db.calls[0][1]["token_hash"] == expected_hash
+    assert raw_token not in str(db.calls[0][1])
+
+
+@pytest.mark.parametrize(
+    ("status", "expires_at", "message"),
+    [
+        ("revoked", None, "no longer active"),
+        ("accepted", None, "no longer active"),
+        ("invited", datetime.now(timezone.utc) - timedelta(minutes=1), "expired"),
+    ],
+)
+def test_invitation_preview_rejects_revoked_replayed_or_expired_tokens(
+    monkeypatch, status, expires_at, message
+):
+    import firebase_authz.supabase_provider as provider
+    from firebase_authz.auth import AuthzError
+
+    raw_token = "opaque-invitation-token-value-which-is-long-enough"
+    expected_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    db = _TokenDb(_invitation_row(status=status, expires_at=expires_at, token_hash=expected_hash))
+    _patch_token_db(monkeypatch, db)
+
+    with pytest.raises(AuthzError, match=message):
+        provider.get_invitation_by_token(raw_token)
+
+
+@pytest.mark.parametrize("token", [None, "wrong-token-value-which-is-long-enough"])
+def test_acceptance_rejects_missing_or_wrong_invitation_token(monkeypatch, token):
+    import firebase_authz.supabase_provider as provider
+    from firebase_authz.auth import AuthzError
+
+    valid_token = "valid-invitation-token-value-which-is-long-enough"
+    row = _invitation_row(token_hash=hashlib.sha256(valid_token.encode()).hexdigest())
+    db = _TokenDb(row)
+    _patch_token_db(monkeypatch, db)
+
+    with pytest.raises(AuthzError, match="token is invalid"):
+        provider.accept_invitation(
+            {"sub": "employee-auth-id", "uid": "employee-auth-id", "email": "employee@example.com"},
+            None,
+            "inv_test",
+            token,
+        )
