@@ -18,6 +18,7 @@ void main() {
       'dataAccess',
       'invitations',
       'audit',
+      'emailSettings',
     ]) {
       expect(navigation, contains('ManagementSection.$section'));
     }
@@ -47,7 +48,7 @@ void main() {
     expect(source, contains('_showAuditDetails(e)'));
     expect(source, contains('constraints.maxWidth < 480'));
     expect(source, isNot(contains("request('/audit?limit=100')")));
-    expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
+    expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit, emailSettings }'));
     expect(source, isNot(contains('ManagementSection.locations')));
     expect(source, isNot(contains('ManagementSection.sections')));
     expect(source, contains("'CREATE LOCATION'"));
