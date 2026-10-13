@@ -663,6 +663,7 @@ class _UnauthenticatedInvitationEntryState
               : 'This invitation is invalid or has expired.',
         );
       }
+      if (!mounted) return;
       setState(() {
         _invitation = {
           ...Map<String, dynamic>.from(decoded),
@@ -672,6 +673,17 @@ class _UnauthenticatedInvitationEntryState
       });
     } catch (error) {
       if (!mounted) return;
+      final user = InsightFlowSupabaseAuthService.currentUser;
+      // Once an invitation is accepted, a browser refresh still has the old
+      // token in the URL. Fall back to the ordinary backend-authorized gate;
+      // an invalid token never grants workspace access by itself.
+      if (user != null && user.emailVerified) {
+        setState(() {
+          _loading = false;
+          _completed = true;
+        });
+        return;
+      }
       setState(() {
         _loading = false;
         _error = error is StateError
