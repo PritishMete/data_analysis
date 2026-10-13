@@ -65,3 +65,9 @@ def test_invitation_link_is_validated_before_signup_and_keeps_token_in_redirect(
     assert "def get_invitation_by_token(token: str)" in provider
     assert '@router.get("/invitations/preview")' in routes
     assert "invite_user_by_email(" not in provider[provider.index("def create_invitation("):provider.index("def get_invitation_by_token(")]
+
+
+def test_invitation_signup_offers_existing_account_signin_path():
+    source = PASSWORD.read_text(encoding="utf-8")
+    assert "Already have an account? Sign in first" in source
+    assert "const SignInScreen()" in source
