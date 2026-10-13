@@ -726,3 +726,63 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
     state["grant"] = None
     with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
         provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
+
+
+
+def test_branch_scoped_dataset_catalog_requires_grant_for_unscoped_resources(monkeypatch):
+    from firebase_authz import supabase_provider as provider
+
+    context = {
+        "organization_id": "org-test",
+        "principal_id": "branch-manager",
+        "role_ids": ["manager"],
+    }
+    state = {"unscoped_grant": None}
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+        def scalar_one_or_none(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+    class FakeDb:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if "FROM dataset_authorization da" in query:
+                return Result([
+                    {"dataset_id": "branch-dataset", "dataset_name": "Branch", "original_filename": "branch.csv",
+                     "location_id": "branch-1", "location_name": "Branch 1"},
+                    {"dataset_id": "unscoped-dataset", "dataset_name": "Unscoped", "original_filename": "global.csv",
+                     "location_id": None, "location_name": None},
+                ])
+            if "FROM organizational_assignments" in query:
+                return Result(["branch-1"])
+            if "FROM resource_grants" in query:
+                return Result(state["unscoped_grant"])
+            raise AssertionError(f"Unexpected catalog query: {query}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", lambda: FakeDb())
+
+    result = provider.list_dataset_catalog({"uid": "branch-manager"}, "workspace-test")
+    assert [row["dataset_id"] for row in result] == ["branch-dataset"]
+
+    state["unscoped_grant"] = ["dataset.view_original"]
+    result = provider.list_dataset_catalog({"uid": "branch-manager"}, "workspace-test")
+    assert [row["dataset_id"] for row in result] == ["branch-dataset", "unscoped-dataset"]
