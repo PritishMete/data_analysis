@@ -288,7 +288,12 @@ class _ManagementShellState extends State<ManagementShell> {
     if (!_canManageGmail || insightFlowWorkspaceId.trim().isEmpty || locations.isEmpty) return;
     final locationId = (selectedLocation ?? locations.first['location_id']?.toString() ?? '').trim();
     if (locationId.isEmpty) return;
-    if (mounted) setState(() { gmailSettingsLoading = true; gmailSettingsError = null; });
+    if (mounted) {
+      setState(() {
+        gmailSettingsLoading = true;
+        gmailSettingsError = null;
+      });
+    }
     try {
       final workspace = Uri.encodeQueryComponent(insightFlowWorkspaceId.trim());
       final location = Uri.encodeQueryComponent(locationId);
@@ -297,12 +302,16 @@ class _ManagementShellState extends State<ManagementShell> {
         setState(() => gmailSettings = result);
       }
     } catch (e) {
-      if (mounted) setState(() {
-        gmailSettings = const {};
-        gmailSettingsError = e.toString().replaceFirst('Bad state: ', '');
-      });
+      if (mounted) {
+        setState(() {
+          gmailSettings = const {};
+          gmailSettingsError = e.toString().replaceFirst('Bad state: ', '');
+        });
+      }
     } finally {
-      if (mounted) setState(() => gmailSettingsLoading = false);
+      if (mounted) {
+        setState(() => gmailSettingsLoading = false);
+      }
     }
   }
 
@@ -329,7 +338,9 @@ class _ManagementShellState extends State<ManagementShell> {
     } catch (e) {
       feedback(e);
     } finally {
-      if (mounted) setState(() => gmailActionInProgress = false);
+      if (mounted) {
+        setState(() => gmailActionInProgress = false);
+      }
     }
   }
 
@@ -360,7 +371,9 @@ class _ManagementShellState extends State<ManagementShell> {
     } catch (e) {
       feedback(e);
     } finally {
-      if (mounted) setState(() => gmailActionInProgress = false);
+      if (mounted) {
+        setState(() => gmailActionInProgress = false);
+      }
     }
   }
 
