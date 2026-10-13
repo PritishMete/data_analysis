@@ -1,83 +1,66 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <base href="/data_analysis/">
-  <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="be450668811710938533700570e63ab6bdf5ce7b">
-  <title>electric_ai_app</title>
-
-  <!-- Office.js MUST come first -->
-  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-
-  <!-- Local worksheet engines load before Flutter. Secure query execution is
-       entirely in-page and never posts workbook rows to a server. -->
-  <script src="excel_authorization_guard.js"></script>
-  <script src="excel_data_processor.js"></script>
-  <script src="excel_helper.js"></script>
-  <script src="excel_schema_bridge.js"></script>
-  <script src="excel_schema_intelligence.js"></script>
-  <script src="excel_secure_query.js"></script>
-  <script src="excel_secure_aggregation.js"></script>
-  <script src="excel_native_chart.js"></script>
-  <script src="excel_synthetic_data.js"></script>
-  <script src="excel_quality_report_generator.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#0b1220">
+  <title>InsightFlow — Data Analysis & Team Workspace</title>
+  <meta name="description" content="InsightFlow helps teams organize spreadsheet workflows, data-analysis work, employee invitations, and role-based workspace access.">
+  <style>
+    :root{color-scheme:light;--ink:#172033;--muted:#526078;--line:#dbe3ef;--accent:#1769e0}
+    *{box-sizing:border-box}body{margin:0;background:#f7f9fc;color:var(--ink);font:16px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    a{color:var(--accent)}.wrap{width:min(1060px,calc(100% - 40px));margin:0 auto}
+    header{background:#0b1220;color:#fff}.nav{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .brand{color:#fff;text-decoration:none;font-weight:800;font-size:1.25rem;letter-spacing:-.03em}
+    .mark{display:inline-grid;place-items:center;width:34px;height:34px;margin-right:9px;border-radius:10px;background:linear-gradient(135deg,#67e8f9,#3b82f6);color:#081321;font-size:.85rem}
+    nav .links{display:flex;flex-wrap:wrap;gap:18px}nav .links a{color:#d7e5fb;text-decoration:none;font-size:.94rem}
+    .hero{padding:74px 0 82px;background:radial-gradient(ellipse at 80% 15%,#123b6170,transparent 42%),radial-gradient(ellipse at 10% 90%,#064e3b55,transparent 38%),#0b1220}
+    .eyebrow{color:#67e8f9;font-size:.78rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+    h1{max-width:800px;margin:15px 0;font-size:clamp(2.6rem,7vw,4.7rem);line-height:1.05;letter-spacing:-.055em}
+    .hero p{max-width:740px;color:#c7d2e4;font-size:1.12rem;margin:0}
+    .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:10px 17px;border-radius:12px;font-weight:750;text-decoration:none}
+    .primary{background:#67e8f9;color:#071321}.secondary{border:1px solid #64748b;color:#fff}
+    main{padding:54px 0 64px}.label{color:var(--accent);font-size:.8rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
+    h2{margin:8px 0 12px;font-size:clamp(1.8rem,4vw,2.5rem);line-height:1.2;letter-spacing:-.035em}.intro{max-width:760px;color:var(--muted);font-size:1.05rem}
+    .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:28px}.card{padding:24px;border:1px solid var(--line);border-radius:18px;background:#fff}
+    .number{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#eaf3ff;color:#1554b5;font-weight:800}
+    h3{margin:15px 0 8px;font-size:1.15rem}.card p,.notice p{margin:0;color:var(--muted)}
+    .notice{margin-top:28px;padding:22px 24px;border:1px solid var(--line);border-radius:16px;background:#fff}.notice p{margin-top:6px}
+    footer{border-top:1px solid var(--line);padding:24px 0 36px;color:var(--muted)}.foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}footer a{margin-right:15px}
+    @media(max-width:720px){.nav{align-items:flex-start;flex-direction:column;justify-content:center;padding:16px 0}.hero{padding:55px 0 62px}.cards{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-<script>
-  function patchHistory() {
-    var noop = function () {};
-    var fakeHistory = {
-      replaceState: noop,
-      pushState: noop,
-      go: noop,
-      back: noop,
-      forward: noop,
-      length: 0,
-      state: null,
-      scrollRestoration: "auto",
-    };
-    try {
-      History.prototype.replaceState = noop;
-      History.prototype.pushState = noop;
-    } catch (e) {}
-    try {
-      Object.defineProperty(window, "history", {
-        get: function () { return fakeHistory; },
-        configurable: true,
-      });
-    } catch (e) {}
-  }
-
-  patchHistory();
-
-  Office.onReady(function (info) {
-    patchHistory();
-    if (typeof window._onOfficeReady === "function") {
-      window._onOfficeReady();
-    }
-
-    console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
-    window.__isOfficeHost = !!(info && info.host);
-
-    // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
-    // Office task panes can retain a previous Flutter web bundle after gh-pages
-    // has received a new build. CI replaces the marker with the source commit.
-    var buildCommit = "be450668811710938533700570e63ab6bdf5ce7b";
-    var script = document.createElement("script");
-    script.src = "flutter_bootstrap.js?build=" + buildCommit;
-    script.onload = function () {
-      _flutter.buildConfig = {
-        builds: [
-          {
-            compileTarget: "dart2js",
-            renderer: "canvaskit",
-            mainJsPath: "main.dart.js?build=" + buildCommit,
-          },
-        ],
-      };
-    };
-    document.head.appendChild(script);
-  });
-</script>
+  <header>
+    <div class="wrap">
+      <div class="nav">
+        <a class="brand" href="./"><span class="mark" aria-hidden="true">IF</span>InsightFlow</a>
+        <nav class="links" aria-label="Main navigation">
+          <a href="#about">About</a><a href="#features">Features</a><a href="privacy-policy.html">Privacy Policy</a><a href="terms-and-conditions.html">Terms</a>
+        </nav>
+      </div>
+      <section class="hero" id="about">
+        <div class="eyebrow">Data workflows · Team workspace</div>
+        <h1>Make your data work flow.</h1>
+        <p>InsightFlow is a workspace designed to help teams work with spreadsheet data, organize data-analysis workflows, and manage employee access within their organization.</p>
+        <div class="actions"><a class="btn primary" href="#features">Explore InsightFlow</a><a class="btn secondary" href="privacy-policy.html">Read our privacy policy</a></div>
+      </section>
+    </div>
+  </header>
+  <main class="wrap">
+    <section id="features">
+      <div class="label">About the application</div>
+      <h2>A clearer workspace for data and teams</h2>
+      <p class="intro">InsightFlow brings data-related work and team administration into a shared workspace. Features available to a user depend on their account, assigned role, and organization permissions.</p>
+      <div class="cards">
+        <article class="card"><div class="number">01</div><h3>Spreadsheet workflows</h3><p>Work with spreadsheet files and support data-focused tasks in an organized workspace.</p></article>
+        <article class="card"><div class="number">02</div><h3>Team and access management</h3><p>Help authorized organization users manage employee invitations, team membership, and role-based access.</p></article>
+        <article class="card"><div class="number">03</div><h3>Optional Gmail connection</h3><p>When an authorized user connects Gmail, InsightFlow can use the approved Gmail permissions to send application invitation emails.</p></article>
+      </div>
+      <div class="notice"><strong>Privacy and permissions</strong><p>Gmail is an optional integration and requires account authorization. Review our <a href="privacy-policy.html">Privacy Policy</a> for information about data handling and our <a href="terms-and-conditions.html">Terms and Conditions</a> for service terms.</p></div>
+    </section>
+  </main>
+  <footer><div class="wrap foot"><div>© 2026 InsightFlow</div><div><a href="privacy-policy.html">Privacy Policy</a><a href="terms-and-conditions.html">Terms and Conditions</a><a href="mailto:jaiphotoshoot@gmail.com">Contact</a></div></div></footer>
 </body>
 </html>
