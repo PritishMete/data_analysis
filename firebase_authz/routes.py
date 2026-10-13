@@ -7,7 +7,7 @@ from .auth import AuthzError, AuthenticationRequired, verify_id_token, require_e
 from . import registration_diagnostics
 from .profile_domain import ProfileFieldError, get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
-from .invitation_email import InvitationEmailConfigurationError, InvitationEmailDeliveryError
+from .gmail_invitation_email import GmailConfigurationError, GmailConnectionError
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -389,7 +389,7 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
         logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
         raise HTTPException(503, "Employee invitation service is temporarily unavailable. Please try again.")
-    except (InvitationEmailConfigurationError, InvitationEmailDeliveryError) as exc:
+    except (GmailConfigurationError, GmailConnectionError) as exc:
         logger.warning("invitation_email_failure error_class=%s", exc.__class__.__name__)
         raise HTTPException(503, "Employee invitation email service is not configured or unavailable. Please try again.")
     except AuthzError as exc: raise HTTPException(403, str(exc))
@@ -592,4 +592,86 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+class GmailConnectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    workspace_id: str
+    location_id: str
+
+
+def _gmail_principal_id(claims: dict) -> str:
+    from .gmail_invitation_email import principal_id_for_auth_subject
+    subject = str(claims.get("uid") or claims.get("sub") or "").strip()
+    if not subject:
+        raise AuthzError("Authenticated Supabase identity is required.")
+    return principal_id_for_auth_subject(subject)
+
+
+@router.post("/management/email-settings/connect")
+def gmail_connect(req: GmailConnectionRequest, authorization: str = Header(default=None)):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        principal_id = _gmail_principal_id(claims)
+        from .gmail_invitation_email import gmail_connection_url
+        return {"authorization_url": gmail_connection_url(req.workspace_id, req.location_id, principal_id)}
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc:
+        raise HTTPException(503, str(exc))
+    except GmailConnectionError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/management/email-settings")
+def gmail_status(workspace_id: str, location_id: str, authorization: str = Header(default=None)):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        principal_id = _gmail_principal_id(claims)
+        from .gmail_invitation_email import gmail_connection_status
+        return gmail_connection_status(workspace_id, location_id, principal_id)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc:
+        raise HTTPException(503, str(exc))
+    except GmailConnectionError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/management/email-settings/disconnect")
+def gmail_disconnect(req: GmailConnectionRequest, authorization: str = Header(default=None)):
+    try:
+        claims = require_email_verified(verify_id_token(_token(authorization)))
+        principal_id = _gmail_principal_id(claims)
+        from .gmail_invitation_email import disconnect_gmail
+        return disconnect_gmail(req.workspace_id, req.location_id, principal_id)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc))
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc:
+        raise HTTPException(503, str(exc))
+    except GmailConnectionError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/management/email-settings/callback")
+def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if error:
+        raise HTTPException(400, "Google Gmail authorization was cancelled or denied.")
+    if not code or not state:
+        raise HTTPException(400, "Google Gmail authorization response is incomplete.")
+    try:
+        from .gmail_invitation_email import complete_gmail_connection
+        return complete_gmail_connection(code, state)
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc))
+    except GmailConfigurationError as exc:
+        raise HTTPException(503, str(exc))
+    except GmailConnectionError as exc:
         raise HTTPException(400, str(exc))

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
@@ -15,7 +16,7 @@ import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSetti
 import 'authorization_management_screen.dart';
 import 'managed_dataset_access_workspace.dart';
 
-enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }
+enum ManagementSection { overview, organization, people, invitations, dataAccess, audit, emailSettings }
 
 class _ManagementGlassDialog extends StatelessWidget {
   const _ManagementGlassDialog({
@@ -115,6 +116,10 @@ class _ManagementShellState extends State<ManagementShell> {
   List<Map<String, dynamic>> assignments = [];
   List<Map<String, dynamic>> audit = [];
   List<Map<String, dynamic>> invitations = [];
+  Map<String, dynamic> gmailSettings = const {};
+  bool gmailSettingsLoading = false;
+  bool gmailActionInProgress = false;
+  String? gmailSettingsError;
   String auditSearch = '';
   String? auditCategory;
   String invitationSearch = '';
@@ -240,7 +245,14 @@ class _ManagementShellState extends State<ManagementShell> {
       if (!mounted) return;
       setState(() {
         overview = r[0];
-        locations = maps(r[1]['locations']);
+        final loadedLocations = maps(r[1]['locations']);
+        locations = loadedLocations;
+        if (selectedLocation == null ||
+            !loadedLocations.any((item) => item['location_id']?.toString() == selectedLocation)) {
+          selectedLocation = loadedLocations.isEmpty
+              ? null
+              : loadedLocations.first['location_id']?.toString();
+        }
         sections = maps(r[2]['sections']);
         people = maps(r[3]['people']);
         assignments = maps(r[4]['assignments']);
@@ -251,6 +263,7 @@ class _ManagementShellState extends State<ManagementShell> {
           section = ManagementSection.overview;
         }
       });
+      if (_canManageGmail) await loadGmailSettings();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -264,6 +277,85 @@ class _ManagementShellState extends State<ManagementShell> {
   String _managementRole() {
     final actor = overview['actor'];
     return actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
+  }
+
+  bool get _canManageGmail =>
+      _managementRole() == 'organization_owner' || _managementRole() == 'branch_head';
+
+  Future<void> loadGmailSettings() async {
+    if (!_canManageGmail || insightFlowWorkspaceId.trim().isEmpty || locations.isEmpty) return;
+    final locationId = (selectedLocation ?? locations.first['location_id']?.toString() ?? '').trim();
+    if (locationId.isEmpty) return;
+    if (mounted) setState(() { gmailSettingsLoading = true; gmailSettingsError = null; });
+    try {
+      final workspace = Uri.encodeQueryComponent(insightFlowWorkspaceId.trim());
+      final location = Uri.encodeQueryComponent(locationId);
+      final result = await request('/email-settings?workspace_id=$workspace&location_id=$location');
+      if (mounted) setState(() => gmailSettings = result);
+    } catch (e) {
+      if (mounted) setState(() {
+        gmailSettings = const {};
+        gmailSettingsError = e.toString().replaceFirst('Bad state: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => gmailSettingsLoading = false);
+    }
+  }
+
+  Future<void> _connectGmail() async {
+    if (!_canManageGmail) {
+      feedback(StateError('Only the Organization Owner or Branch Head can configure branch email.'));
+      return;
+    }
+    final workspace = insightFlowWorkspaceId.trim();
+    final location = (selectedLocation ?? '').trim();
+    if (workspace.isEmpty || location.isEmpty) {
+      feedback(StateError('Select an active branch before connecting Gmail.'));
+      return;
+    }
+    setState(() => gmailActionInProgress = true);
+    try {
+      final result = await request('/email-settings/connect', method: 'POST',
+        body: {'workspace_id': workspace, 'location_id': location});
+      final authorizationUrl = result['authorization_url']?.toString() ?? '';
+      if (authorizationUrl.isEmpty) throw StateError('The backend did not return a Google authorization URL.');
+      final opened = await launchUrl(Uri.parse(authorizationUrl), mode: LaunchMode.externalApplication);
+      if (!opened) throw StateError('Could not open Google authorization. Allow pop-ups or open the URL again.');
+      feedback(StateError('Complete Google consent in the opened tab, return to InsightFlow, then refresh the connection status.'));
+    } catch (e) {
+      feedback(e);
+    } finally {
+      if (mounted) setState(() => gmailActionInProgress = false);
+    }
+  }
+
+  Future<void> _disconnectGmail() async {
+    if (!_canManageGmail) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Disconnect branch Gmail?'),
+        content: const Text('New employee invitations will not be deliverable until a Gmail account is connected again.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Disconnect')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final workspace = insightFlowWorkspaceId.trim();
+    final location = (selectedLocation ?? '').trim();
+    setState(() => gmailActionInProgress = true);
+    try {
+      final result = await request('/email-settings/disconnect', method: 'POST',
+        body: {'workspace_id': workspace, 'location_id': location});
+      if (mounted) setState(() => gmailSettings = result);
+      feedback(StateError('Branch Gmail disconnected.'));
+    } catch (e) {
+      feedback(e);
+    } finally {
+      if (mounted) setState(() => gmailActionInProgress = false);
+    }
   }
 
   Map<String, dynamic> _uiPolicy() {
@@ -311,7 +403,13 @@ class _ManagementShellState extends State<ManagementShell> {
           case 'audit':
             sections.add(ManagementSection.audit);
             break;
+          case 'emailSettings':
+            sections.add(ManagementSection.emailSettings);
+            break;
         }
+      }
+      if (_canManageGmail && !sections.contains(ManagementSection.emailSettings)) {
+        sections.add(ManagementSection.emailSettings);
       }
       if (sections.isNotEmpty) return sections;
     }
@@ -326,6 +424,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ManagementSection.dataAccess,
           ManagementSection.invitations,
           ManagementSection.audit,
+          ManagementSection.emailSettings,
         ];
       case 'manager':
         return const [
@@ -2134,6 +2233,101 @@ class _ManagementShellState extends State<ManagementShell> {
       ),
     );
   }
+  Widget emailSettingsView() {
+    if (!_canManageGmail) {
+      return const Center(child: Text('Branch email settings are restricted to the Organization Owner and Branch Head.'));
+    }
+    if (locations.isEmpty) {
+      return const Center(child: Text('Create an active branch before configuring invitation email.'));
+    }
+    final locationId = selectedLocation ?? locations.first['location_id'].toString();
+    final connected = gmailSettings['connected'] == true;
+    final connectedAccount = gmailSettings['connected_account']?.toString() ?? '';
+    final senderIdentity = gmailSettings['sender_identity']?.toString() ?? '';
+    final senderName = gmailSettings['sender_name']?.toString() ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(18),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _eyebrow('BRANCH EMAIL DELIVERY'),
+              const SizedBox(height: 8),
+              const Text(
+                'Connect the Branch Head’s authorized Gmail account. Employee invitations are sent through Gmail API; there is no Resend fallback.',
+                style: TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: locationId,
+                decoration: input('Branch / Location'),
+                items: locations.map((item) => DropdownMenuItem<String>(
+                  value: item['location_id'].toString(),
+                  child: Text(item['name']?.toString() ?? item['location_id'].toString()),
+                )).toList(),
+                onChanged: gmailActionInProgress ? null : (value) {
+                  if (value == null) return;
+                  setState(() => selectedLocation = value);
+                  loadGmailSettings();
+                },
+              ),
+              const SizedBox(height: 14),
+              if (gmailSettingsLoading) const LinearProgressIndicator(),
+              if (gmailSettingsError != null) ...[
+                const SizedBox(height: 8),
+                Text(gmailSettingsError!, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+              ],
+              const SizedBox(height: 8),
+              if (connected) ...[
+                const Text('Connected Gmail account', style: TextStyle(color: TechColors.textMuted, fontSize: 11)),
+                const SizedBox(height: 4),
+                SelectableText(connectedAccount, style: const TextStyle(color: TechColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 12),
+                Text('Gmail Send-As address: ${senderIdentity.isEmpty ? 'Not configured' : senderIdentity}',
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
+                if (senderName.isNotEmpty) Text('Display identity: ${senderName}',
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
+              ] else
+                const Text('No Gmail account is connected for this branch. Invitations cannot be delivered until the Branch Head connects Gmail.',
+                  style: TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.5)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: gmailActionInProgress ? null : _connectGmail,
+                    icon: const Icon(Icons.link_rounded),
+                    label: Text(gmailActionInProgress ? 'PLEASE WAIT…' : (connected ? 'RECONNECT GMAIL' : 'CONNECT GMAIL')),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: gmailActionInProgress || !connected ? null : _disconnectGmail,
+                    icon: const Icon(Icons.link_off_rounded),
+                    label: const Text('DISCONNECT'),
+                  ),
+                  TextButton.icon(
+                    onPressed: gmailSettingsLoading || gmailActionInProgress ? null : loadGmailSettings,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('REFRESH STATUS'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'OAuth credentials and encrypted refresh tokens stay on the backend. The browser never receives the Gmail refresh token.',
+                style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.45),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget invitationView() {
     final query = invitationSearch.trim().toLowerCase();
     final now = DateTime.now();
@@ -2347,6 +2541,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.organization => 'Organization',
     ManagementSection.people => 'People Registry',
     ManagementSection.invitations => 'Invitations',
+    ManagementSection.emailSettings => 'Email Settings',
     ManagementSection.dataAccess => 'Access',
     ManagementSection.audit => 'Audit',
   };
@@ -2356,6 +2551,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.organization => 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
     ManagementSection.invitations => 'Manage invitations sent to people in your organization and review their current status.',
+    ManagementSection.emailSettings => 'BRANCH GMAIL / INVITATION DELIVERY',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
     ManagementSection.audit => 'Review recent organization activity and understand who performed important management actions.',
   };
@@ -2365,6 +2561,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ManagementSection.organization => Icons.account_tree_outlined,
     ManagementSection.people => Icons.people_outline,
     ManagementSection.invitations => Icons.mail_outline,
+    ManagementSection.emailSettings => Icons.alternate_email_rounded,
     ManagementSection.dataAccess => Icons.lock_outline,
     ManagementSection.audit => Icons.history_rounded,
   };
@@ -2375,6 +2572,7 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
       case ManagementSection.invitations: return invitationView();
+      case ManagementSection.emailSettings: return emailSettingsView();
       case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
       case ManagementSection.audit: return auditView();
     }
@@ -3446,6 +3644,7 @@ class _ManagementShellState extends State<ManagementShell> {
       const MapEntry(ManagementSection.people, 'PEOPLE'),
       const MapEntry(ManagementSection.dataAccess, 'ACCESS'),
       const MapEntry(ManagementSection.invitations, 'INVITATIONS'),
+      const MapEntry(ManagementSection.emailSettings, 'EMAIL SETTINGS'),
       const MapEntry(ManagementSection.audit, 'AUDIT'),
     ].where((tab) => _sectionAllowed(tab.key)).toList();
     // Same geometry and glass settings as DataScreen.NavigationTabs.

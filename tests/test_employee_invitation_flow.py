@@ -128,7 +128,7 @@ def test_new_invitation_does_not_create_supabase_auth_user(monkeypatch):
 
 def test_invitation_email_failure_leaves_retryable_local_invitation(monkeypatch):
     import firebase_authz.supabase_provider as provider
-    from firebase_authz.invitation_email import InvitationEmailDeliveryError
+    from firebase_authz.gmail_invitation_email import GmailConnectionError
 
     db = _FakeDb(_actor())
     _patch_invitation_db(monkeypatch, db)
@@ -136,11 +136,11 @@ def test_invitation_email_failure_leaves_retryable_local_invitation(monkeypatch)
         provider,
         "send_invitation_email",
         lambda **_: (_ for _ in ()).throw(
-            InvitationEmailDeliveryError("mail provider unavailable")
+            GmailConnectionError("mail provider unavailable")
         ),
     )
 
-    with pytest.raises(InvitationEmailDeliveryError):
+    with pytest.raises(GmailConnectionError):
         provider.create_invitation(
             _claims(), "org_test", "mail-failure@example.com", "data_analyst",
             location_id="loc_main",
