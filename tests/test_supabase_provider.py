@@ -23,7 +23,9 @@ def _stub_supabase_auth_admin_for_database_tests(monkeypatch):
         user_id = local
         return {"user_id": user_id, "email_confirmed": False}
 
-    monkeypatch.setattr(supabase_provider, "invite_user_by_email", invite_user_by_email)
+    # Invitation tests exercise the local token lifecycle, never real email delivery.
+    monkeypatch.setattr(supabase_provider, "send_invitation_email", lambda **_: None)
+    monkeypatch.setenv("INSIGHTFLOW_TESTING", "1")
 
 _PHONE_LOCK = threading.Lock()
 _PHONE_BY_SUBJECT: dict[str, str] = {}
@@ -267,7 +269,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
         pending = pending_invitations(guest)
         assert pending[0]["invitation_id"] == invitation["invitation_id"]
         assert pending[0]["organization_name"] == "Invitation Test"
-        accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
+        accepted = accept_invitation(guest, workspace, invitation["invitation_id"], invitation["invitation_token"])
         assert accepted["accepted"] is True
         with SessionLocal() as db:
             row = db.execute(text("""SELECT m.status, mr.role_id FROM organization_members m
@@ -281,7 +283,7 @@ def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
         with pytest.raises(AuthzError):
             mutate_role(guest, workspace, owner_uid, "manager", True)
         with pytest.raises(AuthzError):
-            accept_invitation(guest, "org_wrong", invitation["invitation_id"])
+            accept_invitation(guest, "org_wrong", invitation["invitation_id"], invitation["invitation_token"])
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
@@ -314,7 +316,7 @@ def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, guest["email"], "data_analyst")
-        accept_invitation(guest, workspace, invitation["invitation_id"])
+        accept_invitation(guest, workspace, invitation["invitation_id"], invitation["invitation_token"])
 
         context = authorization_context(guest, workspace)
         assert context["membership_status"] == "active"
@@ -378,7 +380,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
                 {"id": expired["invitation_id"]},
             )
         with pytest.raises(AuthzError, match="expired"):
-            accept_invitation(guest, workspace, expired["invitation_id"])
+            accept_invitation(guest, workspace, expired["invitation_id"], expired["invitation_token"])
 
         revoked = create_invitation(
             owner, workspace, guest["email"], "data_analyst",
@@ -389,7 +391,7 @@ def test_supabase_invitation_rejects_expired_and_revoked():
                 {"id": revoked["invitation_id"]},
             )
         with pytest.raises(AuthzError, match="no longer active"):
-            accept_invitation(guest, workspace, revoked["invitation_id"])
+            accept_invitation(guest, workspace, revoked["invitation_id"], revoked["invitation_token"])
     finally:
         with SessionLocal.begin() as session:
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
@@ -415,11 +417,11 @@ def test_supabase_invitation_rejects_cross_company_active_member():
     org_a = _register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
     org_b = _register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
     invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "data_analyst")
-    accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
+    accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"], invitation_a["invitation_token"])
     invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "data_analyst")
     try:
         with pytest.raises(AuthzError):
-            accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"])
+            accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"], invitation_b["invitation_token"])
         with SessionLocal() as session:
             rows = session.execute(
                 text("""SELECT organization_id, status FROM organization_members
@@ -450,7 +452,7 @@ def test_supabase_management_approved_employee_and_delegation_are_scoped():
     workspace = result["workspace_id"]
     try:
         invitation = create_invitation(owner, workspace, member["email"], "team_lead")
-        accepted_member = accept_invitation(member, workspace, invitation["invitation_id"])
+        accepted_member = accept_invitation(member, workspace, invitation["invitation_id"], invitation["invitation_token"])
         assert set_approved_employee(owner, workspace, member_uid, accepted_member["employee_id"]) is True
         delegation = set_delegation(owner, workspace, member_uid, [member_uid], [], ["dataset.share"], None)
         assert delegation["delegation_id"].startswith("dlg_")
@@ -491,7 +493,7 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
     claims = {"uid": uid, "sub": uid, "email": uid + "@example.com"}
     result = _register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
     invitation = create_invitation(owner, result["workspace_id"], claims["email"], "data_analyst")
-    accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
+    accept_invitation(claims, result["workspace_id"], invitation["invitation_id"], invitation["invitation_token"])
     try:
         assert cleanup_account(claims, uid) == {"revoked_workspaces": [result["workspace_id"]]}
         with SessionLocal() as session:
@@ -609,7 +611,7 @@ def test_concurrent_invitation_acceptance_is_transactionally_consistent():
 
     def accept(_):
         try:
-            return accept_invitation(guest, result["workspace_id"], invitation["invitation_id"])
+            return accept_invitation(guest, result["workspace_id"], invitation["invitation_id"], invitation["invitation_token"])
         except Exception as exc:
             return exc
 
