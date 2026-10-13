@@ -62,7 +62,7 @@ def send_invitation_email(
         "from": from_email,
         "to": [recipient],
         "subject": f"You're invited to InsightFlow - {organization}",
-        "html": html,
+        "html": message_html,
     }).encode("utf-8")
 
     request = urllib.request.Request(
@@ -82,12 +82,7 @@ def send_invitation_email(
                     f"Invitation email provider returned HTTP {response.status}."
                 )
     except urllib.error.HTTPError as exc:
-        body = exc.read(500).decode("utf-8", errors="replace")
-        logger.warning(
-            "invitation_email_delivery_failed status=%s provider_message=%s",
-            exc.code,
-            body[:500],
-        )
+        logger.warning("invitation_email_delivery_failed status=%s", exc.code)
         raise InvitationEmailDeliveryError(
             "Invitation email could not be delivered."
         ) from exc
