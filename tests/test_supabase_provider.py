@@ -649,3 +649,45 @@ def test_concurrent_invitation_acceptance_is_transactionally_consistent():
                 text("DELETE FROM organizations WHERE organization_id=:org"),
                 {"org": result["organization_id"]},
             )
+
+
+def test_resending_invitation_revokes_old_token_without_creating_auth_user():
+    import uuid
+    from firebase_authz.auth import AuthzError
+    from firebase_authz.supabase_provider import (
+        create_invitation,
+        get_invitation_by_token,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"resend-owner-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com"}
+    guest_email = f"resend-guest-{suffix}@example.com"
+    result = _register_organization(owner, f"Resend Test {suffix}", "Main", f"RESEND-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        first = create_invitation(owner, workspace, guest_email, "data_analyst")
+        second = create_invitation(owner, workspace, guest_email, "data_analyst")
+        assert first["invitation_token"] != second["invitation_token"]
+        with SessionLocal() as db:
+            first_row = db.execute(
+                text("SELECT status, auth_user_id, token_hash FROM invitations WHERE invitation_id=:id"),
+                {"id": first["invitation_id"]},
+            ).one()
+            second_row = db.execute(
+                text("SELECT status, auth_user_id, token_hash FROM invitations WHERE invitation_id=:id"),
+                {"id": second["invitation_id"]},
+            ).one()
+        assert first_row.status == "revoked"
+        assert second_row.status == "invited"
+        assert first_row.auth_user_id is None and second_row.auth_user_id is None
+        assert first_row.token_hash == hashlib.sha256(first["invitation_token"].encode()).hexdigest()
+        assert second_row.token_hash == hashlib.sha256(second["invitation_token"].encode()).hexdigest()
+        with pytest.raises(AuthzError, match="no longer active"):
+            get_invitation_by_token(first["invitation_token"])
+        assert get_invitation_by_token(second["invitation_token"])["invitation_id"] == second["invitation_id"]
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
