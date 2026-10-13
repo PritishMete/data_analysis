@@ -604,6 +604,13 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
             raise AuthzError("Only an Organization Owner or Branch Head can manage invitations.")
 
+        # Serialize resends for one organization/email so concurrent requests
+        # cannot leave multiple usable pending tokens.
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"insightflow-invite:{workspace_id}:{email}"},
+        )
+
         # A new invitation supersedes older unaccepted invitations for the
         # same organization/email. No Auth account exists to clean up.
         db.execute(text("""UPDATE invitations
