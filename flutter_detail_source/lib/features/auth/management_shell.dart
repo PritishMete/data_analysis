@@ -293,7 +293,9 @@ class _ManagementShellState extends State<ManagementShell> {
       final workspace = Uri.encodeQueryComponent(insightFlowWorkspaceId.trim());
       final location = Uri.encodeQueryComponent(locationId);
       final result = await request('/email-settings?workspace_id=$workspace&location_id=$location');
-      if (mounted) setState(() => gmailSettings = result);
+      if (mounted) {
+        setState(() => gmailSettings = result);
+      }
     } catch (e) {
       if (mounted) setState(() {
         gmailSettings = const {};
@@ -351,7 +353,9 @@ class _ManagementShellState extends State<ManagementShell> {
     try {
       final result = await request('/email-settings/disconnect', method: 'POST',
         body: {'workspace_id': workspace, 'location_id': location});
-      if (mounted) setState(() => gmailSettings = result);
+      if (mounted) {
+        setState(() => gmailSettings = result);
+      }
       feedback(StateError('Branch Gmail disconnected.'));
     } catch (e) {
       feedback(e);
