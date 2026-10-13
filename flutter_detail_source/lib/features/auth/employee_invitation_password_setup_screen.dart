@@ -10,6 +10,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
+import 'sign_in_screen.dart';
 
 class EmployeeInvitationPasswordSetupScreen extends StatefulWidget {
   const EmployeeInvitationPasswordSetupScreen({
@@ -261,6 +262,15 @@ class _EmployeeInvitationPasswordSetupScreenState
               Text(_busy ? 'Setting up…' : 'Set password'),
             ],
           ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SignInScreen()),
+                  ),
+          child: const Text('Already have an account? Sign in first'),
         ),
         const SizedBox(height: 8),
         TextButton(
