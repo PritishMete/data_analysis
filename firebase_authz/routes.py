@@ -414,7 +414,7 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
     try:
         from .supabase_provider import accept_invitation as provider_accept_invitation
         result = provider_accept_invitation(
-            verify_id_token(_token(authorization)),
+            require_email_verified(verify_id_token(_token(authorization))),
             req.workspace_id,
             req.invitation_id,
             req.token,
