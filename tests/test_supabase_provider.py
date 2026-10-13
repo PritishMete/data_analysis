@@ -647,3 +647,82 @@ def test_concurrent_invitation_acceptance_is_transactionally_consistent():
                 text("DELETE FROM organizations WHERE organization_id=:org"),
                 {"org": result["organization_id"]},
             )
+
+
+
+def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch):
+    from contextlib import contextmanager
+    from firebase_authz import supabase_provider as provider
+    from firebase_authz.auth import AuthzError
+
+    context = {
+        "workspace_authorized": True,
+        "organization_id": "org-test",
+        "workspace_id": "workspace-test",
+        "principal_id": "manager-principal",
+        "role_ids": ["manager"],
+        "permissions": [],
+    }
+    state = {"grant": None}
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self.value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+    class FakeDb:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if "FROM authorization_resources" in query:
+                return Result({"resource_type": "dataset", "owner_principal_id": "owner"})
+            if "FROM dataset_authorization" in query and "SELECT protected_original" in query:
+                return Result({"protected_original": True, "location_id": "branch-1"})
+            if "FROM resource_grants" in query:
+                return Result(state["grant"])
+            if "SELECT role_id FROM member_roles" in query:
+                return Result(["manager"])
+            if "role_id='branch_head'" in query:
+                return Result([])
+            if "role_id='manager'" in query:
+                return Result(["branch-1"])
+            raise AssertionError(f"Unexpected authorization query: {query}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    @contextmanager
+    def fake_session():
+        yield FakeDb()
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", lambda: FakeDb())
+
+    claims = {"uid": "manager", "sub": "manager"}
+    with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
+        provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
+
+    state["grant"] = ["dataset.upload"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.upload"
+    )["authorized"]
+
+    state["grant"] = None
+    with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
+        provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
