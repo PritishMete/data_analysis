@@ -1649,16 +1649,18 @@ class _ManagementShellState extends State<ManagementShell> {
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    Widget metric(String label, int value, IconData icon) => Expanded(
-      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
-        Icon(icon, size: 17, color: TechColors.borderActive),
-        const SizedBox(width: 9),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-        ])),
-      ])),
-    );
+    // This metric is used both as a full-width child in the narrow Column
+    // and as a fixed-width child in the desktop Wrap. It must not return
+    // Expanded because the desktop Wrap/SizedBox are not Flex parents.
+    Widget metric(String label, int value, IconData icon) =>
+        _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
+          Icon(icon, size: 17, color: TechColors.borderActive),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
+          ])),
+        ]));
     Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
       final name = p['full_name']?.toString().trim() ?? '';
       final employeeId = p['employee_id']?.toString().trim() ?? '';
@@ -1827,7 +1829,12 @@ class _ManagementShellState extends State<ManagementShell> {
               }), icon: const Icon(Icons.filter_alt_off)),
             ]),
             if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
-              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+              onPressed: () => setState(() {
+        search = '';
+        selectedLocation = null;
+        selectedSection = null;
+        selectedRole = null;
+      }),
               child: const Text('Clear filters'),
             )),
           ]),
@@ -1851,8 +1858,12 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 5),
             const Text('Try changing your search or clearing the selected filters.',
               textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
-              child: const Text('Clear search and filters')),
+            TextButton(onPressed: () => setState(() {
+              search = '';
+              selectedLocation = null;
+              selectedSection = null;
+              selectedRole = null;
+            }), child: const Text('Clear search and filters')),
           ])))
         else if (narrow)
           Column(children: filtered.map((p) => Padding(
