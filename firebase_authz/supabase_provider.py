@@ -1832,9 +1832,9 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
-    # Original/master operations are role-scoped. Managers may upload into
-    # their own branch, while Branch Heads may manage the branch's originals.
-    if action == "dataset.upload":
+    # Original/master mutation is never implied by branch membership.
+    # Managers need an explicit capability grant for each operation.
+    if action in {"dataset.upload", "dataset.edit", "dataset.replace"}:
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
@@ -1847,8 +1847,10 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+            if action not in grant_permissions:
+                raise AuthzError(f"An explicit {action} grant is required for this dataset.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
+            raise AuthzError("This role cannot mutate the original dataset.")
     elif action == "dataset.view_original":
         if "organization_owner" in actor_roles:
             pass
@@ -1865,10 +1867,22 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         else:
             raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
-            raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")
-        if "organization_owner" not in actor_roles and (not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}):
-            raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        if "organization_owner" in actor_roles:
+            pass
+        elif "branch_head" in actor_roles:
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        elif "manager" in actor_roles and action != "dataset.manage_acl":
+            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
+                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+            if action not in grant_permissions:
+                raise AuthzError(f"An explicit {action} grant is required for this dataset.")
+        else:
+            raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset ACL.")
     elif action == "dataset.create_working_copy":
         # Branch Heads and Managers can copy datasets inside their branch scope.
         # All lower roles require an explicit per-dataset working-copy grant.
@@ -1897,9 +1911,16 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
                       target_uid: str, permissions: list[str]) -> bool:
     # Original/master access is never delegated. A Branch Head explicitly
     # grants only the ability to create a working copy of this dataset.
-    allowed = {"dataset.create_working_copy"}
+    allowed = {
+        "dataset.create_working_copy",
+        "dataset.upload",
+        "dataset.edit",
+        "dataset.replace",
+        "dataset.delete",
+        "dataset.share",
+    }
     if any(p not in allowed for p in permissions):
-        raise ValueError("Only dataset.create_working_copy can be delegated.")
+        raise ValueError("Unsupported dataset capability in grant.")
     context = authorization_context(claims, workspace_id)
     if "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
         raise AuthzError("Only a Branch Head or Organization Owner can authorize dataset copies.")
@@ -2012,7 +2033,21 @@ def list_dataset_catalog(claims: dict[str, Any], workspace_id: str) -> list[dict
         locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
             WHERE organization_id=:org AND principal_id=:principal AND status='active' AND location_id IS NOT NULL"""),
             {"org":org,"principal":context["principal_id"]}).scalars().all())
-        return [dict(row) for row in rows if row["location_id"] is None or row["location_id"] in locations]
+        visible = []
+        principal = context["principal_id"]
+        for row in rows:
+            location_id = row["location_id"]
+            if location_id is not None and location_id in locations:
+                visible.append(dict(row))
+                continue
+            # Null-location resources are not implicitly organization-wide.
+            # A non-owner must have an explicit resource grant to see them.
+            grant = db.execute(text("""SELECT permissions FROM resource_grants
+                WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:principal"""),
+                {"org": org, "dataset": row["dataset_id"], "principal": principal}).scalar_one_or_none()
+            if set(grant or []).intersection({"dataset.view_original", "dataset.create_working_copy"}):
+                visible.append(dict(row))
+        return visible
 
 
 
