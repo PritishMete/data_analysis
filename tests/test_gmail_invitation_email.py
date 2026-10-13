@@ -89,6 +89,7 @@ def test_oauth_callback_encrypts_refresh_token_and_binds_branch(monkeypatch):
     class Factory:
         def begin(self): return Context()
     monkeypatch.setattr(gmail,"SessionLocal",Factory())
+    gmail._persist_oauth_state(payload)
     result=gmail.complete_gmail_connection("one-time-code",state)
     assert result["connected"] is True
     assert actor==[("org-1","loc-9","principal-2")]

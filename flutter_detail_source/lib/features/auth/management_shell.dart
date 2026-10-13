@@ -263,7 +263,9 @@ class _ManagementShellState extends State<ManagementShell> {
           section = ManagementSection.overview;
         }
       });
-      if (_canManageGmail) await loadGmailSettings();
+      if (_canManageGmail) {
+        await loadGmailSettings();
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -2289,7 +2291,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 const SizedBox(height: 12),
                 Text('Gmail Send-As address: ${senderIdentity.isEmpty ? 'Not configured' : senderIdentity}',
                   style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
-                if (senderName.isNotEmpty) Text('Display identity: ${senderName}',
+                if (senderName.isNotEmpty) Text('Display identity: $senderName',
                   style: const TextStyle(color: TechColors.textMuted, fontSize: 12)),
               ] else
                 const Text('No Gmail account is connected for this branch. Invitations cannot be delivered until the Branch Head connects Gmail.',
