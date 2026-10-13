@@ -61,6 +61,8 @@ def test_invitation_link_is_validated_before_signup_and_keeps_token_in_redirect(
     routes = (ROOT / "firebase_authz/routes.py").read_text(encoding="utf-8")
     assert "Uri.base.queryParameters['token']" in gate
     assert "/v1/authz/invitations/preview" in gate
+    assert "user != null && user.emailVerified" in gate
+    assert "an invalid token never grants workspace access" in gate
     assert "String? emailRedirectTo" in service
     assert "def get_invitation_by_token(token: str)" in provider
     assert '@router.get("/invitations/preview")' in routes
