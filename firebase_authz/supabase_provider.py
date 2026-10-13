@@ -1909,8 +1909,8 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
 def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str,
                       target_uid: str, permissions: list[str]) -> bool:
-    # Original/master access is never delegated. A Branch Head explicitly
-    # grants only the ability to create a working copy of this dataset.
+    # Branch Heads explicitly delegate only the capabilities listed below.
+    # Original/master mutations are never implied by branch membership.
     allowed = {
         "dataset.create_working_copy",
         "dataset.upload",
@@ -1923,7 +1923,7 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
         raise ValueError("Unsupported dataset capability in grant.")
     context = authorization_context(claims, workspace_id)
     if "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
-        raise AuthzError("Only a Branch Head or Organization Owner can authorize dataset copies.")
+        raise AuthzError("Only a Branch Head or Organization Owner can manage dataset grants.")
     organization_id = str(context["organization_id"])
     with SessionLocal() as db:
         row = db.execute(text("""SELECT location_id FROM dataset_authorization
