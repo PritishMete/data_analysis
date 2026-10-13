@@ -2,9 +2,9 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace]
+    branches: [main, feature/data-workspace, feature/employee-management-cell]
   pull_request:
-    branches: [main]
+    branches: [main, feature/employee-management-cell]
   workflow_dispatch:
 
 jobs:
