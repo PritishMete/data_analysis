@@ -70,7 +70,7 @@ jobs:
         run: |
           psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -f tests/sql/supabase_compat.sql
           python tools/run_authz_migrations.py
-          pytest -q tests/test_supabase_provider.py tests/test_management_domain.py
+          pytest -q tests/test_supabase_provider.py tests/test_management_domain.py tests/test_management_routes_authorization.py
 
       - name: Run Supabase authentication and authorization API tests
         run: pytest -q tests/test_supabase_authz_api.py tests/test_supabase_only_auth.py tests/test_supabase_only_persistence.py tests/test_office_mutation_boundary.py
