@@ -1683,11 +1683,14 @@ class _ManagementShellState extends State<ManagementShell> {
     const professionalRoles = <String>{'data_analyst','senior_data_analyst','business_analyst','data_scientist','data_engineer','ml_engineer','analytics_engineer','bi_developer','data_architect','data_quality_analyst','data_governance_analyst'};
     final professionalMemberCount = people.where((p) => professionalRoles.contains(p['role_id']?.toString())).length;
     final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
-    final assignedCount = people.where((p) {
-      final loc = p['location_name']?.toString() ?? '';
-      final sec = p['section_name']?.toString() ?? '';
-      return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
-          sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
+    // "Team assigned" means a non-Branch-Head has a real section/team.
+    // A branch location alone is not a team assignment, and Branch Heads
+    // manage the branch rather than belonging to a subordinate team.
+    final teamAssignedCount = people.where((p) {
+      if (p['role_id']?.toString() == 'branch_head') return false;
+      final sectionName = p['section_name']?.toString().trim() ?? '';
+      return sectionName.isNotEmpty &&
+          sectionName.toLowerCase() != 'unassigned';
     }).length;
     final filtered = people.where((p) {
       final fields = [p['full_name'], p['email'], p['employee_id'], p['role_id'],
@@ -1800,7 +1803,7 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 7),
             metric('Active members', activeCount, Icons.verified_user_outlined),
             const SizedBox(height: 7),
-            metric('Assigned', assignedCount, Icons.account_tree_outlined),
+            metric('Team assigned', teamAssignedCount, Icons.account_tree_outlined),
           ] else Wrap(
             spacing: 9,
             runSpacing: 9,
@@ -1811,7 +1814,7 @@ class _ManagementShellState extends State<ManagementShell> {
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Professional members', professionalMemberCount, Icons.person_outline)),
               SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Active members', activeCount, Icons.verified_user_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Assigned', assignedCount, Icons.account_tree_outlined)),
+              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Team assigned', teamAssignedCount, Icons.account_tree_outlined)),
             ],
           ),
           const SizedBox(height: 12),
