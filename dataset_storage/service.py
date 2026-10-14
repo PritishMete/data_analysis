@@ -72,8 +72,8 @@ def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[st
 def _authorize_upload(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"branch_head", "manager"}):
-        raise PermissionDenied("Only a Branch Head or Manager can upload datasets.")
+    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
+        raise PermissionDenied("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
     return {**context, "authorized": True, "permission": "dataset.upload"}
 
 
@@ -491,7 +491,8 @@ def upload_managed_dataset_stream(
     claims = _claims(token)
     _authorize_upload(claims, workspace_id)
     if dataset_id is not None:
-        _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.view_original')
+        # Adding a version mutates an existing master dataset; viewing it is not enough.
+        _authorize_dataset(claims, workspace_id, dataset_id, "dataset.upload")
     safe_name = _safe_filename(filename)
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
