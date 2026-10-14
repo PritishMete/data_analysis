@@ -254,6 +254,18 @@ class _ManagementShellState extends State<ManagementShell> {
         request('/overview'), request('/locations'), request('/sections'),
         request('/people'), request('/assignments'), request(''),
       ]);
+      // The backend's UI policy is authoritative. A missing or malformed
+      // policy is an invalid authorization response, not permission to use
+      // frontend role defaults.
+      final policy = r[0]['ui_policy'];
+      if (policy is! Map ||
+          !policy.containsKey('sections') ||
+          policy['sections'] is! List) {
+        throw StateError(
+          'Management service returned an invalid permissions policy. '
+          'Please retry or contact your administrator.',
+        );
+      }
       if (!mounted) return;
       setState(() {
         overview = r[0];
@@ -306,60 +318,37 @@ class _ManagementShellState extends State<ManagementShell> {
 
   List<ManagementSection> _allowedSections() {
     final policy = overview['ui_policy'];
-    if (policy is Map && policy['sections'] is List) {
-      final sections = <ManagementSection>[];
-      for (final raw in policy['sections'] as List) {
-        switch (raw.toString()) {
-          case 'overview':
-            sections.add(ManagementSection.overview);
-            break;
-          case 'organization':
-            sections.add(ManagementSection.organization);
-            break;
-          case 'people':
-            sections.add(ManagementSection.people);
-            break;
-          case 'dataAccess':
-            sections.add(ManagementSection.dataAccess);
-            break;
-          case 'invitations':
-            sections.add(ManagementSection.invitations);
-            break;
-          case 'audit':
-            sections.add(ManagementSection.audit);
-            break;
-        }
-      }
-      if (sections.isNotEmpty) return sections;
+    // An explicit list (including an empty list) is authoritative. Ignore
+    // unknown section names; never replace an empty/invalid result with
+    // hard-coded role defaults.
+    if (policy is! Map || policy['sections'] is! List) {
+      return const [];
     }
 
-    switch (_managementRole()) {
-      case 'organization_owner':
-      case 'branch_head':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.organization,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-          ManagementSection.invitations,
-          ManagementSection.audit,
-        ];
-      case 'manager':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-          ManagementSection.invitations,
-        ];
-      case 'team_lead':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-        ];
-      default:
-        return const [ManagementSection.overview];
+    final sections = <ManagementSection>[];
+    for (final raw in policy['sections'] as List) {
+      switch (raw.toString()) {
+        case 'overview':
+          sections.add(ManagementSection.overview);
+          break;
+        case 'organization':
+          sections.add(ManagementSection.organization);
+          break;
+        case 'people':
+          sections.add(ManagementSection.people);
+          break;
+        case 'dataAccess':
+          sections.add(ManagementSection.dataAccess);
+          break;
+        case 'invitations':
+          sections.add(ManagementSection.invitations);
+          break;
+        case 'audit':
+          sections.add(ManagementSection.audit);
+          break;
+      }
     }
+    return sections;
   }
 
   bool _sectionAllowed(ManagementSection value) =>
@@ -3575,6 +3564,27 @@ class _ManagementShellState extends State<ManagementShell> {
                                         ],
                                       ),
                                     )
+                                  : _allowedSections().isEmpty
+                                      ? GlassCard(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.lock_outline_rounded, color: TechColors.textMuted, size: 22),
+                                              const SizedBox(height: 8),
+                                              _eyebrow('NO MANAGEMENT ACCESS'),
+                                              const SizedBox(height: 6),
+                                              const Text(
+                                                'No management sections are authorized for this account. '
+                                                'Contact your organization administrator if you believe this is incorrect.',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(color: TechColors.textPrimary, height: 1.4),
+                                              ),
+                                              const SizedBox(height: 14),
+                                              _actionChip('REFRESH', Icons.refresh_rounded, loadAll, accent: true),
+                                            ],
+                                          ),
+                                        )
                                   : Column(
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
