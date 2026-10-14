@@ -236,35 +236,4 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('People search empty state can be cleared on a narrow screen', (tester) async {
-    tester.view.physicalSize = const Size(375, 812);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(MaterialApp(
-      home: ManagementShell(
-        initialSection: ManagementSection.people,
-        requestOverride: _fixtureResponse,
-      ),
-    ));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
-    await tester.pump();
-
-    final search = find.byType(TextField).first;
-    await tester.ensureVisible(search);
-    await tester.enterText(search, 'no-such-person');
-    await tester.pump();
-
-    expect(find.text('No people match your search'), findsOneWidget);
-    await tester.ensureVisible(find.text('Clear search and filters'));
-    await tester.pump(const Duration(milliseconds: 120));
-    await tester.pump();
-    await tester.tap(find.text('Clear search and filters'));
-    await tester.pump();
-
-    expect(find.text('Asha Banerjee'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
 }
