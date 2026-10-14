@@ -55,6 +55,12 @@ void main() {
     expect(source, contains("'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE'"));
     expect(source, contains('selectedLocation = id'));
     expect(source, contains('selectedSection = sectionId'));
+    expect(source, contains("p['location_id']?.toString() != selectedLocation"));
+    expect(source, contains("p['section_id']?.toString() != selectedSection"));
+    expect(source, isNot(contains("p['location_name']?.toString() != selectedLocation")));
+    expect(source, isNot(contains("p['section_name']?.toString() != selectedSection")));
+    expect(source, contains('locationOptionIds.map((id)'));
+    expect(source, contains('sectionOptionIds.map((id)'));
     expect(source, contains('selectedSection ?? sections.first'));
     expect(source, contains('assignmentList()'));
     expect(source, contains('actions()'));
