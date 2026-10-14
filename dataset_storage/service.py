@@ -684,6 +684,7 @@ def _create_managed_working_copy_from_claims(
     dataset_id: str,
     *,
     assigned_to_principal_id: str | None = None,
+    db_session: Any | None = None,
 ) -> dict[str, Any]:
     """Create an independently persisted snapshot of a managed dataset version.
 
@@ -699,7 +700,8 @@ def _create_managed_working_copy_from_claims(
     from core.db import SessionLocal
     from datasets.physical_table import create_physical_table, physical_table_name
 
-    repo = DatasetRepository(SessionLocal())
+    owns_session = db_session is None
+    repo = DatasetRepository(db_session or SessionLocal())
     copy_table_name = None
     try:
         source = repo.get_by_id(dataset_id)
@@ -832,7 +834,10 @@ def _create_managed_working_copy_from_claims(
                 {"org": organization_id, "copy": working_copy_id,
                  "principal": assigned_to_principal_id,
                  "permissions": json.dumps(recipient_permissions)})
-        repo.db.commit()
+        if owns_session:
+            repo.db.commit()
+        else:
+            repo.db.flush()
         _audit_safely(
             workspace_id,
             str(claims["uid"]),
@@ -855,10 +860,12 @@ def _create_managed_working_copy_from_claims(
             "column_count": source_version.column_count,
         }
     except Exception:
-        repo.db.rollback()
+        if owns_session:
+            repo.db.rollback()
         raise
     finally:
-        repo.db.close()
+        if owns_session:
+            repo.db.close()
 
 
 def create_managed_working_copy(
