@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/features/auth/management_shell.dart';
+import 'package:liquid_glass_widgets/features/auth/management_shell.dart';
 
 Future<Map<String, dynamic>> _fixtureResponse(String path) async {
   switch (path) {
