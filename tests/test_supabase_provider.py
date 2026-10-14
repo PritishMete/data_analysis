@@ -671,7 +671,7 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
         "role_ids": ["manager"],
         "permissions": [],
     }
-    state = {"grant": None, "manager_locations": ["branch-1"]}
+    state = {"grant": None, "manager_locations": ["branch-1"], "branch_locations": [], "roles": ["manager"], "dataset_location": "branch-1"}
 
     class Result:
         def __init__(self, value=None):
@@ -698,13 +698,13 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
             if "FROM authorization_resources" in query:
                 return Result({"resource_type": "dataset", "owner_principal_id": "owner"})
             if "FROM dataset_authorization" in query and "SELECT protected_original" in query:
-                return Result({"protected_original": True, "location_id": "branch-1"})
+                return Result({"protected_original": True, "location_id": state["dataset_location"]})
             if "FROM resource_grants" in query:
                 return Result(state["grant"])
             if "SELECT role_id FROM member_roles" in query:
-                return Result(["manager"])
+                return Result(state["roles"])
             if "role_id='branch_head'" in query:
-                return Result([])
+                return Result(state["branch_locations"])
             if "role_id='manager'" in query:
                 return Result(state["manager_locations"])
             raise AssertionError(f"Unexpected authorization query: {query}")
@@ -750,6 +750,20 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
         )
 
     state["manager_locations"] = ["branch-1"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+    )["authorized"]
+
+    # Branch Heads do not need a Manager grant, but they must stay within
+    # their own assigned branch.
+    state["roles"] = ["branch_head"]
+    state["branch_locations"] = ["branch-2"]
+    with pytest.raises(AuthzError, match="outside your Branch Head scope"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["branch_locations"] = ["branch-1"]
     assert provider.authorize_dataset(
         claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
     )["authorized"]
