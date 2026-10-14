@@ -1657,7 +1657,7 @@ def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[s
 def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: str, approve: bool) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head"}):
+    if not roles.intersection({"organization_owner", "branch_head"}):
         raise AuthzError("Only a Branch Head or Organization Owner can approve copy requests.")
     org = str(context["organization_id"])
     with SessionLocal.begin() as db:
@@ -1670,25 +1670,34 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
             branch = db.execute(text("""SELECT 1 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:principal
                   AND role_id='branch_head' AND location_id=:location AND status='active'"""),
-                {"org": org,"principal":context["principal_id"],"location":req["location_id"]}).scalar_one_or_none()
+                {"org": org, "principal": context["principal_id"], "location": req["location_id"]}).scalar_one_or_none()
             if not branch:
                 raise AuthzError("This request belongs to another branch.")
         if not approve:
-            db.execute(text("""UPDATE authorization_requests SET status='rejected', reviewed_by_principal_id=:reviewer, reviewed_at=now(), updated_at=now()
-                WHERE request_id=:request"""), {"requester":request_id,"reviewer":context["principal_id"],"request":request_id})
+            db.execute(text("""UPDATE authorization_requests
+                SET status='rejected', reviewed_by_principal_id=:reviewer, reviewed_at=now(), updated_at=now()
+                WHERE organization_id=:org AND request_id=:request"""),
+                {"org": org, "reviewer": context["principal_id"], "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
-    copy = create_working_copy(claims, workspace_id, req["dataset_id"], None, None)
-    with SessionLocal.begin() as db:
-        db.execute(text("""INSERT INTO working_copy_assignments
-            (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
-            VALUES (:copy,:org,:principal,:assigner)"""),
-            {"copy":copy["working_copy_id"],"org":org,"principal":req["requester_principal_id"],"assigner":context["principal_id"]})
+
+        # Persist the physical snapshot, its independent dataset/version IDs,
+        # ACL, recipient assignment, and request decision in one DB transaction.
+        from dataset_storage.service import _create_managed_working_copy_from_claims
+        copy = _create_managed_working_copy_from_claims(
+            claims,
+            workspace_id,
+            str(req["dataset_id"]),
+            assigned_to_principal_id=str(req["requester_principal_id"]),
+            db_session=db,
+        )
         db.execute(text("""UPDATE authorization_requests
             SET status='approved', reviewed_by_principal_id=:reviewer, reviewed_at=now(),
                 resulting_working_copy_id=:copy, updated_at=now()
-            WHERE request_id=:request"""),
-            {"reviewer":context["principal_id"],"copy":copy["working_copy_id"],"request":request_id})
+            WHERE organization_id=:org AND request_id=:request"""),
+            {"org": org, "reviewer": context["principal_id"],
+             "copy": copy["working_copy_id"], "request": request_id})
     return {"request_id": request_id, "status": "approved", "working_copy": copy}
+
 
 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
