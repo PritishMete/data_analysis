@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -150,6 +152,48 @@ void main() {
     await tester.ensureVisible(find.text('Clear filters'));
     await tester.tap(find.text('Clear filters'));
     await tester.pumpAndSettle();
+    expect(find.text('Asha Banerjee'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('People loading state transitions to populated content', (tester) async {
+    final peopleCompleter = Completer<Map<String, dynamic>>();
+
+    Future<Map<String, dynamic>> delayedResponse(String path) {
+      if (path == '/people') return peopleCompleter.future;
+      return _fixtureResponse(path);
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      home: ManagementShell(
+        initialSection: ManagementSection.people,
+        requestOverride: delayedResponse,
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.text('Asha Banerjee'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    peopleCompleter.complete({
+      'people': [
+        {
+          'principal_id': 'principal-1',
+          'full_name': 'Asha Banerjee',
+          'email': 'asha@example.test',
+          'employee_id': 'EMP-001',
+          'role_id': 'branch_head',
+          'status': 'active',
+          'location_name': 'Kolkata',
+          'section_name': 'Operations',
+          'assignment_id': 'assignment-1',
+        },
+      ],
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
+
     expect(find.text('Asha Banerjee'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
