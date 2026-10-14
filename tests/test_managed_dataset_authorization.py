@@ -548,3 +548,147 @@ def test_existing_dataset_version_upload_requires_dataset_upload_capability(monk
         )
 
     assert calls == [("master-dataset", "dataset.upload")]
+
+
+
+def test_working_copy_persists_independent_rows_and_version_identity(monkeypatch):
+    """Exercise real disposable SQLite persistence, not mocked row storage."""
+    import uuid
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    from core.db import Base
+    from datasets.models import Dataset, DatasetColumn, DatasetVersion
+    from datasets.physical_table import create_physical_table, physical_table_name
+    from datasets.repository import DatasetRepository
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr("core.db.SessionLocal", Session)
+
+    source_id = "master-dataset"
+    source_version_pk = str(uuid.uuid4())
+    source_table = physical_table_name(source_version_pk)
+    source_columns = [("id", "integer"), ("value", "text")]
+    with Session() as db:
+        repo = DatasetRepository(db)
+        repo.create_dataset(Dataset(
+            dataset_id=source_id,
+            organization_id="org-test",
+            dataset_name="master.csv",
+            uploaded_by="principal-owner",
+            schema_hash="schema-hash",
+            file_hash="master-hash",
+            row_count=2,
+            column_count=2,
+            source_type="managed",
+            status="ready",
+            original_filename="master.csv",
+            content_type="text/csv",
+            file_size=32,
+            current_version_id="v1",
+            version_number=1,
+        ), commit=False)
+        repo.add_version(DatasetVersion(
+            version_pk=source_version_pk,
+            dataset_id=source_id,
+            version_id="v1",
+            version_number=1,
+            status="ready",
+            file_hash="master-hash",
+            schema_hash="schema-hash",
+            row_count=2,
+            column_count=2,
+            original_filename="master.csv",
+            content_type="text/csv",
+            file_size=32,
+            created_by="principal-owner",
+            data_table_name=source_table,
+        ), commit=False)
+        repo.add_columns([
+            DatasetColumn(
+                dataset_id=source_id,
+                version_pk=source_version_pk,
+                column_name="id",
+                detected_type="integer",
+                nullable=False,
+                unique_count=2,
+                missing_count=0,
+                missing_percentage=0.0,
+            ),
+            DatasetColumn(
+                dataset_id=source_id,
+                version_pk=source_version_pk,
+                column_name="value",
+                detected_type="text",
+                nullable=True,
+                unique_count=2,
+                missing_count=0,
+                missing_percentage=0.0,
+            ),
+        ], commit=False)
+        create_physical_table(db.connection(), source_table, source_columns)
+        repo.bulk_add_rows(source_version_pk, [
+            {"row_number": 1, "row_data": {"id": 1, "value": "original-a"}},
+            {"row_number": 2, "row_data": {"id": 2, "value": "original-b"}},
+        ], table_name=source_table, columns=source_columns, commit=False)
+        db.commit()
+
+    claims = {"uid": "owner", "sub": "owner", "provider": "supabase"}
+    monkeypatch.setattr(dataset_service, "_claims", lambda token: claims)
+    monkeypatch.setattr(dataset_service, "_authorization_context", lambda claims_arg, workspace_id: {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-test",
+        "organization_id": "org-test",
+        "principal_id": "principal-owner",
+        "role_ids": ["organization_owner"],
+    })
+    monkeypatch.setattr(dataset_service, "_authorize_dataset", lambda *args: {"authorized": True})
+    monkeypatch.setattr(dataset_service, "create_working_copy", lambda claims_arg, workspace_id, dataset_id, working_copy_id, source_version, db=None: {
+        "working_copy_id": working_copy_id,
+        "organization_id": "org-test",
+        "workspace_id": "workspace-test",
+        "source_dataset_id": dataset_id,
+        "source_version": source_version,
+    })
+
+    created = dataset_service.create_managed_working_copy(
+        workspace_id="workspace-test",
+        token="token",
+        dataset_id=source_id,
+    )
+    copy_id = created["structured_dataset_id"]
+    assert copy_id != source_id
+    assert created["structured_version_id"] == "1"
+
+    with Session() as db:
+        repo = DatasetRepository(db)
+        copy_version = repo.get_version(copy_id)
+        master_version = repo.get_version(source_id)
+        assert copy_version is not None
+        assert master_version is not None
+        assert copy_version.version_pk != master_version.version_pk
+        assert copy_version.data_table_name != master_version.data_table_name
+        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+
+        db.execute(
+            text(f'UPDATE "{copy_version.data_table_name}" SET value=:value WHERE "__row_number"=1'),
+            {"value": "copy-only"},
+        )
+        db.commit()
+        assert repo.get_rows(master_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "copy-only"
+
+        db.execute(
+            text(f'UPDATE "{master_version.data_table_name}" SET value=:value WHERE "__row_number"=2'),
+            {"value": "master-only"},
+        )
+        db.commit()
+        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "original-b"
+        repo.delete_dataset(copy_id)
+        assert repo.get_by_id(source_id) is not None
+        assert repo.get_rows(master_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+
+    engine.dispose()
