@@ -683,6 +683,7 @@ def _create_managed_working_copy_from_claims(
     workspace_id: str,
     dataset_id: str,
     *,
+    source_version_id: str | None = None,
     assigned_to_principal_id: str | None = None,
     db_session: Any | None = None,
 ) -> dict[str, Any]:
@@ -707,9 +708,9 @@ def _create_managed_working_copy_from_claims(
         source = repo.get_by_id(dataset_id)
         if source is None or source.organization_id != organization_id:
             raise FileNotFoundError("Dataset not found.")
-        source_version = repo.get_version(dataset_id)
+        source_version = repo.get_version(dataset_id, source_version_id)
         if source_version is None or source_version.status != "ready":
-            raise FileNotFoundError("Current dataset version is not READY.")
+            raise FileNotFoundError("Requested source dataset version is not READY.")
         source_columns = repo.get_columns_for_version(source_version.version_pk)
         if source_version.row_count and not source_version.data_table_name:
             raise RuntimeError("Source version has rows but no persisted physical table.")
