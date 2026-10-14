@@ -98,8 +98,18 @@ class _ManagementGlassDialog extends StatelessWidget {
 }
 
 
+typedef ManagementRequestOverride = Future<Map<String, dynamic>> Function(String path);
+
 class ManagementShell extends StatefulWidget {
-  const ManagementShell({super.key});
+  const ManagementShell({
+    super.key,
+    this.initialSection = ManagementSection.overview,
+    this.requestOverride,
+  });
+
+  final ManagementSection initialSection;
+  final ManagementRequestOverride? requestOverride;
+
   @override
   State<ManagementShell> createState() => _ManagementShellState();
 }
@@ -129,7 +139,11 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _isCurrentUserProfile = false;
 
   @override
-  void initState() { super.initState(); loadAll(); }
+  void initState() {
+    super.initState();
+    section = widget.initialSection;
+    loadAll();
+  }
 
   List<Map<String, dynamic>> maps(dynamic v) => v is List
       ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
@@ -170,6 +184,9 @@ class _ManagementShellState extends State<ManagementShell> {
     String method = 'GET',
     Map<String, dynamic>? body,
   }) async {
+    final override = widget.requestOverride;
+    if (override != null) return override(path);
+
     final session = await InsightFlowSupabaseAuthService.ensureSession(
       timeout: const Duration(seconds: 8),
     );
