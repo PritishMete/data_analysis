@@ -1761,11 +1761,19 @@ def _organization_id_for_workspace(db, workspace_id: str) -> str:
 
 
 def delete_dataset_authorization(workspace_id: str, dataset_id: str) -> None:
+    """Remove ACL metadata for a managed dataset or a persisted working copy."""
     with SessionLocal.begin() as db:
         organization_id = _organization_id_for_workspace(db, workspace_id)
         db.execute(text("DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM dataset_authorization WHERE organization_id=:org AND dataset_id=:dataset"),
+                   {"org": organization_id, "dataset": dataset_id})
+        # Working-copy metadata must not remain active after its structured
+        # dataset is deleted, otherwise a stale authorization record could be
+        # reused if the identifier is ever presented again.
+        db.execute(text("DELETE FROM working_copy_assignments WHERE organization_id=:org AND working_copy_id=:dataset"),
+                   {"org": organization_id, "dataset": dataset_id})
+        db.execute(text("DELETE FROM working_copy_authorization WHERE organization_id=:org AND working_copy_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM authorization_resources WHERE organization_id=:org AND resource_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
@@ -1829,6 +1837,35 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 WHERE organization_id=:org AND principal_id=:principal
                   AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL"""),
             {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+    # A persisted working copy has its own structured dataset identity but
+    # keeps the separate working-copy grant/assignment policy. Translate the
+    # managed-dataset API capabilities into that policy before any content is
+    # read or mutated.
+    if resource and resource["resource_type"] == "working_copy":
+        copy_actions = {
+            "dataset.view_original": "working_copy.view",
+            "dataset.upload": "working_copy.modify",
+            "dataset.edit": "working_copy.modify",
+            "dataset.replace": "working_copy.modify",
+            "dataset.delete": "working_copy.delete",
+            "dataset.share": "working_copy.assign",
+            "dataset.manage_acl": "working_copy.assign",
+        }
+        copy_action = copy_actions.get(action)
+        if copy_action is None:
+            raise AuthzError("This operation is not supported for a working copy.")
+        copy_context = authorize_working_copy(
+            claims, workspace_id, dataset_id, copy_action
+        )
+        return {
+            **copy_context,
+            "authorized": True,
+            "workspace_id": resolved_workspace_id,
+            "organization_id": organization_id,
+            "dataset_id": dataset_id,
+            "protected_original": False,
+            "location_id": None,
+        }
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
@@ -1950,26 +1987,39 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
 
 def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str,
-                        working_copy_id: str | None, source_version: str | None) -> dict[str, Any]:
+                        working_copy_id: str | None, source_version: str | None,
+                        *, db=None) -> dict[str, Any]:
+    """Create working-copy ACL metadata, optionally inside the content transaction.
+
+    Passing the repository session lets the caller commit the copy identity,
+    copied physical rows, version metadata, and ACL together.
+    """
     authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     context = authorization_context(claims, workspace_id)
     copy_id = working_copy_id or _id("wc")
     version = source_version or "1"
     organization_id = str(context["organization_id"])
     resolved_workspace_id = str(context["workspace_id"])
-    with SessionLocal.begin() as db:
-        db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
+
+    def insert_metadata(target_db) -> None:
+        target_db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
             VALUES (:org, :copy, 'working_copy', :principal)"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"]})
-        db.execute(text("""INSERT INTO working_copy_authorization
+        target_db.execute(text("""INSERT INTO working_copy_authorization
             (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id)
             VALUES (:org, :copy, :dataset, :version, :principal)"""),
             {"org": organization_id, "copy": copy_id, "dataset": dataset_id,
              "version": version, "principal": context["principal_id"]})
-        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+        target_db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"],
              "permissions": '["working_copy.view","working_copy.modify","working_copy.delete","working_copy.assign"]'})
+
+    if db is None:
+        with SessionLocal.begin() as target_db:
+            insert_metadata(target_db)
+    else:
+        insert_metadata(db)
     return {"working_copy_id": copy_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id,
             "source_dataset_id": dataset_id, "source_version": version}
 
