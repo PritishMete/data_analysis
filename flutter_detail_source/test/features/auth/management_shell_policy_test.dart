@@ -45,7 +45,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('NO MANAGEMENT ACCESS'), findsOneWidget);
       expect(find.text('ORGANIZATION'), findsNothing);
@@ -68,7 +69,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('NO MANAGEMENT ACCESS'), findsOneWidget);
       expect(find.text('ORGANIZATION'), findsNothing);
@@ -88,7 +90,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('MANAGEMENT SERVICE ERROR'), findsOneWidget);
     expect(
