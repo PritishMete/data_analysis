@@ -32,7 +32,7 @@ from .management_domain import (
     list_team_lead_requests,
     decide_team_lead_request,
 )
-from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, list_dataset_catalog
+from .supabase_provider import request_dataset_copy, list_copy_requests, approve_copy_request, assign_working_copy, revoke_working_copy_assignment, list_dataset_catalog
 
 router = APIRouter(prefix="/v1/authz/management", tags=["management"])
 
@@ -310,6 +310,18 @@ def working_copy_assignment(
 ):
     return _dispatch(
         assign_working_copy, _claims(authorization), _workspace(workspace_id),
+        req.working_copy_id, req.target_uid,
+    )
+
+
+@router.post("/data-access/working-copies/revoke")
+def working_copy_assignment_revoke(
+    req: WorkingCopyAssignmentRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        revoke_working_copy_assignment, _claims(authorization), _workspace(workspace_id),
         req.working_copy_id, req.target_uid,
     )
 
