@@ -663,7 +663,7 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
         "role_ids": ["manager"],
         "permissions": [],
     }
-    state = {"grant": None}
+    state = {"grant": None, "manager_locations": ["branch-1"]}
 
     class Result:
         def __init__(self, value=None):
@@ -698,7 +698,7 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
             if "role_id='branch_head'" in query:
                 return Result([])
             if "role_id='manager'" in query:
-                return Result(["branch-1"])
+                return Result(state["manager_locations"])
             raise AssertionError(f"Unexpected authorization query: {query}")
 
         def __enter__(self):
@@ -726,6 +726,25 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
     state["grant"] = None
     with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
         provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
+
+    # Copy creation is also a Manager mutation: branch membership alone must
+    # not authorize it, and a grant for the wrong branch must not bypass scope.
+    with pytest.raises(AuthzError, match="explicit dataset.create_working_copy grant"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["grant"] = ["dataset.create_working_copy"]
+    state["manager_locations"] = ["branch-2"]
+    with pytest.raises(AuthzError, match="outside your Manager scope"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["manager_locations"] = ["branch-1"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+    )["authorized"]
 
 
 
