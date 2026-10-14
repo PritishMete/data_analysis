@@ -142,16 +142,23 @@ void main() {
     final roleFilter = find.byType(DropdownButtonFormField<String>).last;
     await tester.ensureVisible(roleFilter);
     await tester.tap(roleFilter);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
     await tester.tap(find.text('Manager').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.text('Rahul Das'), findsOneWidget);
     expect(find.text('Asha Banerjee'), findsNothing);
 
-    await tester.ensureVisible(find.text('Clear filters'));
+    await tester.scrollUntilVisible(
+      find.text('Clear filters'),
+      160,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.tap(find.text('Clear filters'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
     expect(find.text('Asha Banerjee'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -251,7 +258,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('No people match your search'), findsOneWidget);
-    await tester.ensureVisible(find.text('Clear search and filters'));
+    await tester.scrollUntilVisible(
+      find.text('Clear search and filters'),
+      160,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.tap(find.text('Clear search and filters'));
     await tester.pump();
 
