@@ -229,6 +229,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
         authorize_dataset,
         authorize_working_copy,
         create_working_copy,
+        delete_dataset_authorization,
         register_dataset,
         register_organization,
     )
@@ -239,6 +240,13 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
     create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
     assert authorize_working_copy(claims, result["workspace_id"], "wc_test", "working_copy.modify")["authorized"]
+
+    # Removing the master's ACL must not invalidate the independent copy ACL
+    # or its persisted branch scope.
+    delete_dataset_authorization(result["workspace_id"], "ds_test")
+    assert authorize_working_copy(
+        claims, result["workspace_id"], "wc_test", "working_copy.modify"
+    )["authorized"]
     from firebase_authz.auth import AuthzError
     with pytest.raises(AuthzError):
         authorize_dataset(claims, "org_other", "ds_test", "dataset.view_original")
