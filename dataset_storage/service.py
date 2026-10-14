@@ -9,7 +9,7 @@ import uuid
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from firebase_authz.auth import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -677,12 +677,12 @@ def delete_managed_dataset(
         repo.db.close()
 
 
-def create_managed_working_copy(
-    *,
+def _create_managed_working_copy_from_claims(
+    claims: dict[str, Any],
     workspace_id: str,
-    token: str,
     dataset_id: str,
-    provider: SupabaseDatasetStorageProvider | None = None,
+    *,
+    assigned_to_principal_id: str | None = None,
 ) -> dict[str, Any]:
     """Create an independently persisted snapshot of a managed dataset version.
 
@@ -691,7 +691,6 @@ def create_managed_working_copy(
     copied into a new physical table in the same database transaction as the
     copy metadata and working-copy ACL records.
     """
-    claims = _claims(token)
     _authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
@@ -811,6 +810,27 @@ def create_managed_working_copy(
             source_version.version_id,
             db=repo.db,
         )
+        if assigned_to_principal_id:
+            target_roles = set(repo.db.execute(
+                text("SELECT role_id FROM member_roles WHERE organization_id=:org AND principal_id=:principal"),
+                {"org": organization_id, "principal": assigned_to_principal_id},
+            ).scalars().all())
+            if not target_roles:
+                raise PermissionDenied("Working-copy recipient is not an active organization member.")
+            repo.db.execute(text("""INSERT INTO working_copy_assignments
+                (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
+                VALUES (:copy, :org, :principal, :assigner)"""),
+                {"copy": working_copy_id, "org": organization_id,
+                 "principal": assigned_to_principal_id, "assigner": context["principal_id"]})
+            recipient_permissions = ["working_copy.view"]
+            if "team_lead" in target_roles:
+                recipient_permissions.append("working_copy.assign")
+            repo.db.execute(text("""INSERT INTO resource_grants
+                (organization_id, resource_id, principal_id, permissions)
+                VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
+                {"org": organization_id, "copy": working_copy_id,
+                 "principal": assigned_to_principal_id,
+                 "permissions": json.dumps(recipient_permissions)})
         repo.db.commit()
         _audit_safely(
             workspace_id,
@@ -838,3 +858,17 @@ def create_managed_working_copy(
         raise
     finally:
         repo.db.close()
+
+
+def create_managed_working_copy(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    provider: SupabaseDatasetStorageProvider | None = None,
+) -> dict[str, Any]:
+    """Authenticate and create an independent persisted working-copy snapshot."""
+    claims = _claims(token)
+    return _create_managed_working_copy_from_claims(
+        claims, workspace_id, dataset_id
+    )
