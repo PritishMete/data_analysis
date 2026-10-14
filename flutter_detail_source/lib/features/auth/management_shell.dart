@@ -1859,9 +1859,7 @@ class _ManagementShellState extends State<ManagementShell> {
             padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
           )).toList())
         else
-          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-            child: Column(children: [
+          Column(children: [
               Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                 child: Row(children: const [
                   Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
@@ -1876,7 +1874,6 @@ class _ManagementShellState extends State<ManagementShell> {
                 child: personCard(p),
               )),
             ]),
-          ),
       ]);
     });
   }
