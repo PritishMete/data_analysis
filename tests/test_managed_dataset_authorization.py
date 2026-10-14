@@ -663,23 +663,37 @@ def test_working_copy_persists_independent_rows_and_version_identity(monkeypatch
     assert copy_id != source_id
     assert created["structured_version_id"] == "1"
 
+    created_b = dataset_service.create_managed_working_copy(
+        workspace_id="workspace-test",
+        token="token",
+        dataset_id=source_id,
+    )
+    copy_b_id = created_b["structured_dataset_id"]
+    assert copy_b_id not in {source_id, copy_id}
+
     with Session() as db:
         repo = DatasetRepository(db)
         copy_version = repo.get_version(copy_id)
+        copy_b_version = repo.get_version(copy_b_id)
         master_version = repo.get_version(source_id)
         assert copy_version is not None
+        assert copy_b_version is not None
         assert master_version is not None
         assert copy_version.version_pk != master_version.version_pk
+        assert copy_version.version_pk != copy_b_version.version_pk
         assert copy_version.data_table_name != master_version.data_table_name
+        assert copy_version.data_table_name != copy_b_version.data_table_name
         assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
 
         db.execute(
             text(f'UPDATE "{copy_version.data_table_name}" SET value=:value WHERE "__row_number"=1'),
-            {"value": "copy-only"},
+            {"value": "copy-a-only"},
         )
         db.commit()
         assert repo.get_rows(master_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
-        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "copy-only"
+        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "copy-a-only"
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
 
         db.execute(
             text(f'UPDATE "{master_version.data_table_name}" SET value=:value WHERE "__row_number"=2'),
@@ -687,8 +701,27 @@ def test_working_copy_persists_independent_rows_and_version_identity(monkeypatch
         )
         db.commit()
         assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "original-b"
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "original-b"
+
+        db.execute(
+            text(f'UPDATE "{copy_b_version.data_table_name}" SET value=:value WHERE "__row_number"=2'),
+            {"value": "copy-b-only"},
+        )
+        db.commit()
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "copy-b-only"
+        assert repo.get_rows(copy_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "original-b"
+        assert repo.get_rows(master_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "master-only"
+
         repo.delete_dataset(copy_id)
         assert repo.get_by_id(source_id) is not None
+        assert repo.get_by_id(copy_b_id) is not None
         assert repo.get_rows(master_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "copy-b-only"
+
+        # Deleting the master storage identity must not delete a persisted copy.
+        repo.delete_dataset(source_id)
+        assert repo.get_by_id(copy_b_id) is not None
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[0]["row_data"]["value"] == "original-a"
+        assert repo.get_rows(copy_b_version.version_pk, limit=10, offset=0)[1]["row_data"]["value"] == "copy-b-only"
 
     engine.dispose()
