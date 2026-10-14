@@ -37,6 +37,6 @@ def test_management_snapshot_and_assignment_profile_use_scoped_authorization():
     ).read_text(encoding="utf-8")
 
     assert "Assignment is outside your management scope." in management_domain
-    assert "Only a Branch Head or Organization Owner can assign working copies." in provider
+    assert "Only a Branch Head or Organization Owner can manage dataset grants." in provider
     assert "working_copy_assignments" in provider
     assert "dataset_scope" in provider
