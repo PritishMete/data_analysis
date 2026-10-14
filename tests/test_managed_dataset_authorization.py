@@ -511,3 +511,40 @@ def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch)
     assert context["workspace_id"] == "org_869423bba8814fa0a2ddf6ebb546194e"
     assert context["membership_status"] == "active"
     assert "dataset.view_original" in context["permissions"]
+
+
+def test_existing_dataset_version_upload_requires_dataset_upload_capability(monkeypatch):
+    import io
+
+    class AuthorizationReached(Exception):
+        pass
+
+    calls = []
+    monkeypatch.setattr(
+        dataset_service,
+        "_claims",
+        lambda token: {"uid": "manager", "sub": "manager", "provider": "supabase"},
+    )
+    monkeypatch.setattr(
+        dataset_service,
+        "_authorize_upload",
+        lambda claims, workspace_id: {"authorized": True},
+    )
+
+    def authorize_existing(claims, workspace_id, dataset_id, action):
+        calls.append((dataset_id, action))
+        raise AuthorizationReached()
+
+    monkeypatch.setattr(dataset_service, "_authorize_dataset", authorize_existing)
+
+    with pytest.raises(AuthorizationReached):
+        dataset_service.upload_managed_dataset_stream(
+            workspace_id="workspace-owner",
+            token="token",
+            filename="updated.csv",
+            stream=io.BytesIO(b"id,value\n1,updated\n"),
+            content_type="text/csv",
+            dataset_id="master-dataset",
+        )
+
+    assert calls == [("master-dataset", "dataset.upload")]
