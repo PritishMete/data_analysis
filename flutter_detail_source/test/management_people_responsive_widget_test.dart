@@ -258,11 +258,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('No people match your search'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Clear search and filters'),
-      160,
-      scrollable: find.byType(Scrollable).last,
-    );
+    await tester.ensureVisible(find.text('Clear search and filters'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Clear search and filters'));
     await tester.pump();
 
