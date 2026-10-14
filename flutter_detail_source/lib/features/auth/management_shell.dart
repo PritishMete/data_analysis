@@ -1887,24 +1887,21 @@ class _ManagementShellState extends State<ManagementShell> {
             padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
           )).toList())
         else
-          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-            child: Column(children: [
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                child: Row(children: const [
-                  Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                ]),
-              ),
-              const Divider(height: 1),
-              ...filtered.map((p) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: personCard(p),
-              )),
-            ]),
-          ),
+          Column(children: [
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              child: Row(children: const [
+                Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+              ]),
+            ),
+            const Divider(height: 1),
+            ...filtered.map((p) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: personCard(p),
+            )),
+          ]),
       ]);
     });
   }
