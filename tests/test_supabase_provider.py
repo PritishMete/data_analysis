@@ -770,6 +770,100 @@ def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch
 
 
 
+def test_working_copy_reassignment_revokes_previous_recipient_grant(monkeypatch):
+    from contextlib import contextmanager
+    from firebase_authz import supabase_provider as provider
+
+    context = {
+        "workspace_authorized": True,
+        "organization_id": "org-test",
+        "workspace_id": "workspace-test",
+        "principal_id": "branch-head-principal",
+        "role_ids": ["branch_head"],
+    }
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class FakeDb:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params=None):
+            query = str(statement)
+            values = params or {}
+            self.calls.append((query, values))
+            if "SELECT location_id FROM working_copy_authorization" in query:
+                return Result({"location_id": "branch-1"})
+            if "SELECT role_id FROM member_roles" in query:
+                return Result(["data_analyst"])
+            if "FROM organizational_assignments" in query:
+                return Result(1)
+            if "SELECT principal_id FROM working_copy_assignments" in query:
+                return Result(["previous-recipient"])
+            return Result()
+
+    db = FakeDb()
+
+    class SessionFactory:
+        def __call__(self):
+            return db
+
+        @contextmanager
+        def begin(self):
+            yield db
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", SessionFactory())
+    monkeypatch.setattr(provider, "_principal_for_uid", lambda _db, _uid, _workspace: {
+        "principal_id": "new-recipient",
+    })
+    monkeypatch.setattr(provider, "authorize_working_copy", lambda *_args, **_kwargs: {
+        "authorized": True,
+    })
+
+    result = provider.assign_working_copy(
+        {"uid": "branch-head", "sub": "branch-head"},
+        "workspace-test",
+        "working-copy-1",
+        "new-recipient-uid",
+    )
+
+    assert result["assigned_to_principal_id"] == "new-recipient"
+    assert any(
+        "UPDATE working_copy_assignments SET status='revoked'" in query
+        for query, _ in db.calls
+    )
+    assert any(
+        "DELETE FROM resource_grants" in query and params.get("principal") == "previous-recipient"
+        for query, params in db.calls
+    )
+    assert any(
+        "INSERT INTO working_copy_assignments" in query and params.get("principal") == "new-recipient"
+        for query, params in db.calls
+    )
+    assert any(
+        "INSERT INTO resource_grants" in query and params.get("principal") == "new-recipient"
+        for query, params in db.calls
+    )
+
+
 def test_branch_scoped_dataset_catalog_requires_grant_for_unscoped_resources(monkeypatch):
     from firebase_authz import supabase_provider as provider
 
