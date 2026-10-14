@@ -1711,9 +1711,8 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
         target = _principal_for_uid(db, target_uid, workspace_id)
         if not target:
             raise AuthzError("Assignment target is not an active member.")
-        source = db.execute(text("""SELECT da.location_id FROM working_copy_authorization wc
-            JOIN dataset_authorization da ON da.organization_id=wc.organization_id AND da.dataset_id=wc.source_dataset_id
-            WHERE wc.organization_id=:org AND wc.working_copy_id=:copy AND wc.status='active'"""),
+        source = db.execute(text("""SELECT location_id FROM working_copy_authorization
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
             {"org": org, "copy": working_copy_id}).mappings().first()
         if not source or not source["location_id"]:
             raise AuthzError("Working copy is not accessible within a branch.")
@@ -1741,6 +1740,28 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
         target_permissions = ["working_copy.view"]
         if "team_lead" in target_roles and roles.intersection({"branch_head", "organization_owner"}):
             target_permissions.append("working_copy.assign")
+        # A working copy has one current assignee. Revoke prior assignments and
+        # remove their grants before assigning the new recipient, so reassignment
+        # cannot leave stale read access behind.
+        previous_assignees = db.execute(text("""SELECT principal_id FROM working_copy_assignments
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+            {"org": org, "copy": working_copy_id}).scalars().all()
+        db.execute(text("""UPDATE working_copy_assignments SET status='revoked', updated_at=now()
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+            {"org": org, "copy": working_copy_id})
+        for previous_principal in previous_assignees:
+            if str(previous_principal) != str(target["principal_id"]):
+                db.execute(text("""DELETE FROM resource_grants
+                    WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
+                    {"org": org, "copy": working_copy_id, "principal": previous_principal})
+        db.execute(text("""INSERT INTO working_copy_assignments
+            (working_copy_id, organization_id, principal_id, assigned_by_principal_id, status)
+            VALUES (:copy, :org, :principal, :assigner, 'active')
+            ON CONFLICT (organization_id, working_copy_id, principal_id)
+            DO UPDATE SET assigned_by_principal_id=EXCLUDED.assigned_by_principal_id,
+                          status='active', updated_at=now()"""),
+            {"copy": working_copy_id, "org": org, "principal": target["principal_id"],
+             "assigner": context["principal_id"]})
         db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
             ON CONFLICT (organization_id, resource_id, principal_id)
@@ -1766,9 +1787,8 @@ def revoke_working_copy_assignment(
         target = _principal_for_uid(db, target_uid, workspace_id)
         if not target:
             raise AuthzError("Assignment target is not an active member.")
-        source = db.execute(text("""SELECT da.location_id FROM working_copy_authorization wc
-            JOIN dataset_authorization da ON da.organization_id=wc.organization_id AND da.dataset_id=wc.source_dataset_id
-            WHERE wc.organization_id=:org AND wc.working_copy_id=:copy AND wc.status='active'"""),
+        source = db.execute(text("""SELECT location_id FROM working_copy_authorization
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
             {"org": org, "copy": working_copy_id}).mappings().first()
         if not source or not source["location_id"]:
             raise AuthzError("Working copy is not accessible within a branch.")
@@ -2078,11 +2098,17 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
         target_db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
             VALUES (:org, :copy, 'working_copy', :principal)"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"]})
+        source_scope = target_db.execute(text("""SELECT location_id FROM dataset_authorization
+            WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"""),
+            {"org": organization_id, "dataset": dataset_id}).mappings().first()
+        if not source_scope:
+            raise AuthzError("Source dataset is not accessible.")
         target_db.execute(text("""INSERT INTO working_copy_authorization
-            (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id)
-            VALUES (:org, :copy, :dataset, :version, :principal)"""),
+            (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id, location_id)
+            VALUES (:org, :copy, :dataset, :version, :principal, :location)"""),
             {"org": organization_id, "copy": copy_id, "dataset": dataset_id,
-             "version": version, "principal": context["principal_id"]})
+             "version": version, "principal": context["principal_id"],
+             "location": source_scope["location_id"]})
         target_db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"],
@@ -2106,7 +2132,7 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
         raise AuthzError("Workspace authorization denied.")
     organization_id = str(context["organization_id"])
     with SessionLocal() as db:
-        row = db.execute(text("""SELECT source_dataset_id, source_version, version, created_by_principal_id
+        row = db.execute(text("""SELECT source_dataset_id, source_version, version, created_by_principal_id, location_id
             FROM working_copy_authorization
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
             {"org": organization_id, "copy": working_copy_id}).mappings().first()
@@ -2126,8 +2152,17 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     is_creator = str(row["created_by_principal_id"]) == str(context["principal_id"])
 
     if is_supervisor:
-        # Superior access is still constrained by the source dataset branch.
-        authorize_dataset(claims, workspace_id, str(row["source_dataset_id"]), "dataset.view_original")
+        # The copy retains its own branch scope and remains usable even if its
+        # source master is deleted. Do not re-authorize against the mutable
+        # source dataset identity.
+        if "branch_head" in roles:
+            with SessionLocal() as db:
+                branch_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL"""),
+                    {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+            if not row["location_id"] or str(row["location_id"]) not in {str(value) for value in branch_locations}:
+                raise AuthzError("The working copy belongs to a branch outside your Branch Head scope.")
         if action == "working_copy.assign":
             return {**context, "authorized": True, "organization_id": organization_id,
                     "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
