@@ -1674,7 +1674,7 @@ class _ManagementShellState extends State<ManagementShell> {
           employeeId.isNotEmpty &&
           a['employee_id']?.toString() == employeeId).firstOrNull ??
         (assignmentId.isNotEmpty ? p : null);
-      return _glassRow(padding: const EdgeInsets.all(14), child: Column(
+      final cardContent = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1726,7 +1726,23 @@ class _ManagementShellState extends State<ManagementShell> {
             )),
           ],
         ],
-      ));
+      );
+      // Desktop rows use an opaque navy surface so the animated background and
+      // glass refraction cannot wash out employee details on wide screens.
+      if (compact) {
+        return _glassRow(padding: const EdgeInsets.all(14), child: cardContent);
+      }
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: TechColors.panelBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: TechColors.borderActive.withValues(alpha: 0.22),
+          ),
+        ),
+        child: cardContent,
+      );
     }
     return LayoutBuilder(builder: (context, constraints) {
       final narrow = constraints.maxWidth < 680;
