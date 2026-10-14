@@ -2050,25 +2050,32 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     roles = set(context.get("role_ids", []))
     allowed = set(grant or [])
     is_supervisor = bool(roles.intersection({"organization_owner", "branch_head"}))
+    is_creator = str(row["created_by_principal_id"]) == str(context["principal_id"])
+
     if is_supervisor:
-        # Superior access is still constrained by the source dataset's
-        # authoritative organization and branch scope.
-        authorize_dataset(
-            claims, workspace_id, str(row["source_dataset_id"]), "dataset.view_original"
-        )
+        # Superior access is still constrained by the source dataset branch.
+        authorize_dataset(claims, workspace_id, str(row["source_dataset_id"]), "dataset.view_original")
         if action == "working_copy.assign":
             return {**context, "authorized": True, "organization_id": organization_id,
                     "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
                     "source_version": row["source_version"], "version": row["version"]}
     elif action == "working_copy.assign":
-        # Team Leads may share only a copy they created or were explicitly
-        # assigned, and only when the copy grant includes the assign capability.
+        # Team Leads may share only copies they created or were assigned, and only with an explicit assign grant.
         if "team_lead" not in roles or "working_copy.assign" not in allowed:
-            raise AuthzError("Only an authorized Team Lead, Branch Head, or Organization Owner can assign working copies.")
-        if not assignment and str(row["created_by_principal_id"]) != str(context["principal_id"]):
+            raise AuthzError("An explicit Team Lead working-copy assignment grant is required.")
+        if not assignment and not is_creator:
             raise AuthzError("A working copy must be assigned to you before it can be reassigned.")
-    elif not assignment and action not in allowed:
-        raise AuthzError("This working copy is assigned to another user.")
+    else:
+        has_copy_access = bool(assignment) or is_creator
+        if action == "working_copy.view":
+            if not has_copy_access and "working_copy.view" not in allowed:
+                raise AuthzError("This working copy is assigned to another user.")
+        elif action == "working_copy.modify":
+            if not has_copy_access or "working_copy.modify" not in allowed:
+                raise AuthzError("You do not have permission to modify this working copy.")
+        elif action == "working_copy.delete":
+            if not has_copy_access or "working_copy.delete" not in allowed:
+                raise AuthzError("You do not have permission to delete this working copy.")
 
     return {**context, "authorized": True, "organization_id": organization_id,
             "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
