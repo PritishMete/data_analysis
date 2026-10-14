@@ -76,6 +76,17 @@ Future<Map<String, dynamic>> _fixtureResponse(String path) async {
   }
 }
 
+Future<Map<String, dynamic>> _emptyPeopleResponse(String path) async {
+  final result = await _fixtureResponse(path);
+  if (path == '/people') return {'people': <Map<String, dynamic>>[]};
+  return result;
+}
+
+Future<Map<String, dynamic>> _errorPeopleResponse(String path) async {
+  if (path == '/people') throw StateError('People fixture failed');
+  return _fixtureResponse(path);
+}
+
 void main() {
   const viewports = <({String label, Size size})>[
     (label: '375x812 mobile', size: Size(375, 812)),
@@ -109,6 +120,70 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('People role filter and clear action restore the full list', (tester) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ManagementShell(
+        initialSection: ManagementSection.people,
+        requestOverride: _fixtureResponse,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
+
+    final roleFilter = find.byType(DropdownButtonFormField<String>).last;
+    await tester.ensureVisible(roleFilter);
+    await tester.tap(roleFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Manager').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rahul Das'), findsOneWidget);
+    expect(find.text('Asha Banerjee'), findsNothing);
+
+    await tester.ensureVisible(find.text('Clear filters'));
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Asha Banerjee'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('People empty state renders when there are no members', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: ManagementShell(
+        initialSection: ManagementSection.people,
+        requestOverride: _emptyPeopleResponse,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
+
+    expect(find.text('No people yet'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Management error state renders when People request fails', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: ManagementShell(
+        initialSection: ManagementSection.people,
+        requestOverride: _errorPeopleResponse,
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
+
+    expect(find.text('MANAGEMENT SERVICE ERROR'), findsOneWidget);
+    expect(find.text('People fixture failed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('People search empty state can be cleared on a narrow screen', (tester) async {
     tester.view.physicalSize = const Size(375, 812);
