@@ -2037,8 +2037,6 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             FROM working_copy_authorization
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
             {"org": organization_id, "copy": working_copy_id}).mappings().first()
-        if not row:
-            raise AuthzError("Working copy is not accessible.")
         assignment = db.execute(text("""SELECT 1 FROM working_copy_assignments
             WHERE organization_id=:org AND working_copy_id=:copy
               AND principal_id=:principal AND status='active'"""),
@@ -2046,20 +2044,35 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
         grant = db.execute(text("""SELECT permissions FROM resource_grants
             WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
             {"org": organization_id, "copy": working_copy_id, "principal": context["principal_id"]}).scalar_one_or_none()
+    if not row:
+        raise AuthzError("Working copy is not accessible.")
+
+    roles = set(context.get("role_ids", []))
     allowed = set(grant or [])
-    if action == "working_copy.assign":
-        if not set(context.get("role_ids", [])).intersection({"organization_owner", "branch_head"}):
-            raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
-        if "working_copy.assign" not in set(context.get("permissions", [])):
-            raise AuthzError("You don't have permission to assign this working copy.")
-    if not assignment and action != "working_copy.assign" and action not in allowed:
+    is_supervisor = bool(roles.intersection({"organization_owner", "branch_head"}))
+    if is_supervisor:
+        # Superior access is still constrained by the source dataset's
+        # authoritative organization and branch scope.
+        authorize_dataset(
+            claims, workspace_id, str(row["source_dataset_id"]), "dataset.view_original"
+        )
+        if action == "working_copy.assign":
+            return {**context, "authorized": True, "organization_id": organization_id,
+                    "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
+                    "source_version": row["source_version"], "version": row["version"]}
+    elif action == "working_copy.assign":
+        # Team Leads may share only a copy they created or were explicitly
+        # assigned, and only when the copy grant includes the assign capability.
+        if "team_lead" not in roles or "working_copy.assign" not in allowed:
+            raise AuthzError("Only an authorized Team Lead, Branch Head, or Organization Owner can assign working copies.")
+        if not assignment and str(row["created_by_principal_id"]) != str(context["principal_id"]):
+            raise AuthzError("A working copy must be assigned to you before it can be reassigned.")
+    elif not assignment and action not in allowed:
         raise AuthzError("This working copy is assigned to another user.")
-    if action == "working_copy.assign" and not assignment and "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
-        raise AuthzError("A working copy must be assigned to its current manager before it can be reassigned.")
+
     return {**context, "authorized": True, "organization_id": organization_id,
             "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
             "source_version": row["source_version"], "version": row["version"]}
-
 
 
 
