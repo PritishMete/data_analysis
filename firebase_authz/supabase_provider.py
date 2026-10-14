@@ -1737,20 +1737,6 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
                 {"org": org, "actor": context["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
             if not actor_in_branch:
                 raise AuthzError("The working copy is outside your branch scope.")
-        # Reassignment revokes prior recipients instead of leaving stale read grants.
-        db.execute(text("""DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:copy
-            AND principal_id IN (SELECT principal_id FROM working_copy_assignments
-                WHERE organization_id=:org AND working_copy_id=:copy AND status='active')"""),
-            {"org": org, "copy": working_copy_id})
-        db.execute(text("""UPDATE working_copy_assignments SET status='revoked', updated_at=now()
-            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
-            {"org": org, "copy": working_copy_id})
-        db.execute(text("""INSERT INTO working_copy_assignments
-            (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
-            VALUES (:copy,:org,:principal,:assigner)
-            ON CONFLICT (organization_id, working_copy_id, principal_id)
-            DO UPDATE SET assigned_by_principal_id=EXCLUDED.assigned_by_principal_id, status='active', updated_at=now()"""),
-            {"copy": working_copy_id, "org": org, "principal": target["principal_id"], "assigner": context["principal_id"]})
         # Assigned recipients receive read-only access; delegation is explicit.
         target_permissions = ["working_copy.view"]
         if "team_lead" in target_roles and roles.intersection({"branch_head", "organization_owner"}):
