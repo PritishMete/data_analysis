@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/supabase-only-auth-20261012]
+    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/supabase-only-auth-20261012, fix/management-people-dataset-security-20261013]
   pull_request:
     branches: [main, feature/employee-management-cell]
   workflow_dispatch:
