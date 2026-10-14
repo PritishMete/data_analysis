@@ -312,7 +312,37 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   String _uiScopeLabel() {
-    final value = _uiPolicy()['scope_label']?.toString().trim() ?? '';
+    final policy = _uiPolicy();
+    final value = policy['scope_label']?.toString().trim() ?? '';
+    final actor = overview['actor'];
+    final actorLocationId =
+        actor is Map ? actor['location_id']?.toString() : null;
+    final scopedLocations = locations;
+    Map<String, dynamic>? branch;
+    if (actorLocationId != null && actorLocationId.isNotEmpty) {
+      for (final location in scopedLocations) {
+        if (location['location_id']?.toString() == actorLocationId) {
+          branch = location;
+          break;
+        }
+      }
+    }
+    if (branch == null && scopedLocations.length == 1) {
+      branch = scopedLocations.first;
+    }
+    final branchName = branch?['name']?.toString().trim().isNotEmpty == true
+        ? branch!['name'].toString().trim()
+        : branch?['location_name']?.toString().trim() ?? '';
+    final tier = policy['management_tier']?.toString();
+    if (branchName.isNotEmpty && tier != 'organization') {
+      if (tier == 'branch') return 'Branch: $branchName';
+      if (tier == 'team') return '$branchName branch · Team';
+      if (tier == 'section') return '$branchName branch · Section';
+      return '$branchName branch';
+    }
+    if (tier == 'organization' && scopedLocations.isNotEmpty) {
+      return 'Organization-wide · ${scopedLocations.length} branches';
+    }
     return value.isNotEmpty ? value : 'Assigned workspace';
   }
 
@@ -1639,20 +1669,17 @@ class _ManagementShellState extends State<ManagementShell> {
       ..sort((a, b) => locationOptions[a]!.toLowerCase().compareTo(locationOptions[b]!.toLowerCase()));
     final sectionOptionIds = sectionOptions.keys.toList()
       ..sort((a, b) => sectionOptions[a]!.toLowerCase().compareTo(sectionOptions[b]!.toLowerCase()));
-    final summary = overview['summary'] is Map
-        ? Map<String, dynamic>.from(overview['summary'] as Map)
-        : const <String, dynamic>{};
-    final roleCounts = summary['role_counts'] is Map
-        ? Map<String, dynamic>.from(summary['role_counts'] as Map)
-        : const <String, dynamic>{};
-    int backendCount(String key, int fallback) {
-      final value = roleCounts[key] ?? summary['${key}_count'];
-      return int.tryParse(value?.toString() ?? '') ?? fallback;
-    }
-    final totalPeople = int.tryParse(summary['total_people']?.toString() ?? '') ?? people.length;
-    final branchHeadCount = backendCount('branch_head', people.where((p) => p['role_id'] == 'branch_head').length);
-    final managerCount = backendCount('manager', people.where((p) => p['role_id'] == 'manager').length);
-    final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
+    // Keep every People metric on the same backend-scoped collection.
+    // The overview summary is calculated through a different aggregation
+    // path and can count assignments differently from the People endpoint.
+    // Mixing those sources made the cards disagree with the visible roster.
+    final totalPeople = people.length;
+    final branchHeadCount =
+        people.where((p) => p['role_id']?.toString() == 'branch_head').length;
+    final managerCount =
+        people.where((p) => p['role_id']?.toString() == 'manager').length;
+    final teamLeadCount =
+        people.where((p) => p['role_id']?.toString() == 'team_lead').length;
     const professionalRoles = <String>{'data_analyst','senior_data_analyst','business_analyst','data_scientist','data_engineer','ml_engineer','analytics_engineer','bi_developer','data_architect','data_quality_analyst','data_governance_analyst'};
     final professionalMemberCount = people.where((p) => professionalRoles.contains(p['role_id']?.toString())).length;
     final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
