@@ -154,6 +154,7 @@ jobs:
           test/auth_screens_test.dart
           test/profile_onboarding_contract_test.dart
           test/management_people_responsive_widget_test.dart
+          test/features/auth/management_shell_policy_test.dart
           test/supabase_auth_service_test.dart
 
       - name: Analyze auth UI Flutter sources
@@ -185,6 +186,7 @@ jobs:
           test/supabase_auth_service_test.dart
           test/management_shell_contract_test.dart
           test/management_people_responsive_widget_test.dart
+          test/features/auth/management_shell_policy_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/profile_onboarding_contract_test.dart
 
