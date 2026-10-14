@@ -1628,10 +1628,28 @@ class _ManagementShellState extends State<ManagementShell> {
     final query = search.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     final roleOptions = people.map((p) => p['role_id']?.toString() ?? '')
         .where((v) => v.isNotEmpty).toSet().toList()..sort();
-    final locationOptions = people.map((p) => p['location_name']?.toString() ?? '')
-        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
-    final sectionOptions = people.map((p) => p['section_name']?.toString() ?? '')
-        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
+    // Keep filter values as stable backend IDs and use names only as labels.
+    // Organization-tab selections already store location_id/section_id.
+    final locationOptions = <String, String>{
+      for (final location in locations)
+        if ((location['location_id']?.toString() ?? '').isNotEmpty &&
+            (location['name']?.toString() ?? location['location_name']?.toString() ?? '').isNotEmpty)
+          location['location_id'].toString():
+              (location['name']?.toString() ?? location['location_name'].toString()),
+    };
+    final sectionOptions = <String, String>{
+      for (final section in sections)
+        if ((section['section_id']?.toString() ?? '').isNotEmpty &&
+            (selectedLocation == null ||
+                section['location_id']?.toString() == selectedLocation) &&
+            (section['name']?.toString() ?? section['section_name']?.toString() ?? '').isNotEmpty)
+          section['section_id'].toString():
+              (section['name']?.toString() ?? section['section_name'].toString()),
+    };
+    final locationOptionIds = locationOptions.keys.toList()
+      ..sort((a, b) => locationOptions[a]!.toLowerCase().compareTo(locationOptions[b]!.toLowerCase()));
+    final sectionOptionIds = sectionOptions.keys.toList()
+      ..sort((a, b) => sectionOptions[a]!.toLowerCase().compareTo(sectionOptions[b]!.toLowerCase()));
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : const <String, dynamic>{};
@@ -1660,8 +1678,8 @@ class _ManagementShellState extends State<ManagementShell> {
         p['location_name'], p['section_name'], p['status']]
         .whereType<Object>().map((v) => v.toString().toLowerCase().trim());
       if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
-      if (selectedLocation != null && p['location_name']?.toString() != selectedLocation) return false;
-      if (selectedSection != null && p['section_name']?.toString() != selectedSection) return false;
+      if (selectedLocation != null && p['location_id']?.toString() != selectedLocation) return false;
+      if (selectedSection != null && p['section_id']?.toString() != selectedSection) return false;
       if (selectedRole != null && p['role_id']?.toString() != selectedRole) return false;
       return true;
     }).toList();
@@ -1803,14 +1821,14 @@ class _ManagementShellState extends State<ManagementShell> {
               DropdownButtonFormField<String>(
                 initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All locations')),
-                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedLocation = v),
+                  ...locationOptionIds.map((id) => DropdownMenuItem(value: id, child: Text(locationOptions[id]!, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() { selectedLocation = v; selectedSection = null; }),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                  ...sectionOptionIds.map((id) => DropdownMenuItem(value: id, child: Text(sectionOptions[id]!, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedSection = v),
               ),
               const SizedBox(height: 8),
@@ -1824,14 +1842,14 @@ class _ManagementShellState extends State<ManagementShell> {
               Expanded(child: DropdownButtonFormField<String>(
                 initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All locations')),
-                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedLocation = v),
+                  ...locationOptionIds.map((id) => DropdownMenuItem(value: id, child: Text(locationOptions[id]!, overflow: TextOverflow.ellipsis)))],
+                onChanged: (v) => setState(() { selectedLocation = v; selectedSection = null; }),
               )),
               const SizedBox(width: 10),
               Expanded(child: DropdownButtonFormField<String>(
                 initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
                 items: [const DropdownMenuItem(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                  ...sectionOptionIds.map((id) => DropdownMenuItem(value: id, child: Text(sectionOptions[id]!, overflow: TextOverflow.ellipsis)))],
                 onChanged: (v) => setState(() => selectedSection = v),
               )),
               const SizedBox(width: 10),
