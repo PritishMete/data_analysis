@@ -1694,8 +1694,8 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head"}):
-        raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
+    if not roles.intersection({"organization_owner", "branch_head", "team_lead"}):
+        raise AuthzError("Only a Branch Head, Organization Owner, or authorized Team Lead can assign working copies.")
     authorize_working_copy(claims, workspace_id, working_copy_id, "working_copy.assign")
     org = str(context["organization_id"])
     with SessionLocal.begin() as db:
@@ -1704,26 +1704,54 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
             raise AuthzError("Assignment target is not an active member.")
         source = db.execute(text("""SELECT da.location_id FROM working_copy_authorization wc
             JOIN dataset_authorization da ON da.organization_id=wc.organization_id AND da.dataset_id=wc.source_dataset_id
-            WHERE wc.organization_id=:org AND wc.working_copy_id=:copy"""),
-            {"org":org,"copy":working_copy_id}).mappings().first()
-        if not source:
-            raise AuthzError("Working copy is not accessible.")
-        if roles.intersection({"manager","team_lead"}):
-            scoped = db.execute(text("""SELECT 1 FROM organizational_assignments
+            WHERE wc.organization_id=:org AND wc.working_copy_id=:copy AND wc.status='active'"""),
+            {"org": org, "copy": working_copy_id}).mappings().first()
+        if not source or not source["location_id"]:
+            raise AuthzError("Working copy is not accessible within a branch.")
+        target_roles = set(db.execute(text("""SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal"""),
+            {"org": org, "principal": target["principal_id"]}).scalars().all())
+        if "team_lead" in roles:
+            lower_roles = {"data_analyst", "data_scientist", "data_engineer", "quality_analyst", "intern", "normal", "employee"}
+            if not target_roles or not target_roles.issubset(lower_roles):
+                raise AuthzError("Team Leads may assign copies only to lower-level roles.")
+        target_in_branch = db.execute(text("""SELECT 1 FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:principal AND location_id=:location
+              AND status='active' LIMIT 1"""),
+            {"org": org, "principal": target["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
+        if not target_in_branch:
+            raise AuthzError("The assignment target must have an active assignment in the source branch.")
+        if roles.intersection({"manager", "team_lead"}):
+            actor_in_branch = db.execute(text("""SELECT 1 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:actor AND location_id=:location
                   AND status='active' AND role_id IN ('manager','team_lead') LIMIT 1"""),
-                {"org":org,"actor":context["principal_id"],"location":source["location_id"]}).scalar_one_or_none()
-            if not scoped:
+                {"org": org, "actor": context["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
+            if not actor_in_branch:
                 raise AuthzError("The working copy is outside your branch scope.")
+        # Reassignment revokes prior recipients instead of leaving stale read grants.
+        db.execute(text("""DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:copy
+            AND principal_id IN (SELECT principal_id FROM working_copy_assignments
+                WHERE organization_id=:org AND working_copy_id=:copy AND status='active')"""),
+            {"org": org, "copy": working_copy_id})
         db.execute(text("""UPDATE working_copy_assignments SET status='revoked', updated_at=now()
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
-            {"org":org,"copy":working_copy_id})
+            {"org": org, "copy": working_copy_id})
         db.execute(text("""INSERT INTO working_copy_assignments
             (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
             VALUES (:copy,:org,:principal,:assigner)
             ON CONFLICT (organization_id, working_copy_id, principal_id)
             DO UPDATE SET assigned_by_principal_id=EXCLUDED.assigned_by_principal_id, status='active', updated_at=now()"""),
-            {"copy":working_copy_id,"org":org,"principal":target["principal_id"],"assigner":context["principal_id"]})
+            {"copy": working_copy_id, "org": org, "principal": target["principal_id"], "assigner": context["principal_id"]})
+        # Assigned recipients receive read-only access; delegation is explicit.
+        target_permissions = ["working_copy.view"]
+        if "team_lead" in target_roles and roles.intersection({"branch_head", "organization_owner"}):
+            target_permissions.append("working_copy.assign")
+        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+            VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
+            ON CONFLICT (organization_id, resource_id, principal_id)
+            DO UPDATE SET permissions=EXCLUDED.permissions"""),
+            {"org": org, "copy": working_copy_id, "principal": target["principal_id"],
+             "permissions": json.dumps(target_permissions)})
     return {"working_copy_id": working_copy_id, "assigned_to_principal_id": target["principal_id"], "status": "active"}
 
 
