@@ -3401,7 +3401,7 @@ class _ManagementShellState extends State<ManagementShell> {
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 700;
+            final compact = constraints.maxWidth < 820;
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3452,7 +3452,13 @@ class _ManagementShellState extends State<ManagementShell> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(children: [identity, const Spacer(), controls]),
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [identity, controls],
+                  ),
                   const SizedBox(height: 7),
                   workspace,
                 ],
