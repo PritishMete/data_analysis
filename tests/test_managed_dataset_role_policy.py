@@ -75,7 +75,7 @@ def _context(roles):
 
 
 def test_manager_can_upload_within_assigned_branch(monkeypatch):
-    db = _Db(["manager"], manager_locations=["branch-1"])
+    db = _Db(["manager"], grant=["dataset.upload"], manager_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider,
@@ -104,7 +104,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only a Manager, Branch Head, or Organization Owner"):
+    with pytest.raises(supabase_provider.AuthzError, match="This role cannot mutate the original dataset"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",

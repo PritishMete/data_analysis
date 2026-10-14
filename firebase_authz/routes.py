@@ -447,14 +447,26 @@ class WorkingCopyRequest(BaseModel):
 @router.post("/working-copies")
 def working_copy_create(req: WorkingCopyRequest, authorization: str = Header(default=None)):
     try:
-        from .supabase_provider import create_working_copy as provider_create_working_copy
-        return provider_create_working_copy(verify_id_token(_token(authorization)), req.workspace_id, req.dataset_id, req.working_copy_id, req.source_version)
+        from dataset_storage.service import _create_managed_working_copy_from_claims
+        claims = verify_id_token(_token(authorization))
+        result = _create_managed_working_copy_from_claims(
+            claims,
+            req.workspace_id,
+            req.dataset_id,
+            source_version_id=req.source_version,
+        )
+        # The server generates the working-copy ID; never trust a client-supplied
+        # ID to select or collide with another user's persisted content.
+        return {"success": True, **result}
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
 
 class ApprovedEmployee(BaseModel):
     workspace_id: str

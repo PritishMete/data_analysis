@@ -232,6 +232,20 @@ void main() {
     expect(source, isNot(contains('metadata.entries.where')));
     expect(source, contains('_overviewSkeleton()'));
     expect(source, contains("Widget peopleView()"));
+    // Regression contract: metrics are rendered in a desktop Wrap as well as
+    // the narrow Column, so the metric helper itself must not return Expanded.
+    final peopleStart = source.indexOf("Widget peopleView()");
+    final peopleEnd = source.indexOf("String _auditActionLabel", peopleStart);
+    expect(peopleStart, greaterThanOrEqualTo(0));
+    expect(peopleEnd, greaterThan(peopleStart));
+    final peopleUi = source.substring(peopleStart, peopleEnd);
+    final metricStart = peopleUi.indexOf("Widget metric(");
+    final metricEnd = peopleUi.indexOf("Widget personCard(", metricStart);
+    expect(metricStart, greaterThanOrEqualTo(0));
+    expect(metricEnd, greaterThan(metricStart));
+    expect(peopleUi.substring(metricStart, metricEnd), isNot(contains("=> Expanded(")));
+    expect(peopleUi, contains("selectedRole = null;"));
+
     expect(source, contains("View and manage the people in your organization"));
     expect(source, contains("Search people"));
     expect(source, contains("No people match your search"));

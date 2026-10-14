@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 import re
 import uuid
@@ -9,7 +10,7 @@ import uuid
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from firebase_authz.auth import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -20,9 +21,8 @@ from firebase_authz.supabase_provider import (
     create_working_copy,
     delete_dataset_authorization,
     register_dataset,
-    revoke_dataset_working_copies,
 )
-from datasets.models import DatasetColumn, DatasetRow
+from datasets.models import Dataset, DatasetColumn, DatasetRow, DatasetVersion
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from schema_intelligence.repository import RelationshipRepository
@@ -72,8 +72,8 @@ def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[st
 def _authorize_upload(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"branch_head", "manager"}):
-        raise PermissionDenied("Only a Branch Head or Manager can upload datasets.")
+    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
+        raise PermissionDenied("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
     return {**context, "authorized": True, "permission": "dataset.upload"}
 
 
@@ -169,11 +169,10 @@ def list_authorized_datasets(
             if dataset.status == "deleted":
                 continue
             roles = set(context.get("role_ids", []))
-            action = (
-                "dataset.view_original"
-                if roles.intersection({"branch_head", "manager"})
-                else "dataset.create_working_copy"
-            )
+            # Use the read capability for catalog visibility. authorize_dataset
+            # resolves working-copy resources to working_copy.view, while the
+            # same attempt remains denied for an ungranted master dataset.
+            action = "dataset.view_original"
             try:
                 _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
             except AuthzError:
@@ -489,9 +488,12 @@ def upload_managed_dataset_stream(
     dataset_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
-    _authorize_upload(claims, workspace_id)
-    if dataset_id is not None:
-        _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.view_original')
+    if dataset_id is None:
+        _authorize_upload(claims, workspace_id)
+    else:
+        # Existing masters and working copies each require their own exact
+        # mutation capability; a workspace role alone never grants upload.
+        _authorize_dataset(claims, workspace_id, dataset_id, "dataset.upload")
     safe_name = _safe_filename(filename)
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
@@ -660,7 +662,6 @@ def delete_managed_dataset(
                     dataset_id=dataset_id,
                     version_id=version.version_id,
                 )
-        revoke_dataset_working_copies(organization_id, dataset_id)
         repo.delete_dataset(dataset_id)
         _unregister_authorization(workspace_id, dataset_id)
         _audit_safely(
@@ -675,35 +676,167 @@ def delete_managed_dataset(
         repo.db.close()
 
 
-def create_managed_working_copy(
-    *,
+def _create_managed_working_copy_from_claims(
+    claims: dict[str, Any],
     workspace_id: str,
-    token: str,
     dataset_id: str,
-    provider: SupabaseDatasetStorageProvider | None = None,
+    *,
+    source_version_id: str | None = None,
+    assigned_to_principal_id: str | None = None,
+    db_session: Any | None = None,
 ) -> dict[str, Any]:
-    claims = _claims(token)
+    """Create an independently persisted snapshot of a managed dataset version.
+
+    The copy gets a new Dataset identity, DatasetVersion identity, physical
+    table, and version history. Source rows are read in bounded batches and
+    copied into a new physical table in the same database transaction as the
+    copy metadata and working-copy ACL records.
+    """
     _authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
+    principal_id = str(context.get("principal_id") or claims["uid"])
     from core.db import SessionLocal
+    from datasets.physical_table import create_physical_table, physical_table_name
 
-    repo = DatasetRepository(SessionLocal())
+    owns_session = db_session is None
+    repo = DatasetRepository(db_session or SessionLocal())
+    copy_table_name = None
     try:
-        dataset = repo.get_by_id(dataset_id)
-        if dataset is None or dataset.organization_id != organization_id:
+        source = repo.get_by_id(dataset_id)
+        if source is None or source.organization_id != organization_id:
             raise FileNotFoundError("Dataset not found.")
-        version = repo.get_version(dataset_id)
-        if version is None or version.status != "ready":
-            raise FileNotFoundError("Current dataset version is not READY.")
+        source_version = repo.get_version(dataset_id, source_version_id)
+        if source_version is None or source_version.status != "ready":
+            raise FileNotFoundError("Requested source dataset version is not READY.")
+        source_columns = repo.get_columns_for_version(source_version.version_pk)
+        if source_version.row_count and not source_version.data_table_name:
+            raise RuntimeError("Source version has rows but no persisted physical table.")
+        if not source_columns and source_version.column_count:
+            raise RuntimeError("Source version schema is incomplete; working copy was not created.")
+
         working_copy_id = f"wc_{uuid.uuid4().hex}"
+        copy_version_pk = str(uuid.uuid4())
+        copy_version_id = "1"
+        copy_table_name = physical_table_name(copy_version_pk)
+        physical_columns = [
+            (column.column_name, column.detected_type) for column in source_columns
+        ]
+
+        # The source read above establishes the immutable source version. All
+        # copied records and authorization metadata then commit together.
+        copy_dataset = Dataset(
+            dataset_id=working_copy_id,
+            organization_id=organization_id,
+            dataset_name=f"{source.dataset_name} (copy)"[:255],
+            uploaded_by=principal_id,
+            schema_hash=source_version.schema_hash or source.schema_hash,
+            file_hash=source_version.file_hash,
+            row_count=source_version.row_count,
+            column_count=source_version.column_count,
+            source_type="working_copy",
+            status="ready",
+            original_filename=source_version.original_filename,
+            content_type=source_version.content_type or source.content_type or "text/csv",
+            file_size=source_version.file_size or source.file_size or 0,
+            storage_provider=None,
+            storage_object_id=None,
+            current_version_id=copy_version_id,
+            version_number=1,
+        )
+        repo.create_dataset(copy_dataset, commit=False)
+
+        copy_version = DatasetVersion(
+            version_pk=copy_version_pk,
+            dataset_id=working_copy_id,
+            version_id=copy_version_id,
+            version_number=1,
+            status="ready",
+            file_hash=source_version.file_hash,
+            schema_hash=source_version.schema_hash or source.schema_hash,
+            row_count=source_version.row_count,
+            column_count=source_version.column_count,
+            original_filename=source_version.original_filename,
+            content_type=source_version.content_type or source.content_type or "text/csv",
+            file_size=source_version.file_size or source.file_size or 0,
+            storage_provider=None,
+            storage_object_id=None,
+            created_by=principal_id,
+            data_table_name=copy_table_name,
+        )
+        repo.add_version(copy_version, commit=False)
+
+        cloned_columns = [
+            DatasetColumn(
+                dataset_id=working_copy_id,
+                version_pk=copy_version_pk,
+                column_name=column.column_name,
+                detected_type=column.detected_type,
+                nullable=column.nullable,
+                unique_count=column.unique_count,
+                missing_count=column.missing_count,
+                missing_percentage=column.missing_percentage,
+                inferred_role=column.inferred_role,
+                inferred_role_confidence=column.inferred_role_confidence,
+                inferred_role_evidence=column.inferred_role_evidence,
+                role_detected_at=column.role_detected_at,
+            )
+            for column in source_columns
+        ]
+        repo.add_columns(cloned_columns, commit=False)
+        create_physical_table(repo.db.connection(), copy_table_name, physical_columns)
+
+        offset = 0
+        batch_size = 5000
+        while offset < source_version.row_count:
+            batch = repo.get_rows(source_version.version_pk, limit=batch_size, offset=offset)
+            if not batch:
+                raise RuntimeError(
+                    f"Source snapshot ended at row {offset}, before the expected "
+                    f"{source_version.row_count} rows; working copy was rolled back."
+                )
+            repo.bulk_add_rows(
+                copy_version_pk,
+                batch,
+                table_name=copy_table_name,
+                columns=physical_columns,
+                commit=False,
+            )
+            offset += len(batch)
+
         metadata = create_working_copy(
             claims,
             workspace_id,
             dataset_id,
             working_copy_id,
-            version.version_id,
+            source_version.version_id,
+            db=repo.db,
         )
+        if assigned_to_principal_id:
+            target_roles = set(repo.db.execute(
+                text("SELECT role_id FROM member_roles WHERE organization_id=:org AND principal_id=:principal"),
+                {"org": organization_id, "principal": assigned_to_principal_id},
+            ).scalars().all())
+            if not target_roles:
+                raise PermissionDenied("Working-copy recipient is not an active organization member.")
+            repo.db.execute(text("""INSERT INTO working_copy_assignments
+                (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
+                VALUES (:copy, :org, :principal, :assigner)"""),
+                {"copy": working_copy_id, "org": organization_id,
+                 "principal": assigned_to_principal_id, "assigner": context["principal_id"]})
+            recipient_permissions = ["working_copy.view"]
+            if "team_lead" in target_roles:
+                recipient_permissions.append("working_copy.assign")
+            repo.db.execute(text("""INSERT INTO resource_grants
+                (organization_id, resource_id, principal_id, permissions)
+                VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
+                {"org": organization_id, "copy": working_copy_id,
+                 "principal": assigned_to_principal_id,
+                 "permissions": json.dumps(recipient_permissions)})
+        if owns_session:
+            repo.db.commit()
+        else:
+            repo.db.flush()
         _audit_safely(
             workspace_id,
             str(claims["uid"]),
@@ -712,13 +845,37 @@ def create_managed_working_copy(
             resource_id=working_copy_id,
             metadata={
                 "source_dataset_id": dataset_id,
-                "source_version": version.version_id,
+                "source_version": source_version.version_id,
+                "structured_dataset_id": working_copy_id,
+                "structured_version_id": copy_version_id,
+                "row_count": source_version.row_count,
             },
         )
         return {
             **metadata,
-            "structured_dataset_id": dataset_id,
-            "structured_version_id": version.version_id,
+            "structured_dataset_id": working_copy_id,
+            "structured_version_id": copy_version_id,
+            "row_count": source_version.row_count,
+            "column_count": source_version.column_count,
         }
+    except Exception:
+        if owns_session:
+            repo.db.rollback()
+        raise
     finally:
-        repo.db.close()
+        if owns_session:
+            repo.db.close()
+
+
+def create_managed_working_copy(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    provider: SupabaseDatasetStorageProvider | None = None,
+) -> dict[str, Any]:
+    """Authenticate and create an independent persisted working-copy snapshot."""
+    claims = _claims(token)
+    return _create_managed_working_copy_from_claims(
+        claims, workspace_id, dataset_id
+    )

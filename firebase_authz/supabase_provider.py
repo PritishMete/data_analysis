@@ -1657,7 +1657,7 @@ def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[s
 def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: str, approve: bool) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head"}):
+    if not roles.intersection({"organization_owner", "branch_head"}):
         raise AuthzError("Only a Branch Head or Organization Owner can approve copy requests.")
     org = str(context["organization_id"])
     with SessionLocal.begin() as db:
@@ -1670,61 +1670,147 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
             branch = db.execute(text("""SELECT 1 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:principal
                   AND role_id='branch_head' AND location_id=:location AND status='active'"""),
-                {"org": org,"principal":context["principal_id"],"location":req["location_id"]}).scalar_one_or_none()
+                {"org": org, "principal": context["principal_id"], "location": req["location_id"]}).scalar_one_or_none()
             if not branch:
                 raise AuthzError("This request belongs to another branch.")
         if not approve:
-            db.execute(text("""UPDATE authorization_requests SET status='rejected', reviewed_by_principal_id=:reviewer, reviewed_at=now(), updated_at=now()
-                WHERE request_id=:request"""), {"requester":request_id,"reviewer":context["principal_id"],"request":request_id})
+            db.execute(text("""UPDATE authorization_requests
+                SET status='rejected', reviewed_by_principal_id=:reviewer, reviewed_at=now(), updated_at=now()
+                WHERE organization_id=:org AND request_id=:request"""),
+                {"org": org, "reviewer": context["principal_id"], "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
-    copy = create_working_copy(claims, workspace_id, req["dataset_id"], None, None)
-    with SessionLocal.begin() as db:
-        db.execute(text("""INSERT INTO working_copy_assignments
-            (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
-            VALUES (:copy,:org,:principal,:assigner)"""),
-            {"copy":copy["working_copy_id"],"org":org,"principal":req["requester_principal_id"],"assigner":context["principal_id"]})
+
+        # Persist the physical snapshot, its independent dataset/version IDs,
+        # ACL, recipient assignment, and request decision in one DB transaction.
+        from dataset_storage.service import _create_managed_working_copy_from_claims
+        copy = _create_managed_working_copy_from_claims(
+            claims,
+            workspace_id,
+            str(req["dataset_id"]),
+            assigned_to_principal_id=str(req["requester_principal_id"]),
+            db_session=db,
+        )
         db.execute(text("""UPDATE authorization_requests
             SET status='approved', reviewed_by_principal_id=:reviewer, reviewed_at=now(),
                 resulting_working_copy_id=:copy, updated_at=now()
-            WHERE request_id=:request"""),
-            {"reviewer":context["principal_id"],"copy":copy["working_copy_id"],"request":request_id})
+            WHERE organization_id=:org AND request_id=:request"""),
+            {"org": org, "reviewer": context["principal_id"],
+             "copy": copy["working_copy_id"], "request": request_id})
     return {"request_id": request_id, "status": "approved", "working_copy": copy}
+
 
 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head"}):
-        raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
+    if not roles.intersection({"organization_owner", "branch_head", "team_lead"}):
+        raise AuthzError("Only a Branch Head, Organization Owner, or authorized Team Lead can assign working copies.")
     authorize_working_copy(claims, workspace_id, working_copy_id, "working_copy.assign")
     org = str(context["organization_id"])
     with SessionLocal.begin() as db:
         target = _principal_for_uid(db, target_uid, workspace_id)
         if not target:
             raise AuthzError("Assignment target is not an active member.")
-        source = db.execute(text("""SELECT da.location_id FROM working_copy_authorization wc
-            JOIN dataset_authorization da ON da.organization_id=wc.organization_id AND da.dataset_id=wc.source_dataset_id
-            WHERE wc.organization_id=:org AND wc.working_copy_id=:copy"""),
-            {"org":org,"copy":working_copy_id}).mappings().first()
-        if not source:
-            raise AuthzError("Working copy is not accessible.")
-        if roles.intersection({"manager","team_lead"}):
-            scoped = db.execute(text("""SELECT 1 FROM organizational_assignments
+        source = db.execute(text("""SELECT location_id FROM working_copy_authorization
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+            {"org": org, "copy": working_copy_id}).mappings().first()
+        if not source or not source["location_id"]:
+            raise AuthzError("Working copy is not accessible within a branch.")
+        target_roles = set(db.execute(text("""SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal"""),
+            {"org": org, "principal": target["principal_id"]}).scalars().all())
+        if "team_lead" in roles:
+            lower_roles = {"data_analyst", "data_scientist", "data_engineer", "quality_analyst", "intern", "normal", "employee"}
+            if not target_roles or not target_roles.issubset(lower_roles):
+                raise AuthzError("Team Leads may assign copies only to lower-level roles.")
+        target_in_branch = db.execute(text("""SELECT 1 FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:principal AND location_id=:location
+              AND status='active' LIMIT 1"""),
+            {"org": org, "principal": target["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
+        if not target_in_branch:
+            raise AuthzError("The assignment target must have an active assignment in the source branch.")
+        if roles.intersection({"manager", "team_lead"}):
+            actor_in_branch = db.execute(text("""SELECT 1 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:actor AND location_id=:location
                   AND status='active' AND role_id IN ('manager','team_lead') LIMIT 1"""),
-                {"org":org,"actor":context["principal_id"],"location":source["location_id"]}).scalar_one_or_none()
-            if not scoped:
+                {"org": org, "actor": context["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
+            if not actor_in_branch:
                 raise AuthzError("The working copy is outside your branch scope.")
+        # Assigned recipients receive read-only access; delegation is explicit.
+        target_permissions = ["working_copy.view"]
+        if "team_lead" in target_roles and roles.intersection({"branch_head", "organization_owner"}):
+            target_permissions.append("working_copy.assign")
+        # A working copy has one current assignee. Revoke prior assignments and
+        # remove their grants before assigning the new recipient, so reassignment
+        # cannot leave stale read access behind.
+        previous_assignees = db.execute(text("""SELECT principal_id FROM working_copy_assignments
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+            {"org": org, "copy": working_copy_id}).scalars().all()
         db.execute(text("""UPDATE working_copy_assignments SET status='revoked', updated_at=now()
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
-            {"org":org,"copy":working_copy_id})
+            {"org": org, "copy": working_copy_id})
+        for previous_principal in previous_assignees:
+            if str(previous_principal) != str(target["principal_id"]):
+                db.execute(text("""DELETE FROM resource_grants
+                    WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
+                    {"org": org, "copy": working_copy_id, "principal": previous_principal})
         db.execute(text("""INSERT INTO working_copy_assignments
-            (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
-            VALUES (:copy,:org,:principal,:assigner)
+            (working_copy_id, organization_id, principal_id, assigned_by_principal_id, status)
+            VALUES (:copy, :org, :principal, :assigner, 'active')
             ON CONFLICT (organization_id, working_copy_id, principal_id)
-            DO UPDATE SET assigned_by_principal_id=EXCLUDED.assigned_by_principal_id, status='active', updated_at=now()"""),
-            {"copy":working_copy_id,"org":org,"principal":target["principal_id"],"assigner":context["principal_id"]})
+            DO UPDATE SET assigned_by_principal_id=EXCLUDED.assigned_by_principal_id,
+                          status='active', updated_at=now()"""),
+            {"copy": working_copy_id, "org": org, "principal": target["principal_id"],
+             "assigner": context["principal_id"]})
+        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+            VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
+            ON CONFLICT (organization_id, resource_id, principal_id)
+            DO UPDATE SET permissions=EXCLUDED.permissions"""),
+            {"org": org, "copy": working_copy_id, "principal": target["principal_id"],
+             "permissions": json.dumps(target_permissions)})
     return {"working_copy_id": working_copy_id, "assigned_to_principal_id": target["principal_id"], "status": "active"}
+
+
+def revoke_working_copy_assignment(
+    claims: dict[str, Any],
+    workspace_id: str,
+    working_copy_id: str,
+    target_uid: str,
+) -> dict[str, Any]:
+    context = authorization_context(claims, workspace_id)
+    roles = set(context.get("role_ids", []))
+    if not roles.intersection({"organization_owner", "branch_head", "team_lead"}):
+        raise AuthzError("Only a Branch Head, Organization Owner, or authorized Team Lead can revoke working-copy access.")
+    authorize_working_copy(claims, workspace_id, working_copy_id, "working_copy.assign")
+    org = str(context["organization_id"])
+    with SessionLocal.begin() as db:
+        target = _principal_for_uid(db, target_uid, workspace_id)
+        if not target:
+            raise AuthzError("Assignment target is not an active member.")
+        source = db.execute(text("""SELECT location_id FROM working_copy_authorization
+            WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
+            {"org": org, "copy": working_copy_id}).mappings().first()
+        if not source or not source["location_id"]:
+            raise AuthzError("Working copy is not accessible within a branch.")
+        assignment = db.execute(text("""SELECT assigned_by_principal_id FROM working_copy_assignments
+            WHERE organization_id=:org AND working_copy_id=:copy AND principal_id=:principal AND status='active'"""),
+            {"org": org, "copy": working_copy_id, "principal": target["principal_id"]}).mappings().first()
+        if not assignment:
+            return {"working_copy_id": working_copy_id, "target_principal_id": target["principal_id"], "status": "already_revoked"}
+        if "team_lead" in roles:
+            actor_in_branch = db.execute(text("""SELECT 1 FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:actor AND location_id=:location
+                  AND status='active' AND role_id='team_lead' LIMIT 1"""),
+                {"org": org, "actor": context["principal_id"], "location": source["location_id"]}).scalar_one_or_none()
+            if not actor_in_branch or str(assignment["assigned_by_principal_id"]) != str(context["principal_id"]):
+                raise AuthzError("Team Leads may revoke only assignments they created within their branch.")
+        db.execute(text("""UPDATE working_copy_assignments SET status='revoked', updated_at=now()
+            WHERE organization_id=:org AND working_copy_id=:copy AND principal_id=:principal AND status='active'"""),
+            {"org": org, "copy": working_copy_id, "principal": target["principal_id"]})
+        db.execute(text("""DELETE FROM resource_grants
+            WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
+            {"org": org, "copy": working_copy_id, "principal": target["principal_id"]})
+    return {"working_copy_id": working_copy_id, "target_principal_id": target["principal_id"], "status": "revoked"}
 
 
 
@@ -1761,11 +1847,19 @@ def _organization_id_for_workspace(db, workspace_id: str) -> str:
 
 
 def delete_dataset_authorization(workspace_id: str, dataset_id: str) -> None:
+    """Remove ACL metadata for a managed dataset or a persisted working copy."""
     with SessionLocal.begin() as db:
         organization_id = _organization_id_for_workspace(db, workspace_id)
         db.execute(text("DELETE FROM resource_grants WHERE organization_id=:org AND resource_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM dataset_authorization WHERE organization_id=:org AND dataset_id=:dataset"),
+                   {"org": organization_id, "dataset": dataset_id})
+        # Working-copy metadata must not remain active after its structured
+        # dataset is deleted, otherwise a stale authorization record could be
+        # reused if the identifier is ever presented again.
+        db.execute(text("DELETE FROM working_copy_assignments WHERE organization_id=:org AND working_copy_id=:dataset"),
+                   {"org": organization_id, "dataset": dataset_id})
+        db.execute(text("DELETE FROM working_copy_authorization WHERE organization_id=:org AND working_copy_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
         db.execute(text("DELETE FROM authorization_resources WHERE organization_id=:org AND resource_id=:dataset"),
                    {"org": organization_id, "dataset": dataset_id})
@@ -1829,12 +1923,41 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 WHERE organization_id=:org AND principal_id=:principal
                   AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL"""),
             {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+    # A persisted working copy has its own structured dataset identity but
+    # keeps the separate working-copy grant/assignment policy. Translate the
+    # managed-dataset API capabilities into that policy before any content is
+    # read or mutated.
+    if resource and resource["resource_type"] == "working_copy":
+        copy_actions = {
+            "dataset.view_original": "working_copy.view",
+            "dataset.upload": "working_copy.modify",
+            "dataset.edit": "working_copy.modify",
+            "dataset.replace": "working_copy.modify",
+            "dataset.delete": "working_copy.delete",
+            "dataset.share": "working_copy.assign",
+            "dataset.manage_acl": "working_copy.assign",
+        }
+        copy_action = copy_actions.get(action)
+        if copy_action is None:
+            raise AuthzError("This operation is not supported for a working copy.")
+        copy_context = authorize_working_copy(
+            claims, workspace_id, dataset_id, copy_action
+        )
+        return {
+            **copy_context,
+            "authorized": True,
+            "workspace_id": resolved_workspace_id,
+            "organization_id": organization_id,
+            "dataset_id": dataset_id,
+            "protected_original": False,
+            "location_id": None,
+        }
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
-    # Original/master operations are role-scoped. Managers may upload into
-    # their own branch, while Branch Heads may manage the branch's originals.
-    if action == "dataset.upload":
+    # Original/master mutation is never implied by branch membership.
+    # Managers need an explicit capability grant for each operation.
+    if action in {"dataset.upload", "dataset.edit", "dataset.replace"}:
         if "organization_owner" in actor_roles:
             pass
         elif "branch_head" in actor_roles:
@@ -1847,8 +1970,10 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+            if action not in grant_permissions:
+                raise AuthzError(f"An explicit {action} grant is required for this dataset.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
+            raise AuthzError("This role cannot mutate the original dataset.")
     elif action == "dataset.view_original":
         if "organization_owner" in actor_roles:
             pass
@@ -1865,23 +1990,42 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         else:
             raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
-            raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")
-        if "organization_owner" not in actor_roles and (not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}):
-            raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        if "organization_owner" in actor_roles:
+            pass
+        elif "branch_head" in actor_roles:
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        elif "manager" in actor_roles and action != "dataset.manage_acl":
+            manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
+                {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+            if action not in grant_permissions:
+                raise AuthzError(f"An explicit {action} grant is required for this dataset.")
+        else:
+            raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset ACL.")
     elif action == "dataset.create_working_copy":
-        # Branch Heads and Managers can copy datasets inside their branch scope.
-        # All lower roles require an explicit per-dataset working-copy grant.
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles and "manager" not in actor_roles:
-            if "dataset.create_working_copy" not in grant_permissions:
-                raise AuthzError("This dataset has not been authorized for copying by this user.")
-        if "manager" in actor_roles and "branch_head" not in actor_roles and "organization_owner" not in actor_roles:
+        # Owners operate within their organization. Branch Heads may copy only
+        # within assigned branches. Managers need both branch scope and an
+        # explicit grant for this specific dataset.
+        if "organization_owner" in actor_roles:
+            pass
+        elif "branch_head" in actor_roles:
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        elif "manager" in actor_roles:
             manager_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:principal
                   AND role_id='manager' AND status='active' AND location_id IS NOT NULL"""),
                 {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+            if "dataset.create_working_copy" not in grant_permissions:
+                raise AuthzError("An explicit dataset.create_working_copy grant is required for this dataset.")
+        elif "dataset.create_working_copy" not in grant_permissions:
+            raise AuthzError("This dataset has not been authorized for copying by this user.")
     elif action not in grant_permissions:
         raise AuthzError("Permission denied for this resource.")
     return {**context, "authorized": True, "workspace_id": resolved_workspace_id,
@@ -1895,14 +2039,21 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
 def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str,
                       target_uid: str, permissions: list[str]) -> bool:
-    # Original/master access is never delegated. A Branch Head explicitly
-    # grants only the ability to create a working copy of this dataset.
-    allowed = {"dataset.create_working_copy"}
+    # Branch Heads explicitly delegate only the capabilities listed below.
+    # Original/master mutations are never implied by branch membership.
+    allowed = {
+        "dataset.create_working_copy",
+        "dataset.upload",
+        "dataset.edit",
+        "dataset.replace",
+        "dataset.delete",
+        "dataset.share",
+    }
     if any(p not in allowed for p in permissions):
-        raise ValueError("Only dataset.create_working_copy can be delegated.")
+        raise ValueError("Unsupported dataset capability in grant.")
     context = authorization_context(claims, workspace_id)
     if "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
-        raise AuthzError("Only a Branch Head or Organization Owner can authorize dataset copies.")
+        raise AuthzError("Only a Branch Head or Organization Owner can manage dataset grants.")
     organization_id = str(context["organization_id"])
     with SessionLocal() as db:
         row = db.execute(text("""SELECT location_id FROM dataset_authorization
@@ -1929,26 +2080,45 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
 
 def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str,
-                        working_copy_id: str | None, source_version: str | None) -> dict[str, Any]:
+                        working_copy_id: str | None, source_version: str | None,
+                        *, db=None) -> dict[str, Any]:
+    """Create working-copy ACL metadata, optionally inside the content transaction.
+
+    Passing the repository session lets the caller commit the copy identity,
+    copied physical rows, version metadata, and ACL together.
+    """
     authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     context = authorization_context(claims, workspace_id)
     copy_id = working_copy_id or _id("wc")
     version = source_version or "1"
     organization_id = str(context["organization_id"])
     resolved_workspace_id = str(context["workspace_id"])
-    with SessionLocal.begin() as db:
-        db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
+
+    def insert_metadata(target_db) -> None:
+        target_db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
             VALUES (:org, :copy, 'working_copy', :principal)"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"]})
-        db.execute(text("""INSERT INTO working_copy_authorization
-            (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id)
-            VALUES (:org, :copy, :dataset, :version, :principal)"""),
+        source_scope = target_db.execute(text("""SELECT location_id FROM dataset_authorization
+            WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"""),
+            {"org": organization_id, "dataset": dataset_id}).mappings().first()
+        if not source_scope:
+            raise AuthzError("Source dataset is not accessible.")
+        target_db.execute(text("""INSERT INTO working_copy_authorization
+            (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id, location_id)
+            VALUES (:org, :copy, :dataset, :version, :principal, :location)"""),
             {"org": organization_id, "copy": copy_id, "dataset": dataset_id,
-             "version": version, "principal": context["principal_id"]})
-        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+             "version": version, "principal": context["principal_id"],
+             "location": source_scope["location_id"]})
+        target_db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))"""),
             {"org": organization_id, "copy": copy_id, "principal": context["principal_id"],
              "permissions": '["working_copy.view","working_copy.modify","working_copy.delete","working_copy.assign"]'})
+
+    if db is None:
+        with SessionLocal.begin() as target_db:
+            insert_metadata(target_db)
+    else:
+        insert_metadata(db)
     return {"working_copy_id": copy_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id,
             "source_dataset_id": dataset_id, "source_version": version}
 
@@ -1962,12 +2132,10 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
         raise AuthzError("Workspace authorization denied.")
     organization_id = str(context["organization_id"])
     with SessionLocal() as db:
-        row = db.execute(text("""SELECT source_dataset_id, source_version, version, created_by_principal_id
+        row = db.execute(text("""SELECT source_dataset_id, source_version, version, created_by_principal_id, location_id
             FROM working_copy_authorization
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'"""),
             {"org": organization_id, "copy": working_copy_id}).mappings().first()
-        if not row:
-            raise AuthzError("Working copy is not accessible.")
         assignment = db.execute(text("""SELECT 1 FROM working_copy_assignments
             WHERE organization_id=:org AND working_copy_id=:copy
               AND principal_id=:principal AND status='active'"""),
@@ -1975,20 +2143,51 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
         grant = db.execute(text("""SELECT permissions FROM resource_grants
             WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal"""),
             {"org": organization_id, "copy": working_copy_id, "principal": context["principal_id"]}).scalar_one_or_none()
+    if not row:
+        raise AuthzError("Working copy is not accessible.")
+
+    roles = set(context.get("role_ids", []))
     allowed = set(grant or [])
-    if action == "working_copy.assign":
-        if not set(context.get("role_ids", [])).intersection({"organization_owner", "branch_head"}):
-            raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
-        if "working_copy.assign" not in set(context.get("permissions", [])):
-            raise AuthzError("You don't have permission to assign this working copy.")
-    if not assignment and action != "working_copy.assign" and action not in allowed:
-        raise AuthzError("This working copy is assigned to another user.")
-    if action == "working_copy.assign" and not assignment and "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
-        raise AuthzError("A working copy must be assigned to its current manager before it can be reassigned.")
+    is_supervisor = bool(roles.intersection({"organization_owner", "branch_head"}))
+    is_creator = str(row["created_by_principal_id"]) == str(context["principal_id"])
+
+    if is_supervisor:
+        # The copy retains its own branch scope and remains usable even if its
+        # source master is deleted. Do not re-authorize against the mutable
+        # source dataset identity.
+        if "branch_head" in roles:
+            with SessionLocal() as db:
+                branch_locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
+                    WHERE organization_id=:org AND principal_id=:principal
+                      AND role_id='branch_head' AND status='active' AND location_id IS NOT NULL"""),
+                    {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+            if not row["location_id"] or str(row["location_id"]) not in {str(value) for value in branch_locations}:
+                raise AuthzError("The working copy belongs to a branch outside your Branch Head scope.")
+        if action == "working_copy.assign":
+            return {**context, "authorized": True, "organization_id": organization_id,
+                    "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
+                    "source_version": row["source_version"], "version": row["version"]}
+    elif action == "working_copy.assign":
+        # Team Leads may share only copies they created or were assigned, and only with an explicit assign grant.
+        if "team_lead" not in roles or "working_copy.assign" not in allowed:
+            raise AuthzError("An explicit Team Lead working-copy assignment grant is required.")
+        if not assignment and not is_creator:
+            raise AuthzError("A working copy must be assigned to you before it can be reassigned.")
+    else:
+        has_copy_access = bool(assignment) or is_creator
+        if action == "working_copy.view":
+            if not has_copy_access and "working_copy.view" not in allowed:
+                raise AuthzError("This working copy is assigned to another user.")
+        elif action == "working_copy.modify":
+            if not has_copy_access or "working_copy.modify" not in allowed:
+                raise AuthzError("You do not have permission to modify this working copy.")
+        elif action == "working_copy.delete":
+            if not has_copy_access or "working_copy.delete" not in allowed:
+                raise AuthzError("You do not have permission to delete this working copy.")
+
     return {**context, "authorized": True, "organization_id": organization_id,
             "working_copy_id": working_copy_id, "source_dataset_id": row["source_dataset_id"],
             "source_version": row["source_version"], "version": row["version"]}
-
 
 
 
@@ -2012,7 +2211,21 @@ def list_dataset_catalog(claims: dict[str, Any], workspace_id: str) -> list[dict
         locations = set(db.execute(text("""SELECT location_id FROM organizational_assignments
             WHERE organization_id=:org AND principal_id=:principal AND status='active' AND location_id IS NOT NULL"""),
             {"org":org,"principal":context["principal_id"]}).scalars().all())
-        return [dict(row) for row in rows if row["location_id"] is None or row["location_id"] in locations]
+        visible = []
+        principal = context["principal_id"]
+        for row in rows:
+            location_id = row["location_id"]
+            if location_id is not None and location_id in locations:
+                visible.append(dict(row))
+                continue
+            # Null-location resources are not implicitly organization-wide.
+            # A non-owner must have an explicit resource grant to see them.
+            grant = db.execute(text("""SELECT permissions FROM resource_grants
+                WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:principal"""),
+                {"org": org, "dataset": row["dataset_id"], "principal": principal}).scalar_one_or_none()
+            if set(grant or []).intersection({"dataset.view_original", "dataset.create_working_copy"}):
+                visible.append(dict(row))
+        return visible
 
 
 

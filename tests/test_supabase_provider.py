@@ -229,6 +229,7 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
         authorize_dataset,
         authorize_working_copy,
         create_working_copy,
+        delete_dataset_authorization,
         register_dataset,
         register_organization,
     )
@@ -239,6 +240,13 @@ def test_dataset_and_working_copy_authorization_is_workspace_scoped():
     assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
     create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
     assert authorize_working_copy(claims, result["workspace_id"], "wc_test", "working_copy.modify")["authorized"]
+
+    # Removing the master's ACL must not invalidate the independent copy ACL
+    # or its persisted branch scope.
+    delete_dataset_authorization(result["workspace_id"], "ds_test")
+    assert authorize_working_copy(
+        claims, result["workspace_id"], "wc_test", "working_copy.modify"
+    )["authorized"]
     from firebase_authz.auth import AuthzError
     with pytest.raises(AuthzError):
         authorize_dataset(claims, "org_other", "ds_test", "dataset.view_original")
@@ -647,3 +655,269 @@ def test_concurrent_invitation_acceptance_is_transactionally_consistent():
                 text("DELETE FROM organizations WHERE organization_id=:org"),
                 {"org": result["organization_id"]},
             )
+
+
+
+def test_manager_dataset_mutation_requires_explicit_capability_grant(monkeypatch):
+    from contextlib import contextmanager
+    from firebase_authz import supabase_provider as provider
+    from firebase_authz.auth import AuthzError
+
+    context = {
+        "workspace_authorized": True,
+        "organization_id": "org-test",
+        "workspace_id": "workspace-test",
+        "principal_id": "manager-principal",
+        "role_ids": ["manager"],
+        "permissions": [],
+    }
+    state = {"grant": None, "manager_locations": ["branch-1"], "branch_locations": [], "roles": ["manager"], "dataset_location": "branch-1"}
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self.value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+    class FakeDb:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if "FROM authorization_resources" in query:
+                return Result({"resource_type": "dataset", "owner_principal_id": "owner"})
+            if "FROM dataset_authorization" in query and "SELECT protected_original" in query:
+                return Result({"protected_original": True, "location_id": state["dataset_location"]})
+            if "FROM resource_grants" in query:
+                return Result(state["grant"])
+            if "SELECT role_id FROM member_roles" in query:
+                return Result(state["roles"])
+            if "role_id='branch_head'" in query:
+                return Result(state["branch_locations"])
+            if "role_id='manager'" in query:
+                return Result(state["manager_locations"])
+            raise AssertionError(f"Unexpected authorization query: {query}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    @contextmanager
+    def fake_session():
+        yield FakeDb()
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", lambda: FakeDb())
+
+    claims = {"uid": "manager", "sub": "manager"}
+    with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
+        provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
+
+    state["grant"] = ["dataset.upload"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.upload"
+    )["authorized"]
+
+    state["grant"] = None
+    with pytest.raises(AuthzError, match="explicit dataset.upload grant"):
+        provider.authorize_dataset(claims, "workspace-test", "dataset-1", "dataset.upload")
+
+    # Copy creation is also a Manager mutation: branch membership alone must
+    # not authorize it, and a grant for the wrong branch must not bypass scope.
+    with pytest.raises(AuthzError, match="explicit dataset.create_working_copy grant"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["grant"] = ["dataset.create_working_copy"]
+    state["manager_locations"] = ["branch-2"]
+    with pytest.raises(AuthzError, match="outside your Manager scope"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["manager_locations"] = ["branch-1"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+    )["authorized"]
+
+    # Branch Heads do not need a Manager grant, but they must stay within
+    # their own assigned branch.
+    state["roles"] = ["branch_head"]
+    state["branch_locations"] = ["branch-2"]
+    with pytest.raises(AuthzError, match="outside your Branch Head scope"):
+        provider.authorize_dataset(
+            claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+        )
+
+    state["branch_locations"] = ["branch-1"]
+    assert provider.authorize_dataset(
+        claims, "workspace-test", "dataset-1", "dataset.create_working_copy"
+    )["authorized"]
+
+
+
+def test_working_copy_reassignment_revokes_previous_recipient_grant(monkeypatch):
+    from contextlib import contextmanager
+    from firebase_authz import supabase_provider as provider
+
+    context = {
+        "workspace_authorized": True,
+        "organization_id": "org-test",
+        "workspace_id": "workspace-test",
+        "principal_id": "branch-head-principal",
+        "role_ids": ["branch_head"],
+    }
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def first(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class FakeDb:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params=None):
+            query = str(statement)
+            values = params or {}
+            self.calls.append((query, values))
+            if "SELECT location_id FROM working_copy_authorization" in query:
+                return Result({"location_id": "branch-1"})
+            if "SELECT role_id FROM member_roles" in query:
+                return Result(["data_analyst"])
+            if "FROM organizational_assignments" in query:
+                return Result(1)
+            if "SELECT principal_id FROM working_copy_assignments" in query:
+                return Result(["previous-recipient"])
+            return Result()
+
+    db = FakeDb()
+
+    class SessionFactory:
+        def __call__(self):
+            return db
+
+        @contextmanager
+        def begin(self):
+            yield db
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", SessionFactory())
+    monkeypatch.setattr(provider, "_principal_for_uid", lambda _db, _uid, _workspace: {
+        "principal_id": "new-recipient",
+    })
+    monkeypatch.setattr(provider, "authorize_working_copy", lambda *_args, **_kwargs: {
+        "authorized": True,
+    })
+
+    result = provider.assign_working_copy(
+        {"uid": "branch-head", "sub": "branch-head"},
+        "workspace-test",
+        "working-copy-1",
+        "new-recipient-uid",
+    )
+
+    assert result["assigned_to_principal_id"] == "new-recipient"
+    assert any(
+        "UPDATE working_copy_assignments SET status='revoked'" in query
+        for query, _ in db.calls
+    )
+    assert any(
+        "DELETE FROM resource_grants" in query and params.get("principal") == "previous-recipient"
+        for query, params in db.calls
+    )
+    assert any(
+        "INSERT INTO working_copy_assignments" in query and params.get("principal") == "new-recipient"
+        for query, params in db.calls
+    )
+    assert any(
+        "INSERT INTO resource_grants" in query and params.get("principal") == "new-recipient"
+        for query, params in db.calls
+    )
+
+
+def test_branch_scoped_dataset_catalog_requires_grant_for_unscoped_resources(monkeypatch):
+    from firebase_authz import supabase_provider as provider
+
+    context = {
+        "organization_id": "org-test",
+        "principal_id": "branch-manager",
+        "role_ids": ["manager"],
+    }
+    state = {"unscoped_grant": None}
+
+    class Result:
+        def __init__(self, value=None):
+            self.value = value
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self.value or []
+
+        def scalar_one_or_none(self):
+            return self.value
+
+        def scalars(self):
+            return self
+
+    class FakeDb:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if "FROM dataset_authorization da" in query:
+                return Result([
+                    {"dataset_id": "branch-dataset", "dataset_name": "Branch", "original_filename": "branch.csv",
+                     "location_id": "branch-1", "location_name": "Branch 1"},
+                    {"dataset_id": "unscoped-dataset", "dataset_name": "Unscoped", "original_filename": "global.csv",
+                     "location_id": None, "location_name": None},
+                ])
+            if "FROM organizational_assignments" in query:
+                return Result(["branch-1"])
+            if "FROM resource_grants" in query:
+                return Result(state["unscoped_grant"])
+            raise AssertionError(f"Unexpected catalog query: {query}")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(provider, "authorization_context", lambda *_args, **_kwargs: context)
+    monkeypatch.setattr(provider, "SessionLocal", lambda: FakeDb())
+
+    result = provider.list_dataset_catalog({"uid": "branch-manager"}, "workspace-test")
+    assert [row["dataset_id"] for row in result] == ["branch-dataset"]
+
+    state["unscoped_grant"] = ["dataset.view_original"]
+    result = provider.list_dataset_catalog({"uid": "branch-manager"}, "workspace-test")
+    assert [row["dataset_id"] for row in result] == ["branch-dataset", "unscoped-dataset"]

@@ -17,6 +17,8 @@ import 'managed_dataset_access_workspace.dart';
 
 enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }
 
+typedef ManagementRequestOverride = Future<Map<String, dynamic>> Function(String path);
+
 class _ManagementGlassDialog extends StatelessWidget {
   const _ManagementGlassDialog({
     required this.title,
@@ -99,7 +101,15 @@ class _ManagementGlassDialog extends StatelessWidget {
 
 
 class ManagementShell extends StatefulWidget {
-  const ManagementShell({super.key});
+  const ManagementShell({
+    super.key,
+    this.initialSection = ManagementSection.overview,
+    this.requestOverride,
+  });
+
+  final ManagementSection initialSection;
+  final ManagementRequestOverride? requestOverride;
+
   @override
   State<ManagementShell> createState() => _ManagementShellState();
 }
@@ -129,7 +139,11 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _isCurrentUserProfile = false;
 
   @override
-  void initState() { super.initState(); loadAll(); }
+  void initState() {
+    super.initState();
+    section = widget.initialSection;
+    loadAll();
+  }
 
   List<Map<String, dynamic>> maps(dynamic v) => v is List
       ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
@@ -170,6 +184,9 @@ class _ManagementShellState extends State<ManagementShell> {
     String method = 'GET',
     Map<String, dynamic>? body,
   }) async {
+    final override = widget.requestOverride;
+    if (override != null) return override(path);
+
     final session = await InsightFlowSupabaseAuthService.ensureSession(
       timeout: const Duration(seconds: 8),
     );
@@ -1649,16 +1666,18 @@ class _ManagementShellState extends State<ManagementShell> {
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    Widget metric(String label, int value, IconData icon) => Expanded(
-      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
-        Icon(icon, size: 17, color: TechColors.borderActive),
-        const SizedBox(width: 9),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-        ])),
-      ])),
-    );
+    // This metric is used both as a full-width child in the narrow Column
+    // and as a fixed-width child in the desktop Wrap. It must not return
+    // Expanded because the desktop Wrap/SizedBox are not Flex parents.
+    Widget metric(String label, int value, IconData icon) =>
+        _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
+          Icon(icon, size: 17, color: TechColors.borderActive),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
+          ])),
+        ]));
     Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
       final name = p['full_name']?.toString().trim() ?? '';
       final employeeId = p['employee_id']?.toString().trim() ?? '';
@@ -1827,7 +1846,12 @@ class _ManagementShellState extends State<ManagementShell> {
               }), icon: const Icon(Icons.filter_alt_off)),
             ]),
             if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
-              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+              onPressed: () => setState(() {
+        search = '';
+        selectedLocation = null;
+        selectedSection = null;
+        selectedRole = null;
+      }),
               child: const Text('Clear filters'),
             )),
           ]),
@@ -1851,32 +1875,33 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 5),
             const Text('Try changing your search or clearing the selected filters.',
               textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
-              child: const Text('Clear search and filters')),
+            TextButton(onPressed: () => setState(() {
+              search = '';
+              selectedLocation = null;
+              selectedSection = null;
+              selectedRole = null;
+            }), child: const Text('Clear search and filters')),
           ])))
         else if (narrow)
           Column(children: filtered.map((p) => Padding(
             padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
           )).toList())
         else
-          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-            child: Column(children: [
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                child: Row(children: const [
-                  Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                ]),
-              ),
-              const Divider(height: 1),
-              ...filtered.map((p) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: personCard(p),
-              )),
-            ]),
-          ),
+          Column(children: [
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              child: Row(children: const [
+                Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+                SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
+              ]),
+            ),
+            const Divider(height: 1),
+            ...filtered.map((p) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: personCard(p),
+            )),
+          ]),
       ]);
     });
   }
@@ -3369,7 +3394,7 @@ class _ManagementShellState extends State<ManagementShell> {
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 700;
+            final compact = constraints.maxWidth < 820;
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3420,7 +3445,13 @@ class _ManagementShellState extends State<ManagementShell> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(children: [identity, const Spacer(), controls]),
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [identity, controls],
+                  ),
                   const SizedBox(height: 7),
                   workspace,
                 ],

@@ -190,22 +190,43 @@ def test_dataset_registration_endpoint_accepts_only_opaque_metadata(monkeypatch)
 
 def test_working_copy_endpoint_does_not_accept_workbook_payloads(monkeypatch):
     from firebase_authz import routes
+    import dataset_storage.service as dataset_service
+
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "owner", "sub": "owner", "email_verified": True})
-    monkeypatch.setattr(supabase_provider, "create_working_copy", lambda claims, workspace_id, dataset_id, working_copy_id, source_version: {
-        "working_copy_id": working_copy_id or "wc"
-    })
+    calls = {}
+
+    def create_snapshot(claims, workspace_id, dataset_id, *, source_version_id=None, assigned_to_principal_id=None, db_session=None):
+        calls.update({
+            "claims": claims,
+            "workspace_id": workspace_id,
+            "dataset_id": dataset_id,
+            "source_version_id": source_version_id,
+        })
+        return {
+            "working_copy_id": "wc-server-generated",
+            "structured_dataset_id": "copy-dataset",
+            "structured_version_id": "1",
+            "source_dataset_id": dataset_id,
+        }
+
+    monkeypatch.setattr(dataset_service, "_create_managed_working_copy_from_claims", create_snapshot)
     from main import app
     response = TestClient(app).post(
         "/v1/authz/working-copies",
         json={
             "workspace_id": "org",
             "dataset_id": "ds1",
-            "working_copy_id": "wc1",
+            "working_copy_id": "client-chosen-id",
             "source_version": "1",
+            "workbook": {"rows": [{"secret": "must-not-be-accepted-as-content"}]},
         },
         headers={"Authorization": "Bearer valid"},
     )
     assert response.status_code == 200
+    assert response.json()["working_copy_id"] == "wc-server-generated"
+    assert calls["dataset_id"] == "ds1"
+    assert calls["source_version_id"] == "1"
+    assert calls["workspace_id"] == "org"
 
 
 def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monkeypatch):
