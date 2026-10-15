@@ -2,34 +2,60 @@ import json
 import re
 import traceback
 import uuid
+from functools import lru_cache
 
-try:
-    from google.adk.agents import LlmAgent
-    from google.adk.runners import Runner
-    from google.adk.sessions import InMemorySessionService
-    from google.genai import types
-except Exception:  # pragma: no cover - import fallback for local tests
-    class _UnavailableGemini:
+
+class _UnavailableGemini:
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("google.adk is unavailable in this environment.")
+
+
+class _UnavailableSessionService:
+    async def create_session(self, *args, **kwargs):
+        return None
+
+
+class _TypesNamespace:
+    class Content:
         def __init__(self, *args, **kwargs):
-            raise RuntimeError("google.adk is unavailable in this environment.")
+            self.parts = kwargs.get("parts", [])
 
-    class _UnavailableSessionService:
-        async def create_session(self, *args, **kwargs):
-            return None
+    class Part:
+        def __init__(self, *args, **kwargs):
+            self.text = kwargs.get("text", "")
 
-    class _TypesNamespace:
-        class Content:
-            def __init__(self, *args, **kwargs):
-                self.parts = kwargs.get("parts", [])
 
-        class Part:
-            def __init__(self, *args, **kwargs):
-                self.text = kwargs.get("text", "")
+@lru_cache(maxsize=1)
+def _load_adk_symbols():
+    """Load Google ADK only when a command-agent request actually needs it."""
+    try:
+        from google.adk.agents import LlmAgent as _LlmAgent
+        from google.adk.runners import Runner as _Runner
+        from google.adk.sessions import InMemorySessionService as _InMemorySessionService
+        from google.genai import types as _types
+    except Exception:  # pragma: no cover - optional runtime dependency
+        return _UnavailableGemini, _UnavailableGemini, _UnavailableSessionService, _TypesNamespace
+    return _LlmAgent, _Runner, _InMemorySessionService, _types
 
-    LlmAgent = _UnavailableGemini
-    Runner = _UnavailableGemini
-    InMemorySessionService = _UnavailableSessionService
-    types = _TypesNamespace()
+
+class _LazyAdkConstructor:
+    def __init__(self, index):
+        self._index = index
+
+    def __call__(self, *args, **kwargs):
+        return _load_adk_symbols()[self._index](*args, **kwargs)
+
+
+class _LazyTypesNamespace:
+    def __getattr__(self, name):
+        return getattr(_load_adk_symbols()[3], name)
+
+
+LlmAgent = _LazyAdkConstructor(0)
+Runner = _LazyAdkConstructor(1)
+InMemorySessionService = _LazyAdkConstructor(2)
+types = _LazyTypesNamespace()
+
 from privacy_context import strict_enabled, safe_columns, sanitize_user_text, remap_plan
 from currency_utils import has_currency_conversion_intent
 
