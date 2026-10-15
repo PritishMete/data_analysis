@@ -269,7 +269,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   // Do not infer upload authority from professional/job roles in Flutter.
   bool get canUpload => uiCapabilities.contains('dataset.upload');
   bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
-  // Copy requests are supported for internal operational roles only. An External Viewer\n  // must never inherit copy authority merely because they cannot view an original.\n  bool get canCopy => roles.any((role) => {'manager', 'team_lead'}.contains(role));
+  // Copy requests are supported for internal operational roles only.
+  // External Viewers must never inherit copy authority from missing original access.
+  bool get canCopy => roles.any((role) => {'manager', 'team_lead'}.contains(role));
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -336,7 +338,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (canCopy && d['source_type'] != 'working_copy') _action('REQUEST COPY', Icons.copy_outlined, () => _requestCopy(d['dataset_id'].toString()), active: true),
         if (roles.contains('team_lead') && d['source_type'] == 'working_copy') _action('SHARE WORKING COPY', Icons.people_alt_outlined, () => _offerWorkingCopyAssignment({'working_copy_id': d['dataset_id']}), active: true),
         if (canViewOriginal) ...[
-          _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+          _action('START WORKING', Icons.edit_note, _openSelectedAnalysis, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
