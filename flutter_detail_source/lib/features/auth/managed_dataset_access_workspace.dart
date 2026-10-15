@@ -127,15 +127,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
-  Future<void> _grant(String uid, List<String> permissions) async {
-    final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
-    try {
-      await _post('/v1/authz/datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': id, 'target_uid': uid, 'permissions': permissions});
-      _snack(permissions.isEmpty ? 'Dataset access revoked.' : 'Dataset access updated.');
-    } catch (e) { _snack(e); }
-  }
-
   // Backend authorization remains the source of truth; download surfaces its safe HTTP detail.
   Future<void> _download() async {
     final id = selected?['dataset_id']?.toString();
@@ -294,7 +285,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
