@@ -53,14 +53,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final isExternalViewer = roles.contains('external_viewer');
-      final values = isExternalViewer
-          ? await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management')])
-          : await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
-      final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-      final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
-      final cat = !isExternalViewer && values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
-      final rq = !isExternalViewer && values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
+      final coreValues = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management')]);
+      final ds = ((coreValues[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      final mg = coreValues[1] is Map ? Map<String,dynamic>.from(coreValues[1] as Map) : <String,dynamic>{};
+      final loadedRoles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
+      final isExternalViewer = loadedRoles.contains('external_viewer');
+      final accessValues = isExternalViewer
+          ? const <dynamic>[{}, {}]
+          : await Future.wait([_get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
+      final cat = accessValues[0] is Map ? Map<String,dynamic>.from(accessValues[0] as Map) : <String,dynamic>{};
+      final rq = accessValues[1] is Map ? Map<String,dynamic>.from(accessValues[1] as Map) : <String,dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
