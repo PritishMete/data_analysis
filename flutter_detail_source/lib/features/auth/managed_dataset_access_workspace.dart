@@ -21,7 +21,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
   List<String> uiCapabilities = [];
-  Map<String,dynamic>? selected, profile, createdWorkingCopy;
+  Map<String,dynamic>? selected, profile;
   int offset = 0;
   static const pageSize = 100;
 
@@ -196,20 +196,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
-  Future<void> _startWorking() async {
-    final id = selected?['dataset_id']?.toString();
+  void _openSelectedAnalysis() {
+    final d = selected;
+    if (d == null) return;
+    final id = d['dataset_id']?.toString();
     if (id == null) return;
-    try {
-      final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
-      final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
-      if (!mounted) return;
-      setState(() => createdWorkingCopy = w);
-      if (roles.contains('team_lead') && (w['working_copy_id']?.toString().isNotEmpty ?? false)) {
-        await _offerWorkingCopyAssignment(w);
-      } else {
-        openInsightFlowAnalysis(context, managedDatasetId: id, managedVersionId: w['structured_version_id']?.toString() ?? w['source_version']?.toString(), managedWorkingCopyId: w['working_copy_id']?.toString());
-      }
-    } catch (e) { _snack(e); }
+    openInsightFlowAnalysis(
+      context,
+      managedDatasetId: id,
+      managedVersionId: profile?['version_id']?.toString() ?? d['current_version']?.toString(),
+      managedWorkingCopyId: d['source_type'] == 'working_copy' ? id : null,
+    );
   }
 
   Future<void> _offerWorkingCopyAssignment(Map<String,dynamic> copy) async {
@@ -267,7 +264,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head'}.contains(role));
   // External Viewer receives only the backend-filtered resources returned by /v1/managed-datasets.
   // The subsequent profile/rows/download requests still pass through backend ACL enforcement.
-  bool get canViewSelectedData => canViewOriginal || roles.contains('external_viewer');
+  bool get canViewSelectedData => canViewOriginal || roles.contains('external_viewer') || roles.contains('team_lead');
   // The backend management policy is the authoritative UI capability source.
   // Do not infer upload authority from professional/job roles in Flutter.
   bool get canUpload => uiCapabilities.contains('dataset.upload');
@@ -336,7 +333,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
-        if (canCopy) _action('REQUEST / CREATE COPY', Icons.copy_outlined, _startWorking, active: true),
+        if (canCopy && d['source_type'] != 'working_copy') _action('REQUEST COPY', Icons.copy_outlined, () => _requestCopy(d['dataset_id'].toString()), active: true),
+        if (roles.contains('team_lead') && d['source_type'] == 'working_copy') _action('SHARE WORKING COPY', Icons.people_alt_outlined, () => _offerWorkingCopyAssignment({'working_copy_id': d['dataset_id']}), active: true),
         if (canViewOriginal) ...[
           _action('START WORKING', Icons.edit_note, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
@@ -368,7 +366,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       ])),
       if (!roles.contains('external_viewer')) ...[const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12)],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        if (!roles.contains('external_viewer')) _action(canCopy ? 'REQUEST / CREATE COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
+        if (!roles.contains('external_viewer')) _action(canCopy ? 'REQUEST COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, canCopy ? () => _requestCopy(d['dataset_id'].toString()) : () => _openSelectedAnalysis(), active: true),
         _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
       ])),
     ]);
