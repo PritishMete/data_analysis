@@ -53,11 +53,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final values = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
+      final isExternalViewer = roles.contains('external_viewer');
+      final values = isExternalViewer
+          ? await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management')])
+          : await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
       final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
       final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
-      final cat = values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
-      final rq = values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
+      final cat = !isExternalViewer && values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
+      final rq = !isExternalViewer && values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
@@ -79,8 +82,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _select(Map<String,dynamic> d) async {
     final id = d['dataset_id']?.toString();
     if (id == null) return;
-    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewOriginal; rowsError = null; });
-    if (!canViewOriginal) return;
+    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewSelectedData; rowsError = null; });
+    if (!canViewSelectedData) return;
     try {
       final p = await _get('/v1/managed-datasets/' + id + '/profile?preview_limit=5');
       profile = p is Map ? Map<String,dynamic>.from(p) : <String,dynamic>{};
@@ -260,6 +263,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
   bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head'}.contains(role));
+  // External Viewer receives only the backend-filtered resources returned by /v1/managed-datasets.
+  // The subsequent profile/rows/download requests still pass through backend ACL enforcement.
+  bool get canViewSelectedData => canViewOriginal || roles.contains('external_viewer');
   // The backend management policy is the authoritative UI capability source.
   // Do not infer upload authority from professional/job roles in Flutter.
   bool get canUpload => uiCapabilities.contains('dataset.upload');
@@ -291,8 +297,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        const Text('Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
-        const Text('Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+        Text(roles.contains('external_viewer') ? 'Shared with me' : 'Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
+        Text(roles.contains('external_viewer') ? 'Read-only resources explicitly shared with your account. You cannot upload, copy, or manage organization datasets.' : 'Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
@@ -337,7 +343,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ],
       ])),
       const SizedBox(height: 12),
-      if (canViewOriginal) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (canViewSelectedData) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _eye('DATASET PREVIEW'), const SizedBox(height: 5), Text(total == 0 ? 'EMPTY DATASET' : 'SHOWING ' + (offset + 1).toString() + '–' + end.toString() + ' OF ' + total.toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')), const SizedBox(height: 8),
         if (rowsLoading) const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)))
         else if (rowsError != null) Column(children: [Text(rowsError!, style: const TextStyle(color: TechColors.statusRed)), const SizedBox(height: 8), _action('RETRY', Icons.refresh, _loadRows, active: true)])
@@ -358,9 +364,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12),
+      if (!roles.contains('external_viewer')) ...[const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12)],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'REQUEST / CREATE COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
+        if (!roles.contains('external_viewer')) _action(canCopy ? 'REQUEST / CREATE COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
         _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
       ])),
     ]);
