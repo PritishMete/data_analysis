@@ -45,6 +45,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
 
+      - name: Guard API startup against eager Google ADK imports
+        run: pytest -q tests/test_main_startup_imports.py
+
       - name: Verify authorization migration runner
         run: |
           python -m py_compile tools/run_authz_migrations.py
