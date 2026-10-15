@@ -3541,7 +3541,34 @@ class _ManagementShellState extends State<ManagementShell> {
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 1500),
-                          child: loading
+                          child: !loading && error == null &&
+                                  _allowedSections().isEmpty
+                              ? GlassCard(
+                                  padding: const EdgeInsets.all(18),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.lock_outline_rounded,
+                                        color: TechColors.textMuted,
+                                        size: 24,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _eyebrow('NO MANAGEMENT ACCESS'),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'Your account has no management sections assigned. '
+                                        'Contact your organization administrator.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: TechColors.textPrimary,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : loading
                               ? (section == ManagementSection.invitations
                                   ? _invitationSkeleton()
                                   : section == ManagementSection.audit
