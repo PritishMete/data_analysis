@@ -2,9 +2,9 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/supabase-only-auth-20261012, fix/management-people-dataset-security-20261013]
+    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/supabase-only-auth-20261012, fix/management-people-dataset-security-20261013, fix/role-specific-management-shell-20261015]
   pull_request:
-    branches: [main, feature/employee-management-cell]
+    branches: [main, feature/employee-management-cell, fix/management-people-dataset-security-20261013]
   workflow_dispatch:
 
 jobs:
@@ -145,6 +145,7 @@ jobs:
           lib/features/auth/account_management_screen.dart
           lib/features/auth/authorization_management_screen.dart
           lib/features/auth/management_shell.dart
+          lib/features/auth/managed_dataset_access_workspace.dart
           lib/features/auth/management_navigation.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
@@ -169,6 +170,7 @@ jobs:
           lib/features/auth/account_management_screen.dart
           lib/features/auth/authorization_management_screen.dart
           lib/features/auth/management_shell.dart
+          lib/features/auth/managed_dataset_access_workspace.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
