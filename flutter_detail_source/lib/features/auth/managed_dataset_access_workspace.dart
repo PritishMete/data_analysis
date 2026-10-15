@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings, curly_braces_in_flow_control_structures
+
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -53,11 +55,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final values = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
-      final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-      final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
-      final cat = values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
-      final rq = values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
+      final coreValues = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management')]);
+      final ds = ((coreValues[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      final mg = coreValues[1] is Map ? Map<String,dynamic>.from(coreValues[1] as Map) : <String,dynamic>{};
+      final loadedRoles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
+      final isExternalViewer = loadedRoles.contains('external_viewer');
+      final accessValues = isExternalViewer
+          ? const <dynamic>[{}, {}]
+          : await Future.wait([_get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
+      final cat = accessValues[0] is Map ? Map<String,dynamic>.from(accessValues[0] as Map) : <String,dynamic>{};
+      final rq = accessValues[1] is Map ? Map<String,dynamic>.from(accessValues[1] as Map) : <String,dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
@@ -79,8 +86,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _select(Map<String,dynamic> d) async {
     final id = d['dataset_id']?.toString();
     if (id == null) return;
-    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewOriginal; rowsError = null; });
-    if (!canViewOriginal) return;
+    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewSelectedData; rowsError = null; });
+    if (!canViewSelectedData) return;
     try {
       final p = await _get('/v1/managed-datasets/' + id + '/profile?preview_limit=5');
       profile = p is Map ? Map<String,dynamic>.from(p) : <String,dynamic>{};
@@ -119,15 +126,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       await _post('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString(), {});
       _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
       await _load();
-    } catch (e) { _snack(e); }
-  }
-
-  Future<void> _grant(String uid, List<String> permissions) async {
-    final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
-    try {
-      await _post('/v1/authz/datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': id, 'target_uid': uid, 'permissions': permissions});
-      _snack(permissions.isEmpty ? 'Dataset access revoked.' : 'Dataset access updated.');
     } catch (e) { _snack(e); }
   }
 
@@ -191,14 +189,61 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     } catch (e) { _snack(e); }
   }
 
-  Future<void> _startWorking() async {
-    final id = selected?['dataset_id']?.toString();
+  void _openSelectedAnalysis() {
+    final d = selected;
+    if (d == null) return;
+    final id = d['dataset_id']?.toString();
     if (id == null) return;
+    openInsightFlowAnalysis(
+      context,
+      managedDatasetId: id,
+      managedVersionId: profile?['version_id']?.toString() ?? d['current_version']?.toString(),
+      managedWorkingCopyId: d['source_type'] == 'working_copy' ? id : null,
+    );
+  }
+
+  Future<void> _offerWorkingCopyAssignment(Map<String,dynamic> copy) async {
+    final copyId = copy['working_copy_id']?.toString();
+    if (copyId == null || copyId.isEmpty) return;
+    const lowerRoles = {'data_analyst', 'data_scientist', 'data_engineer', 'quality_analyst', 'intern', 'normal', 'employee'};
+    final candidates = members.where((m) {
+      final raw = m['role_ids'] ?? m['roles'] ?? (m['role_id'] == null ? const [] : [m['role_id']]);
+      final memberRoles = raw is List ? raw.map((e) => e.toString()).toSet() : <String>{};
+      return memberRoles.isNotEmpty && memberRoles.every(lowerRoles.contains) && (m['uid'] != null || m['principal_id'] != null || m['user_id'] != null);
+    }).toList();
+    if (candidates.isEmpty) {
+      _snack('Working copy created. No eligible lower-level employees were returned; you can share it when eligible members are available.');
+      return;
+    }
+    String? target;
+    await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('Assign working copy'),
+      content: SizedBox(width: 420, child: StatefulBuilder(builder: (context, refresh) => Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          const Text('Choose a lower-level employee in your branch. The server checks branch scope and role before granting read-only access.'),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: target,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Employee'),
+            items: candidates.map((m) {
+              final uid = (m['uid'] ?? m['principal_id'] ?? m['user_id']).toString();
+              final label = (m['full_name'] ?? m['name'] ?? m['email'] ?? m['employee_id'] ?? uid).toString();
+              return DropdownMenuItem<String>(value: uid, child: Text(label, overflow: TextOverflow.ellipsis));
+            }).toList(),
+            onChanged: (v) => refresh(() => target = v),
+          ),
+        ],
+      ))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Skip')),
+        FilledButton(onPressed: target == null ? null : () => Navigator.pop(dialogContext), child: const Text('Assign copy')),
+      ],
+    ));
+    if (target == null || !mounted) return;
     try {
-      final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
-      final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
-      if (!mounted) return;
-      openInsightFlowAnalysis(context, managedDatasetId: id, managedVersionId: w['structured_version_id']?.toString() ?? w['source_version']?.toString(), managedWorkingCopyId: w['working_copy_id']?.toString());
+      await _post('/v1/authz/management/data-access/working-copies/assign', {'working_copy_id': copyId, 'target_uid': target});
+      _snack('Read-only working-copy access assigned.');
     } catch (e) { _snack(e); }
   }
 
@@ -209,12 +254,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
+  bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head'}.contains(role));
+  // External Viewer receives only the backend-filtered resources returned by /v1/managed-datasets.
+  // The subsequent profile/rows/download requests still pass through backend ACL enforcement.
+  bool get canViewSelectedData => canViewOriginal || roles.contains('external_viewer') || roles.contains('team_lead');
   // The backend management policy is the authoritative UI capability source.
   // Do not infer upload authority from professional/job roles in Flutter.
   bool get canUpload => uiCapabilities.contains('dataset.upload');
   bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
-  bool get canCopy => !canViewOriginal;
+  // Copy requests are supported for internal operational roles only.
+  // External Viewers must never inherit copy authority from missing original access.
+  bool get canCopy => roles.any((role) => {'manager', 'team_lead'}.contains(role));
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -237,12 +287,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        const Text('Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
-        const Text('Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+        Text(roles.contains('external_viewer') ? 'Shared with me' : 'Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
+        Text(roles.contains('external_viewer') ? 'Read-only resources explicitly shared with your account. You cannot upload, copy, or manage organization datasets.' : 'Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
@@ -278,16 +327,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
-        if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
+        if (canCopy && d['source_type'] != 'working_copy') _action('REQUEST COPY', Icons.copy_outlined, () => _requestCopy(d['dataset_id'].toString()), active: true),
+        if (roles.contains('team_lead') && d['source_type'] == 'working_copy') _action('SHARE WORKING COPY', Icons.people_alt_outlined, () => _offerWorkingCopyAssignment({'working_copy_id': d['dataset_id']}), active: true),
         if (canViewOriginal) ...[
-          _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+          _action('START WORKING', Icons.edit_note, _openSelectedAnalysis, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
       ])),
       const SizedBox(height: 12),
-      if (canViewOriginal) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (canViewSelectedData) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _eye('DATASET PREVIEW'), const SizedBox(height: 5), Text(total == 0 ? 'EMPTY DATASET' : 'SHOWING ' + (offset + 1).toString() + '–' + end.toString() + ' OF ' + total.toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')), const SizedBox(height: 8),
         if (rowsLoading) const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)))
         else if (rowsError != null) Column(children: [Text(rowsError!, style: const TextStyle(color: TechColors.statusRed)), const SizedBox(height: 8), _action('RETRY', Icons.refresh, _loadRows, active: true)])
@@ -308,9 +358,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12),
+      if (!roles.contains('external_viewer')) ...[const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12)],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
+        if (!roles.contains('external_viewer')) _action(canCopy ? 'REQUEST COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, canCopy ? () => _requestCopy(d['dataset_id'].toString()) : () => _openSelectedAnalysis(), active: true),
         _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
       ])),
     ]);
@@ -321,7 +371,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 5),
-    const Text('Original datasets remain Branch Head / Organization Owner only. Managers and Team Leads request a working copy; approval creates and assigns a private copy.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const Text('Original datasets are restricted to the Organization Owner and Branch Head. Managers and Team Leads request a working copy; approval creates and assigns a private copy. External Viewers can only access resources explicitly shared with them.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
     if (roles.contains('manager') || roles.contains('team_lead')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),

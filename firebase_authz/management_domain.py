@@ -468,8 +468,8 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "External Viewer" if role == "external_viewer"
             else "Employee"
         ),
-        "scope_label": "Assigned workspace",
-        "sections": ["overview"],
+        "scope_label": "Explicitly shared resources",
+        "sections": ["overview", "dataAccess"] if role == "external_viewer" else ["overview"],
         "capabilities": [],
     }
 

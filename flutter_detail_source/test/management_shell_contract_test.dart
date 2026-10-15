@@ -345,7 +345,7 @@ void main() {
 
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
-    expect(access, contains("Text('Access'"));
+    expect(access, contains("roles.contains('external_viewer') ? 'Shared with me' : 'Access'"));
     expect(
       access,
       contains(
@@ -359,7 +359,7 @@ void main() {
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
     expect(access, contains("if (canUpload) _action('IMPORT CSV'"));
-    expect(access, contains("_action('COPY DATASET'"));
+    expect(access, contains("_action(canCopy ? 'REQUEST COPY' : 'OPEN ANALYSIS'"));
     expect(access, contains("if (canViewOriginal)"));
     expect(access, contains("if (canDelete)"));
     expect(access, contains("roles.contains('organization_owner')"));
