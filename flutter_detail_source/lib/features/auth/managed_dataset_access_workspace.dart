@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings, curly_braces_in_flow_control_structures
+
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -221,7 +223,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           const Text('Choose a lower-level employee in your branch. The server checks branch scope and role before granting read-only access.'),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: target,
+            initialValue: target,
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'Employee'),
             items: candidates.map((m) {
