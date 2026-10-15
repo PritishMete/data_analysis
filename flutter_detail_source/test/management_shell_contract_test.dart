@@ -345,7 +345,7 @@ void main() {
 
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
-    expect(access, contains("Text('Access'"));
+    expect(access, contains("roles.contains('external_viewer') ? 'Shared with me' : 'Access'"));
     expect(
       access,
       contains(
