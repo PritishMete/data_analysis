@@ -2,36 +2,77 @@ import os
 import uuid
 import math
 import json
+from functools import lru_cache
+
 import numpy as np
 import pandas as pd
-try:
-    from google.adk.agents import LlmAgent, SequentialAgent
-    from google.adk.runners import Runner
-    from google.adk.sessions import InMemorySessionService
-    from google.genai import types
-except Exception:  # pragma: no cover - import fallback for local tests
-    class _UnavailableGemini:
+
+
+class _UnavailableGemini:
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("google.adk is unavailable in this environment.")
+
+
+class _UnavailableSessionService:
+    async def create_session(self, *args, **kwargs):
+        return None
+
+
+class _TypesNamespace:
+    class Content:
         def __init__(self, *args, **kwargs):
-            raise RuntimeError("google.adk is unavailable in this environment.")
+            self.parts = kwargs.get("parts", [])
 
-    class _UnavailableSessionService:
-        async def create_session(self, *args, **kwargs):
-            return None
+    class Part:
+        def __init__(self, *args, **kwargs):
+            self.text = kwargs.get("text", "")
 
-    class _TypesNamespace:
-        class Content:
-            def __init__(self, *args, **kwargs):
-                self.parts = kwargs.get("parts", [])
 
-        class Part:
-            def __init__(self, *args, **kwargs):
-                self.text = kwargs.get("text", "")
+@lru_cache(maxsize=1)
+def _load_adk_symbols():
+    """Load Gemini ADK only when an AI-agent operation is actually requested.
 
-    LlmAgent = _UnavailableGemini
-    SequentialAgent = _UnavailableGemini
-    Runner = _UnavailableGemini
-    InMemorySessionService = _UnavailableSessionService
-    types = _TypesNamespace()
+    Importing google.adk can pull in the Google AI Platform stack and make the
+    API process miss Render's port-detection window. Keep module import cheap;
+    preserve the existing unavailable-package fallback for local/test runs.
+    """
+    try:
+        from google.adk.agents import LlmAgent as _LlmAgent, SequentialAgent as _SequentialAgent
+        from google.adk.runners import Runner as _Runner
+        from google.adk.sessions import InMemorySessionService as _InMemorySessionService
+        from google.genai import types as _types
+    except Exception:  # pragma: no cover - optional runtime dependency
+        return (
+            _UnavailableGemini,
+            _UnavailableGemini,
+            _UnavailableGemini,
+            _UnavailableSessionService,
+            _TypesNamespace,
+        )
+    return _LlmAgent, _SequentialAgent, _Runner, _InMemorySessionService, _types
+
+
+class _LazyAdkConstructor:
+    """Constructor proxy that defers importing Google ADK until first use."""
+
+    def __init__(self, index):
+        self._index = index
+
+    def __call__(self, *args, **kwargs):
+        constructor = _load_adk_symbols()[self._index]
+        return constructor(*args, **kwargs)
+
+
+class _LazyTypesNamespace:
+    def __getattr__(self, name):
+        return getattr(_load_adk_symbols()[4], name)
+
+
+LlmAgent = _LazyAdkConstructor(0)
+SequentialAgent = _LazyAdkConstructor(1)
+Runner = _LazyAdkConstructor(2)
+InMemorySessionService = _LazyAdkConstructor(3)
+types = _LazyTypesNamespace()
 
 from command_agent import _extract_json
 from common.report.orchestrator import generate_structured_report_data
