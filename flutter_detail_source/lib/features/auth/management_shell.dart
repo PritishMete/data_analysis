@@ -1409,7 +1409,11 @@ class _ManagementShellState extends State<ManagementShell> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 760;
+            // Keep the heading on one horizontal line on tablet and desktop.
+            // The action chips must be width-constrained: as a non-flex Row
+            // child, the Wrap can otherwise claim its full intrinsic width and
+            // leave the Expanded heading with almost no room.
+            final compact = constraints.maxWidth < 1000;
             final controls = Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1443,8 +1447,18 @@ class _ManagementShellState extends State<ManagementShell> {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Expanded(child: _eyebrow('Organization structure')),
-                      controls,
+                      Expanded(
+                        flex: 2,
+                        child: _eyebrow('Organization structure'),
+                      ),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        flex: 3,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: controls,
+                        ),
+                      ),
                     ],
                   );
           },
