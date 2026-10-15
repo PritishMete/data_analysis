@@ -21,7 +21,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
   List<String> uiCapabilities = [];
-  Map<String,dynamic>? selected, profile;
+  Map<String,dynamic>? selected, profile, createdWorkingCopy;
   int offset = 0;
   static const pageSize = 100;
 
@@ -198,7 +198,57 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
       final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
       if (!mounted) return;
-      openInsightFlowAnalysis(context, managedDatasetId: id, managedVersionId: w['structured_version_id']?.toString() ?? w['source_version']?.toString(), managedWorkingCopyId: w['working_copy_id']?.toString());
+      setState(() => createdWorkingCopy = w);
+      if (roles.contains('team_lead') && (w['working_copy_id']?.toString().isNotEmpty ?? false)) {
+        await _offerWorkingCopyAssignment(w);
+      } else {
+        openInsightFlowAnalysis(context, managedDatasetId: id, managedVersionId: w['structured_version_id']?.toString() ?? w['source_version']?.toString(), managedWorkingCopyId: w['working_copy_id']?.toString());
+      }
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _offerWorkingCopyAssignment(Map<String,dynamic> copy) async {
+    final copyId = copy['working_copy_id']?.toString();
+    if (copyId == null || copyId.isEmpty) return;
+    const lowerRoles = {'data_analyst', 'data_scientist', 'data_engineer', 'quality_analyst', 'intern', 'normal', 'employee'};
+    final candidates = members.where((m) {
+      final raw = m['role_ids'] ?? m['roles'] ?? (m['role_id'] == null ? const [] : [m['role_id']]);
+      final memberRoles = raw is List ? raw.map((e) => e.toString()).toSet() : <String>{};
+      return memberRoles.isNotEmpty && memberRoles.every(lowerRoles.contains) && (m['uid'] != null || m['principal_id'] != null || m['user_id'] != null);
+    }).toList();
+    if (candidates.isEmpty) {
+      _snack('Working copy created. No eligible lower-level employees were returned; you can share it when eligible members are available.');
+      return;
+    }
+    String? target;
+    await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('Assign working copy'),
+      content: SizedBox(width: 420, child: StatefulBuilder(builder: (context, refresh) => Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          const Text('Choose a lower-level employee in your branch. The server checks branch scope and role before granting read-only access.'),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: target,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Employee'),
+            items: candidates.map((m) {
+              final uid = (m['uid'] ?? m['principal_id'] ?? m['user_id']).toString();
+              final label = (m['full_name'] ?? m['name'] ?? m['email'] ?? m['employee_id'] ?? uid).toString();
+              return DropdownMenuItem<String>(value: uid, child: Text(label, overflow: TextOverflow.ellipsis));
+            }).toList(),
+            onChanged: (v) => refresh(() => target = v),
+          ),
+        ],
+      ))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Skip')),
+        FilledButton(onPressed: target == null ? null : () => Navigator.pop(dialogContext), child: const Text('Assign copy')),
+      ],
+    ));
+    if (target == null || !mounted) return;
+    try {
+      await _post('/v1/authz/management/data-access/working-copies/assign', {'working_copy_id': copyId, 'target_uid': target});
+      _snack('Read-only working-copy access assigned.');
     } catch (e) { _snack(e); }
   }
 
@@ -278,7 +328,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
-        if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
+        if (canCopy) _action('REQUEST / CREATE COPY', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
           _action('START WORKING', Icons.edit_note, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
@@ -310,7 +360,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       ])),
       const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12),
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
+        _action(canCopy ? 'REQUEST / CREATE COPY' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
         _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
       ])),
     ]);
