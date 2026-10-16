@@ -363,13 +363,13 @@ class _EmployeeProfileOnboardingScreenState
 
     return AuthGlassScaffold(
       wideContent: true,
-      title: 'EMPLOYEE / PROFILE',
-      subtitle: 'Complete your profile before workspace access is enabled.',
+      title: 'INVITATION / PROFILE',
+      subtitle: 'Complete your InsightFlow profile to finish joining your team.',
       children: [
         AuthGlassMessage(
           text: _email.isEmpty
               ? 'Your authenticated email must already be confirmed.'
-              : 'EMAIL  $_email  •  VERIFIED',
+              : 'VERIFIED EMAIL  •  $_email',
           error: false,
         ),
         const SizedBox(height: 12),
