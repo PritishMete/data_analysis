@@ -401,7 +401,8 @@ class _EmployeeProfileOnboardingScreenState
               : 'EMAIL  $_email  •  VERIFIED',
           error: false,
         ),
-        const SizedBox(height: 12),
+        _stepIndicator(),
+        const SizedBox(height: 14),
         if (_step == 0) ...[
           LayoutBuilder(
             builder: (context, constraints) {
@@ -545,6 +546,71 @@ class _EmployeeProfileOnboardingScreenState
           child: const Text('Sign out'),
         ),
       ],
+    );
+  }
+
+  Widget _stepIndicator() {
+    const labels = ['Personal details', 'Review & confirm'];
+    final progress = (_step + 1) / labels.length;
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: TechColors.fieldGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.person_outline_rounded,
+                  color: TechColors.statusGreen, size: 20),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  labels[_step],
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                'STEP ${_step + 1} OF ${labels.length}',
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: Colors.white.withValues(alpha: 0.10),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                  TechColors.statusGreen),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _step == 0
+                ? 'Add your contact and identity details. Your organization and role remain managed by InsightFlow.'
+                : 'Confirm your profile details before saving.',
+            style: const TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

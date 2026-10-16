@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../app_colors.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -80,6 +81,118 @@ class _OrganizationOnboardingScreenState
     }
   }
 
+  Widget _accessHeader({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 420;
+        return GlassContainer(
+          useOwnLayer: true,
+          quality: GlassQuality.minimal,
+          settings: TechColors.fieldGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+          padding: EdgeInsets.all(compact ? 14 : 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: TechColors.statusGreen.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: TechColors.statusGreen.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Icon(icon, color: TechColors.statusGreen, size: 23),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(
+                      color: TechColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    )),
+                    const SizedBox(height: 5),
+                    Text(subtitle, style: const TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 12,
+                      height: 1.4,
+                    )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _invitationSummary({
+    required String organization,
+    required String role,
+    required String? employeeId,
+  }) {
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: TechColors.fieldGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('ACCESS SUMMARY', style: TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            fontFamily: 'monospace',
+          )),
+          const SizedBox(height: 12),
+          _summaryRow(Icons.apartment_rounded, 'Organization', organization),
+          const SizedBox(height: 10),
+          _summaryRow(Icons.verified_user_outlined, 'Assigned role', role),
+          if (employeeId != null && employeeId.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _summaryRow(Icons.badge_outlined, 'Employee ID', employeeId),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: TechColors.statusGreen, size: 18),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 94,
+          child: Text(label, style: const TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+          )),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(value, style: const TextStyle(
+          color: TechColors.textPrimary,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ))),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final invitations = (widget.state['pending_invitations'] is List)
@@ -98,12 +211,23 @@ class _OrganizationOnboardingScreenState
     return AuthGlassScaffold(
       title: 'EMPLOYEE / ACCESS',
       subtitle: 'Your authenticated identity must be approved by an organization.',
+      wideContent: true,
       children: [
+        _accessHeader(
+          title: primary == null ? 'Your workspace access' : 'You’re invited to join',
+          subtitle: primary == null
+              ? 'Your organization will appear here when access is approved.'
+              : 'Complete your employee onboarding to access $displayOrganization.',
+          icon: primary == null ? Icons.hourglass_top_rounded : Icons.apartment_rounded,
+        ),
+        const SizedBox(height: 14),
         if (primary != null) ...[
-          AuthGlassMessage(
-            text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access the organization workspace. Role: $role"
-                "${employeeId == null ? '' : ' · Employee ID: $employeeId'}",
-          ),          const SizedBox(height: 14),
+          _invitationSummary(
+            organization: displayOrganization,
+            role: role,
+            employeeId: employeeId,
+          ),
+          const SizedBox(height: 14),
           GlassButton.custom(
             onTap: _busy ? () {} : () => _acceptInvitation(primary),
             enabled: !_busy,
@@ -127,6 +251,12 @@ class _OrganizationOnboardingScreenState
             ),
           ),
         ] else ...[
+          _invitationSummary(
+            organization: 'Approval pending',
+            role: 'Not assigned yet',
+            employeeId: null,
+          ),
+          const SizedBox(height: 10),
           const AuthGlassMessage(
             text:
                 'This account is awaiting organization approval. Employees do not enter workspace IDs or create organization relationships themselves.',

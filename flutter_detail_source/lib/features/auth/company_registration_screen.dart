@@ -786,38 +786,86 @@ class _CompanyRegistrationScreenState
 
   Widget _stepIndicator() {
     const labels = ['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW'];
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: List.generate(labels.length, (index) {
-        final active = index == _step;
-        final complete = index < _step;
-        return GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.minimal,
-          settings: LiquidGlassSettings(
-            thickness: 10,
-            blur: 4,
-            glassColor: active
-                ? const Color(0x433DDC97)
-                : const Color(0x17FFFFFF),
-            refractiveIndex: 1.05,
+    final progress = (_step + 1) / labels.length;
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: TechColors.fieldGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.apartment_rounded, color: TechColors.statusGreen, size: 20),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  labels[_step],
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                'STEP ${_step + 1} OF ${labels.length}',
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
           ),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-          child: Text(
-            '${index + 1}  ${labels[index]}${complete ? '  ✓' : ''}',
-            style: TextStyle(
-              color: active || complete
-                  ? TechColors.textPrimary
-                  : TechColors.textMuted,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: Colors.white.withValues(alpha: 0.10),
+              valueColor: const AlwaysStoppedAnimation<Color>(TechColors.statusGreen),
             ),
           ),
-        );
-      }),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(labels.length, (index) {
+              final active = index == _step;
+              final complete = index < _step;
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: active
+                      ? TechColors.statusGreen.withValues(alpha: 0.12)
+                      : Colors.white.withValues(alpha: 0.035),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: active || complete
+                        ? TechColors.statusGreen.withValues(alpha: 0.48)
+                        : Colors.white.withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Text(
+                  '${complete ? '✓  ' : '${index + 1}. '}${labels[index]}',
+                  style: TextStyle(
+                    color: active || complete
+                        ? TechColors.textPrimary
+                        : TechColors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 
