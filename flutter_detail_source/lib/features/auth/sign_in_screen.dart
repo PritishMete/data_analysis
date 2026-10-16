@@ -130,6 +130,7 @@ class _SignInScreenState extends State<SignInScreen> {
     return AuthGlassScaffold(
       title: 'Sign in',
       subtitle: 'Access your InsightFlow workspace securely.',
+      brandedLayout: true,
       children: [
         const AuthGlassFieldLabel('Email'),
         GlassTextField(
