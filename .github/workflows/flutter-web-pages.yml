@@ -8,6 +8,12 @@ on:
     paths:
       - 'flutter_detail_source/**'
       - '.github/workflows/flutter-web-pages.yml'
+  pull_request:
+    branches:
+      - feature/data-workspace
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/flutter-web-pages.yml'
   workflow_dispatch:
 
 permissions:
