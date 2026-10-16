@@ -51,7 +51,7 @@ DEFAULT_ROLES = {
     "external_viewer": {"data.view","history.view","organization.view"},
     # Ordinary employees can work with authorized copies, but cannot manage users,
     # upload or mutate the protected original dataset, or administer permissions.
-    "employee": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
+    "employee": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","dataset.create_working_copy","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "data_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "senior_data_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "business_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
