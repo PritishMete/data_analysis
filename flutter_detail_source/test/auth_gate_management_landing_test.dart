@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('active members use the role-aware management entry', () {
-    final source =
-        File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    final source = File('lib/features/auth/auth_gate.dart').readAsStringSync();
     final start = source.indexOf(
       'case InsightFlowOnboardingState.activeMember:',
     );
@@ -41,13 +40,9 @@ void main() {
   );
 
   test('shell state is keyed to the authenticated user and workspace', () {
-    final source =
-        File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    final source = File('lib/features/auth/auth_gate.dart').readAsStringSync();
 
-    expect(
-      source,
-      contains(r"ValueKey('$userId:${widget.workspaceId}')"),
-    );
+    expect(source, contains(r"ValueKey('$userId:${widget.workspaceId}')"));
     expect(source, contains('ManagementShell(key: shellKey)'));
     expect(source, contains('EmployeeManagementShell(key: shellKey)'));
   });
