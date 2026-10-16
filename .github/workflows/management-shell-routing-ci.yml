@@ -39,10 +39,6 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
-      - name: Diagnose Dart formatter output
-        run: |
-          dart format test/auth_gate_management_landing_test.dart
-          git --no-pager diff -- test/auth_gate_management_landing_test.dart
       - name: Check Dart formatting for focused tests
         run: dart format --output=none --set-exit-if-changed test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
       - name: Test management shell routing
