@@ -363,7 +363,6 @@ class _EmployeeProfileOnboardingScreenState
 
     return AuthGlassScaffold(
       wideContent: true,
-      brandedLayout: true,
       title: 'INVITATION / PROFILE',
       subtitle: 'Complete your InsightFlow profile to finish joining your team.',
       children: [
