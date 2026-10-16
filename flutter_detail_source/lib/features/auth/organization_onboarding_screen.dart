@@ -217,7 +217,7 @@ class _OrganizationOnboardingScreenState
           title: primary == null ? 'Your workspace access' : 'You’re invited to join',
           subtitle: primary == null
               ? 'Your organization will appear here when access is approved.'
-              : displayOrganization,
+              : 'Complete your employee onboarding to access $displayOrganization.',
           icon: primary == null ? Icons.hourglass_top_rounded : Icons.apartment_rounded,
         ),
         const SizedBox(height: 14),
