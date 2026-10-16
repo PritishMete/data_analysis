@@ -241,7 +241,7 @@ class _AuthBrandPanel extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: TechColors.panelGlass,
+              color: TechColors.panelBg.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: kAuthAccent.withValues(alpha: 0.22)),
             ),
