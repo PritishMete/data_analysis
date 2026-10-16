@@ -34,6 +34,7 @@ ROLE_LEVELS = {
     "data_architect": 20,
     "data_quality_analyst": 20,
     "data_governance_analyst": 20,
+    "employee": 20,
     "team_lead": 30,
     "manager": 40,
     "organization_owner": 50,
@@ -48,6 +49,9 @@ DEFAULT_ROLES = {
     "manager": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","worksheet.delete","operation.undo.own","history.view","users.manage","organization.view","membership.view","membership.manage","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy"},
     "team_lead": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","membership.view","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy"},
     "external_viewer": {"data.view","history.view","organization.view"},
+    # Ordinary employees can work with authorized copies, but cannot manage users,
+    # upload or mutate the protected original dataset, or administer permissions.
+    "employee": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "data_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "senior_data_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
     "business_analyst": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","working_copy.view","working_copy.modify","excel.mutate.working_copy"},
