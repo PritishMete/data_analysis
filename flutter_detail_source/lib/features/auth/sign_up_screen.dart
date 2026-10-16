@@ -90,6 +90,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return AuthGlassScaffold(
       title: 'Create account',
       subtitle: 'Set up your InsightFlow workspace access.',
+      brandedLayout: true,
       children: [
         const AuthGlassFieldLabel('Full name'),
         GlassTextField(
