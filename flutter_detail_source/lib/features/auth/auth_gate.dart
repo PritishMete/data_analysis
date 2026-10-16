@@ -525,6 +525,28 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       case InsightFlowOnboardingState.noMembership:
         authenticatedChild = const CompanyRegistrationScreen();
         break;
+      case InsightFlowOnboardingState.endpointMissing:
+        authenticatedChild = AuthGlassScaffold(
+          title: 'AUTH / BACKEND ROUTE MISSING',
+          subtitle: 'AUTHORIZATION DEPLOYMENT MISMATCH',
+          children: [
+            const AuthGlassMessage(
+              text:
+                  'The deployed backend does not expose the organization authorization endpoint. Your account and membership were not changed. Retry after the backend is deployed from the configured authorization branch.',
+              error: true,
+            ),
+            const SizedBox(height: 12),
+            GlassButton.custom(
+              onTap: _refresh,
+              width: double.infinity,
+              height: 44,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: 'Retry',
+              child: const Text('Retry'),
+            ),
+          ],
+        );
+        break;
       case InsightFlowOnboardingState.transientFailure:
         authenticatedChild = AuthGlassScaffold(
           title: 'AUTH / WORKSPACE LOOKUP',
@@ -545,6 +567,9 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
             ),
           ],
         );
+        break;
+      case InsightFlowOnboardingState.unauthenticated:
+        authenticatedChild = const SignInScreen();
         break;
       case InsightFlowOnboardingState.authoritativeDenial:
         authenticatedChild = AuthGlassScaffold(
