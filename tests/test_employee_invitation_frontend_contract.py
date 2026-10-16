@@ -9,9 +9,12 @@ AUTH = ROOT / "flutter_detail_source/lib/core/auth/supabase_auth_service.dart"
 
 def test_password_setup_has_bounded_auth_backend_and_acceptance_requests():
     source = PASSWORD.read_text(encoding="utf-8")
-    assert "setPassword(\n        password,\n        timeout: const Duration(seconds: 10)," in source
+    assert "InsightFlowSupabaseAuthService.signUp(" in source
+    assert "emailRedirectTo: redirect" in source
+    assert "'token': invitationToken" in source
     assert ".timeout(const Duration(seconds: 10))" in source
     assert "/v1/authz/invitations/password-setup-complete" in source
+    assert "Uri.base.queryParameters['token']" in source
     assert "/v1/authz/invitations/accept" in source
     assert "await widget.onCompleted().timeout(const Duration(seconds: 10));" in source
 
@@ -49,3 +52,24 @@ def test_invitation_acceptance_backend_does_not_use_nullable_sql_parameter_for_o
     assert "AND (:org IS NULL OR organization_id=:org)" not in provider
     assert "if workspace_id:" in provider
     assert "organization_id=:org" in provider
+
+
+def test_invitation_link_is_validated_before_signup_and_keeps_token_in_redirect():
+    gate = (ROOT / "flutter_detail_source/lib/features/auth/auth_gate.dart").read_text(encoding="utf-8")
+    service = AUTH.read_text(encoding="utf-8")
+    provider = (ROOT / "firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    routes = (ROOT / "firebase_authz/routes.py").read_text(encoding="utf-8")
+    assert "Uri.base.queryParameters['token']" in gate
+    assert "/v1/authz/invitations/preview" in gate
+    assert "user != null && user.emailVerified" in gate
+    assert "an invalid token never grants workspace access" in gate
+    assert "String? emailRedirectTo" in service
+    assert "def get_invitation_by_token(token: str)" in provider
+    assert '@router.get("/invitations/preview")' in routes
+    assert "invite_user_by_email(" not in provider[provider.index("def create_invitation("):provider.index("def get_invitation_by_token(")]
+
+
+def test_invitation_signup_offers_existing_account_signin_path():
+    source = PASSWORD.read_text(encoding="utf-8")
+    assert "Already have an account? Sign in first" in source
+    assert "const SignInScreen()" in source
