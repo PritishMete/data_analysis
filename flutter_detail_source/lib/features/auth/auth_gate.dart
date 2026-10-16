@@ -323,9 +323,11 @@ class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
         ],
       );
     }
+    final userId = InsightFlowSupabaseAuthService.currentUser?.uid ?? 'unknown';
+    final shellKey = ValueKey('$userId:${widget.workspaceId}');
     return employeeCell
-        ? const EmployeeManagementShell()
-        : const ManagementShell();
+        ? EmployeeManagementShell(key: shellKey)
+        : ManagementShell(key: shellKey);
   }
 }
 
