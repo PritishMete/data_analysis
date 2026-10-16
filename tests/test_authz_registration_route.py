@@ -5,7 +5,7 @@ from firebase_authz import routes
 
 
 def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(

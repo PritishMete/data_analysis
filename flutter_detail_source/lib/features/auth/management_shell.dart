@@ -98,18 +98,8 @@ class _ManagementGlassDialog extends StatelessWidget {
 }
 
 
-typedef ManagementRequestOverride = Future<Map<String, dynamic>> Function(String path);
-
 class ManagementShell extends StatefulWidget {
-  const ManagementShell({
-    super.key,
-    this.initialSection = ManagementSection.overview,
-    this.requestOverride,
-  });
-
-  final ManagementSection initialSection;
-  final ManagementRequestOverride? requestOverride;
-
+  const ManagementShell({super.key});
   @override
   State<ManagementShell> createState() => _ManagementShellState();
 }
@@ -139,11 +129,7 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _isCurrentUserProfile = false;
 
   @override
-  void initState() {
-    super.initState();
-    section = widget.initialSection;
-    loadAll();
-  }
+  void initState() { super.initState(); loadAll(); }
 
   List<Map<String, dynamic>> maps(dynamic v) => v is List
       ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
@@ -184,9 +170,6 @@ class _ManagementShellState extends State<ManagementShell> {
     String method = 'GET',
     Map<String, dynamic>? body,
   }) async {
-    final override = widget.requestOverride;
-    if (override != null) return override(path);
-
     final session = await InsightFlowSupabaseAuthService.ensureSession(
       timeout: const Duration(seconds: 8),
     );
@@ -366,10 +349,10 @@ class _ManagementShellState extends State<ManagementShell> {
       _allowedSections().contains(value);
 
   String _roleWorkspaceTitle() =>
-      '${_uiRoleLabel().toUpperCase()} / MANAGEMENT';
+      _uiRoleLabel().toUpperCase() + ' / MANAGEMENT';
 
   String _roleWorkspaceSubtitle() =>
-      '${_uiScopeLabel()} management workspace';
+      _uiScopeLabel() + ' management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
@@ -1390,9 +1373,7 @@ class _ManagementShellState extends State<ManagementShell> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            // Keep the heading horizontal on tablet and desktop. Constrain the action
-            // chips so their intrinsic width cannot squeeze the heading to zero.
-            final compact = constraints.maxWidth < 1000;
+            final compact = constraints.maxWidth < 760;
             final controls = Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1426,18 +1407,8 @@ class _ManagementShellState extends State<ManagementShell> {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Expanded(
-                        flex: 2,
-                        child: _eyebrow('Organization structure'),
-                      ),
-                      const SizedBox(width: 12),
-                      Flexible(
-                        flex: 3,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: controls,
-                        ),
-                      ),
+                      Expanded(child: _eyebrow('Organization structure')),
+                      controls,
                     ],
                   );
           },
@@ -1678,18 +1649,16 @@ class _ManagementShellState extends State<ManagementShell> {
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    // Used in both a narrow Column and a desktop Wrap/SizedBox. Keep this
-    // widget self-sizing: Expanded is only valid as a child of a Flex, and
-    // caused the desktop People layout to fail when the viewport widened.
-    Widget metric(String label, int value, IconData icon) =>
-        _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
-          Icon(icon, size: 17, color: TechColors.borderActive),
-          const SizedBox(width: 9),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-            Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-          ])),
-        ]));
+    Widget metric(String label, int value, IconData icon) => Expanded(
+      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
+        Icon(icon, size: 17, color: TechColors.borderActive),
+        const SizedBox(width: 9),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
+        ])),
+      ])),
+    );
     Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
       final name = p['full_name']?.toString().trim() ?? '';
       final employeeId = p['employee_id']?.toString().trim() ?? '';
@@ -1705,7 +1674,7 @@ class _ManagementShellState extends State<ManagementShell> {
           employeeId.isNotEmpty &&
           a['employee_id']?.toString() == employeeId).firstOrNull ??
         (assignmentId.isNotEmpty ? p : null);
-      final cardContent = Column(
+      return _glassRow(padding: const EdgeInsets.all(14), child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1757,23 +1726,7 @@ class _ManagementShellState extends State<ManagementShell> {
             )),
           ],
         ],
-      );
-      // Desktop rows use an opaque navy surface so the animated background and
-      // glass refraction cannot wash out employee details on wide screens.
-      if (compact) {
-        return _glassRow(padding: const EdgeInsets.all(14), child: cardContent);
-      }
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: TechColors.panelBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: TechColors.borderActive.withValues(alpha: 0.22),
-          ),
-        ),
-        child: cardContent,
-      );
+      ));
     }
     return LayoutBuilder(builder: (context, constraints) {
       final narrow = constraints.maxWidth < 680;
@@ -1874,7 +1827,7 @@ class _ManagementShellState extends State<ManagementShell> {
               }), icon: const Icon(Icons.filter_alt_off)),
             ]),
             if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
-              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; selectedRole = null; }),
+              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
               child: const Text('Clear filters'),
             )),
           ]),
@@ -1898,7 +1851,7 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 5),
             const Text('Try changing your search or clearing the selected filters.',
               textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; selectedRole = null; }),
+            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
               child: const Text('Clear search and filters')),
           ])))
         else if (narrow)
@@ -1906,7 +1859,9 @@ class _ManagementShellState extends State<ManagementShell> {
             padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
           )).toList())
         else
-          Column(children: [
+          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
+            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+            child: Column(children: [
               Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                 child: Row(children: const [
                   Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
@@ -1921,6 +1876,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 child: personCard(p),
               )),
             ]),
+          ),
       ]);
     });
   }
@@ -2483,7 +2439,7 @@ class _ManagementShellState extends State<ManagementShell> {
         );
         if (approve == null) continue;
         await request(
-          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=$approve',
+          '/assignments/team-lead/requests/${item['request_id']}/decision?approve=${approve}',
           method: 'POST',
         );
         feedback(approve ? 'Team Lead request approved.' : 'Team Lead request rejected.');
@@ -3413,7 +3369,7 @@ class _ManagementShellState extends State<ManagementShell> {
         shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 820;
+            final compact = constraints.maxWidth < 700;
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3464,13 +3420,7 @@ class _ManagementShellState extends State<ManagementShell> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [identity, controls],
-                  ),
+                  Row(children: [identity, const Spacer(), controls]),
                   const SizedBox(height: 7),
                   workspace,
                 ],

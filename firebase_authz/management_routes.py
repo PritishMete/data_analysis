@@ -11,7 +11,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from .auth import AuthzError, AuthenticationRequired
+from .service import AuthzError, AuthenticationRequired
 from .supabase_auth import verify_supabase_access_token
 from .management_domain import (
     ManagementConflict,
@@ -44,12 +44,13 @@ def _token(value: str | None) -> str:
 
 
 def _claims(authorization: str | None) -> dict:
-    """Accept only verified Supabase Auth access tokens for management APIs."""
     try:
-        return verify_supabase_access_token(
-            _token(authorization),
-            require_email_verified=True,
-        )
+        token = _token(authorization)
+        provider = os.environ.get("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
+        if provider == "supabase":
+            return verify_supabase_access_token(token, require_email_verified=True)
+        from .service import verify_id_token, require_email_verified
+        return require_email_verified(verify_id_token(token))
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc)) from exc
 

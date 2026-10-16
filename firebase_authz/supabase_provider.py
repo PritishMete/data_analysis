@@ -13,11 +13,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
-from .auth import AuthzError
-from .profile_domain import ProfileFieldError
+from .service import AuthzError
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import normalize_phone_submission, validate_profile_fields
@@ -161,13 +159,19 @@ def register_organization(
     # require Supabase phone authentication or phone verification during onboarding.
     confirmed_phone_at = None
 
-    # This function receives claims only after Supabase Auth verification.
-    # The stable Supabase Auth UUID is the sole identity key; JWT metadata
-    # cannot select a different authentication provider.
-    provider = "supabase"
-    subject = str(claims.get("sub") or "").strip()
-    if not subject or subject != uid:
-        raise AuthzError("Authenticated Supabase identity is required.")
+    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
+    provider = str(
+        claims.get("provider")
+        or firebase.get("sign_in_provider")
+        or "firebase"
+    ).strip().lower()
+    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
+    subjects = identities.get(provider)
+    subject = (
+        str(subjects[0])
+        if isinstance(subjects, list) and subjects
+        else str(claims.get("sub") or uid)
+    )
 
     principal_id = _id("prn")
     organization_id = _id("org")
@@ -177,14 +181,6 @@ def register_organization(
 
     registration_diagnostics.stage("DB_TRANSACTION_START")
     with SessionLocal.begin() as db:
-        # Serialize organization bootstrap for the same Supabase subject.
-        # The transaction-scoped lock closes the race between identity lookup
-        # and insertion; the losing request then observes the active membership
-        # and returns a domain conflict instead of leaking a uniqueness error.
-        db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
-            {"lock_key": f"insightflow-registration:{subject}"},
-        )
         existing = db.execute(
             text(
                 "SELECT principal_id FROM identity_bindings "
@@ -202,12 +198,13 @@ def register_organization(
             )
             db.execute(
                 text(
-                    """INSERT INTO identity_bindings(provider, provider_subject, principal_id)
-                    VALUES (:provider, :subject, :principal)"""
+                    """INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
+                    VALUES (:provider, :subject, :uid, :principal)"""
                 ),
                 {
                     "provider": provider,
                     "subject": subject,
+                    "uid": uid,
                     "principal": principal_id,
                 },
             )
@@ -229,37 +226,6 @@ def register_organization(
                 "Open the existing organization instead of registering another one."
             )
         registration_diagnostics.stage("ACTIVE_MEMBERSHIP_CHECK_COMPLETE")
-
-        duplicate_phone = db.execute(
-            text("""SELECT 1 FROM organization_member_profiles
-                    WHERE phone_e164=:phone AND principal_id<>:principal
-                    LIMIT 1"""),
-            {"phone": profile_phone, "principal": principal_id},
-        ).scalar_one_or_none()
-        if duplicate_phone:
-            raise ProfileFieldError(
-                "phone",
-                "This phone number is already registered. Please use a different number.",
-            )
-
-        duplicate_id = db.execute(
-            text("""SELECT 1 FROM organization_member_profiles
-                    WHERE id_proof_type=:proof_type
-                      AND regexp_replace(upper(id_proof_number), '[^A-Z0-9]', '', 'g')
-                          =regexp_replace(upper(:proof_number), '[^A-Z0-9]', '', 'g')
-                      AND principal_id<>:principal
-                    LIMIT 1"""),
-            {
-                "proof_type": proof_type,
-                "proof_number": proof_number,
-                "principal": principal_id,
-            },
-        ).scalar_one_or_none()
-        if duplicate_id:
-            raise ProfileFieldError(
-                "id_proof_number",
-                "This ID proof number is already registered. Please check the number or use the correct document.",
-            )
 
         db.execute(
             text(
@@ -346,47 +312,39 @@ def register_organization(
         email_verified_at = _auth_timestamp(claims.get("email_confirmed_at"))
         if email_verified_at is None:
             email_verified_at = datetime.now(timezone.utc)
-        try:
-            db.execute(
-                text(
-                    """INSERT INTO organization_member_profiles
-                    (organization_id, principal_id, full_name, email, email_verified_at,
-                     phone_e164, phone_verified_at, address_line1, address_line2,
-                     city, state, state_code, postal_code, country, country_code,
-                     id_proof_type, id_proof_number, id_proof_provided_at)
-                    VALUES
-                    (:organization, :principal, :full_name, :email, :email_verified_at,
-                     :phone, :phone_verified_at, :address_line1, :address_line2,
-                     :city, :state, :state_code, :postal_code, :country, :country_code,
-                     :id_proof_type, :id_proof_number, now())"""
-                ),
-                {
-                    "organization": organization_id,
-                    "principal": principal_id,
-                    "full_name": profile_name,
-                    "email": authoritative_email,
-                    "email_verified_at": email_verified_at,
-                    "phone": profile_phone,
-                    "phone_verified_at": confirmed_phone_at,
-                    "address_line1": address1,
-                    "address_line2": address2 or None,
-                    "city": profile_city,
-                    "state": profile_state,
-                    "state_code": profile_state_code,
-                    "postal_code": profile_postal,
-                    "country": profile_country,
-                    "country_code": profile_country_code,
-                    "id_proof_type": proof_type,
-                    "id_proof_number": proof_number,
-                },
-            )
-        except IntegrityError as exc:
-            constraint = str(getattr(getattr(exc.orig, "diag", None), "constraint_name", "") or "")
-            if constraint == "uq_member_profiles_phone_e164_global":
-                raise ProfileFieldError("phone", "This phone number is already registered. Please use a different number.") from exc
-            if constraint == "uq_member_profiles_id_proof_type_normalized_global":
-                raise ProfileFieldError("id_proof_number", "This ID proof number is already registered. Please check the number or use the correct document.") from exc
-            raise
+        db.execute(
+            text(
+                """INSERT INTO organization_member_profiles
+                (organization_id, principal_id, full_name, email, email_verified_at,
+                 phone_e164, phone_verified_at, address_line1, address_line2,
+                 city, state, state_code, postal_code, country, country_code,
+                 id_proof_type, id_proof_number, id_proof_provided_at)
+                VALUES
+                (:organization, :principal, :full_name, :email, :email_verified_at,
+                 :phone, :phone_verified_at, :address_line1, :address_line2,
+                 :city, :state, :state_code, :postal_code, :country, :country_code,
+                 :id_proof_type, :id_proof_number, now())"""
+            ),
+            {
+                "organization": organization_id,
+                "principal": principal_id,
+                "full_name": profile_name,
+                "email": authoritative_email,
+                "email_verified_at": email_verified_at,
+                "phone": profile_phone,
+                "phone_verified_at": confirmed_phone_at,
+                "address_line1": address1,
+                "address_line2": address2 or None,
+                "city": profile_city,
+                "state": profile_state,
+                "state_code": profile_state_code,
+                "postal_code": profile_postal,
+                "country": profile_country,
+                "country_code": profile_country_code,
+                "id_proof_type": proof_type,
+                "id_proof_number": proof_number,
+            },
+        )
         registration_diagnostics.stage("PROFILE_CREATED")
 
         db.execute(
@@ -449,11 +407,13 @@ def register_organization(
     }
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    """Return only the stable subject from an already verified Supabase JWT."""
-    subject = str(claims.get("sub") or "").strip()
-    if not subject:
-        raise AuthzError("Authenticated Supabase identity is required.")
-    return "supabase", subject
+    uid = str(claims.get("uid") or claims.get("sub") or "").strip()
+    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
+    provider = str(claims.get("provider") or firebase.get("sign_in_provider") or "firebase").strip().lower()
+    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
+    values = identities.get(provider)
+    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or uid)
+    return provider, subject
 
 
 def _principal_for_claims(db, claims: dict[str, Any], organization_id: str | None = None):
@@ -462,7 +422,8 @@ def _principal_for_claims(db, claims: dict[str, Any], organization_id: str | Non
     row = db.execute(text("""SELECT b.principal_id, m.employee_id, m.status
         FROM identity_bindings b
         LEFT JOIN organization_members m ON m.principal_id=b.principal_id
-        WHERE b.provider=:provider AND b.provider_subject=:subject
+        WHERE ((b.provider=:provider AND b.provider_subject=:subject)
+               OR (b.provider='firebase' AND b.firebase_uid=:uid))
           AND (CAST(:org AS TEXT) IS NULL OR m.organization_id=CAST(:org AS TEXT))
           AND b.status='active'
         ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END"""),
@@ -645,74 +606,6 @@ def pending_invitations(claims: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def revoke_invitation(claims: dict[str, Any], workspace_id: str, invitation_id: str) -> dict[str, Any]:
-    """Revoke a pending invitation within the actor's organization/branch scope."""
-    workspace_id = str(workspace_id or "").strip()
-    invitation_id = str(invitation_id or "").strip()
-    if not workspace_id or not invitation_id:
-        raise ValueError("Workspace and invitation IDs are required.")
-
-    with SessionLocal.begin() as db:
-        actor = _principal_for_claims(db, claims, workspace_id)
-        if not actor or actor["status"] != "active":
-            raise AuthzError("Workspace authorization denied.")
-        actor_roles = set(db.execute(text("""
-            SELECT role_id FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal
-        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
-        if not actor_roles.intersection({"organization_owner", "branch_head"}):
-            raise AuthzError("Only an Organization Owner or Branch Head can revoke invitations.")
-
-        invitation = db.execute(text("""
-            SELECT invitation_id, organization_id, email, status, expires_at, location_id
-            FROM invitations
-            WHERE invitation_id=:invitation AND organization_id=:org
-            FOR UPDATE
-        """), {"invitation": invitation_id, "org": workspace_id}).mappings().first()
-        if not invitation or invitation["status"] != "invited":
-            raise AuthzError("Invitation is no longer active.")
-        if invitation["expires_at"] is not None and invitation["expires_at"] <= datetime.now(timezone.utc):
-            db.execute(text("""
-                UPDATE invitations SET status='expired'
-                WHERE invitation_id=:invitation AND organization_id=:org AND status='invited'
-            """), {"invitation": invitation_id, "org": workspace_id})
-            raise AuthzError("Invitation has expired.")
-
-        location_id = str(invitation.get("location_id") or "").strip()
-        if "organization_owner" not in actor_roles:
-            scoped = db.execute(text("""
-                SELECT 1 FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:principal
-                  AND location_id=:location AND status='active'
-                LIMIT 1
-            """), {
-                "org": workspace_id,
-                "principal": actor["principal_id"],
-                "location": location_id,
-            }).scalar_one_or_none() if location_id else None
-            if scoped is None:
-                raise AuthzError("Invitation is outside your branch scope.")
-
-        db.execute(text("""
-            UPDATE invitations
-            SET status='revoked'
-            WHERE invitation_id=:invitation AND organization_id=:org AND status='invited'
-        """), {"invitation": invitation_id, "org": workspace_id})
-        import json
-        db.execute(text("""
-            INSERT INTO audit_events
-              (event_id, organization_id, actor_principal_id, action, outcome, metadata)
-            VALUES (:event, :org, :actor, 'invitation.revoked', 'succeeded', CAST(:metadata AS jsonb))
-        """), {
-            "event": _id("evt"),
-            "org": workspace_id,
-            "actor": actor["principal_id"],
-            "metadata": json.dumps({"invitation_id": invitation_id, "email": invitation["email"]}),
-        })
-
-    return {"success": True, "invitation_id": invitation_id, "status": "revoked"}
-
-
 def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitation_id: str) -> dict[str, Any]:
     provider, subject = _identity(claims)
     uid = str(claims.get("uid") or claims.get("sub") or "").strip()
@@ -788,9 +681,9 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
         else:
             principal_id = _id("prn")
             db.execute(text("INSERT INTO principals(principal_id) VALUES (:id)"), {"id": principal_id})
-            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, principal_id)
-                VALUES (:provider,:subject,:principal)"""),
-                       {"provider": provider, "subject": subject, "principal": principal_id})
+            db.execute(text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
+                VALUES (:provider,:subject,:uid,:principal)"""),
+                       {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
 
         existing_member = db.execute(
             text("""SELECT employee_id FROM organization_members
@@ -831,7 +724,7 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
         raise AuthzError("Verified email is required.")
     with SessionLocal.begin() as db:
         invitation = db.execute(
-            text("""SELECT invitation_id, organization_id, email, status, expires_at, auth_user_id
+            text("""SELECT invitation_id, organization_id, email, status, expires_at
                     FROM invitations WHERE invitation_id=:id FOR UPDATE"""),
             {"id": invitation_id},
         ).mappings().first()
@@ -841,10 +734,6 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
             raise AuthzError("Invitation has expired.")
         if invitation["email"].lower() != email:
             raise AuthzError("Invitation identity does not match the authenticated email.")
-        authenticated_uid = str(claims.get("uid") or claims.get("sub") or "").strip()
-        invited_auth_user_id = str(invitation.get("auth_user_id") or "").strip()
-        if invited_auth_user_id and invited_auth_user_id != authenticated_uid:
-            raise AuthzError("Invitation identity does not match the authenticated account.")
         db.execute(
             text("""UPDATE invitations SET password_setup_at=now()
                     WHERE invitation_id=:id"""),
@@ -913,8 +802,7 @@ def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid:
 def _principal_for_uid(db, uid: str, organization_id: str):
     return db.execute(text("""SELECT b.principal_id, m.status FROM identity_bindings b
         JOIN organization_members m ON m.principal_id=b.principal_id
-        WHERE b.provider='supabase' AND b.provider_subject=:uid
-          AND m.organization_id=:org"""),
+        WHERE b.firebase_uid=:uid AND m.organization_id=:org"""),
                       {"uid": uid, "org": organization_id}).mappings().first()
 
 
@@ -1121,7 +1009,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             member_scope = "m.principal_id=:actor"
             member_params = {"org": org, "actor": actor}
 
-        members = db.execute(text(f"""SELECT b.provider_subject AS uid, m.employee_id, m.status,
+        members = db.execute(text(f"""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
             COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids
             FROM organization_members m
             JOIN identity_bindings b ON b.principal_id=m.principal_id
@@ -1130,7 +1018,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             LEFT JOIN organizational_assignments oa
               ON oa.organization_id=m.organization_id AND oa.principal_id=m.principal_id AND oa.status='active'
             WHERE m.organization_id=:org AND {member_scope}
-            GROUP BY b.provider_subject,m.employee_id,m.status"""), member_params).mappings().all()
+            GROUP BY b.firebase_uid,m.employee_id,m.status"""), member_params).mappings().all()
 
         if organization_wide:
             dataset_scope = "TRUE"
@@ -1200,7 +1088,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             )"""
         else:
             approved_scope = "a.principal_id=:actor"
-        approved = db.execute(text(f"""SELECT b.provider_subject AS uid, a.employee_id, a.status
+        approved = db.execute(text(f"""SELECT b.firebase_uid AS uid, a.employee_id, a.status
             FROM approved_employees a JOIN identity_bindings b ON b.principal_id=a.principal_id
             WHERE a.organization_id=:org AND a.status='active' AND {approved_scope}"""),
             {"org": org, "actor": actor}).mappings().all()
@@ -1354,8 +1242,7 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
     with SessionLocal.begin() as db:
         memberships = db.execute(text("""SELECT m.organization_id, m.principal_id
             FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
-            WHERE b.provider='supabase' AND b.provider_subject=:uid
-              AND m.status IN ('active','approved','suspended')"""),
+            WHERE b.firebase_uid=:uid AND m.status IN ('active','approved','suspended')"""),
                                   {"uid": uid}).mappings().all()
         affected = []
         for membership in memberships:
@@ -1385,7 +1272,7 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
                        {"event": _id("evt"), "org": org, "principal": principal,
                         "metadata": json.dumps({"membership_revoked": True, "authorization_state_revoked": True})})
         db.execute(text("""UPDATE identity_bindings SET status='inactive', updated_at=now()
-            WHERE provider='supabase' AND provider_subject=:uid"""), {"uid": uid})
+            WHERE firebase_uid=:uid"""), {"uid": uid})
     return {"revoked_workspaces": affected}
 
 
@@ -1526,7 +1413,8 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
     with SessionLocal.begin() as db:
         target = db.execute(text("""SELECT b.principal_id FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE b.provider='supabase' AND b.provider_subject=:uid
+            WHERE ((b.provider='supabase' AND b.provider_subject=:uid)
+                OR (b.provider='firebase' AND b.firebase_uid=:uid))
               AND m.organization_id=:org AND m.status='active'
               AND b.status='active'"""),
                             {"uid": target_uid, "org": organization_id}).scalar_one_or_none()
@@ -1558,7 +1446,8 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
         owner = db.execute(text("""SELECT b.principal_id
             FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE b.provider=:provider AND b.provider_subject=:owner_uid
+            WHERE ((b.provider=:provider AND b.provider_subject=:owner_uid)
+                OR (b.provider='firebase' AND b.firebase_uid=:owner_uid))
               AND m.organization_id=:org AND m.workspace_id=:workspace
               AND m.status='active' AND b.status='active'"""),
                            {"provider": provider, "owner_uid": str(owner_uid),
@@ -1732,15 +1621,27 @@ def audit_dataset_event(
     workspace_id: str, actor_uid: str, action: str, outcome: str,
     *, metadata: dict[str, Any] | None = None,
 ) -> None:
+    provider_mode = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
     with SessionLocal.begin() as db:
-        context = authorization_context(
-            {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"},
-            workspace_id,
-        )
-        if not context.get("workspace_authorized"):
-            return
-        organization_id = str(context["organization_id"])
-        principal_id = str(context["principal_id"])
+        if provider_mode == "supabase":
+            context = authorization_context(
+                {"uid": actor_uid, "sub": actor_uid, "provider": "supabase"},
+                workspace_id,
+            )
+            if not context.get("workspace_authorized"):
+                return
+            organization_id = str(context["organization_id"])
+            principal_id = str(context["principal_id"])
+        else:
+            actor = _principal_for_claims(
+                db,
+                {"uid": actor_uid, "sub": actor_uid, "provider": "firebase"},
+                workspace_id,
+            )
+            if not actor:
+                return
+            organization_id = str(workspace_id)
+            principal_id = str(actor["principal_id"])
         db.execute(text("""INSERT INTO audit_events
             (event_id, organization_id, actor_principal_id, action, outcome, metadata)
             VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),

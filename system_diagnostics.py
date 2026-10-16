@@ -250,9 +250,5 @@ def install_build_info_timestamp_compatibility() -> None:
     _BUILD_INFO_MIDDLEWARE_INSTALLED = True
 
 
-# Do not run import-based service checks while importing this module. The
-# report-generation check imports ai_analyst and the Google ADK stack, which
-# can delay Uvicorn's socket bind beyond Render's port-scan startup window.
-# /v1/system/diagnostics performs these checks on demand after the server is
-# listening. Keep only the lightweight middleware registration at import time.
+run_startup_self_check()
 install_build_info_timestamp_compatibility()

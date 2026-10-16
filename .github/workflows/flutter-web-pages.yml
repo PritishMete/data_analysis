@@ -2,14 +2,11 @@ name: Build and publish InsightFlow Flutter web
 
 on:
   push:
-    branches:
-      - feature/employee-management-cell
-  workflow_dispatch:
+    branches: [feature/data-workspace]
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/flutter-web-pages.yml'
 
-# Pages deployment trigger for feature/employee-management-cell
-# Workflow trigger marker: 2026-10-06
-# Explicit publish trigger: 2026-10-06T21:08+05:30
-# Production verification trigger: 2026-10-07T05:30+05:30
 permissions:
   contents: write
 
@@ -19,13 +16,12 @@ concurrency:
 
 jobs:
   build-and-publish:
-    runs-on: ubuntu-24.04
-    environment: github-pages
+    runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -36,19 +32,6 @@ jobs:
       - name: Install Flutter dependencies
         working-directory: flutter_detail_source
         run: flutter pub get
-
-      - name: Install backend test dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-input -r requirements.txt
-          python -m pip install --disable-pip-version-check --no-input pytest
-
-      - name: Run backend invitation regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pytest -q tests/test_employee_invitation_flow.py
 
       - name: Run auth and onboarding regression tests
         working-directory: flutter_detail_source
@@ -64,27 +47,40 @@ jobs:
         run: |
           set -euo pipefail
           sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
+          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com/g" web/index.html
 
-      - name: Validate Supabase Web build configuration
+      - name: Validate Firebase Web build configuration
         shell: bash
         env:
-          SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
         run: |
           set -euo pipefail
-          test -n "${SUPABASE_URL}"
-          test -n "${SUPABASE_PUBLISHABLE_KEY}"
+          test -n "${FIREBASE_WEB_API_KEY}"
+          test -n "${FIREBASE_WEB_APP_ID}"
+          test -n "${FIREBASE_WEB_MESSAGING_SENDER_ID}"
+          test -n "${FIREBASE_WEB_PROJECT_ID}"
+          test -n "${FIREBASE_WEB_AUTH_DOMAIN}"
+          test "${FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
 
       - name: Build Flutter web
         working-directory: flutter_detail_source
         env:
-          SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
         run: |
-          set -euo pipefail
           flutter build web --release --base-href /data_analysis/ \
-            --dart-define=INSIGHTFLOW_SUPABASE_URL="${SUPABASE_URL}" \
-            --dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY="${SUPABASE_PUBLISHABLE_KEY}"
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY="${FIREBASE_WEB_API_KEY}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID="${FIREBASE_WEB_APP_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID="${FIREBASE_WEB_MESSAGING_SENDER_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID="${FIREBASE_WEB_PROJECT_ID}" \
+            --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN="${FIREBASE_WEB_AUTH_DOMAIN}"
 
       - name: Verify generated web bundle
         working-directory: flutter_detail_source

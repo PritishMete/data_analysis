@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .schema import ROLE_LEVELS
-from .auth import AuthzError
+from .service import AuthzError
 
 
 class ManagementConflict(AuthzError):
@@ -33,11 +33,16 @@ def _id(prefix: str) -> str:
 
 
 def _identity(claims: dict[str, Any]) -> tuple[str, str]:
-    """Resolve identity only from the already-verified Supabase Auth subject."""
-    subject = str(claims.get("sub") or "").strip()
-    if not subject:
-        raise AuthzError("Authenticated Supabase identity is required.")
-    return "supabase", subject
+    uid = str(claims.get("uid") or claims.get("sub") or "").strip()
+    provider = str(claims.get("provider") or "").strip().lower()
+    if provider:
+        return provider, str(claims.get("sub") or uid)
+    firebase = claims.get("firebase") if isinstance(claims.get("firebase"), dict) else {}
+    provider = str(firebase.get("sign_in_provider") or "firebase").strip().lower()
+    identities = firebase.get("identities") if isinstance(firebase.get("identities"), dict) else {}
+    values = identities.get(provider)
+    subject = str(values[0]) if isinstance(values, list) and values else str(claims.get("sub") or uid)
+    return provider, subject
 
 
 def _actor(db, claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
@@ -98,34 +103,6 @@ def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
         "org": actor["organization_id"],
         "principal": actor["principal_id"],
     }).mappings().all()
-    # Organization ownership is a membership-level authority, not a
-    # branch assignment. An owner may also have a Branch Head assignment for
-    # the initial branch, but that must not narrow the owner's organization
-    # scope to that one branch.
-    is_organization_owner = db.execute(text("""
-        SELECT 1
-        FROM organization_members m
-        JOIN member_roles mr
-          ON mr.organization_id=m.organization_id
-         AND mr.principal_id=m.principal_id
-        WHERE m.organization_id=:org
-          AND m.principal_id=:principal
-          AND m.status='active'
-          AND mr.role_id='organization_owner'
-        LIMIT 1
-    """), {
-        "org": actor["organization_id"],
-        "principal": actor["principal_id"],
-    }).scalar_one_or_none()
-    if is_organization_owner:
-        return {
-            "role_id": "organization_owner",
-            "location_id": None,
-            "location_ids": [],
-            "section_id": None,
-            "section_ids": [],
-            "organization_wide": True,
-        }
     if not rows:
         return {
             "role_id": None,
@@ -387,7 +364,6 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
         "branch_head": dict(branch_head) if branch_head else None,
         "manager": dict(manager) if manager else None,
         "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
-        "employee_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
         "team_lead_count": counts.get("team_lead", 0),
         "section_count": int(section_count),
     }
@@ -525,7 +501,6 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "total_people": sum(counts.values()),
                 "branch_head_count": counts.get("branch_head", 0),
                 "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
-                "employee_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
                 "manager_count": counts.get("manager", 0),
                 "team_lead_count": counts.get("team_lead", 0),
                 "role_counts": counts,
@@ -792,7 +767,7 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
             clauses.append("oa.status=:status")
             params["status"] = status
         rows = db.execute(text(f"""
-            SELECT oa.assignment_id, oa.organization_id, oa.principal_id, m.employee_id, oa.role_id,
+            SELECT oa.assignment_id, oa.principal_id, m.employee_id, oa.role_id,
                    oa.location_id, l.name AS location_name,
                    oa.section_id, s.name AS section_name,
                    oa.reports_to_assignment_id,
@@ -1186,11 +1161,7 @@ def set_reporting_relationship(claims: dict[str, Any], workspace_id: str,
             UPDATE organizational_assignments
             SET reports_to_assignment_id=:parent, updated_at=now()
             WHERE organization_id=:org AND assignment_id=:assignment
-        """), {
-            "org": org,
-            "parent": parent["assignment_id"] if parent else None,
-            "assignment": assignment_id,
-        })
+        """), {"parent": parent["assignment_id"] if parent else None, "assignment": assignment_id})
         _audit(db, org, actor["principal_id"], "management.assignment.changed", "succeeded", {
             "assignment_id": assignment_id,
             "reports_to_assignment_id": parent["assignment_id"] if parent else None,

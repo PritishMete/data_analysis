@@ -9,6 +9,7 @@ scikit-learn
 pydantic
 google-generativeai
 google-adk
+firebase-admin>=6.9.0
 python-dotenv
 duckdb
 sqlalchemy>=2.0

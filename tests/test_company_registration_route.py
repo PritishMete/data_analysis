@@ -12,24 +12,13 @@ def test_company_registration_uses_authoritative_bootstrap_route():
 
 def test_founder_registration_requires_bearer_and_registration_fields(monkeypatch):
     from firebase_authz import routes
-    from firebase_authz import supabase_provider
     monkeypatch.setattr(
-        "firebase_authz.supabase_auth.verify_supabase_access_token",
-        lambda token, require_email_verified=True: {
-            "uid": "verified-user",
-            "sub": "verified-user",
-            "email": "owner@example.com",
-            "email_verified": True,
-            "email_confirmed_at": "2026-10-01T00:00:00Z",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_provider,
-        "register_organization",
-        lambda claims, organization_name, branch_name, branch_identifier, **kwargs: {
+        routes,
+        "bootstrap_owner",
+        lambda token, organization_name, allow_any_authenticated=False: {
             "organization_id": "org_opaque",
             "workspace_id": "org_opaque",
-            "owner_uid": claims["sub"],
+            "owner_uid": "verified-user",
         },
     )
     from main import app
@@ -38,24 +27,8 @@ def test_founder_registration_requires_bearer_and_registration_fields(monkeypatc
     client = TestClient(app)
     response = client.post(
         "/v1/authz/organizations/register",
-        json={
-            "organization_name": "ABC",
-            "branch_name": "Main",
-            "branch_identifier": "main",
-            "full_name": "Verified User",
-            "phone": "+919876543210",
-            "phone_country_calling_code": "+91",
-            "phone_national_number": "9876543210",
-            "address_line1": "1 Test Way",
-            "state": "West Bengal",
-            "state_code": "IN-WB",
-            "postal_code": "700001",
-            "country": "India",
-            "country_code": "IN",
-            "id_proof_type": "passport",
-            "id_proof_number": "TEST-001",
-        },
-        headers={"Authorization": "Bearer verified-supabase-token"},
+        json={"organization_name": "ABC", "branch_name": "Main", "branch_identifier": "main"},
+        headers={"Authorization": "Bearer verified-firebase-token"},
     )
     assert response.status_code == 200
     assert response.json()["workspace_id"] == "org_opaque"

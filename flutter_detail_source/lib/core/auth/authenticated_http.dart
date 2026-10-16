@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'insightflow_auth_service.dart';
 import 'supabase_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
 
@@ -53,8 +54,6 @@ enum InsightFlowOnboardingState {
   pendingInvitation,
   profileIncomplete,
   noMembership,
-  unauthenticated,
-  endpointMissing,
   transientFailure,
   authoritativeDenial,
 }
@@ -108,9 +107,6 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
   if (response.statusCode == 401 || response.statusCode == 403) {
     throw _AuthoritativeAuthorizationFailure();
   }
-  if (response.statusCode == 404) {
-    throw _MissingAuthorizationEndpoint();
-  }
   if (response.statusCode != 200) {
     throw _TransientAuthorizationFailure();
   }
@@ -125,8 +121,6 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
 }
 
 class _AuthoritativeAuthorizationFailure implements Exception {}
-
-class _MissingAuthorizationEndpoint implements Exception {}
 
 class _TransientAuthorizationFailure implements Exception {}
 
@@ -156,20 +150,13 @@ Future<InsightFlowOnboardingResolution>
         )
         .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode == 404) {
-      return const InsightFlowOnboardingResolution(
-        InsightFlowOnboardingState.endpointMissing,
-      );
-    }
     if (response.statusCode == 401 || response.statusCode == 403) {
       await InsightFlowSupabaseAuthService.signOut();
       insightFlowWorkspaceId = '';
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('insightflow.workspace.$uid');
-      return InsightFlowOnboardingResolution(
-        response.statusCode == 401
-            ? InsightFlowOnboardingState.unauthenticated
-            : InsightFlowOnboardingState.authoritativeDenial,
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
       );
     }
     if (response.statusCode != 200) {
@@ -267,10 +254,6 @@ Future<InsightFlowOnboardingResolution>
       await prefs.remove('insightflow.workspace.$uid');
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.authoritativeDenial,
-      );
-    } on _MissingAuthorizationEndpoint {
-      return const InsightFlowOnboardingResolution(
-        InsightFlowOnboardingState.endpointMissing,
       );
     } on _TransientAuthorizationFailure {
       return const InsightFlowOnboardingResolution(
@@ -503,8 +486,17 @@ Future<void> attachFirebaseAuth(
   String? resourceId,
   bool forceRefresh = false,
 }) async {
-  final headers = await supabaseAuthHeaders(resourceId: resourceId);
-  request.headers.addAll(headers);
+  final token = InsightFlowSupabaseAuthService.accessToken;
+  if (token == null || token.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  request.headers['Authorization'] = 'Bearer $token';
+  if (insightFlowWorkspaceId.isNotEmpty) {
+    request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+  }
+  if (resourceId != null && resourceId.trim().isNotEmpty) {
+    request.headers['X-InsightFlow-Resource-ID'] = _safeResourceId(resourceId);
+  }
 }
 
 Future<Map<String, String>> firebaseAuthHeaders({
@@ -539,7 +531,7 @@ Future<String?> _resolveDatasetId(String sourceSheetName) async {
   if (id == null || id.isEmpty) return null;
   try {
     final headers = await firebaseAuthHeaders(resourceId: id);
-    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+    final uid = InsightFlowAuthService.currentUser?.uid;
     if (uid != null) {
       await http.post(
         Uri.parse('$insightFlowBackendBaseUrl/v1/authz/datasets/register'),
@@ -626,8 +618,7 @@ Future<bool> authorizeExcelOperation({
       resourceId: datasetId,
     );
     if (!allowed) return false;
-    final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
-    if (token == null || token.isEmpty) return false;
+    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
     await setExcelMutationAuthorization(
       idToken: token,
       workspaceId: insightFlowWorkspaceId,
@@ -644,8 +635,7 @@ Future<bool> authorizeExcelOperation({
     resourceId: datasetId,
   );
   if (originalAllowed) {
-    final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
-    if (token == null || token.isEmpty) return false;
+    final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
     await setExcelMutationAuthorization(
       idToken: token,
       workspaceId: insightFlowWorkspaceId,
@@ -663,8 +653,7 @@ Future<bool> authorizeExcelOperation({
   final workingCopyId = copy?['working_copy_id']?.toString();
   if (workingCopyId == null || workingCopyId.isEmpty) return false;
 
-  final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
-  if (token == null || token.isEmpty) return false;
+  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
   await setExcelMutationAuthorization(
     idToken: token,
     workspaceId: insightFlowWorkspaceId,
@@ -713,8 +702,7 @@ Future<bool> authorizeWorkingCopyExcelMutation({
   if (response.statusCode != 200) {
     return false;
   }
-  final token = (await InsightFlowSupabaseAuthService.ensureSession())?.accessToken;
-  if (token == null || token.isEmpty) return false;
+  final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
   await setExcelMutationAuthorization(
     idToken: token,
     workspaceId: insightFlowWorkspaceId,

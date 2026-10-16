@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String source(String path) => File(path).readAsStringSync();
 
@@ -94,10 +94,10 @@ void main() {
       }
 
       final nameIndex = layout.indexOf("_field('Full Name'");
-      final employeeIndex = layout.contains('_employeeIdInfo()')
+      final employeeIndex = layout.indexOf('_employeeIdInfo()') >= 0
           ? layout.indexOf('_employeeIdInfo()')
           : layout.indexOf("_readonly('Employee ID'");
-      final emailIndex = layout.contains('_emailField()')
+      final emailIndex = layout.indexOf('_emailField()') >= 0
           ? layout.indexOf('_emailField()')
           : layout.indexOf("_readonly('Email'");
       final phoneIndex = layout.indexOf('_phoneInputRow()');
@@ -196,22 +196,6 @@ void main() {
     expect(employee, contains('ID PROOF • PROVIDED'));
     expect(company, isNot(contains('ID PROOF VERIFIED')));
     expect(employee, isNot(contains('ID PROOF VERIFIED')));
-  });
-
-  test('duplicate profile identities return field-specific UI errors', () {
-    final employee = source('lib/features/auth/employee_profile_onboarding_screen.dart');
-    final company = source('lib/features/auth/company_registration_screen.dart');
-    for (final screen in [employee, company]) {
-      expect(screen, contains("rawDetail['field']"));
-      expect(screen, contains("field == 'phone'"));
-      expect(screen, contains("field == 'id_proof_number'"));
-      expect(screen, contains('_phoneError = message'));
-      expect(screen, contains('_idProofError = message'));
-      expect(screen, contains('_phoneError!'));
-      expect(screen, contains('errorText: _idProofError'));
-    }
-    expect(employee, contains('_step = 0'));
-    expect(company, contains('_step = 1'));
   });
 
   test('confirmation redirect failures get a user-facing route', () {

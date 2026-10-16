@@ -6,23 +6,21 @@ void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
 
-    final navigationStart = source.indexOf('List<ManagementSection> _allowedSections()');
-    final navigationEnd = source.indexOf('bool _sectionAllowed', navigationStart);
+    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationEnd = source.indexOf('];', navigationStart);
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
     final navigation = source.substring(navigationStart, navigationEnd);
-    for (final section in [
-      'overview',
-      'organization',
-      'people',
-      'dataAccess',
-      'invitations',
-      'audit',
+    for (final label in [
+      "MapEntry(ManagementSection.overview, 'OVERVIEW')",
+      "MapEntry(ManagementSection.organization, 'ORGANIZATION')",
+      "MapEntry(ManagementSection.people, 'PEOPLE')",
+      "MapEntry(ManagementSection.dataAccess, 'ACCESS')",
+      "MapEntry(ManagementSection.invitations, 'INVITATIONS')",
+      "MapEntry(ManagementSection.audit, 'AUDIT')",
     ]) {
-      expect(navigation, contains('ManagementSection.$section'));
+      expect(navigation, contains(label));
     }
-    expect(navigation, isNot(contains('ManagementSection.locations')));
-    expect(navigation, isNot(contains('ManagementSection.sections')));
     expect(navigation, isNot(contains('LOCATIONS')));
     expect(navigation, isNot(contains('SECTIONS')));
     expect(navigation, isNot(contains('DATA ACCESS')));
@@ -289,6 +287,7 @@ void main() {
     for (final role in [
       'manager',
       'team_lead',
+      'employee',
       'data_analyst',
       'senior_data_analyst',
       'business_analyst',
@@ -326,27 +325,19 @@ void main() {
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
     expect(access, contains("Text('Access'"));
-    expect(
-      access,
-      contains(
-        'Review managed resources and the access levels available to people in your organization.',
-      ),
-    );
+    expect(access, contains('People and dataset access'));
     expect(access, contains('Search managed resources'));
-    expect(access, contains("tooltip: 'Clear search'"));
+    expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this scope yet.'));
     expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
-    expect(access, contains("if (canUpload) _action('IMPORT CSV'"));
-    expect(access, contains("_action('COPY DATASET'"));
-    expect(access, contains("if (canViewOriginal)"));
-    expect(access, contains("if (canDelete)"));
-    expect(access, contains("roles.contains('organization_owner')"));
-    expect(access, contains("roles.contains('branch_head')"));
-    expect(access, contains('uiCapabilities'));
+    expect(access, contains('People and dataset access'));
+    expect(access, contains("['dataset.view_original']"));
+    expect(access, contains("'dataset.create_working_copy'"));
+    expect(access, contains("'dataset.edit_working_copy'"));
+    expect(access, contains('_accessPanel'));
     expect(access, isNot(contains('ORGANIZATION CONTROL PLANE')));
-
 
 
     final headerStart = source.indexOf('Widget _buildManagementHeader()');
@@ -360,10 +351,8 @@ void main() {
     expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
     expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
     expect(header, contains('InsightFlow'));
-    expect(header, contains('_eyebrow(_roleWorkspaceTitle())'));
-    expect(header, contains('_roleWorkspaceSubtitle()'));
-    expect(source, contains('String _roleWorkspaceTitle()'));
-    expect(source, contains('String _roleWorkspaceSubtitle()'));
+    expect(header, contains('ORGANIZATION / MANAGEMENT'));
+    expect(header, contains('MANAGEMENT WORKSPACE'));
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('every active member is routed through the role-aware Employee Management Cell', () {
+  test('every active member is routed through the Management Cell', () {
     final source =
         File('lib/features/auth/auth_gate.dart').readAsStringSync();
     final start = source.indexOf(
@@ -17,9 +17,8 @@ void main() {
     expect(end, greaterThan(start));
 
     final activeMemberBlock = source.substring(start, end);
-    expect(activeMemberBlock, contains('_EmployeeManagementEntry('));
+    expect(activeMemberBlock, contains('const ManagementShell()'));
     expect(activeMemberBlock, isNot(contains('const DataScreen()')));
     expect(activeMemberBlock, isNot(contains('managementRoles')));
-    expect(source, contains('const EmployeeManagementShell()'));
   });
 }

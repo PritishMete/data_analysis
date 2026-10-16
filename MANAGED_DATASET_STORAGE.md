@@ -51,6 +51,6 @@ The original archived object is not the primary download mechanism.
 
 Start Working uses the existing managed-dataset working-copy authorization path and passes the managed dataset/version identity into the existing DataScreen flow. Remote Smart Query/Sentiment requests can resolve that identity server-side, so Flutter does not copy the full managed dataset into browser memory. No second analysis application or DataScreen is created.
 
-## Authentication and storage boundary
+## Firebase boundary
 
-Supabase Auth is the only authentication provider, and PostgreSQL is the authoritative authorization and dataset persistence layer. No Firebase Auth or Realtime Database fallback is part of the active application path. Optional original-file archival uses private Supabase Storage only.
+Firebase authentication compatibility elsewhere in InsightFlow remains outside this feature. Firebase Storage, RTDB dataset storage, Firestore dataset storage, Firebase dataset metadata, Firebase dataset versions, and Firebase dataset downloads are not used by this managed dataset lifecycle.

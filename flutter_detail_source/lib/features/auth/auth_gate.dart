@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,7 +8,6 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'management_shell.dart';
-import 'employee_management_shell.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
@@ -224,96 +220,6 @@ class _AuthenticatedGate extends StatefulWidget {
   @override
   State<_AuthenticatedGate> createState() => _AuthenticatedGateState();
 }
-class _EmployeeManagementEntry extends StatefulWidget {
-  const _EmployeeManagementEntry({required this.workspaceId});
-  final String workspaceId;
-
-  @override
-  State<_EmployeeManagementEntry> createState() => _EmployeeManagementEntryState();
-}
-
-class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
-  bool loading = true;
-  bool employeeCell = false;
-  String? error;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolve();
-  }
-
-  Future<void> _resolve() async {
-    try {
-      final session = await InsightFlowSupabaseAuthService.ensureSession(
-        timeout: const Duration(seconds: 8),
-      );
-      if (session == null || session.accessToken.isEmpty) {
-        throw StateError('Authenticated session could not be restored.');
-      }
-      final headers = await supabaseAuthHeaders();
-      if (widget.workspaceId.isNotEmpty) {
-        headers['X-InsightFlow-Workspace-ID'] = widget.workspaceId;
-      }
-      final response = await http
-          .get(
-            Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management/overview'),
-            headers: headers,
-          )
-          .timeout(const Duration(seconds: 45));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError('Management authorization policy could not be loaded.');
-      }
-      final decoded = jsonDecode(response.body);
-      final data = decoded is Map
-          ? Map<String, dynamic>.from(decoded)
-          : const <String, dynamic>{};
-      final policy = data['ui_policy'];
-      final sections = policy is Map && policy['sections'] is List
-          ? (policy['sections'] as List).map((value) => value.toString()).toList()
-          : const <String>[];
-      if (!mounted) return;
-      setState(() {
-        employeeCell = sections.length == 1 && sections.first == 'overview';
-        loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = e.toString().replaceFirst('Bad state: ', '');
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const _AuthLoading();
-    if (error != null) {
-      return AuthGlassScaffold(
-        title: 'AUTH / MANAGEMENT POLICY',
-        subtitle: 'AUTHORIZATION LOOKUP',
-        children: [
-          AuthGlassMessage(text: error!, error: true),
-          const SizedBox(height: 12),
-          GlassButton.custom(
-            onTap: _resolve,
-            width: double.infinity,
-            height: 44,
-            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Retry',
-            child: const Text('Retry'),
-          ),
-        ],
-      );
-    }
-    return employeeCell
-        ? const EmployeeManagementShell()
-        : const ManagementShell();
-  }
-}
-
-
 
 class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   bool _loading = true;
@@ -496,9 +402,10 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
         break;
       case InsightFlowOnboardingState.activeMember:
-        authenticatedChild = _EmployeeManagementEntry(
-          workspaceId: _authoritativeWorkspaceId ?? '',
-        );
+        // Every authenticated employee enters the same authoritative
+        // Management Cell. The server-derived role/scope controls what the
+        // ManagementShell can show and what management APIs permit.
+        authenticatedChild = const ManagementShell();
         break;
       case InsightFlowOnboardingState.pendingInvitation:
         final passwordInvitation = _pendingInvitations.firstWhere(
@@ -525,28 +432,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       case InsightFlowOnboardingState.noMembership:
         authenticatedChild = const CompanyRegistrationScreen();
         break;
-      case InsightFlowOnboardingState.endpointMissing:
-        authenticatedChild = AuthGlassScaffold(
-          title: 'AUTH / BACKEND ROUTE MISSING',
-          subtitle: 'AUTHORIZATION DEPLOYMENT MISMATCH',
-          children: [
-            const AuthGlassMessage(
-              text:
-                  'The deployed backend does not expose the organization authorization endpoint. Your account and membership were not changed. Retry after the backend is deployed from the configured authorization branch.',
-              error: true,
-            ),
-            const SizedBox(height: 12),
-            GlassButton.custom(
-              onTap: _refresh,
-              width: double.infinity,
-              height: 44,
-              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-              label: 'Retry',
-              child: const Text('Retry'),
-            ),
-          ],
-        );
-        break;
       case InsightFlowOnboardingState.transientFailure:
         authenticatedChild = AuthGlassScaffold(
           title: 'AUTH / WORKSPACE LOOKUP',
@@ -567,9 +452,6 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
             ),
           ],
         );
-        break;
-      case InsightFlowOnboardingState.unauthenticated:
-        authenticatedChild = const SignInScreen();
         break;
       case InsightFlowOnboardingState.authoritativeDenial:
         authenticatedChild = AuthGlassScaffold(

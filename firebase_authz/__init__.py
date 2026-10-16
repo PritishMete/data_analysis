@@ -1,1 +1,1 @@
-"""InsightFlow Supabase Auth + PostgreSQL authorization boundary."""
+"""InsightFlow Firebase Authentication + RTDB authorization boundary."""

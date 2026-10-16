@@ -35,12 +35,7 @@ def require_database_url() -> str:
     value = os.environ.get("DATABASE_URL", "").strip()
     if not value:
         raise RuntimeError("DATABASE_URL is required.")
-    if not value.lower().startswith((
-        "postgresql://",
-        "postgresql+psycopg://",
-        "postgresql+psycopg2://",
-        "postgres://",
-    )):
+    if not value.lower().startswith(("postgresql://", "postgresql+psycopg2://", "postgres://")):
         raise RuntimeError("Refusing non-PostgreSQL DATABASE_URL.")
     return value
 

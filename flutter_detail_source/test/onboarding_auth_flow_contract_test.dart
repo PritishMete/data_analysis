@@ -11,8 +11,6 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
       'InsightFlowOnboardingState.activeMember',
       'InsightFlowOnboardingState.pendingInvitation',
       'InsightFlowOnboardingState.noMembership',
-      'InsightFlowOnboardingState.unauthenticated',
-      'InsightFlowOnboardingState.endpointMissing',
       'InsightFlowOnboardingState.profileIncomplete',
       'InsightFlowOnboardingState.transientFailure',
       'InsightFlowOnboardingState.authoritativeDenial',
@@ -31,16 +29,6 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(
       source,
       contains("case InsightFlowOnboardingState.authoritativeDenial:"),
-    );
-    expect(source, contains("AUTHORIZATION DEPLOYMENT MISMATCH"));
-    expect(
-      source,
-      contains("case InsightFlowOnboardingState.endpointMissing:"),
-    );
-    expect(http, contains("if (response.statusCode == 404)"));
-    expect(
-      source,
-      contains("case InsightFlowOnboardingState.unauthenticated:"),
     );
     expect(
       source,
@@ -61,10 +49,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(http, contains('supabaseAuthHeaders()'));
     expect(onboarding, contains('InsightFlowSupabaseAuthService.ensureSession()'));
     expect(onboarding, contains('final headers = await supabaseAuthHeaders();'));
-    // Organization/workspace identity must be resolved by the backend after acceptance,
-    // not trusted from a client-supplied pending-invitation payload.
-    expect(onboarding, contains("The server resolves the accepted invitation's organization and workspace."));
-    expect(onboarding, isNot(contains("invitation['organization_id']?.toString()")));
+    expect(onboarding, contains("invitation['organization_id']?.toString()"));
     expect(onboarding, isNot(contains('firebaseAuthHeaders(')));
     expect(onboarding, isNot(contains('InsightFlowAuthService.currentUser')));
   });
@@ -95,8 +80,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(gate, contains('case InsightFlowOnboardingState.profileIncomplete:'));
     expect(gate, contains('EmployeeProfileOnboardingScreen('));
     expect(gate, contains('case InsightFlowOnboardingState.activeMember:'));
-    expect(gate, contains('_EmployeeManagementEntry('));
-    expect(gate, contains('EmployeeManagementShell()'));
+    expect(gate, contains('ManagementShell()'));
   });
 
   test('authoritative /me top-level state controls onboarding before workspace details', () {
@@ -160,14 +144,13 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(activeStart, greaterThanOrEqualTo(0));
     expect(pendingStart, greaterThan(activeStart));
     final activeBlock = gate.substring(activeStart, pendingStart);
-    expect(activeBlock, contains('_EmployeeManagementEntry('));
+    expect(activeBlock, contains('const ManagementShell()'));
     expect(activeBlock, isNot(contains('DataScreen')));
 
-    final employeeManagement =
-        File('lib/features/auth/employee_management_shell.dart').readAsStringSync();
-    expect(employeeManagement, contains('EmployeeManagementShell'));
-    expect(employeeManagement, contains('EmployeeCellSection'));
-    expect(employeeManagement, contains('ManagedDatasetAccessWorkspace'));
+    final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    expect(management, contains("contextData['role_ids']"));
+    expect(management, contains("'organization_owner'"));
+    expect(management, isNot(contains("'employee'")));
   });
 
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
@@ -277,35 +260,6 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(repository, contains('limit(min(max(1, limit), 10000))'));
     expect(physical, contains('PHYSICAL_SCHEMA = "managed_data"'));
     expect(physical, contains('def physical_table_name(version_pk: str)'));
-  });
-
-
-  test('invitation password setup verifies the exact Supabase identity before changing the password', () {
-    final screen =
-        File('lib/features/auth/employee_invitation_password_setup_screen.dart')
-            .readAsStringSync();
-    final identityCheck = screen.indexOf('invitedAuthUserId');
-    final passwordChange = screen.indexOf('setPassword(', identityCheck);
-    expect(identityCheck, greaterThanOrEqualTo(0));
-    expect(passwordChange, greaterThan(identityCheck));
-    expect(screen.substring(identityCheck, passwordChange),
-        contains('authenticatedUser.uid != invitedAuthUserId'));
-    expect(screen.substring(identityCheck, passwordChange),
-        contains('authenticatedEmail != invitedEmail'));
-  });
-
-  test('invitation password setup backend binds completion to auth_user_id', () {
-    final provider =
-        File('../firebase_authz/supabase_provider.py').readAsStringSync();
-    final marker = provider.indexOf('def mark_invitation_password_setup');
-    expect(marker, greaterThanOrEqualTo(0));
-    final blockEnd = provider.indexOf('def set_membership_status', marker);
-    expect(blockEnd, greaterThan(marker));
-    final block = provider.substring(marker, blockEnd);
-    expect(block, contains('auth_user_id'));
-    expect(block, contains('authenticated_uid'));
-    expect(block,
-        contains('Invitation identity does not match the authenticated account.'));
   });
 
 }

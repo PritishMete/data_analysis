@@ -1,38 +1,68 @@
-# Organization Bootstrap: Supabase Auth + PostgreSQL
+# First-Owner Bootstrap: Secure Setup
 
-The active application bootstrap path is Supabase Auth plus the PostgreSQL authorization provider. Firebase Auth, Firebase Admin credentials, and Realtime Database are not valid bootstrap dependencies.
+This procedure initializes one workspace Owner. It does not automatically make every Firebase signup an Owner.
 
 ## Preconditions
 
-The trusted backend must have:
+Configure the trusted Python backend with:
 
-- `SUPABASE_URL`
-- `SUPABASE_SECRET_KEY` (backend-only, when required by invitation/auth administration)
-- `DATABASE_URL` pointing to the intended PostgreSQL database
-- `AUTHZ_PERSISTENCE_PROVIDER=supabase`
+    FIREBASE_PROJECT_ID=insightflow-5a23d
+    FIREBASE_DATABASE_URL=https://insightflow-5a23d-default-rtdb.asia-southeast1.firebasedatabase.app/
+    GOOGLE_APPLICATION_CREDENTIALS=<trusted backend credential path>
+    INSIGHTFLOW_BOOTSTRAP_SECRET=<random high-entropy secret>
 
-Never place service-role/secret keys in Flutter, browser JavaScript, source control, issues, or pull requests.
+Do not commit the service-account JSON or bootstrap secret. Do not paste either secret into ChatGPT, GitHub issues, pull requests, source files, or browser JavaScript.
 
-## Registration flow
+## Bootstrap identity
 
-Use `POST /v1/authz/organizations/register` with a valid, email-verified Supabase Auth bearer token and the required organization, branch, contact, address, and identity-profile fields.
+The person who becomes Owner must first authenticate with Firebase Email/Password and obtain a normal Firebase ID token.
 
-The backend verifies the Supabase token and creates the organization, branch/workspace, principal identity binding, membership, role assignment, profile, and initial audit state in the PostgreSQL transaction. Organization/workspace IDs, principal IDs, employee IDs, and authorization assignments are server-generated; client-supplied identity, role, or workspace overrides are rejected.
+The bootstrap request requires the authenticated user's Firebase ID token, workspace ID, that same user's Firebase UID as expected_uid, and the backend-only bootstrap secret.
 
-The current provider initializes the first branch membership as `branch_head`. Do not treat this endpoint as proof that a separate Organization Owner hierarchy is implemented; that role-layer contract requires its own explicit verification.
+The backend independently verifies the ID token and requires:
+1. token is valid and not revoked;
+2. token UID equals expected_uid;
+3. bootstrap secret matches the backend secret;
+4. workspace ID passes strict validation.
 
-## Transaction and retry behavior
+Authentication alone never grants Owner.
 
-- Registration is executed through the PostgreSQL provider.
-- The identity binding and active membership are checked within the registration transaction.
-- A repeated registration cannot silently create a second active organization membership for the same Supabase subject.
-- Database errors must fail the request; no RTDB fallback is allowed.
-- Concurrency and rollback guarantees are validated in the isolated PostgreSQL integration suite.
+## First initialization
 
-## Last-owner and role changes
+Call the trusted backend's POST /v1/authz/bootstrap-owner.
 
-Role mutation and membership status changes must use the PostgreSQL provider's last-owner guard and transaction. Never change role, membership, branch, or resource grants directly from Flutter or by editing database records manually.
+The backend uses an RTDB transaction on workspaces/{workspace_id}. The first successful transaction creates the bootstrap marker, built-in Owner/Analyst/Viewer roles, Owner workspace membership, and an empty resource-grant collection.
+
+Concurrent bootstrap requests cannot both initialize the same workspace as different owners.
+
+## Partial recovery
+
+If initialization writes the bootstrap marker but membership is incomplete, retrying with the same authenticated UID and same bootstrap credential can repair the missing Owner membership.
+
+A different Firebase user cannot take over an initialized workspace.
+
+## Last-Owner protection
+
+Owner removal/demotion is checked against the active workspace Owner set. If the target is the last active Owner, the backend rejects the change.
+
+The same guard is used before an Owner role is disabled. Any future suspension endpoint must call the same guard before suspending an Owner.
+
+## After bootstrap
+
+Use backend role-management APIs to create/update workspace roles, assign workspace-scoped roles, and grant resource-specific permissions.
+
+Do not write these records directly from the browser.
 
 ## Production safety
 
-This repository work does not initialize production organizations, apply production migrations, change secrets, or deploy to Render. Before any production rollout, review and approve the pending schema migrations and the historical-data import plan separately, then validate against a non-production Supabase project first.
+This repository change does not initialize a production Owner and does not deploy RTDB rules.
+
+Before production bootstrap:
+1. verify the production FIREBASE_DATABASE_URL exactly matches the regional database above;
+2. verify the service credential belongs to the intended Firebase project;
+3. set a unique bootstrap secret in the backend secret store;
+4. authenticate the intended first Owner;
+5. perform the bootstrap once;
+6. remove or rotate the bootstrap secret after initialization according to your operational policy.
+
+No workbook contents are part of the bootstrap request or Firebase authorization records.

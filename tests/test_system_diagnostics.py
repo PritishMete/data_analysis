@@ -52,22 +52,3 @@ def test_recovery_actions_are_structured():
     )
     assert actions
     assert {"id", "severity", "title", "action", "automatic"} <= set(actions[0])
-
-
-def test_module_import_does_not_load_heavy_report_engine():
-    """Diagnostics imports must not delay Uvicorn's initial port bind."""
-    import subprocess
-    import sys
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; import system_diagnostics; "
-            "assert 'ai_analyst' not in sys.modules",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr

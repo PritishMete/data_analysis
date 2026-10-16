@@ -15,12 +15,6 @@ class _FakeResult:
     def scalar_one_or_none(self):
         return self._scalar
 
-    def scalars(self):
-        return self
-
-    def all(self):
-        return [self._scalar] if self._scalar is not None else []
-
 
 class _FakeDb:
     def __init__(self, actor, *, fail_insert=False):
@@ -34,18 +28,10 @@ class _FakeDb:
             return _FakeResult(mapping=self.actor)
         if "role_permissions" in sql:
             return _FakeResult(scalar=1)
-        if "SELECT DISTINCT location_id" in sql and "FROM organizational_assignments" in sql:
-            return _FakeResult(scalar="loc_main")
-        if "SELECT 1 FROM organizational_assignments" in sql:
-            return _FakeResult(scalar=1)
         if "FROM locations" in sql:
-            if "SELECT location_id, status" in sql:
-                return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
-            return _FakeResult(scalar="loc_main")
+            return _FakeResult(mapping={"location_id": "loc_main", "status": "active"})
         if "FROM member_roles" in sql:
             return _FakeResult(scalar="organization_owner")
-        if "FROM organizations" in sql:
-            return _FakeResult(scalar="Test Organization")
         if "INSERT INTO invitations" in sql:
             if self.fail_insert:
                 raise RuntimeError("database insert failed")
@@ -104,7 +90,7 @@ def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     monkeypatch.setattr(
         provider,
         "invite_user_by_email",
-        lambda email, redirect_to, **kwargs: {
+        lambda email, redirect_to: {
             "user_id": "auth-new-user",
             "email_confirmed": False,
         },
@@ -116,7 +102,7 @@ def test_new_email_creates_invitation_with_new_auth_user(monkeypatch):
     )
 
     result = provider.create_invitation(
-        _claims(), "org_test", "new@example.com", "data_analyst", location_id="loc_main"
+        _claims(), "org_test", "new@example.com", "employee", location_id="loc_main"
     )
 
     assert result["status"] == "invited"
@@ -139,7 +125,7 @@ def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkey
 
     calls = {"invite": 0}
 
-    def duplicate_invite(email, redirect_to, **kwargs):
+    def duplicate_invite(email, redirect_to):
         calls["invite"] += 1
         raise DuplicateError()
 
@@ -154,7 +140,7 @@ def test_existing_confirmed_auth_user_creates_existing_account_invitation(monkey
     )
 
     result = provider.create_invitation(
-        _claims(), "org_test", "existing@example.com", "data_analyst"
+        _claims(), "org_test", "existing@example.com", "employee"
     )
 
     assert calls["invite"] == 1
@@ -176,7 +162,7 @@ def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(mon
         def __str__(self):
             return "A user with this email address has already been registered"
 
-    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_, **__: (_ for _ in ()).throw(DuplicateError()))
+    monkeypatch.setattr(provider, "invite_user_by_email", lambda *_: (_ for _ in ()).throw(DuplicateError()))
     monkeypatch.setattr(
         provider,
         "find_user_by_email",
@@ -185,7 +171,7 @@ def test_existing_unconfirmed_auth_user_is_rejected_without_local_invitation(mon
 
     with pytest.raises(AuthzError, match="unconfirmed Auth account"):
         provider.create_invitation(
-            _claims(), "org_test", "unconfirmed@example.com", "data_analyst", location_id="loc_main"
+            _claims(), "org_test", "unconfirmed@example.com", "employee", location_id="loc_main"
         )
 
     assert db.inserts == []
@@ -199,10 +185,10 @@ def test_database_insertion_failure_does_not_return_success(monkeypatch):
     monkeypatch.setattr(
         provider,
         "invite_user_by_email",
-        lambda email, redirect_to, **kwargs: {"user_id": "auth-new-user", "email_confirmed": False},
+        lambda email, redirect_to: {"user_id": "auth-new-user", "email_confirmed": False},
     )
 
     with pytest.raises(RuntimeError, match="database insert failed"):
         provider.create_invitation(
-            _claims(), "org_test", "db-failure@example.com", "data_analyst"
+            _claims(), "org_test", "db-failure@example.com", "employee"
         )

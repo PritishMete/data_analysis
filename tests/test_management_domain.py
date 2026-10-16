@@ -1,6 +1,4 @@
-import hashlib
 import os
-import threading
 import uuid
 
 import pytest
@@ -12,43 +10,32 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
 )
 
-_PHONE_LOCK = threading.Lock()
-_PHONE_BY_UID: dict[str, str] = {}
-
-
-def _phone_for_uid(uid: str) -> str:
-    with _PHONE_LOCK:
-        if uid not in _PHONE_BY_UID:
-            slot = len(_PHONE_BY_UID)
-            if slot >= 100:
-                raise RuntimeError("Test phone-number fixture pool exhausted.")
-            _PHONE_BY_UID[uid] = f"+120255501{slot:02d}"
-        return _PHONE_BY_UID[uid]
-
 
 def _claims(uid: str) -> dict:
-    phone = _phone_for_uid(uid)
     return {
         "uid": uid,
         "sub": uid,
         "email": f"{uid}@example.com",
         "email_verified": True,
         "email_confirmed_at": "2026-10-01T00:00:00Z",
-        "phone": phone,
+        "phone": "+919876543210",
         "phone_confirmed_at": "2026-10-01T00:00:00Z",
-        "provider": "supabase",
+        "firebase": {
+            "sign_in_provider": "password",
+            "identities": {"password": [uid]},
+        },
     }
 
 
-def _add_member(session, organization_id: str, uid: str, employee_id: str, role: str = "data_analyst") -> str:
+def _add_member(session, organization_id: str, uid: str, employee_id: str, role: str = "employee") -> str:
     principal_id = f"prn_test_{uuid.uuid4().hex}"
     session.execute(
         text("INSERT INTO principals(principal_id) VALUES (:id)"),
         {"id": principal_id},
     )
     session.execute(
-        text("""INSERT INTO identity_bindings(provider, provider_subject, principal_id)
-                VALUES ('supabase', :uid, :principal)"""),
+        text("""INSERT INTO identity_bindings(provider, provider_subject, firebase_uid, principal_id)
+                VALUES ('firebase', :uid, :uid, :principal)"""),
         {"uid": uid, "principal": principal_id},
     )
     session.execute(
@@ -67,26 +54,24 @@ def _add_member(session, organization_id: str, uid: str, employee_id: str, role:
 
 def _seed_org(owner_uid: str, name: str, branch_id: str) -> dict:
     from firebase_authz.supabase_provider import register_organization
-    digest = hashlib.sha256(owner_uid.encode("utf-8")).hexdigest().upper()
-    phone = _phone_for_uid(owner_uid)
-    phone_number = phone[2:]
+    suffix = str(uuid.uuid4().int)[:8]
     return register_organization(
         _claims(owner_uid),
         name,
         "Main Branch",
         branch_id,
         full_name=f"Owner {owner_uid}",
-        phone=phone,
+        phone="+919876543210",
         address_line1="1 InsightFlow Way",
         state="California",
         state_code="US-CA",
         postal_code="90210",
         country="United States",
         country_code="US",
-        phone_country_calling_code="+1",
-        phone_national_number=phone_number,
+        phone_country_calling_code="+91",
+        phone_national_number="9876543210",
         id_proof_type="passport",
-        id_proof_number="TEST-" + digest[:16],
+        id_proof_number="TEST-" + suffix,
     )
 
 
@@ -102,13 +87,14 @@ def _cleanup(*organization_ids: str) -> None:
 
 def test_management_reads_are_organization_scoped():
     from firebase_authz.management_domain import (
+        create_location,
         list_assignments,
         list_locations,
         list_people,
         list_sections,
         management_overview,
     )
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     a = _seed_org(f"management-owner-a-{suffix}", "Management A", f"MGMT-A-{suffix}")
@@ -150,14 +136,12 @@ def test_management_reads_are_organization_scoped():
 
 def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplied():
     from firebase_authz.management_domain import (
-        create_location,
         list_assignments,
         list_locations,
         list_people,
         list_sections,
         management_overview,
     )
-    from firebase_authz.auth import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"branch-head-scope-{suffix}"
@@ -166,8 +150,6 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
     org = _seed_org(owner_uid, "Branch Head Scope", f"BRANCH-SCOPE-{suffix}")
     try:
         owner = _claims(owner_uid)
-        with pytest.raises(AuthzError, match="permission to create locations"):
-            create_location(owner, org["workspace_id"], "Forbidden Branch", f"FORBIDDEN-{suffix}")
         with SessionLocal.begin() as session:
             branch_employee = _add_member(
                 session, org["organization_id"], branch_employee_uid, "EMP-BRANCH"
@@ -175,24 +157,19 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
             other_employee = _add_member(
                 session, org["organization_id"], other_employee_uid, "EMP-OTHER"
             )
-        # Seed a second branch as test data; a Branch Head cannot create branches.
-        second_location_id = f"loc_{uuid.uuid4().hex}"
-        with SessionLocal.begin() as session:
-            session.execute(
-                text("""INSERT INTO locations
-                    (location_id, organization_id, name, branch_identifier)
-                    VALUES (:location, :org, 'Other Branch', :identifier)"""),
-                {"location": second_location_id, "org": org["organization_id"],
-                 "identifier": f"OTHER-{suffix}"},
-            )
-        second = {"location_id": second_location_id}
+        second = create_location(
+            owner,
+            org["workspace_id"],
+            "Other Branch",
+            f"OTHER-{suffix}",
+        )
 
         with SessionLocal.begin() as session:
             session.execute(
                 text("""
                     INSERT INTO organizational_assignments
                       (assignment_id, organization_id, principal_id, location_id, role_id, status)
-                    VALUES (:assignment, :org, :principal, :location, 'data_analyst', 'active')
+                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
                 """),
                 {
                     "assignment": f"asg_branch_{uuid.uuid4().hex}",
@@ -205,7 +182,7 @@ def test_branch_head_population_is_branch_scoped_and_all_scope_binds_are_supplie
                 text("""
                     INSERT INTO organizational_assignments
                       (assignment_id, organization_id, principal_id, location_id, role_id, status)
-                    VALUES (:assignment, :org, :principal, :location, 'data_analyst', 'active')
+                    VALUES (:assignment, :org, :principal, :location, 'employee', 'active')
                 """),
                 {
                     "assignment": f"asg_other_{uuid.uuid4().hex}",
@@ -268,10 +245,10 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
                 session, org["organization_id"], branch_head_uid, "BH-VIS", role="branch_head"
             )
             employee = _add_member(
-                session, org["organization_id"], employee_uid, "EMP-VIS", role="data_analyst"
+                session, org["organization_id"], employee_uid, "EMP-VIS", role="employee"
             )
             _add_member(
-                session, org["organization_id"], other_recipient_uid, "EMP-OTHER-VIS", role="data_analyst"
+                session, org["organization_id"], other_recipient_uid, "EMP-OTHER-VIS", role="employee"
             )
             session.execute(
                 text("""
@@ -302,7 +279,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
             owner_principal = session.execute(
                 text("""
                     SELECT principal_id FROM identity_bindings
-                    WHERE provider='supabase' AND provider_subject=:uid
+                    WHERE provider='firebase' AND provider_subject=:uid
                 """),
                 {"uid": owner_uid},
             ).scalar_one()
@@ -312,9 +289,9 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
                       (invitation_id, organization_id, email, role_id, status,
                        created_by_principal_id, location_id)
                     VALUES
-                      (:main_id, :org, :main_email, 'data_analyst', 'invited', :creator, :main_location),
+                      (:main_id, :org, :main_email, 'employee', 'invited', :creator, :main_location),
                       (:other_id, :org, :other_email, 'manager', 'invited', :creator, :other_location),
-                      (:recipient_id, :org, :recipient_email, 'data_analyst', 'invited', :creator, :other_location)
+                      (:recipient_id, :org, :recipient_email, 'employee', 'invited', :creator, :other_location)
                 """),
                 {
                     "main_id": f"inv_{uuid.uuid4().hex}",
@@ -338,7 +315,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
         assert branch_head_invitations[0]["location_id"] == org["location_id"]
         assert branch_head_invitations[0]["sender_name"] == f"Owner {owner_uid}"
         assert branch_head_invitations[0]["sender_role_id"] == "branch_head"
-        assert branch_head_invitations[0]["recipient_role_id"] == "data_analyst"
+        assert branch_head_invitations[0]["recipient_role_id"] == "employee"
         assert branch_head_invitations[0]["recipient_display"] == f"branch-recipient-{suffix}@example.com"
 
         employee_result = management_snapshot(
@@ -355,7 +332,7 @@ def test_invitation_visibility_is_recipient_private_and_branch_head_scoped():
 
 def test_manager_assignment_conflict_replacement_and_audit_are_atomic():
     from firebase_authz.management_domain import assign_manager, replace_manager, list_audit_events
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"manager-owner-{suffix}"
@@ -413,7 +390,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
         create_section,
         set_reporting_relationship,
     )
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"scope-owner-{suffix}"
@@ -428,17 +405,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             lead = _add_member(session, org["organization_id"], lead_uid, "LEAD-SCOPE")
             employee = _add_member(session, org["organization_id"], employee_uid, "EMP-SCOPE")
 
-        # Additional location is fixture data; Branch Heads cannot create branches.
-        second_location_id = f"loc_{uuid.uuid4().hex}"
-        with SessionLocal.begin() as session:
-            session.execute(
-                text("""INSERT INTO locations
-                    (location_id, organization_id, name, branch_identifier)
-                    VALUES (:location, :org, 'North Branch', :identifier)"""),
-                {"location": second_location_id, "org": org["organization_id"],
-                 "identifier": f"NORTH-{suffix}"},
-            )
-        second_location = {"location_id": second_location_id}
+        second_location = create_location(owner, org["workspace_id"], "North Branch", f"NORTH-{suffix}")
         manager_assignment = assign_manager(owner, org["workspace_id"], org["location_id"], manager)
         main_section = create_section(owner, org["workspace_id"], org["location_id"], "Sales")
 
@@ -466,7 +433,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             )
         assert lead_assignment["reports_to_assignment_id"] == manager_assignment["assignment_id"]
 
-        with pytest.raises(AuthzError):
+        with pytest.raises(AuthzError, match="same location"):
             assign_team_lead(
                 owner,
                 org["workspace_id"],
@@ -481,7 +448,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
             session.execute(
                 text("""INSERT INTO organizational_assignments
                         (assignment_id, organization_id, principal_id, location_id, role_id, section_id, status)
-                        VALUES (:assignment, :org, :principal, :location, 'data_analyst', :section, 'active')"""),
+                        VALUES (:assignment, :org, :principal, :location, 'employee', :section, 'active')"""),
                 {
                     "assignment": employee_assignment_id,
                     "org": org["organization_id"],
@@ -528,7 +495,7 @@ def test_manager_scope_and_team_lead_reporting_relationships():
 
 def test_cross_company_mutations_and_invalid_members_are_rejected():
     from firebase_authz.management_domain import assign_manager, create_section
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_a_uid = f"cross-owner-a-{suffix}"
@@ -560,7 +527,7 @@ def test_unauthorized_suspended_removed_and_invalid_targets_are_rejected():
         create_section,
         set_reporting_relationship,
     )
-    from firebase_authz.auth import AuthzError
+    from firebase_authz.service import AuthzError
 
     suffix = uuid.uuid4().hex
     owner_uid = f"state-owner-{suffix}"

@@ -32,8 +32,10 @@ class _OrganizationOnboardingScreenState
   String? _message;
 
   Future<void> _acceptInvitation(Map<String, dynamic> invitation) async {
+    final workspaceId = invitation['workspace_id']?.toString() ??
+        invitation['organization_id']?.toString() ?? '';
     final invitationId = invitation['invitation_id']?.toString() ?? '';
-    if (invitationId.isEmpty) return;
+    if (workspaceId.isEmpty || invitationId.isEmpty) return;
 
     setState(() {
       _busy = true;
@@ -62,8 +64,10 @@ class _OrganizationOnboardingScreenState
               : 'Invitation could not be accepted.',
         );
       }
-      // The server resolves the accepted invitation's organization and workspace.
-      // Refresh authenticated onboarding state instead of trusting a client-supplied ID.
+      final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+      if (uid != null) {
+        await setInsightFlowWorkspaceId(uid, workspaceId);
+      }
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error) {
       if (!mounted) return;
@@ -96,12 +100,13 @@ class _OrganizationOnboardingScreenState
     final employeeId = primary?['employee_id']?.toString();
 
     return AuthGlassScaffold(
-      title: 'EMPLOYEE / ACCESS',
-      subtitle: 'Your authenticated identity must be approved by an organization.',
+      brandedLayout: true,
+      title: 'INVITATION / YOUR WORKSPACE',
+      subtitle: 'Review your invitation and the access assigned by your Branch Head.',
       children: [
         if (primary != null) ...[
           AuthGlassMessage(
-            text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access the organization workspace. Role: $role"
+            text: "Your invitation to $displayOrganization is ready. Your Branch Head assigned the role: ${role.replaceAll('_', ' ')}. This role is read-only here and cannot be changed during onboarding."
                 "${employeeId == null ? '' : ' · Employee ID: $employeeId'}",
           ),          const SizedBox(height: 14),
           GlassButton.custom(

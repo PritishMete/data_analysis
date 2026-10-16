@@ -67,21 +67,6 @@ class _EmployeeInvitationPasswordSetupScreenState
     });
 
     try {
-      final authenticatedUser = InsightFlowSupabaseAuthService.currentUser;
-      final invitedAuthUserId = widget.invitation['auth_user_id']?.toString().trim() ?? '';
-      final invitedEmail = widget.invitation['email']?.toString().trim().toLowerCase() ?? '';
-      final authenticatedEmail = authenticatedUser?.email?.trim().toLowerCase() ?? '';
-      if (authenticatedUser == null || authenticatedUser.uid.isEmpty) {
-        throw StateError('Open this invitation in a signed-in Supabase session for the invited email, then retry.');
-      }
-      // Do not change any account password until the invitation identity is verified.
-      if (invitedAuthUserId.isNotEmpty && authenticatedUser.uid != invitedAuthUserId) {
-        throw StateError('This invitation belongs to a different Supabase account. Sign out, reopen the invitation link, and retry.');
-      }
-      if (invitedEmail.isNotEmpty && authenticatedEmail != invitedEmail) {
-        throw StateError('This invitation was sent to $invitedEmail. Sign out, reopen the invitation link, and use that account.');
-      }
-      debugPrint('invitation_lifecycle identity_verified=true');
       debugPrint('invitation_lifecycle password_setup_started');
       await InsightFlowSupabaseAuthService.setPassword(
         password,
@@ -95,8 +80,9 @@ class _EmployeeInvitationPasswordSetupScreenState
         debugPrint('invitation_lifecycle session_available=false');
         throw StateError('Your authenticated session could not be restored.');
       }
+      final authenticatedEmail = InsightFlowSupabaseAuthService.currentUser?.email;
       debugPrint('invitation_lifecycle session_available=true');
-      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail.trim().isNotEmpty}');
+      debugPrint('invitation_lifecycle authenticated_email_available=${authenticatedEmail?.trim().isNotEmpty == true}');
 
       final response = await http
           .post(
@@ -181,11 +167,12 @@ class _EmployeeInvitationPasswordSetupScreenState
     final role = widget.invitation['role_id']?.toString() ?? 'data_analyst';
 
     return AuthGlassScaffold(
-      title: 'INVITED ACCOUNT SETUP',
-      subtitle: 'Secure your invited InsightFlow account.',
+      brandedLayout: true,
+      title: 'INVITATION / SECURE ACCOUNT',
+      subtitle: 'Create your password to finish joining InsightFlow.',
       children: [
         AuthGlassMessage(
-          text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access your organization workspace as ${role.replaceAll('_', ' ')}. Your email is verified through Supabase Auth.",
+          text: "You’re joining $displayOrganization. Your Branch Head assigned the role ${role.replaceAll('_', ' ')}; it cannot be changed on this screen. Your email is verified through Supabase Auth.",
           error: false,
         ),
         const SizedBox(height: 14),

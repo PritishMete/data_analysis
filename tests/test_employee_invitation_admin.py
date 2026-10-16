@@ -34,24 +34,20 @@ def test_supabase_admin_invite_uses_server_redirect_and_returns_user(monkeypatch
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "server-only-test-secret")
     monkeypatch.setattr(
-        "firebase_authz.supabase_admin._credential_client",
-        lambda source, credential: fake,
+        "firebase_authz.supabase_admin.admin_client",
+        lambda: fake,
     )
 
     result = invite_user_by_email(
         "employee@example.com",
         "https://pritishmete.github.io/data_analysis/employee-invite",
-        organization_name="Test Organization",
     )
 
     assert result == {"user_id": "auth-user-123", "email_confirmed": False}
     assert fake.auth.admin.calls == [
         (
             "employee@example.com",
-            {
-                "redirect_to": "https://pritishmete.github.io/data_analysis/employee-invite",
-                "data": {"organization_name": "Test Organization"},
-            },
+            {"redirect_to": "https://pritishmete.github.io/data_analysis/employee-invite"},
         )
     ]
 
@@ -119,7 +115,7 @@ def test_supabase_admin_falls_back_to_service_role_only_on_auth_rejection(monkey
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setattr("firebase_authz.supabase_admin._credential_client", fake_client)
 
-    result = invite_user_by_email("employee@example.com", "https://example.com/invite", organization_name="Test Organization")
+    result = invite_user_by_email("employee@example.com", "https://example.com/invite")
     assert result == {"user_id": "legacy-user-456", "email_confirmed": False}
     assert calls == ["SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "service_role"]
 
@@ -144,7 +140,7 @@ def test_supabase_admin_does_not_fallback_for_non_auth_admin_errors(monkeypatch)
     from firebase_authz.supabase_admin import SupabaseAdminOperationError
 
     with pytest.raises(SupabaseAdminOperationError):
-        invite_user_by_email("employee@example.com", "https://example.com/invite", organization_name="Test Organization")
+        invite_user_by_email("employee@example.com", "https://example.com/invite")
     assert calls == ["SUPABASE_SECRET_KEY"]
 
 
@@ -177,7 +173,7 @@ def test_supabase_admin_diagnostic_logging_never_logs_credentials(monkeypatch, c
 
     with caplog.at_level("WARNING"):
         with pytest.raises(SupabaseAdminCredentialError):
-            invite_user_by_email("employee@example.com", "https://example.com/invite", organization_name="Test Organization")
+            invite_user_by_email("employee@example.com", "https://example.com/invite")
 
     assert secret not in caplog.text
     assert "REDACTED" in caplog.text
