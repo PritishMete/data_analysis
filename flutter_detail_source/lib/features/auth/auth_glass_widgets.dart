@@ -17,12 +17,14 @@ class AuthGlassScaffold extends StatelessWidget {
     required this.subtitle,
     required this.children,
     this.wideContent = false,
+    this.brandedLayout = false,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
   final bool wideContent;
+  final bool brandedLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +49,7 @@ class AuthGlassScaffold extends StatelessWidget {
 
                     final card = ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: wideContent ? 1280 : 420,
+                        maxWidth: (wideContent || brandedLayout) ? 1280 : 420,
                       ),
                       child: InsightFlowDialogSurface(
                         padding: EdgeInsets.all(narrow ? 20 : 28),
