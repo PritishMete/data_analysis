@@ -785,7 +785,7 @@ class _CompanyRegistrationScreenState
       );
 
   Widget _stepIndicator() {
-    const labels = ['Company details', 'Branch Head profile', 'Review'];
+    const labels = ['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW'];
     final progress = (_step + 1) / labels.length;
     return GlassContainer(
       useOwnLayer: true,
