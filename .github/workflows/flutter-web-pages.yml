@@ -2,10 +2,13 @@ name: Build and publish InsightFlow Flutter web
 
 on:
   push:
-    branches: [feature/data-workspace]
+    branches:
+      - feature/data-workspace
+      - feature/insightflow-onboarding-ui-current-20261016
     paths:
       - 'flutter_detail_source/**'
       - '.github/workflows/flutter-web-pages.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
