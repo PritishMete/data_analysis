@@ -900,6 +900,32 @@ class _ManagementShellState extends State<ManagementShell> {
     return 'Your organization';
   }
 
+  String _overviewBranchName() {
+    if (_managementRole() != 'branch_head') return _overviewOrganizationName();
+    for (final key in ['branch', 'location']) {
+      final value = overview[key];
+      if (value is Map) {
+        final name = value['name']?.toString().trim() ?? '';
+        if (name.isNotEmpty) return name;
+      }
+    }
+    final selected = selectedLocation;
+    if (selected != null) {
+      for (final location in locations) {
+        if (location['location_id']?.toString() == selected) {
+          final name = location['name']?.toString().trim() ?? '';
+          if (name.isNotEmpty) return name;
+        }
+      }
+    }
+    if (locations.isNotEmpty) {
+      final name = locations.first['name']?.toString().trim() ?? '';
+      if (name.isNotEmpty) return name;
+    }
+    final scope = _uiScopeLabel().trim();
+    return scope.isEmpty || scope == 'Assigned workspace' ? 'Your branch' : scope;
+  }
+
   int _overviewCount(dynamic summaryValue, int fallback) {
     if (summaryValue is num) return summaryValue.toInt();
     final parsed = int.tryParse(summaryValue?.toString() ?? '');
@@ -1100,10 +1126,13 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
-    final locationCount = _overviewCount(sum['location_count'], locations.length);
     final sectionCount = _overviewCount(sum['section_count'], sections.length);
     final peopleCount = _overviewCount(sum['people_count'], people.length);
     final activeAssignments = assignments.where((a) => a['status'] == 'active').length;
+    final pendingInvitations = invitations.where((item) {
+      final status = item['status']?.toString().trim().toLowerCase() ?? '';
+      return status == 'pending' || status == 'invited' || status == 'sent';
+    }).length;
     final unassignedPeople = _unassignedPeople();
     final attentionItems = <Widget>[];
 
@@ -1172,14 +1201,18 @@ class _ManagementShellState extends State<ManagementShell> {
               final compact = constraints.maxWidth < 620;
               final organizationStatus = org['status']?.toString().trim();
               final subtitle = organizationStatus == null || organizationStatus.isEmpty
-                  ? 'Manage your organization, people, access and activity from one place.'
-                  : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.';
+                  ? (_managementRole() == 'branch_head'
+                      ? 'Manage people, invitations, dataset access and branch activity from one place.'
+                      : 'Manage your organization, people, access and activity from one place.')
+                  : (_managementRole() == 'branch_head'
+                      ? 'Manage people, invitations, dataset access and branch activity from one place.'
+                      : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.');
               final content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _eyebrow('Organization overview'),
+                  _eyebrow(_managementRole() == 'branch_head' ? 'Branch overview' : 'Organization overview'),
                   const SizedBox(height: 7),
-                  Text(_overviewOrganizationName(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+                  Text(_overviewBranchName(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 7),
                   Text(subtitle, style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.45)),
                 ],
@@ -1197,7 +1230,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
         ),
         const SizedBox(height: 14),
-        _eyebrow('Organization summary'),
+        _eyebrow(_managementRole() == 'branch_head' ? 'Branch summary' : 'Organization summary'),
         const SizedBox(height: 9),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -1207,9 +1240,9 @@ class _ManagementShellState extends State<ManagementShell> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                SizedBox(width: width, child: _overviewSummaryCard('People', peopleCount.toString(), 'People across your organization', Icons.people_outline)),
-                SizedBox(width: width, child: _overviewSummaryCard('Locations', locationCount.toString(), 'Branches and locations', Icons.location_on_outlined)),
-                SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), 'Sections across your locations', Icons.account_tree_outlined)),
+                SizedBox(width: width, child: _overviewSummaryCard('People', peopleCount.toString(), _managementRole() == 'branch_head' ? 'People assigned to this branch' : 'People across your organization', Icons.people_outline)),
+                SizedBox(width: width, child: _overviewSummaryCard(_managementRole() == 'branch_head' ? 'Pending invitations' : 'Locations', _managementRole() == 'branch_head' ? pendingInvitations.toString() : locations.length.toString(), _managementRole() == 'branch_head' ? 'Invitations awaiting acceptance' : 'Branches and locations', _managementRole() == 'branch_head' ? Icons.mail_outline : Icons.location_on_outlined)),
+                SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), _managementRole() == 'branch_head' ? 'Teams and sections in this branch' : 'Sections across your locations', Icons.account_tree_outlined)),
                 SizedBox(width: width, child: _overviewSummaryCard('Active assignments', activeAssignments.toString(), 'Current role and reporting assignments', Icons.assignment_ind_outlined)),
               ],
             );
@@ -1222,13 +1255,21 @@ class _ManagementShellState extends State<ManagementShell> {
           builder: (context, constraints) {
             final columns = constraints.maxWidth < 820 ? 1 : 2;
             final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            final actions = [
-              ('Add person', 'Review and manage people', Icons.person_add_alt_1_outlined, ManagementSection.people),
-              ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
-              ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
-              ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
-              ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
-            ];
+            final actions = _managementRole() == 'branch_head'
+                ? [
+                    ('Manage people', 'Review employees and role assignments', Icons.people_outline, ManagementSection.people),
+                    ('Branch structure', 'Manage sections and reporting structure', Icons.account_tree_outlined, ManagementSection.organization),
+                    ('Invitations', 'Track pending and accepted invitations', Icons.mail_outline, ManagementSection.invitations),
+                    ('Dataset access', 'Manage authorized dataset access', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
+                    ('Branch activity', 'Review important management events', Icons.history_rounded, ManagementSection.audit),
+                  ]
+                : [
+                    ('Add person', 'Review and manage people', Icons.person_add_alt_1_outlined, ManagementSection.people),
+                    ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
+                    ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
+                    ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
+                    ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
+                  ];
             return Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -1283,22 +1324,26 @@ class _ManagementShellState extends State<ManagementShell> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _title('Organization structure', detail: 'A quick view of how your organization is arranged', icon: Icons.account_tree_outlined),
+                  _title(
+                    _managementRole() == 'branch_head' ? 'Branch structure' : 'Organization structure',
+                    detail: _managementRole() == 'branch_head' ? 'A quick view of this branch and its teams' : 'A quick view of how your organization is arranged',
+                    icon: Icons.account_tree_outlined,
+                  ),
                   const SizedBox(height: 14),
-                  _overviewStructureStep('Organization', _overviewOrganizationName(), Icons.business_outlined),
-                  _overviewStructureConnector(),
-                  _overviewStructureStep('Branches / Locations', '$locationCount locations', Icons.location_on_outlined),
+                  _overviewStructureStep(_managementRole() == 'branch_head' ? 'Branch' : 'Organization', _overviewBranchName(), Icons.business_outlined),
                   _overviewStructureConnector(),
                   _overviewStructureStep('Sections', '$sectionCount sections', Icons.account_tree_outlined),
                   _overviewStructureConnector(),
                   _overviewStructureStep('People', '$peopleCount people', Icons.people_outline),
+                  _overviewStructureConnector(),
+                  _overviewStructureStep('Active assignments', '$activeAssignments assignments', Icons.assignment_ind_outlined),
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
                       onPressed: () => setState(() => section = ManagementSection.organization),
                       icon: const Icon(Icons.arrow_forward_rounded, size: 15),
-                      label: const Text('View organization'),
+                      label: Text(_managementRole() == 'branch_head' ? 'Manage branch structure' : 'View organization'),
                     ),
                   ),
                 ],
@@ -2388,7 +2433,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   String _sectionLabel(ManagementSection value) => switch (value) {
     ManagementSection.overview => 'Management Overview',
-    ManagementSection.organization => 'Organization',
+    ManagementSection.organization => _managementRole() == 'branch_head' ? 'Branch Structure' : 'Organization',
     ManagementSection.people => 'People Registry',
     ManagementSection.invitations => 'Invitations',
     ManagementSection.dataAccess => 'Access',
@@ -2396,8 +2441,8 @@ class _ManagementShellState extends State<ManagementShell> {
   };
 
   String _sectionDetail(ManagementSection value) => switch (value) {
-    ManagementSection.overview => 'ORGANIZATION OVERVIEW',
-    ManagementSection.organization => 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
+    ManagementSection.overview => _managementRole() == 'branch_head' ? 'BRANCH OVERVIEW' : 'ORGANIZATION OVERVIEW',
+    ManagementSection.organization => _managementRole() == 'branch_head' ? 'BRANCH → SECTION → MANAGER → TEAM LEAD → EMPLOYEE' : 'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE',
     ManagementSection.people => 'IDENTITY / ROLE / PLACEMENT',
     ManagementSection.invitations => 'Manage invitations sent to people in your organization and review their current status.',
     ManagementSection.dataAccess => 'DATASET / RESOURCE AUTHORIZATION',
@@ -3492,7 +3537,7 @@ class _ManagementShellState extends State<ManagementShell> {
   Widget _buildManagementNavigation() {
     final tabs = <MapEntry<ManagementSection, String>>[
       const MapEntry(ManagementSection.overview, 'OVERVIEW'),
-      const MapEntry(ManagementSection.organization, 'ORGANIZATION'),
+      MapEntry(ManagementSection.organization, _managementRole() == 'branch_head' ? 'BRANCH STRUCTURE' : 'ORGANIZATION'),
       const MapEntry(ManagementSection.people, 'PEOPLE'),
       const MapEntry(ManagementSection.dataAccess, 'ACCESS'),
       const MapEntry(ManagementSection.invitations, 'INVITATIONS'),
