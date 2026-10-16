@@ -53,6 +53,8 @@ enum InsightFlowOnboardingState {
   pendingInvitation,
   profileIncomplete,
   noMembership,
+  unauthenticated,
+  endpointMissing,
   transientFailure,
   authoritativeDenial,
 }
@@ -106,6 +108,9 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
   if (response.statusCode == 401 || response.statusCode == 403) {
     throw _AuthoritativeAuthorizationFailure();
   }
+  if (response.statusCode == 404) {
+    throw _MissingAuthorizationEndpoint();
+  }
   if (response.statusCode != 200) {
     throw _TransientAuthorizationFailure();
   }
@@ -120,6 +125,8 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
 }
 
 class _AuthoritativeAuthorizationFailure implements Exception {}
+
+class _MissingAuthorizationEndpoint implements Exception {}
 
 class _TransientAuthorizationFailure implements Exception {}
 
@@ -149,13 +156,20 @@ Future<InsightFlowOnboardingResolution>
         )
         .timeout(const Duration(seconds: 8));
 
+    if (response.statusCode == 404) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.endpointMissing,
+      );
+    }
     if (response.statusCode == 401 || response.statusCode == 403) {
       await InsightFlowSupabaseAuthService.signOut();
       insightFlowWorkspaceId = '';
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('insightflow.workspace.$uid');
-      return const InsightFlowOnboardingResolution(
-        InsightFlowOnboardingState.authoritativeDenial,
+      return InsightFlowOnboardingResolution(
+        response.statusCode == 401
+            ? InsightFlowOnboardingState.unauthenticated
+            : InsightFlowOnboardingState.authoritativeDenial,
       );
     }
     if (response.statusCode != 200) {
@@ -253,6 +267,10 @@ Future<InsightFlowOnboardingResolution>
       await prefs.remove('insightflow.workspace.$uid');
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.authoritativeDenial,
+      );
+    } on _MissingAuthorizationEndpoint {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.endpointMissing,
       );
     } on _TransientAuthorizationFailure {
       return const InsightFlowOnboardingResolution(
