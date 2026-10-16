@@ -1,0 +1,45 @@
+name: Management Shell Routing CI
+
+on:
+  push:
+    branches:
+      - feature/role-based-management-shell-20261016
+    paths:
+      - 'flutter_detail_source/lib/features/auth/auth_gate.dart'
+      - 'flutter_detail_source/test/auth_gate_management_landing_test.dart'
+      - 'flutter_detail_source/test/management_navigation_context_test.dart'
+      - '.github/workflows/management-shell-routing-ci.yml'
+  pull_request:
+    branches:
+      - feature/branch-head-management-cell-redesign-20261016
+    paths:
+      - 'flutter_detail_source/lib/features/auth/auth_gate.dart'
+      - 'flutter_detail_source/test/auth_gate_management_landing_test.dart'
+      - 'flutter_detail_source/test/management_navigation_context_test.dart'
+      - '.github/workflows/management-shell-routing-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-management-shell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Check Dart formatting for focused tests
+        run: dart format --output=none --set-exit-if-changed test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
+      - name: Test management shell routing
+        run: flutter test test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart
