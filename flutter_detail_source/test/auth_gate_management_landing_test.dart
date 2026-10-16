@@ -46,7 +46,7 @@ void main() {
 
     expect(
       source,
-      contains('ValueKey(\'$userId:${widget.workspaceId}\')'),
+      contains(r"ValueKey('$userId:${widget.workspaceId}')"),
     );
     expect(source, contains('ManagementShell(key: shellKey)'));
     expect(source, contains('EmployeeManagementShell(key: shellKey)'));
