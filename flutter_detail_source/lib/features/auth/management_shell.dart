@@ -1205,7 +1205,7 @@ class _ManagementShellState extends State<ManagementShell> {
                       ? 'Manage people, invitations, dataset access and branch activity from one place.'
                       : 'Manage your organization, people, access and activity from one place.')
                   : (_managementRole() == 'branch_head'
-                      ? 'Manage people, invitations, dataset access and branch activity from one place. Status: $organizationStatus.'
+                      ? 'Manage people, invitations, dataset access and branch activity from one place.'
                       : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.');
               final content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
