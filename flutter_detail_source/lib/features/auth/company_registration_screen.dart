@@ -710,11 +710,11 @@ class _CompanyRegistrationScreenState
         InsightFlowSupabaseAuthService.currentSupabaseUser != null;
 
     return AuthGlassScaffold(
-      wideContent: true,
-      title: 'REGISTER / COMPANY',
+      brandedLayout: true,
+      title: 'BRANCH HEAD / WORKSPACE',
       subtitle: authenticated
-          ? 'Create the company, initial branch, and Branch Head profile.'
-          : 'Authenticate the founder identity first.',
+          ? 'Create your InsightFlow workspace and register its first branch.'
+          : 'Verify your account to securely set up the workspace.',
       children: [
         if (!authenticated)
           GlassButton.custom(
