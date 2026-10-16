@@ -24,8 +24,9 @@ void main() {
   test(
     'management roles remain in ManagementShell with overview-only policy',
     () {
-      final source =
-          File('lib/features/auth/auth_gate.dart').readAsStringSync();
+      final source = File(
+        'lib/features/auth/auth_gate.dart',
+      ).readAsStringSync();
 
       expect(source, contains("'organization_owner'"));
       expect(source, contains("'branch_head'"));
