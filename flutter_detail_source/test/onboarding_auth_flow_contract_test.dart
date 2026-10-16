@@ -11,6 +11,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
       'InsightFlowOnboardingState.activeMember',
       'InsightFlowOnboardingState.pendingInvitation',
       'InsightFlowOnboardingState.noMembership',
+      'InsightFlowOnboardingState.unauthenticated',
+      'InsightFlowOnboardingState.endpointMissing',
       'InsightFlowOnboardingState.profileIncomplete',
       'InsightFlowOnboardingState.transientFailure',
       'InsightFlowOnboardingState.authoritativeDenial',
@@ -29,6 +31,16 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(
       source,
       contains("case InsightFlowOnboardingState.authoritativeDenial:"),
+    );
+    expect(source, contains("AUTHORIZATION DEPLOYMENT MISMATCH"));
+    expect(
+      source,
+      contains("case InsightFlowOnboardingState.endpointMissing:"),
+    );
+    expect(http, contains("if (response.statusCode == 404)"));
+    expect(
+      source,
+      contains("case InsightFlowOnboardingState.unauthenticated:"),
     );
     expect(
       source,
