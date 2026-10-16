@@ -181,11 +181,12 @@ class _EmployeeInvitationPasswordSetupScreenState
     final role = widget.invitation['role_id']?.toString() ?? 'data_analyst';
 
     return AuthGlassScaffold(
-      title: 'INVITED ACCOUNT SETUP',
-      subtitle: 'Secure your invited InsightFlow account.',
+      brandedLayout: true,
+      title: 'INVITATION / SECURE ACCOUNT',
+      subtitle: 'Create your password to finish joining InsightFlow.',
       children: [
         AuthGlassMessage(
-          text: "You’re invited to join $displayOrganization. Complete your employee onboarding to access your organization workspace as ${role.replaceAll('_', ' ')}. Your email is verified through Supabase Auth.",
+          text: "You’re joining $displayOrganization. Your Branch Head assigned the role ${role.replaceAll('_', ' ')}; it cannot be changed on this screen. Your email is verified through Supabase Auth.",
           error: false,
         ),
         const SizedBox(height: 14),
