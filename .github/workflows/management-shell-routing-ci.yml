@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - fix/management-shell-role-routing-20261016
+    paths:
+      - 'flutter_detail_source/lib/features/auth/auth_gate.dart'
+      - 'flutter_detail_source/test/auth_gate_management_landing_test.dart'
+      - 'flutter_detail_source/test/management_navigation_context_test.dart'
+      - '.github/workflows/management-shell-routing-ci.yml'
+  pull_request:
+    branches:
+      - feature/branch-head-management-cell-redesign-20261016
+    paths:
+      - 'flutter_detail_source/lib/features/auth/auth_gate.dart'
+      - 'flutter_detail_source/test/auth_gate_management_landing_test.dart'
+      - 'flutter_detail_source/test/management_navigation_context_test.dart'
+      - '.github/workflows/management-shell-routing-ci.yml'
   workflow_dispatch:
 
 permissions:
