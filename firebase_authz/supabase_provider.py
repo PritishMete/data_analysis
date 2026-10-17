@@ -1765,6 +1765,8 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         else:
             raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
+        if "dataset.view_original" not in grant_permissions:
+            raise AuthzError("Permission denied for this resource.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
         if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
             raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")

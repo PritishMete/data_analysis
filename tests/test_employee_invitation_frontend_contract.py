@@ -30,12 +30,15 @@ def test_session_refresh_is_bounded():
 
 
 def test_invitation_onboarding_uses_authoritative_org_name_only():
-    for path in (PASSWORD, ONBOARDING):
-        source = path.read_text(encoding="utf-8")
-        assert "organization_id']?.toString() ??" not in source
-        assert "organization_name" in source
-        assert "You’re invited to join" in source
-        assert "Complete your employee onboarding" in source
+    password = PASSWORD.read_text(encoding="utf-8")
+    onboarding = ONBOARDING.read_text(encoding="utf-8")
+
+    assert "widget.invitation['organization_name']" in password
+    assert "text: \"You’re joining $displayOrganization." in password
+    assert "primary?['organization_name']" in onboarding
+    assert "text: \"Your invitation to $displayOrganization is ready." in onboarding
+    assert "final displayOrganization = organization.isEmpty ? 'your organization' : organization;" in password
+    assert "final displayOrganization = organization.isEmpty ? 'your organization' : organization;" in onboarding
 
 
 def test_pending_invitation_backend_exposes_org_name_without_user_facing_id_fallback():

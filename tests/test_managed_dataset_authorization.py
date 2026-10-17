@@ -42,7 +42,12 @@ class _AuthzSession:
         if "FROM authorization_resources" in sql and "SELECT 1" in sql:
             return _Result(scalar=1 if self.resource else None)
         if "FROM dataset_authorization" in sql:
-            return _Result(scalar=self.protected)
+            row = (
+                {"protected_original": self.protected, "location_id": "branch-1"}
+                if self.protected is not None
+                else None
+            )
+            return _Result(row=row)
         if "FROM resource_grants" in sql:
             return _Result(scalar=self.grant)
         if "FROM identity_bindings" in sql and "JOIN organization_members" in sql:
@@ -121,7 +126,7 @@ def test_dataset_from_wrong_organization_is_rejected(monkeypatch):
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context())
 
-    with pytest.raises(supabase_provider.AuthzError, match="Resource is not accessible"):
+    with pytest.raises(supabase_provider.AuthzError, match="Dataset is not accessible"):
         supabase_provider.authorize_dataset(
             {"uid": "owner", "sub": "owner", "provider": "supabase"},
             "workspace-owner",
