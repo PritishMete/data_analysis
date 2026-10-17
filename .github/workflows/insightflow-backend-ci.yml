@@ -2,9 +2,9 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell]
+    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/render-startup-import-timeout-20261017]
   pull_request:
-    branches: [main]
+    branches: [main, feature/employee-management-cell]
   workflow_dispatch:
 
 jobs:
