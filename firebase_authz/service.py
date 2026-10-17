@@ -871,9 +871,16 @@ def authorize_excel_mutation(
 ):
     validate_id(dataset_id, "dataset ID")
     if action == "excel.mutate.original":
-        # Original-workbook mutation requires the role capability plus an
-        # explicit dataset grant. The dataset grant is the resource boundary;
-        # do not route this through legacy workspace.resources ACLs.
+        # Original-workbook mutation is an elevated operation, not ordinary
+        # employee worksheet editing. Require Manager-level authority and the
+        # explicit dataset ACL; never infer write access from view permission.
+        workspace = _workspace(workspace_id)
+        member_uid = _member_key_for_workspace(workspace, uid)
+        member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
+        if not isinstance(member, dict) or _membership_status(member) != "active":
+            raise PermissionDenied("User membership is not active.")
+        if _effective_role_level(member) < ROLE_LEVELS["manager"]:
+            raise PermissionDenied("Only Managers and above may mutate the original dataset.")
         decision = authorization(uid, workspace_id, "worksheet.modify", None)
         authorize_dataset(uid, workspace_id, dataset_id, "dataset.view_original")
         return {
@@ -943,13 +950,27 @@ def set_dataset_grant(
     return True
 
 def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str):
+    validate_action(action)
     if not action.startswith("dataset."):
         raise ValueError("Dataset authorization requires a dataset capability.")
-    decision = authorization(uid, workspace_id, action, None)
+
+    # Dataset ACL capabilities are delegated per resource. An active member
+    # with an explicit grant may view an original or create a working copy even
+    # when that capability is not part of their default role. This is distinct
+    # from general workspace-resource authorization, which still intersects
+    # role permissions and resource grants. The dataset ACL remains mandatory.
+    if action in DELEGATED_DATASET_PERMISSIONS:
+        decision = authorization(uid, workspace_id, "organization.view", None)
+    else:
+        decision = authorization(uid, workspace_id, action, None)
+
     workspace = _workspace(workspace_id)
     dataset = _dataset(workspace, dataset_id)
     grants = _dataset_grant(dataset, uid)
-    grant_permissions = set(grants.get("permissions") or [])
+    grant_permissions = {
+        permission for permission in (grants.get("permissions") or [])
+        if permission in ACTIONS
+    }
     if action not in grant_permissions:
         raise PermissionDenied("Permission denied for this dataset.")
     return {

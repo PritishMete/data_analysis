@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final managementNavigation = File(
+      'lib/features/auth/management_navigation.dart',
+    ).readAsStringSync();
 
-    final navigationStart = source.indexOf('const tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationStart = source.indexOf('final tabs = <MapEntry<ManagementSection, String>>[');
     final navigationEnd = source.indexOf('];', navigationStart);
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
@@ -59,6 +62,19 @@ void main() {
 
     expect(source, contains('openInsightFlowAnalysis('));
     expect(source, contains('managedDatasetId: datasetId'));
+    // The analysis route is deliberately kept in the shared navigation helper;
+    // verify the real route target rather than only checking the caller name.
+    expect(
+      managementNavigation,
+      contains("import '../dashboard/data_screen.dart';"),
+    );
+    expect(managementNavigation, contains('builder: (_) => DataScreen('));
+    expect(managementNavigation, contains('managedDatasetId: managedDatasetId'));
+    expect(managementNavigation, contains('managedVersionId: managedVersionId'));
+    expect(
+      managementNavigation,
+      contains('managedWorkingCopyId: managedWorkingCopyId'),
+    );
     expect(source, contains('LiquidGlassScope'));
     expect(source, contains('GlassBackgroundSource'));
     expect(source, contains('TechAnimatedBackground'));

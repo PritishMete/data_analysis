@@ -341,9 +341,34 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
     }
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
-    assert service.authorize_dataset("employee", "org", "ds_opaque", "dataset.view_original")["allowed"] is True
+
+    # The employee role is not itself an original-dataset grant. Access comes
+    # only from the explicit dataset ACL and is still limited to delegated
+    # dataset capabilities.
+    assert "dataset.view_original" not in service.DEFAULT_ROLES["employee"]
+    assert "dataset.create_working_copy" not in service.DEFAULT_ROLES["employee"]
+    assert service.authorize_dataset(
+        "employee", "org", "ds_opaque", "dataset.view_original"
+    )["allowed"] is True
+    assert service.authorize_dataset(
+        "employee", "org", "ds_opaque", "dataset.create_working_copy"
+    )["allowed"] is True
+
+    # A read/copy grant does not grant destructive capabilities or permission
+    # to mutate the protected original workbook.
     with pytest.raises(service.PermissionDenied):
         service.authorize_dataset("employee", "org", "ds_opaque", "dataset.delete")
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_excel_mutation(
+            "employee", "org", "excel.mutate.original", "ds_opaque"
+        )
+
+    # Revoking the resource ACL takes effect even though membership remains active.
+    workspace["datasets"]["ds_opaque"]["grants"].pop("employee")
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_dataset(
+            "employee", "org", "ds_opaque", "dataset.view_original"
+        )
 
 
 def test_dataset_acl_never_accepts_workbook_fields(monkeypatch):
