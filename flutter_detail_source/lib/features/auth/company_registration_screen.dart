@@ -697,7 +697,8 @@ class _CompanyRegistrationScreenState
           )
         else ...[
           _stepIndicator(),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
+          _stepIntro(),
           if (_step == 0)
             _companyBody()
           else if (_step == 1)
@@ -730,62 +731,309 @@ class _CompanyRegistrationScreenState
   Widget _companyBody() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const AuthGlassMessage(
-            text:
-                'Your authenticated email is already confirmed before this screen. There is no email OTP step here.',
-            error: false,
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: TechColors.fieldGlass,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            padding: const EdgeInsets.all(13),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(CupertinoIcons.checkmark_seal_fill,
+                    color: kAuthAccent, size: 19),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Email confirmed',
+                        style: TextStyle(
+                          color: TechColors.textPrimary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _email ?? 'Your verified Supabase account',
+                        style: const TextStyle(
+                          color: TechColors.textMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Your account is verified. Next, tell us which organization and branch you will lead.',
+                        style: TextStyle(
+                          color: TechColors.textMuted,
+                          fontSize: 10,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          _field('Company / Organization Name', _organization),
-          const SizedBox(height: 10),
-          _field('Branch Name', _branch),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
+          _field(
+            'Company / Organization Name',
+            _organization,
+            placeholder: 'e.g. Acme Analytics',
+          ),
+          const SizedBox(height: 13),
+          _field(
+            'Branch Name',
+            _branch,
+            placeholder: 'e.g. Kolkata Operations',
+            helper: 'This is the branch you will lead as its initial Branch Head.',
+          ),
+          const SizedBox(height: 13),
           _field(
             'Unique Branch Identifier',
             _branchIdentifier,
-            placeholder: 'e.g. TCS@Singur_1',
-            helper: 'Opaque business identifier. Special characters are allowed.',
+            placeholder: 'e.g. KOL-OPS-001',
+            helper: 'A unique business identifier for this branch. Special characters are allowed.',
+          ),
+          const SizedBox(height: 13),
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: TechColors.sectionGlass,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.info_circle,
+                    color: TechColors.borderActive, size: 16),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'You will become the first Branch Head for this branch. Team members and managers can be added later from the Management Cell.',
+                    style: TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 10,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       );
 
   Widget _stepIndicator() {
-    const labels = ['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW'];
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: List.generate(labels.length, (index) {
-        final active = index == _step;
-        final complete = index < _step;
-        return GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.minimal,
-          settings: LiquidGlassSettings(
-            thickness: 10,
-            blur: 4,
-            glassColor: active
-                ? const Color(0x433DDC97)
-                : const Color(0x17FFFFFF),
-            refractiveIndex: 1.05,
+    const labels = ['Workspace', 'Your profile', 'Review'];
+    const details = [
+      'Company and branch',
+      'Branch Head details',
+      'Confirm and create',
+    ];
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: TechColors.sectionGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.square_stack_3d_up_fill,
+                  color: kAuthAccent, size: 17),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'WORKSPACE SETUP',
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              Text(
+                'STEP ${_step + 1} OF 3',
+                style: const TextStyle(
+                  color: kAuthAccent,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
           ),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-          child: Text(
-            (index + 1).toString() +
-                '  ' +
-                labels[index] +
-                (complete ? '  ✓' : ''),
-            style: TextStyle(
-              color: active || complete
-                  ? TechColors.textPrimary
-                  : TechColors.textMuted,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
+          const SizedBox(height: 14),
+          Row(
+            children: List.generate(3, (index) {
+              final complete = index < _step;
+              final active = index == _step;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 7),
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: complete || active
+                          ? kAuthAccent
+                          : Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 13),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(3, (index) {
+              final complete = index < _step;
+              final active = index == _step;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: complete || active
+                              ? kAuthAccent.withValues(alpha: 0.16)
+                              : Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: complete || active
+                                ? kAuthAccent.withValues(alpha: 0.65)
+                                : Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        child: complete
+                            ? const Icon(CupertinoIcons.check_mark,
+                                color: kAuthAccent, size: 12)
+                            : Text(
+                                '${index + 1}',
+                                style: TextStyle(
+                                  color: active
+                                      ? kAuthAccent
+                                      : TechColors.textMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              labels[index],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: active || complete
+                                    ? TechColors.textPrimary
+                                    : TechColors.textMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              details[index],
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: TechColors.textMuted,
+                                fontSize: 9,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepIntro() {
+    const titles = [
+      'Create your workspace',
+      'Set up your Branch Head profile',
+      'Review before you launch',
+    ];
+    const descriptions = [
+      'Start with your organization, then register the first branch you will lead.',
+      'Add the identity and contact details required to secure your branch workspace.',
+      'Check the details below. Once you create the workspace, you will enter the Management Cell.',
+    ];
+    final icons = [
+      CupertinoIcons.building_2_fill,
+      CupertinoIcons.person_crop_circle_badge_checkmark,
+      CupertinoIcons.checkmark_shield_fill,
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: kAuthAccent.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: kAuthAccent.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Icon(icons[_step], color: kAuthAccent, size: 22),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titles[_step],
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w750,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  descriptions[_step],
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.64),
+                    fontSize: 12,
+                    height: 1.55,
+                  ),
+                ),
+              ],
             ),
           ),
-        );
-      }),
+        ],
+      ),
     );
   }
 
