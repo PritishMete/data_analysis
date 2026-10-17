@@ -52,11 +52,15 @@ class AuthGlassScaffold extends StatelessWidget {
 
                     final card = ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: wideContent ? (fitViewport ? 760 : 1280) : 460,
+                        maxWidth: wideContent
+                            ? (fitViewport ? 760 : 1280)
+                            : 460,
                       ),
                       child: InsightFlowDialogSurface(
                         padding: EdgeInsets.all(
-                          fitViewport ? (narrow ? 14 : 20) : (narrow ? 20 : 28),
+                          fitViewport
+                              ? (narrow ? 14 : 20)
+                              : (narrow ? 20 : 28),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -118,7 +122,8 @@ class AuthGlassScaffold extends StatelessWidget {
                                 child: SingleChildScrollView(
                                   physics: const BouncingScrollPhysics(),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
                                     children: children,
                                   ),
                                 ),
@@ -131,14 +136,12 @@ class AuthGlassScaffold extends StatelessWidget {
                     );
 
                     if (fitViewport) {
-                      final viewportHeight = constraints.maxHeight - vertical * 2;
-                      final cardWidth = wideContent
-                          ? (constraints.maxWidth - horizontal * 2)
-                              .clamp(0.0, 760.0)
-                              .toDouble()
-                          : (constraints.maxWidth - horizontal * 2)
-                              .clamp(0.0, 460.0)
-                              .toDouble();
+                      final viewportHeight =
+                          constraints.maxHeight - vertical * 2;
+                      final cardMaxWidth = wideContent ? 760.0 : 460.0;
+                      final cardWidth = (constraints.maxWidth - horizontal * 2)
+                          .clamp(0.0, cardMaxWidth)
+                          .toDouble();
 
                       // Keep the page fixed to the viewport. Long forms scroll
                       // inside the glass card instead of scrolling the whole page.
@@ -154,14 +157,16 @@ class AuthGlassScaffold extends StatelessWidget {
                             height: viewportHeight,
                             child: Center(
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 1280),
+                                constraints: const BoxConstraints(
+                                  maxWidth: 1280,
+                                ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     const Expanded(child: _AuthBrandPanel()),
                                     const SizedBox(width: 40),
                                     SizedBox(
-                                      width: 760,
+                                      width: cardMaxWidth,
                                       height: viewportHeight,
                                       child: card,
                                     ),
