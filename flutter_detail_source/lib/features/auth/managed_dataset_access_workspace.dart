@@ -138,15 +138,28 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       if (r.statusCode != 200) {
         dynamic decoded;
         try { decoded = jsonDecode(r.body); } catch (_) {}
-        final detail = decoded is Map && decoded['detail'] != null
-            ? decoded['detail'].toString()
-            : switch (r.statusCode) {
-                401 => 'Authentication required.',
-                403 => 'Permission denied for this resource.',
-                404 => 'Dataset version not found.',
-                409 => 'Workspace context conflict.',
-                _ => 'Managed dataset operation failed.',
-              };
+        late final String detail;
+        if (decoded is Map && decoded['detail'] != null) {
+          detail = decoded['detail'].toString();
+        } else {
+          switch (r.statusCode) {
+            case 401:
+              detail = 'Authentication required.';
+              break;
+            case 403:
+              detail = 'Permission denied for this resource.';
+              break;
+            case 404:
+              detail = 'Dataset version not found.';
+              break;
+            case 409:
+              detail = 'Workspace context conflict.';
+              break;
+            default:
+              detail = 'Managed dataset operation failed.';
+              break;
+          }
+        }
         throw StateError(detail);
       }
       var filename = _name(selected!);
