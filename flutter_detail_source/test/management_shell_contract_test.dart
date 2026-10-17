@@ -405,8 +405,12 @@ void main() {
     expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
     expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
     expect(header, contains('InsightFlow'));
-    expect(header, contains('ORGANIZATION / MANAGEMENT'));
-    expect(header, contains('MANAGEMENT WORKSPACE'));
+    // The header title and subtitle are role/scope-driven rather than
+    // hard-coded to an organization-owner label.
+    expect(header, contains('_roleWorkspaceTitle()'));
+    expect(header, contains('_roleWorkspaceSubtitle()'));
+    expect(source, contains("String _roleWorkspaceTitle()"));
+    expect(source, contains("String _roleWorkspaceSubtitle()"));
     expect(header, contains('Refresh management data'));
     expect(header, contains('Sign out'));
 
