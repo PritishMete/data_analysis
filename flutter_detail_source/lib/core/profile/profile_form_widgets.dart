@@ -56,7 +56,9 @@ Future<ProfileOption?> showProfileOptionPicker(
               if (filtered.isEmpty) return;
               setSheetState(() {
                 highlightedIndex =
-                    (highlightedIndex + delta).clamp(0, filtered.length - 1);
+                    (highlightedIndex + delta)
+                        .clamp(0, filtered.length - 1)
+                        .toInt();
               });
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!scrollController.hasClients) return;
@@ -238,10 +240,16 @@ class _ProfileSelectFieldState extends State<ProfileSelectField> {
   void initState() {
     super.initState();
     _focusNode = FocusNode(debugLabel: '${widget.label} selector');
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  void _handleFocusChange() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
     _focusNode.dispose();
     super.dispose();
   }

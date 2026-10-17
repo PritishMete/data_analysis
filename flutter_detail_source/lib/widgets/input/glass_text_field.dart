@@ -768,6 +768,17 @@ class _GlassTextFieldState extends State<GlassTextField> {
       );
     }
 
+    if (widget.height != null && widget.enabled && !widget.readOnly) {
+      // The horizontal padding and rounded glass margins remain tappable. A
+      // tap in those margins focuses the editor; taps on text still reach the
+      // native editor first so caret placement remains accurate.
+      glassWidget = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _focusNode.requestFocus,
+        child: glassWidget,
+      );
+    }
+
     return Opacity(
       opacity: widget.enabled ? 1.0 : 0.5,
       child: _wrapWithConstraints(glassWidget),
