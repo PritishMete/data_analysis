@@ -5,6 +5,26 @@ import 'package:test/test.dart';
 String source(String path) => File(path).readAsStringSync();
 
 void main() {
+  test('onboarding and sign-up layouts fit the viewport', () {
+    final scaffold = source('lib/features/auth/auth_glass_widgets.dart');
+    expect(scaffold, contains('this.fitViewport = false'));
+    expect(scaffold, contains('final viewportHeight = constraints.maxHeight - vertical * 2'));
+    expect(scaffold, contains('inside the glass card instead of scrolling the whole page'));
+
+    for (final path in [
+      'lib/features/auth/company_registration_screen.dart',
+      'lib/features/auth/employee_profile_onboarding_screen.dart',
+      'lib/features/auth/organization_onboarding_screen.dart',
+      'lib/features/auth/sign_up_screen.dart',
+    ]) {
+      expect(
+        source(path),
+        contains('fitViewport: true'),
+        reason: '$path should use the viewport-fitted onboarding layout',
+      );
+    }
+  });
+
   test('Branch Head registration has no email OTP step', () {
     final text = source('lib/features/auth/company_registration_screen.dart');
     expect(text, contains("['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW']"));

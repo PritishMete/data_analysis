@@ -88,6 +88,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         GlassThemeData.of(context).qualityFor(context) ?? GlassQuality.standard;
 
     return AuthGlassScaffold(
+      fitViewport: true,
       title: 'Create account',
       subtitle: 'Set up your InsightFlow workspace access.',
       brandedLayout: true,

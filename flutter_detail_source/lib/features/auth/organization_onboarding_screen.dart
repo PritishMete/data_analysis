@@ -101,6 +101,7 @@ class _OrganizationOnboardingScreenState
 
     return AuthGlassScaffold(
       brandedLayout: true,
+      fitViewport: true,
       title: 'INVITATION / YOUR WORKSPACE',
       subtitle: 'Review your invitation and the access assigned by your Branch Head.',
       children: [

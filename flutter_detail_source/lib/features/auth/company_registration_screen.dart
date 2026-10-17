@@ -676,6 +676,7 @@ class _CompanyRegistrationScreenState
     return AuthGlassScaffold(
       wideContent: true,
       brandedLayout: true,
+      fitViewport: true,
       title: 'BRANCH HEAD / WORKSPACE',
       subtitle: authenticated
           ? 'Create your InsightFlow workspace and register its first branch.'

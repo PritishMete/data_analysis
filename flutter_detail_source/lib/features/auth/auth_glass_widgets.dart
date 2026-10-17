@@ -18,6 +18,7 @@ class AuthGlassScaffold extends StatelessWidget {
     required this.children,
     this.wideContent = false,
     this.brandedLayout = false,
+    this.fitViewport = false,
   });
 
   final String title;
@@ -25,6 +26,8 @@ class AuthGlassScaffold extends StatelessWidget {
   final List<Widget> children;
   final bool wideContent;
   final bool brandedLayout;
+  /// Keeps onboarding inside the visible viewport; only the form body scrolls.
+  final bool fitViewport;
 
   @override
   Widget build(BuildContext context) {
@@ -49,10 +52,12 @@ class AuthGlassScaffold extends StatelessWidget {
 
                     final card = ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: wideContent ? 1280 : 460,
+                        maxWidth: wideContent ? (fitViewport ? 760 : 1280) : 460,
                       ),
                       child: InsightFlowDialogSurface(
-                        padding: EdgeInsets.all(narrow ? 20 : 28),
+                        padding: EdgeInsets.all(
+                          fitViewport ? (narrow ? 14 : 20) : (narrow ? 20 : 28),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -107,12 +112,84 @@ class AuthGlassScaffold extends StatelessWidget {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 24),
-                            ...children,
+                            SizedBox(height: fitViewport ? 12 : 24),
+                            if (fitViewport)
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: children,
+                                  ),
+                                ),
+                              )
+                            else
+                              ...children,
                           ],
                         ),
                       ),
                     );
+
+                    if (fitViewport) {
+                      final viewportHeight = constraints.maxHeight - vertical * 2;
+                      final cardWidth = wideContent
+                          ? (constraints.maxWidth - horizontal * 2)
+                              .clamp(0.0, 760.0)
+                              .toDouble()
+                          : (constraints.maxWidth - horizontal * 2)
+                              .clamp(0.0, 460.0)
+                              .toDouble();
+
+                      // Keep the page fixed to the viewport. Long forms scroll
+                      // inside the glass card instead of scrolling the whole page.
+                      if (brandedLayout &&
+                          constraints.maxWidth >= 1400 &&
+                          constraints.maxHeight >= 660) {
+                        return Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 48,
+                            vertical: vertical,
+                          ),
+                          child: SizedBox(
+                            height: viewportHeight,
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 1280),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    const Expanded(child: _AuthBrandPanel()),
+                                    const SizedBox(width: 40),
+                                    SizedBox(
+                                      width: 760,
+                                      height: viewportHeight,
+                                      child: card,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontal,
+                          vertical: vertical,
+                        ),
+                        child: SizedBox(
+                          height: viewportHeight,
+                          child: Center(
+                            child: SizedBox(
+                              width: cardWidth,
+                              height: viewportHeight,
+                              child: card,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
 
                     if (brandedLayout && constraints.maxWidth >= 900) {
                       return SingleChildScrollView(
