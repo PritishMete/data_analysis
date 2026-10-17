@@ -1,18 +1,11 @@
 # ai_routes.py
-# ─────────────────────────────────────────────────────────────────────────────
-# Drop this file into your repo root alongside app.py.
-# Then add these 2 lines to the BOTTOM of your app.py:
-#
-#   from ai_routes import ai_router
-#   app.include_router(ai_router)
-#
-# That's the ONLY change needed in app.py.
-# ─────────────────────────────────────────────────────────────────────────────
+# Keep the legacy command-model imports lazy: ai_engine imports scikit-learn
+# and the insights stack. Loading it while importing main:app delays Uvicorn's
+# first socket bind, even when those legacy routes are never used.
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ai_engine import parse_command, add_training_example, train_model
 from memory import (
     log_command, get_recent_commands, get_command_stats,
     save_alias, resolve_alias, get_all_aliases, log_correction,
@@ -22,11 +15,10 @@ from system_diagnostics import build_diagnostics
 ai_router = APIRouter()
 
 
-# ── Pydantic Models ───────────────────────────────────────────────────────────
-
 class CommandRequest(BaseModel):
     text: str
     available_columns: list[str] = []
+
 
 class LogResultRequest(BaseModel):
     text: str
@@ -36,18 +28,18 @@ class LogResultRequest(BaseModel):
     success: bool = False
     confidence: float = 0.0
 
+
 class AddTrainingRequest(BaseModel):
     text: str
     correct_intent: str
     slots: dict = {}
     wrong_intent: str = ""
 
+
 class AliasRequest(BaseModel):
     alias: str
     real_name: str
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @ai_router.get("/v1/system/diagnostics")
 async def system_diagnostics(detail_analysis_build_id: str | None = None):
@@ -57,17 +49,13 @@ async def system_diagnostics(detail_analysis_build_id: str | None = None):
 
 @ai_router.post("/parse_command")
 async def parse_command_endpoint(req: CommandRequest):
-    """
-    Takes a natural language command, returns intent + slots.
-    Flutter calls this, then executes the Excel action locally.
-    """
-    result = parse_command(req.text)
+    """Parse a command; load the legacy ML stack only when this route is used."""
+    from ai_engine import parse_command
 
-    # Resolve any learned column aliases from memory
+    result = parse_command(req.text)
     if "column" in result["slots"]:
         result["slots"]["column"] = resolve_alias(result["slots"]["column"])
 
-    # Fuzzy-match column against columns currently in the workbook
     if "column" in result["slots"] and req.available_columns:
         col = result["slots"]["column"].lower()
         matches = [
@@ -76,7 +64,6 @@ async def parse_command_endpoint(req: CommandRequest):
         ]
         if matches:
             result["slots"]["column"] = matches[0]
-
     return result
 
 
@@ -96,19 +83,17 @@ async def log_result(req: LogResultRequest):
 
 @ai_router.get("/memory")
 async def get_memory(limit: int = 30):
-    """Returns recent command history + stats."""
     return {
         "history": get_recent_commands(limit),
-        "stats":   get_command_stats(),
+        "stats": get_command_stats(),
     }
 
 
 @ai_router.post("/add_training")
 async def add_training(req: AddTrainingRequest):
-    """
-    When the AI gets something wrong, submit the correction here.
-    Automatically saves the example and retrains the model.
-    """
+    """Persist a correction and retrain the legacy model."""
+    from ai_engine import add_training_example
+
     if req.wrong_intent:
         log_correction(
             original_text=req.text,
@@ -128,6 +113,8 @@ async def add_training(req: AddTrainingRequest):
 @ai_router.post("/retrain")
 async def retrain():
     """Force a full retrain from training_data.json."""
+    from ai_engine import train_model
+
     train_model()
     return {"status": "retrained"}
 
