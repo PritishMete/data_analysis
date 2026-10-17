@@ -34,8 +34,8 @@ def test_supabase_admin_invite_uses_server_redirect_and_returns_user(monkeypatch
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "server-only-test-secret")
     monkeypatch.setattr(
-        "firebase_authz.supabase_admin.admin_client",
-        lambda: fake,
+        "firebase_authz.supabase_admin._run_admin_operation",
+        lambda operation, callback: callback(fake),
     )
 
     result = invite_user_by_email(

@@ -50,6 +50,8 @@ class _AuthzSession:
             return _Result(row=row)
         if "FROM resource_grants" in sql:
             return _Result(scalar=self.grant)
+        if "FROM member_roles" in sql:
+            return _Result(scalars=["organization_owner"])
         if "FROM identity_bindings" in sql and "JOIN organization_members" in sql:
             return _Result(scalar=self.owner)
         return _Result()
