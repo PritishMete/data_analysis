@@ -5,6 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
 import '../../core/interop/office_host.dart';
+import 'onboarding_screen.dart';
 
 /// InsightFlow authentication surface styled from the Lockr liquid-glass
 /// authentication flow. Authentication behavior is intentionally unchanged.
@@ -69,6 +70,19 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+
+    // Sign-up opens the dedicated onboarding UI. This is presentation-only;
+    // existing sign-in behavior and authentication integration remain unchanged.
+    if (isSignup) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => OnboardingScreen(
+            onBack: () => Navigator.of(context).pop(),
+          ),
+        ),
+      );
+      return;
+    }
 
     if (emailController.text.trim().isEmpty ||
         passwordController.text.isEmpty) {
