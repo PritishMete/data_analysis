@@ -49,7 +49,7 @@ class AuthGlassScaffold extends StatelessWidget {
 
                     final card = ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxWidth: (wideContent || brandedLayout) ? 1280 : 420,
+                        maxWidth: wideContent ? 1280 : 460,
                       ),
                       child: InsightFlowDialogSurface(
                         padding: EdgeInsets.all(narrow ? 20 : 28),
@@ -114,6 +114,31 @@ class AuthGlassScaffold extends StatelessWidget {
                       ),
                     );
 
+                    if (brandedLayout && constraints.maxWidth >= 900) {
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(48, vertical, 48, vertical),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight - vertical * 2,
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1240),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  const Expanded(child: _AuthBrandPanel()),
+                                  const SizedBox(width: 64),
+                                  SizedBox(width: 460, child: card),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
                     return SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
                       padding: EdgeInsets.symmetric(
@@ -134,6 +159,166 @@ class AuthGlassScaffold extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// Brand panel shown beside the authentication form on desktop-sized screens.
+class _AuthBrandPanel extends StatelessWidget {
+  const _AuthBrandPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 540),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: kAuthAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: kAuthAccent.withValues(alpha: 0.42)),
+                ),
+                child: const Icon(
+                  CupertinoIcons.chart_bar_square_fill,
+                  color: kAuthAccent,
+                  size: 27,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Text(
+                'InsightFlow',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.7,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 52),
+          const Text(
+            'Turn your data into',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 35,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'actionable insights.',
+            style: TextStyle(
+              color: kAuthAccent,
+              fontSize: 35,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'A secure, role-based analytics workspace built for teams that make decisions with data.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 15,
+              height: 1.7,
+            ),
+          ),
+          const SizedBox(height: 32),
+          const _AuthFeatureRow(
+            icon: CupertinoIcons.chart_bar_alt_fill,
+            title: 'Powerful analytics',
+            subtitle: 'Explore trends and performance in one place',
+          ),
+          const SizedBox(height: 18),
+          const _AuthFeatureRow(
+            icon: CupertinoIcons.lock_shield_fill,
+            title: 'Role-based access',
+            subtitle: 'Workspace access follows your assigned role',
+          ),
+          const SizedBox(height: 18),
+          const _AuthFeatureRow(
+            icon: CupertinoIcons.checkmark_shield_fill,
+            title: 'Your data, protected',
+            subtitle: 'Secure sign-in with verified email access',
+          ),
+          const SizedBox(height: 34),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: TechColors.panelBg.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: kAuthAccent.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.waveform_path, color: kAuthAccent, size: 25),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'One workspace. Clear permissions. Better decisions.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthFeatureRow extends StatelessWidget {
+  const _AuthFeatureRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: kAuthAccent.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kAuthAccent.withValues(alpha: 0.2)),
+          ),
+          child: Icon(icon, color: kAuthAccent, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.58), fontSize: 11, height: 1.4)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
