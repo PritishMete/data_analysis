@@ -1016,7 +1016,7 @@ class _CompanyRegistrationScreenState
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
-                    fontWeight: FontWeight.w750,
+                    fontWeight: FontWeight.w700,
                     height: 1.2,
                   ),
                 ),
