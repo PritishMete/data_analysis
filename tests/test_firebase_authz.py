@@ -319,10 +319,12 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
     workspace = {
         "members": {
             "owner": {"status": "active", "roles": {"organization_owner": True}},
+            "manager": {"status": "active", "roles": {"manager": True}},
             "employee": {"status": "active", "roles": {"employee": True}},
         },
         "roles": {
             "organization_owner": {"permissions": sorted(service.ACTIONS)},
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
             "employee": {"permissions": sorted(service.DEFAULT_ROLES["employee"])},
         },
         "datasets": {
@@ -332,6 +334,9 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
                 "owner_uid": "owner",
                 "protected_original": True,
                 "grants": {
+                    "manager": {
+                        "permissions": ["dataset.view_original"]
+                    },
                     "employee": {
                         "permissions": ["dataset.view_original", "dataset.create_working_copy"]
                     }
@@ -361,6 +366,16 @@ def test_dataset_acl_is_opaque_and_fail_closed(monkeypatch):
     with pytest.raises(service.PermissionDenied):
         service.authorize_excel_mutation(
             "employee", "org", "excel.mutate.original", "ds_opaque"
+        )
+    # A manager can mutate the original only when their role capability and
+    # explicit dataset ACL both authorize the operation.
+    assert service.authorize_excel_mutation(
+        "manager", "org", "excel.mutate.original", "ds_opaque"
+    )["allowed"] is True
+    workspace["datasets"]["ds_opaque"]["grants"].pop("manager")
+    with pytest.raises(service.PermissionDenied):
+        service.authorize_excel_mutation(
+            "manager", "org", "excel.mutate.original", "ds_opaque"
         )
 
     # Revoking the resource ACL takes effect even though membership remains active.

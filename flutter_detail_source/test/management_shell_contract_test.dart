@@ -10,7 +10,10 @@ void main() {
     ).readAsStringSync();
 
     final navigationStart = source.indexOf('final tabs = <MapEntry<ManagementSection, String>>[');
-    final navigationEnd = source.indexOf('];', navigationStart);
+    final navigationEnd = source.indexOf(
+      'return AdaptiveLiquidGlassLayer(',
+      navigationStart,
+    );
     expect(navigationStart, greaterThanOrEqualTo(0));
     expect(navigationEnd, greaterThan(navigationStart));
     final navigation = source.substring(navigationStart, navigationEnd);

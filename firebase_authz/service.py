@@ -871,17 +871,20 @@ def authorize_excel_mutation(
 ):
     validate_id(dataset_id, "dataset ID")
     if action == "excel.mutate.original":
-        # Original-workbook mutation is an elevated operation, not ordinary
-        # employee worksheet editing. Require Manager-level authority and the
-        # explicit dataset ACL; never infer write access from view permission.
+        # Original-workbook mutation is elevated, not ordinary employee
+        # worksheet editing. Require an active authenticated member, Manager+
+        # role level, the role's worksheet.modify capability, and an explicit
+        # dataset ACL. A view grant cannot elevate a lower role to write access.
         workspace = _workspace(workspace_id)
+        decision = authorization(uid, workspace_id, "organization.view", None)
         member_uid = _member_key_for_workspace(workspace, uid)
         member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
         if not isinstance(member, dict) or _membership_status(member) != "active":
             raise PermissionDenied("User membership is not active.")
         if _effective_role_level(member) < ROLE_LEVELS["manager"]:
             raise PermissionDenied("Only Managers and above may mutate the original dataset.")
-        decision = authorization(uid, workspace_id, "worksheet.modify", None)
+        if "worksheet.modify" not in _role_permissions(workspace, member):
+            raise PermissionDenied("Role does not permit original dataset mutation.")
         authorize_dataset(uid, workspace_id, dataset_id, "dataset.view_original")
         return {
             **decision,
