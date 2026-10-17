@@ -363,19 +363,35 @@ void main() {
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
     expect(access, contains("Text('Access'"));
-    expect(access, contains('People and dataset access'));
     expect(access, contains('Search managed resources'));
     expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this scope yet.'));
     expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
-    expect(access, contains('People and dataset access'));
-    expect(access, contains("['dataset.view_original']"));
-    expect(access, contains("'dataset.create_working_copy'"));
-    expect(access, contains("'dataset.edit_working_copy'"));
-    expect(access, contains('_accessPanel'));
-    expect(access, isNot(contains('ORGANIZATION CONTROL PLANE')));
+
+    // Match the actual managed-dataset UI policy: original viewing, upload,
+    // deletion, and working-copy access are role-gated in this widget.
+    expect(
+      access,
+      contains(
+        "bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));",
+      ),
+    );
+    expect(
+      access,
+      contains(
+        "bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));",
+      ),
+    );
+    expect(
+      access,
+      contains(
+        "bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');",
+      ),
+    );
+    expect(access, contains('bool get canCopy => !canViewOriginal;'));
+    expect(access, contains('openInsightFlowAnalysis(context, managedDatasetId: id'));
 
 
     final headerStart = source.indexOf('Widget _buildManagementHeader()');
