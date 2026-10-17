@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    environment: github-pages
     timeout-minutes: 45
 
     steps:
@@ -44,43 +45,76 @@ jobs:
       - name: Stamp production web build identity
         working-directory: flutter_detail_source
         shell: bash
+        env:
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: \${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
-          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
-          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com/g" web/index.html
+          test -n "\${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}"
+          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/\${GITHUB_SHA}/g" web/index.html
+          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/\${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" web/index.html
 
-      - name: Validate Firebase Web build configuration
+      - name: Validate production web build configuration
         shell: bash
         env:
-          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
-          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
-          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
-          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
-          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_FIREBASE_WEB_API_KEY: \${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          INSIGHTFLOW_FIREBASE_WEB_APP_ID: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
+          INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: \${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+          INSIGHTFLOW_SUPABASE_URL: \${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: \${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
         run: |
           set -euo pipefail
-          test -n "${FIREBASE_WEB_API_KEY}"
-          test -n "${FIREBASE_WEB_APP_ID}"
-          test -n "${FIREBASE_WEB_MESSAGING_SENDER_ID}"
-          test -n "${FIREBASE_WEB_PROJECT_ID}"
-          test -n "${FIREBASE_WEB_AUTH_DOMAIN}"
-          test "${FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
+          required=(
+            INSIGHTFLOW_FIREBASE_WEB_API_KEY
+            INSIGHTFLOW_FIREBASE_WEB_APP_ID
+            INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID
+            INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID
+            INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN
+            INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
+            INSIGHTFLOW_SUPABASE_URL
+            INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY
+          )
+          for name in "\${required[@]}"; do
+            if [ -z "\${!name:-}" ]; then
+              echo "::error::Missing required build configuration: \${name}"
+              exit 1
+            fi
+          done
+          test "\${INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
 
       - name: Build Flutter web
         working-directory: flutter_detail_source
         env:
-          FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
-          FIREBASE_WEB_APP_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
-          FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
-          FIREBASE_WEB_PROJECT_ID: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID }}
-          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_FIREBASE_WEB_API_KEY: \${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          INSIGHTFLOW_FIREBASE_WEB_APP_ID: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
+          INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: \${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: \${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+          INSIGHTFLOW_WORKSPACE_ID: \${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
+          INSIGHTFLOW_SUPABASE_URL: \${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: \${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
         run: |
-          flutter build web --release --base-href /data_analysis/ \
-            --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY="${FIREBASE_WEB_API_KEY}" \
-            --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID="${FIREBASE_WEB_APP_ID}" \
-            --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID="${FIREBASE_WEB_MESSAGING_SENDER_ID}" \
-            --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID="${FIREBASE_WEB_PROJECT_ID}" \
-            --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN="${FIREBASE_WEB_AUTH_DOMAIN}"
+          set -euo pipefail
+          clean_env() { printf '%s' "\${!1:-}" | tr -d '\\r\\n'; }
+          build_args=(
+            build web --release --no-wasm-dry-run --base-href "/data_analysis/"
+            --dart-define "INSIGHTFLOW_FIREBASE_WEB_API_KEY=$(clean_env INSIGHTFLOW_FIREBASE_WEB_API_KEY)"
+            --dart-define "INSIGHTFLOW_FIREBASE_WEB_APP_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_APP_ID)"
+            --dart-define "INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID)"
+            --dart-define "INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID)"
+            --dart-define "INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=$(clean_env INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN)"
+            --dart-define "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID=$(clean_env INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID)"
+            --dart-define "INSIGHTFLOW_WORKSPACE_ID=$(clean_env INSIGHTFLOW_WORKSPACE_ID)"
+            --dart-define "INSIGHTFLOW_SUPABASE_URL=$(clean_env INSIGHTFLOW_SUPABASE_URL)"
+            --dart-define "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
+            --dart-define "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
+          )
+          flutter "\${build_args[@]}"
 
       - name: Verify generated web bundle
         working-directory: flutter_detail_source
