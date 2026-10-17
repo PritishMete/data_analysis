@@ -23,7 +23,7 @@ class InsightFlowFloatingBrand extends StatelessWidget {
         width: 180,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: TechColors.panelGlass.tint.withValues(alpha: 0.20),
+          color: TechColors.panelGlass.glassColor.withValues(alpha: 0.20),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: Colors.white.withValues(alpha: 0.16),
