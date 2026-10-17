@@ -371,6 +371,8 @@ class _CompanyRegistrationScreenState
             placeholder: placeholder ?? label,
             enabled: !_busy,
             keyboardType: type,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
             inputFormatters: inputFormatters,
           ),
         ),
@@ -557,6 +559,8 @@ class _CompanyRegistrationScreenState
             placeholder: 'Phone number',
             enabled: !_busy,
             keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
             inputFormatters: <TextInputFormatter>[
               FilteringTextInputFormatter.digitsOnly,
             ],

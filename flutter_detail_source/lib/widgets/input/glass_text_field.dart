@@ -694,7 +694,9 @@ class _GlassTextFieldState extends State<GlassTextField> {
               left: resolvedPadding.left,
               right: resolvedPadding.right,
             ),
-            child: Align(alignment: Alignment.center, child: rowContent),
+            // Expand the editable surface to the entire fixed-height glass
+            // field so taps near its top/bottom still place the text cursor.
+            child: SizedBox.expand(child: rowContent),
           )
         : Padding(padding: widget.padding, child: rowContent);
 

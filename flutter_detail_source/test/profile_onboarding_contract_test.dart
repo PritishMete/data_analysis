@@ -31,6 +31,28 @@ void main() {
     }
   });
 
+  test('profile selectors support keyboard navigation and searchable selection', () {
+    final widgets = source('lib/core/profile/profile_form_widgets.dart');
+    final glassField = source('lib/widgets/input/glass_text_field.dart');
+    final company = source('lib/features/auth/company_registration_screen.dart');
+    final employee =
+        source('lib/features/auth/employee_profile_onboarding_screen.dart');
+
+    expect(widgets, contains('canRequestFocus: widget.onTap != null'));
+    expect(widgets, contains('LogicalKeyboardKey.arrowDown'));
+    expect(widgets, contains('LogicalKeyboardKey.arrowUp'));
+    expect(widgets, contains('LogicalKeyboardKey.numpadEnter'));
+    expect(widgets, contains('autofocus: true'));
+    expect(widgets, contains('onSubmitted: (_) => selectHighlighted()'));
+    expect(widgets, contains('return await showModalBottomSheet'));
+    expect(glassField, contains('SizedBox.expand(child: rowContent)'));
+
+    for (final screen in [company, employee]) {
+      expect(screen, contains('textInputAction: TextInputAction.next'));
+      expect(screen, contains('FocusScope.of(context).nextFocus()'));
+    }
+  });
+
   test('Branch Head registration has no email OTP step', () {
     final text = source('lib/features/auth/company_registration_screen.dart');
     expect(text, contains("['COMPANY', 'BRANCH HEAD PROFILE', 'REVIEW']"));

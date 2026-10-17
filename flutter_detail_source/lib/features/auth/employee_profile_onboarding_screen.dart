@@ -334,6 +334,8 @@ class _EmployeeProfileOnboardingScreenState
             placeholder: 'Phone number',
             enabled: !_busy,
             keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
             inputFormatters: <TextInputFormatter>[
               FilteringTextInputFormatter.digitsOnly,
             ],
@@ -551,6 +553,8 @@ class _EmployeeProfileOnboardingScreenState
             placeholder: placeholder ?? label,
             enabled: !_busy,
             keyboardType: type,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
             inputFormatters: inputFormatters,
           ),
         ),
