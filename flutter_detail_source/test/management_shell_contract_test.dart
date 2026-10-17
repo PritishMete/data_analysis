@@ -303,10 +303,20 @@ void main() {
     expect(source, contains("title: 'Invite employee'"));
     expect(source, contains("GlassDialogAction("));
     expect(source, contains("label: const Text('Invite employee')"));
+    final invitationRoleStart = source.indexOf(
+      "const roleOptions = <String>[",
+      source.indexOf("Future<void> _inviteEmployee() async"),
+    );
+    final invitationRoleEnd = source.indexOf("];", invitationRoleStart);
+    expect(invitationRoleStart, greaterThanOrEqualTo(0));
+    expect(invitationRoleEnd, greaterThan(invitationRoleStart));
+    final invitationRoles = source.substring(
+      invitationRoleStart,
+      invitationRoleEnd,
+    );
     for (final role in [
       'manager',
       'team_lead',
-      'employee',
       'data_analyst',
       'senior_data_analyst',
       'business_analyst',
@@ -320,8 +330,17 @@ void main() {
       'data_governance_analyst',
       'external_viewer',
     ]) {
-      expect(source, contains("'$role'"), reason: 'Invitation role missing: $role');
+      expect(
+        invitationRoles,
+        contains("'$role'"),
+        reason: 'Invitation role missing: $role',
+      );
     }
+    expect(
+      invitationRoles,
+      isNot(contains("'employee'")),
+      reason: 'Generic employee must not be offered as an invitation role.',
+    );
     expect(source, contains('v1/authz/invitations'));
     expect(source, contains("'email_delivery_status'"));
     expect(source, contains("no duplicate Auth account was created"));
