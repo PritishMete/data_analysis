@@ -1458,7 +1458,7 @@ class _ManagementShellState extends State<ManagementShell> {
         final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
         return Wrap(spacing: 10, runSpacing: 10, children: [
           SizedBox(width: width, child: _overviewSummaryCard('Team members', peopleCount.toString(), 'People in your organization', Icons.people_alt_outlined)),
-          SizedBox(width: width, child: _overviewSummaryCard('Datasets / locations', locationCount.toString(), 'Locations in your organization', Icons.storage_outlined)),
+          SizedBox(width: width, child: _overviewSummaryCard('Locations', locationCount.toString(), 'Branches and locations', Icons.location_on_outlined)),
           SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), 'Sections across locations', Icons.account_tree_outlined)),
           SizedBox(width: width, child: _overviewSummaryCard('Active access', activeAssignments.toString(), 'Current active assignments', Icons.shield_outlined)),
         ]);
