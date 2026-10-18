@@ -1335,7 +1335,7 @@ class _ManagementShellState extends State<ManagementShell> {
           child: Column(children: [
             teamRow(const <String, dynamic>{}, header: true),
             ...people.take(5).map((p) => Column(children: [
-              teamRow(p), const Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
+              teamRow(p), Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
             ])),
           ]),
         )),
