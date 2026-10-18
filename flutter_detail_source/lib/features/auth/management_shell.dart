@@ -934,34 +934,51 @@ class _ManagementShellState extends State<ManagementShell> {
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(16),
       shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 190;
+          final iconBadge = Container(
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: TechColors.borderActive.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
+              color: TechColors.borderActive.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(13),
               border: Border.all(
-                color: TechColors.borderActive.withValues(alpha: 0.18),
+                color: TechColors.borderActive.withValues(alpha: 0.28),
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: TechColors.borderActive.withValues(alpha: 0.08),
+                  blurRadius: 14,
+                ),
+              ],
             ),
-            child: Icon(icon, size: 19, color: TechColors.borderActive),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
+            child: Icon(icon, size: 20, color: TechColors.borderActive),
+          );
+          final metricText = Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
+                Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 5),
+                Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, height: 1.0, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 7),
+                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
               ],
             ),
-          ),
-        ],
+          );
+          return compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [iconBadge, const SizedBox(height: 12), metricText],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [iconBadge, const SizedBox(width: 12), metricText],
+                );
+        },
       ),
     );
   }
