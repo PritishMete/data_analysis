@@ -3481,7 +3481,7 @@ class _ManagementShellState extends State<ManagementShell> {
         quality: GlassQuality.standard,
         settings: kInsightFlowFloatingBrandGlassSettings,
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 700;
