@@ -1340,6 +1340,7 @@ class _ManagementShellState extends State<ManagementShell> {
       _overviewDetailLine('Locations', locationCount.toString()),
       _overviewDetailLine('Sections', sectionCount.toString()),
       _overviewDetailLine('People', peopleCount.toString()),
+      _overviewDetailLine('Unassigned people', _unassignedPeople().length.toString()),
       _overviewDetailLine('Pending invitations', pendingCount.toString()),
       _overviewDetailLine('Active assignments', activeCount.toString()),
       const SizedBox(height: 8),
@@ -1349,33 +1350,23 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     final actionsPanel = panel('Workspace actions', Icons.flash_on_rounded, Column(children: [
-      actionTile('People & invitations', 'Manage your team', Icons.person_add_alt_1_rounded, ManagementSection.people),
+      _overviewQuickAction('People & invitations', 'Manage your team', Icons.person_add_alt_1_rounded, ManagementSection.people),
       const SizedBox(height: 8),
-      actionTile('Organization structure', 'Locations and sections', Icons.account_tree_rounded, ManagementSection.organization),
+      _overviewQuickAction('Organization structure', 'Locations and sections', Icons.account_tree_rounded, ManagementSection.organization),
       const SizedBox(height: 8),
-      actionTile('Access control', 'Assignments and permissions', Icons.shield_outlined, ManagementSection.dataAccess),
+      _overviewQuickAction('Access control', 'Assignments and permissions', Icons.shield_outlined, ManagementSection.dataAccess),
       const SizedBox(height: 8),
-      actionTile('Invitation queue', '$pendingCount waiting for response', Icons.mark_email_unread_outlined, ManagementSection.invitations),
+      _overviewQuickAction('Invitation queue', '$pendingCount waiting for response', Icons.mark_email_unread_outlined, ManagementSection.invitations),
     ]));
 
-    final activityPanel = panel('Latest activity', Icons.bolt_rounded,
-      latest.isEmpty ? const Text('Activity will appear here as your team works.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
-      : Column(children: latest.map((event) {
-        final actor = event['actor_name']?.toString().trim() ?? '';
-        final action = _humanizeAuditAction(event['action']?.toString() ?? '');
-        final time = _relativeActivityTime(event['created_at']?.toString() ?? '');
-        return Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(width: 30, height: 30, decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .11), borderRadius: BorderRadius.circular(10)),
-            child: const Icon(Icons.bolt_rounded, color: TechColors.borderActive, size: 16)),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(actor.isEmpty ? action : '$actor · $action', maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 3), Text(time.isEmpty ? 'Recent event' : time, style: const TextStyle(color: TechColors.textMuted, fontSize: 9)),
-          ])),
-        ]));
-      }).toList()),
-      action: TextButton(onPressed: _sectionAllowed(ManagementSection.audit) ? () => setState(() => section = ManagementSection.audit) : null, child: const Text('All activity')));
+    final activityPanel = panel('Recent activity', Icons.bolt_rounded,
+      latest.isEmpty
+        ? const Text('Activity will appear here as your team works.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
+        : Column(children: latest.map(_overviewActivityItem).toList()),
+      action: TextButton(
+        onPressed: _sectionAllowed(ManagementSection.audit) ? () => setState(() => section = ManagementSection.audit) : null,
+        child: const Text('View all'),
+      ));
 
     final structurePanel = panel('Workspace map', Icons.account_tree_rounded, Column(children: [
       _overviewStructureStep('Organization', orgName, Icons.apartment_rounded),
@@ -1388,6 +1379,10 @@ class _ManagementShellState extends State<ManagementShell> {
     ]), action: TextButton(onPressed: _sectionAllowed(ManagementSection.organization) ? () => setState(() => section = ManagementSection.organization) : null, child: const Text('Explore')));
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _workspaceControlPanel(),
+      const SizedBox(height: 12),
+      _branchAuthorityCard(),
+      const SizedBox(height: 14),
       LayoutBuilder(builder: (context, constraints) {
         final narrow = constraints.maxWidth < 650;
         final greeting = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1413,10 +1408,10 @@ class _ManagementShellState extends State<ManagementShell> {
         final gap = 12.0;
         final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
         return Wrap(spacing: gap, runSpacing: gap, children: [
-          SizedBox(width: width, child: metric('Team members', '$peopleCount', 'People in your scope', Icons.groups_2_rounded, TechColors.borderActive)),
-          SizedBox(width: width, child: metric('Locations', '$locationCount', 'Branches and locations', Icons.hub_rounded, const Color(0xFF419BFF))),
-          SizedBox(width: width, child: metric('Sections', '$sectionCount', 'Operational groups', Icons.account_tree_rounded, const Color(0xFF31D6C3))),
-          SizedBox(width: width, child: metric('Active access', '$activeCount', '$pendingCount pending invitations', Icons.shield_moon_rounded, TechColors.statusGreen)),
+          SizedBox(width: width, child: _overviewSummaryCard('Team members', '$peopleCount', 'People in your scope', Icons.groups_2_rounded)),
+          SizedBox(width: width, child: _overviewSummaryCard('Locations', '$locationCount', 'Branches and locations', Icons.hub_rounded)),
+          SizedBox(width: width, child: _overviewSummaryCard('Sections', '$sectionCount', 'Operational groups', Icons.account_tree_rounded)),
+          SizedBox(width: width, child: _overviewSummaryCard('Active access', '$activeCount', '$pendingCount pending invitations', Icons.shield_moon_rounded)),
         ]);
       }),
       const SizedBox(height: 14),
