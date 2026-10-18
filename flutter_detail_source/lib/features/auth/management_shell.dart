@@ -1080,6 +1080,58 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  Widget _branchAuthorityCard() => GlassCard(
+    margin: EdgeInsets.zero,
+    padding: const EdgeInsets.all(15),
+    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+        final hierarchy = Row(
+          children: [
+            const Icon(Icons.account_tree_outlined, color: TechColors.borderActive, size: 19),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 7,
+                runSpacing: 5,
+                children: [
+                  const Text('Organization Owner', style: TextStyle(
+                    color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700,
+                  )),
+                  const Icon(Icons.chevron_right_rounded, color: TechColors.textMuted, size: 15),
+                  Text('Branch Head · ${_uiScopeLabel()}', style: const TextStyle(
+                    color: TechColors.borderActive, fontSize: 11, fontWeight: FontWeight.w700,
+                  )),
+                  const Icon(Icons.chevron_right_rounded, color: TechColors.textMuted, size: 15),
+                  const Text('Branch team', style: TextStyle(
+                    color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700,
+                  )),
+                ],
+              ),
+            ),
+          ],
+        );
+        const note = Text(
+          'Management actions stay within your authorized branch scope. Organization-wide authority remains with the Organization Owner.',
+          style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.45),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            hierarchy,
+            SizedBox(height: compact ? 9 : 7),
+            Padding(
+              padding: EdgeInsets.only(left: compact ? 0 : 28),
+              child: note,
+            ),
+          ],
+        );
+      },
+    ),
+  );
+
   Widget overviewView() {
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
@@ -1155,12 +1207,12 @@ class _ManagementShellState extends State<ManagementShell> {
               final compact = constraints.maxWidth < 620;
               final organizationStatus = org['status']?.toString().trim();
               final subtitle = organizationStatus == null || organizationStatus.isEmpty
-                  ? 'Manage your organization, people, access and activity from one place.'
+                  ? 'Manage your branch, people, authorized data access and activity from one place.'
                   : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.';
               final content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _eyebrow('Organization overview'),
+                  _eyebrow(_managementRole() == 'branch_head' ? 'Branch Head workspace' : 'Organization overview'),
                   const SizedBox(height: 7),
                   Text(_overviewOrganizationName(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 7),
@@ -1179,8 +1231,12 @@ class _ManagementShellState extends State<ManagementShell> {
             },
           ),
         ),
+        if (_managementRole() == 'branch_head') ...[
+          const SizedBox(height: 12),
+          _branchAuthorityCard(),
+        ],
         const SizedBox(height: 14),
-        _eyebrow('Organization summary'),
+        _eyebrow(_managementRole() == 'branch_head' ? 'Branch summary' : 'Organization summary'),
         const SizedBox(height: 9),
         LayoutBuilder(
           builder: (context, constraints) {
