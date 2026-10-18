@@ -889,20 +889,6 @@ class _ManagementShellState extends State<ManagementShell> {
     return parsed ?? fallback;
   }
 
-  List<Map<String, dynamic>> _unassignedPeople() {
-    final assignedPrincipalIds = assignments
-        .where((a) => a['status'] == 'active')
-        .map((a) => a['principal_id']?.toString())
-        .whereType<String>()
-        .toSet();
-    return people.where((p) {
-      final principalId = p['principal_id']?.toString();
-      return principalId == null ||
-          principalId.isEmpty ||
-          !assignedPrincipalIds.contains(principalId);
-    }).toList();
-  }
-
   String _humanizeAuditAction(String action) {
     final normalized = action
         .replaceAll(RegExp(r'^[A-Z_]+\\.'), '')
@@ -1280,7 +1266,8 @@ class _ManagementShellState extends State<ManagementShell> {
     );
 
     Widget teamRow(Map<String, dynamic> p, {bool header = false}) {
-      if (header) return Container(
+      if (header) {
+        return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .07), borderRadius: BorderRadius.circular(9)),
         child: const Row(children: [
@@ -1290,6 +1277,7 @@ class _ManagementShellState extends State<ManagementShell> {
           SizedBox(width: 56, child: Text('STATUS', textAlign: TextAlign.end, style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700))),
         ]),
       );
+      }
       final name = p['full_name']?.toString().trim() ?? '';
       final role = p['role_id']?.toString() ?? '';
       final email = p['email']?.toString() ?? '';
@@ -1434,6 +1422,8 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _workspaceControlPanel(),
+      const SizedBox(height: 12),
       // Command-center hero: the existing InsightFlow glass language is retained,
       // while the information hierarchy is closer to the approved dashboard mockup.
       GlassContainer(
@@ -1512,6 +1502,8 @@ class _ManagementShellState extends State<ManagementShell> {
           ]);
         }),
       ),
+      const SizedBox(height: 12),
+      _branchAuthorityCard(),
       const SizedBox(height: 14),
       LayoutBuilder(builder: (context, constraints) {
         final columns = constraints.maxWidth < 560 ? 2 : constraints.maxWidth < 950 ? 2 : 4;
