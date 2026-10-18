@@ -1261,45 +1261,10 @@ class _ManagementShellState extends State<ManagementShell> {
             child: Icon(icon, size: 18, color: TechColors.borderActive)),
           const SizedBox(width: 10),
           Expanded(child: Text(title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w800))),
-          if (action != null) action,
+          ?action,
         ]),
         const SizedBox(height: 14), child,
       ]),
-    );
-
-    Widget metric(String title, String value, String detail, IconData icon, Color accent) => GlassCard(
-      margin: EdgeInsets.zero, padding: const EdgeInsets.all(15),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 17),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(width: 38, height: 38, decoration: BoxDecoration(color: accent.withValues(alpha: .12), borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, color: accent, size: 20)),
-          const Spacer(), Container(width: 6, height: 6, decoration: BoxDecoration(color: accent, shape: BoxShape.circle)),
-        ]),
-        const SizedBox(height: 16),
-        Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 27, height: 1, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        Text(title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
-      ]),
-    );
-
-    Widget actionTile(String title, String detail, IconData icon, ManagementSection target) => InkWell(
-      onTap: _sectionAllowed(target) ? () => setState(() => section = target) : null,
-      borderRadius: BorderRadius.circular(13),
-      child: Container(padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: TechColors.panelBg.withValues(alpha: .52), borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: TechColors.borderActive.withValues(alpha: .17))),
-        child: Row(children: [
-          Icon(icon, size: 19, color: TechColors.borderActive), const SizedBox(width: 11),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 3), Text(detail, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-          ])),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: TechColors.textMuted),
-        ]),
-      ),
     );
 
     final teamRows = people.take(5).map((person) {
@@ -1418,19 +1383,19 @@ class _ManagementShellState extends State<ManagementShell> {
       LayoutBuilder(builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1060;
         final medium = constraints.maxWidth >= 720;
-        if (wide) return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (wide) { return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(flex: 6, child: Column(children: [teamPanel, const SizedBox(height: 12), activityPanel])),
           const SizedBox(width: 12),
           Expanded(flex: 3, child: Column(children: [branchPanel, const SizedBox(height: 12), structurePanel])),
           const SizedBox(width: 12), Expanded(flex: 3, child: actionsPanel),
         ]);
-        if (medium) return Column(children: [
+        if (medium) { return Column(children: [
           teamPanel, const SizedBox(height: 12),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: Column(children: [branchPanel, const SizedBox(height: 12), structurePanel])),
             const SizedBox(width: 12), Expanded(child: Column(children: [actionsPanel, const SizedBox(height: 12), activityPanel])),
           ]),
-        ]);
+        ]); }
         return Column(children: [
           teamPanel, const SizedBox(height: 12), branchPanel, const SizedBox(height: 12),
           actionsPanel, const SizedBox(height: 12), activityPanel, const SizedBox(height: 12), structurePanel,
@@ -1449,22 +1414,6 @@ class _ManagementShellState extends State<ManagementShell> {
       const SizedBox(width: 10),
       Flexible(child: Text(value.isEmpty ? '—' : value, textAlign: TextAlign.end, maxLines: 2, overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700))),
-    ]),
-  );
-
-  Widget _overviewHeroTag(IconData icon, String label) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-    decoration: BoxDecoration(
-      color: TechColors.borderActive.withValues(alpha: .09),
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: TechColors.borderActive.withValues(alpha: .20)),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 13, color: TechColors.borderActive),
-      const SizedBox(width: 6),
-      Text(label, style: const TextStyle(
-        color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w600,
-      )),
     ]),
   );
 
