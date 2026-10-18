@@ -782,7 +782,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final fillColor = accent ? TechColors.borderActive : TechColors.panelBg;
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: CupertinoColors.black.withValues(alpha: 0.24),
@@ -792,7 +792,7 @@ class _ManagementShellState extends State<ManagementShell> {
         ],
       ),
       child: SizedBox(
-        height: 56,
+        height: 48,
         child: Stack(
           children: [
             Positioned.fill(
@@ -807,9 +807,9 @@ class _ManagementShellState extends State<ManagementShell> {
               child: GlassButton.custom(
                 onTap: onPressed ?? () {},
                 enabled: onPressed != null,
-                height: 56,
+                height: 48,
                 width: double.infinity,
-                shape: const LiquidRoundedSuperellipse(borderRadius: 28),
+                shape: const LiquidRoundedSuperellipse(borderRadius: 12),
                 useOwnLayer: true,
                 quality: GlassQuality.minimal,
                 settings: dockGlassSettings(glassColor: fillColor.withValues(alpha: 0.85)),
@@ -918,8 +918,8 @@ class _ManagementShellState extends State<ManagementShell> {
   ) {
     return GlassCard(
       margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(16),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      padding: const EdgeInsets.all(18),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 190;
@@ -3475,26 +3475,43 @@ class _ManagementShellState extends State<ManagementShell> {
     // Mirrors DataScreen._buildGlassAppBar(): management is another
     // InsightFlow workspace, not a separate admin theme.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       child: GlassContainer(
         useOwnLayer: true,
         quality: GlassQuality.standard,
         settings: kInsightFlowFloatingBrandGlassSettings,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 12),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 700;
             final identity = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.auto_awesome_rounded, color: TechColors.borderActive, size: 18),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF168BFF), Color(0xFF00DDF5)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: TechColors.borderActive.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.hub_rounded, color: Colors.white, size: 21),
+                ),
                 const SizedBox(width: 10),
                 const Text('InsightFlow', style: TextStyle(
                   color: TechColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'monospace',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                 )),
               ],
             );
@@ -3610,14 +3627,14 @@ class _ManagementShellState extends State<ManagementShell> {
       const MapEntry(ManagementSection.audit, 'Audit Activity'),
     ];
     return Container(
-      width: 244,
+      width: 256,
       decoration: BoxDecoration(
-        color: const Color(0xCC00101F),
-        border: Border(right: BorderSide(color: TechColors.borderActive.withValues(alpha: .16))),
+        color: const Color(0xE6031120),
+        border: Border(right: BorderSide(color: TechColors.borderActive.withValues(alpha: .20))),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 22, 16, 24),
+          padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
           child: Row(children: [
             Container(width: 40, height: 40,
               decoration: BoxDecoration(shape: BoxShape.circle,
@@ -3642,15 +3659,15 @@ class _ManagementShellState extends State<ManagementShell> {
                   onTap: () => setState(() => section = nav[i].key),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     decoration: BoxDecoration(
-                      color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .14) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .5) : Colors.transparent),
+                      color: section == nav[i].key ? const Color(0xFF062B42) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .72) : Colors.transparent),
                     ),
                     child: Row(children: [
                       Icon([Icons.home_rounded, Icons.people_alt_outlined, Icons.account_tree_outlined,
-                        Icons.mail_outline_rounded, Icons.history_rounded][i], size: 18,
+                        Icons.mail_outline_rounded, Icons.history_rounded, Icons.shield_outlined][i], size: 18,
                         color: section == nav[i].key ? TechColors.borderActive : TechColors.textMuted),
                       const SizedBox(width: 12),
                       Expanded(child: Text(nav[i].value, style: TextStyle(fontSize: 12,
