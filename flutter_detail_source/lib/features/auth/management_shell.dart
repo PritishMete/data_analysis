@@ -1335,7 +1335,7 @@ class _ManagementShellState extends State<ManagementShell> {
           child: Column(children: [
             teamRow(const <String, dynamic>{}, header: true),
             ...people.take(5).map((p) => Column(children: [
-              teamRow(p), const Divider(color: TechColors.borderSubtle, height: 1),
+              teamRow(p), const Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
             ])),
           ]),
         )),
@@ -1357,7 +1357,7 @@ class _ManagementShellState extends State<ManagementShell> {
         ])),
       ]),
       const SizedBox(height: 10),
-      const Divider(color: TechColors.borderSubtle, height: 1),
+      const Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
       const SizedBox(height: 5),
       detailRow('Workspace', isBranchHead ? 'Branch Head' : 'Organization'),
       detailRow('Location', primaryLocation['name']?.toString() ?? primaryLocation['location_name']?.toString() ?? ''),
