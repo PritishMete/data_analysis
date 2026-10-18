@@ -1388,7 +1388,7 @@ class _ManagementShellState extends State<ManagementShell> {
           const SizedBox(width: 12),
           Expanded(flex: 3, child: Column(children: [branchPanel, const SizedBox(height: 12), structurePanel])),
           const SizedBox(width: 12), Expanded(flex: 3, child: actionsPanel),
-        ]);
+        ]); }
         if (medium) { return Column(children: [
           teamPanel, const SizedBox(height: 12),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
