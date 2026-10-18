@@ -1233,6 +1233,12 @@ class _ManagementShellState extends State<ManagementShell> {
     ),
   );
 
+  List<Map<String, dynamic>> _unassignedPeople() => people.where((person) {
+    final location = person['location_name']?.toString().trim() ?? '';
+    final sectionName = person['section_name']?.toString().trim() ?? '';
+    return location.isEmpty && sectionName.isEmpty;
+  }).toList();
+
   Widget overviewView() {
     final org = overview['organization'] is Map
         ? Map<String, dynamic>.from(overview['organization'] as Map)
@@ -1245,6 +1251,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final peopleCount = _overviewCount(summary['people_count'], people.length);
     final activeAssignments = assignments.where((a) => a['status']?.toString() == 'active').length;
     final recentActivity = audit.take(5).toList();
+    final unassignedPeople = _unassignedPeople();
     final primaryLocation = locations.isNotEmpty ? locations.first : <String, dynamic>{};
     final organizationStatus = org['status']?.toString().trim();
     final organizationName = _overviewOrganizationName();
@@ -1359,7 +1366,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     final quickActionsPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _title('Quick actions', icon: Icons.bolt_rounded),
+      _title('Quick actions', detail: 'Common branch management tasks', icon: Icons.bolt_rounded),
       const SizedBox(height: 10),
       _overviewQuickAction('Add person', 'Invite or manage a team member', Icons.person_add_alt_1_outlined, ManagementSection.people),
       const SizedBox(height: 8),
@@ -1383,7 +1390,7 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     final operationsPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _title('Branch operations', detail: 'Locations, sections and access', icon: Icons.storage_outlined),
+      _title('Organization summary', detail: 'Locations, sections and access', icon: Icons.storage_outlined),
       const SizedBox(height: 11),
       if (locations.isEmpty)
         _glassRow(child: Text('$locationCount locations configured', style: const TextStyle(color: TechColors.textMuted, fontSize: 11)))
@@ -1405,8 +1412,37 @@ class _ManagementShellState extends State<ManagementShell> {
         icon: const Icon(Icons.shield_outlined, size: 15), label: const Text('Review access'))),
     ]));
 
+    final attentionPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _title('Management attention', detail: 'Items that may need a follow-up', icon: Icons.notifications_active_outlined),
+      const SizedBox(height: 10),
+      _glassRow(child: Row(children: [
+        Icon(unassignedPeople.isEmpty ? Icons.check_circle_outline_rounded : Icons.person_search_outlined,
+          color: unassignedPeople.isEmpty ? TechColors.statusGreen : TechColors.statusAmber, size: 17),
+        const SizedBox(width: 9),
+        Expanded(child: Text(unassignedPeople.isEmpty
+          ? 'All visible people have a location or section assignment.'
+          : '${unassignedPeople.length} people need a location or section assignment.',
+          style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, height: 1.35))),
+      ])),
+      const SizedBox(height: 8),
+      _glassRow(child: Row(children: [
+        Icon(invitations.any((i) => (i['status']?.toString() ?? '').toLowerCase() == 'pending')
+          ? Icons.mail_outline_rounded : Icons.mark_email_read_outlined,
+          color: TechColors.borderActive, size: 17),
+        const SizedBox(width: 9),
+        Expanded(child: Text(
+          '${invitations.where((i) => (i['status']?.toString() ?? '').toLowerCase() == 'pending').length} pending invitations',
+          style: const TextStyle(color: TechColors.textPrimary, fontSize: 11))),
+        TextButton(onPressed: () => setState(() => section = ManagementSection.invitations),
+          child: const Text('Review invitations')),
+      ])),
+      const SizedBox(height: 4),
+      TextButton.icon(onPressed: () => setState(() => section = ManagementSection.dataAccess),
+        icon: const Icon(Icons.shield_outlined, size: 15), label: const Text('Manage access')),
+    ]));
+    
     final hierarchyPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _title('Organization hierarchy', icon: Icons.hub_outlined),
+      _title('Organization structure', detail: 'How your workspace is organized', icon: Icons.hub_outlined),
       const SizedBox(height: 12),
       _overviewStructureStep('Organization', organizationName, Icons.business_outlined),
       _overviewStructureConnector(),
@@ -1422,8 +1458,21 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _workspaceControlPanel(),
-      const SizedBox(height: 12),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Welcome back', style: TextStyle(color: TechColors.textPrimary, fontSize: 25, fontWeight: FontWeight.w800, letterSpacing: -.4)),
+          const SizedBox(height: 5),
+          Text(isBranchHead ? 'Here\'s what\'s happening in your branch.' : 'Here\'s what\'s happening in your organization.',
+            style: const TextStyle(color: TechColors.textMuted, fontSize: 13)),
+          const SizedBox(height: 8),
+          Text('Organization overview', style: const TextStyle(color: TechColors.borderActive, fontSize: 10, letterSpacing: 1.1, fontWeight: FontWeight.w800)),
+        ])),
+        const SizedBox(width: 12),
+        if (_sectionAllowed(ManagementSection.audit)) OutlinedButton.icon(
+          onPressed: () => setState(() => section = ManagementSection.audit),
+          icon: const Icon(Icons.history_rounded, size: 16), label: const Text('View audit')),
+      ]),
+      const SizedBox(height: 14),
       // Command-center hero: the existing InsightFlow glass language is retained,
       // while the information hierarchy is closer to the approved dashboard mockup.
       GlassContainer(
@@ -1503,8 +1552,7 @@ class _ManagementShellState extends State<ManagementShell> {
         }),
       ),
       const SizedBox(height: 12),
-      _branchAuthorityCard(),
-      const SizedBox(height: 14),
+      const SizedBox(height: 4),
       LayoutBuilder(builder: (context, constraints) {
         final columns = constraints.maxWidth < 560 ? 2 : constraints.maxWidth < 950 ? 2 : 4;
         final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
@@ -1523,7 +1571,7 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(width: 12),
             Expanded(flex: 3, child: Column(children: [branchPanel, const SizedBox(height: 12), operationsPanel])),
             const SizedBox(width: 12),
-            Expanded(flex: 3, child: Column(children: [quickActionsPanel, const SizedBox(height: 12), hierarchyPanel])),
+            Expanded(flex: 3, child: Column(children: [quickActionsPanel, const SizedBox(height: 12), attentionPanel, const SizedBox(height: 12), hierarchyPanel])),
           ]);
         }
         if (constraints.maxWidth >= 720) {
@@ -1538,7 +1586,7 @@ class _ManagementShellState extends State<ManagementShell> {
         }
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           teamPanel, const SizedBox(height: 12), branchPanel, const SizedBox(height: 12),
-          quickActionsPanel, const SizedBox(height: 12), activityPanel, const SizedBox(height: 12),
+          quickActionsPanel, const SizedBox(height: 12), attentionPanel, const SizedBox(height: 12), activityPanel, const SizedBox(height: 12),
           operationsPanel, const SizedBox(height: 12), hierarchyPanel,
         ]);
       }),
