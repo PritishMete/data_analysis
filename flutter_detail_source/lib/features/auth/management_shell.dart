@@ -3505,7 +3505,7 @@ class _ManagementShellState extends State<ManagementShell> {
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.hub_rounded, color: Colors.white, size: 21),
+                  child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 21),
                 ),
                 const SizedBox(width: 10),
                 const Text('InsightFlow', style: TextStyle(
