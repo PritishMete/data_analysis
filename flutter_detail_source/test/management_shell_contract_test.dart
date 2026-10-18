@@ -247,7 +247,7 @@ void main() {
     expect(source, contains('ManagementSection.dataAccess'));
     expect(source, contains('ManagementSection.audit'));
     expect(source, contains('_unassignedPeople()'));
-    expect(source, contains('audit.take(5)'));
+    expect(source, contains('audit.take(4)'));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('section == ManagementSection.audit'));
     expect(source, isNot(contains('metadata.entries.where')));
