@@ -1357,7 +1357,7 @@ class _ManagementShellState extends State<ManagementShell> {
         ])),
       ]),
       const SizedBox(height: 10),
-      const Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
+      Divider(color: TechColors.textMuted.withValues(alpha: .16), height: 1),
       const SizedBox(height: 5),
       detailRow('Workspace', isBranchHead ? 'Branch Head' : 'Organization'),
       detailRow('Location', primaryLocation['name']?.toString() ?? primaryLocation['location_name']?.toString() ?? ''),
