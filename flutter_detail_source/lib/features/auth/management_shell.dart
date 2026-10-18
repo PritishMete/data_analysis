@@ -3744,79 +3744,144 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  Widget _buildDashboardSidebar() {
+    final nav = <MapEntry<ManagementSection, String>>[
+      const MapEntry(ManagementSection.overview, 'Dashboard'),
+      const MapEntry(ManagementSection.people, 'People & Invitations'),
+      const MapEntry(ManagementSection.organization, 'Organization'),
+      const MapEntry(ManagementSection.dataAccess, 'Branch Data & Access'),
+      const MapEntry(ManagementSection.people, 'Team Management'),
+      const MapEntry(ManagementSection.audit, 'Reports & Insights'),
+      const MapEntry(ManagementSection.audit, 'Audit Activity'),
+    ];
+    return Container(
+      width: 244,
+      decoration: BoxDecoration(
+        color: const Color(0xCC00101F),
+        border: Border(right: BorderSide(color: TechColors.borderActive.withValues(alpha: .16))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 16, 24),
+          child: Row(children: [
+            Container(width: 40, height: 40,
+              decoration: BoxDecoration(shape: BoxShape.circle,
+                gradient: LinearGradient(colors: [TechColors.borderActive, const Color(0xFF1764E8)])),
+              child: const Icon(Icons.hub_rounded, color: Colors.white, size: 24)),
+            const SizedBox(width: 10),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('InsightFlow', style: TextStyle(color: TechColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+              Text('Data. Insights. Action.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
+            ])),
+          ]),
+        ),
+        const Divider(height: 1, color: Color(0x2228CFFF)),
+        const SizedBox(height: 12),
+        Expanded(child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          children: [
+            for (var i = 0; i < nav.length; i++)
+              if (_sectionAllowed(nav[i].key) && (i != 4 || _sectionAllowed(ManagementSection.people)) &&
+                  (i != 5 || _sectionAllowed(ManagementSection.audit)) && (i != 6 || _sectionAllowed(ManagementSection.audit)))
+                Padding(padding: const EdgeInsets.only(bottom: 5), child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => setState(() => section = nav[i].key),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                    decoration: BoxDecoration(
+                      color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .14) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .5) : Colors.transparent),
+                    ),
+                    child: Row(children: [
+                      Icon([Icons.home_rounded, Icons.people_alt_outlined, Icons.account_tree_outlined,
+                        Icons.storage_outlined, Icons.groups_outlined, Icons.query_stats_outlined,
+                        Icons.history_rounded][i], size: 18,
+                        color: section == nav[i].key ? TechColors.borderActive : TechColors.textMuted),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(nav[i].value, style: TextStyle(fontSize: 12,
+                        color: section == nav[i].key ? TechColors.textPrimary : TechColors.textMuted,
+                        fontWeight: section == nav[i].key ? FontWeight.w700 : FontWeight.w500))),
+                    ]),
+                  ),
+                )),
+            const SizedBox(height: 18),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: _eyebrow('MY BRANCH')),
+            const SizedBox(height: 10),
+            _glassRow(child: Row(children: [
+              const Icon(Icons.hub_outlined, color: TechColors.borderActive, size: 18),
+              const SizedBox(width: 9),
+              Expanded(child: Text(_uiScopeLabel(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: TechColors.textPrimary, fontSize: 11))),
+            ])),
+          ],
+        )),
+        Padding(padding: const EdgeInsets.all(14), child: GlassCard(
+          margin: EdgeInsets.zero, padding: const EdgeInsets.all(13),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.workspace_premium_rounded, color: TechColors.statusGreen, size: 22),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_uiRoleLabel(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700))),
+            ]),
+            const SizedBox(height: 7),
+            Text('Manages branch operations, team and data access within authorized scope.',
+              style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
+          ]),
+        )),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
-    extendBodyBehindAppBar: true,
     body: LiquidGlassScope(
-      child: Stack(
-        children: [
-          Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
-          Positioned.fill(
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _buildManagementHeader(),
-                  _buildManagementNavigation(),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1500),
-                          child: loading
-                              ? (section == ManagementSection.invitations
-                                  ? _invitationSkeleton()
-                                  : section == ManagementSection.audit
-                                      ? _auditSkeleton()
-                                      : _overviewSkeleton())
-                              : error != null
-                                  ? GlassCard(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.error_outline_rounded, color: TechColors.statusRed, size: 22),
-                                          const SizedBox(height: 8),
-                                          _eyebrow('MANAGEMENT SERVICE ERROR'),
-                                          const SizedBox(height: 6),
-                                          Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
-                                          const SizedBox(height: 14),
-                                          _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
-                                        ],
-                                      ),
-                                    )
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (section != ManagementSection.dataAccess) ...[
-                                          surface(_title(
-                                            _sectionLabel(section),
-                                            detail: _sectionDetail(section),
-                                            icon: _sectionIcon(section),
-                                          )),
-                                          const SizedBox(height: 12),
-                                        ],
-                                        body(),
-                                        if (section == ManagementSection.organization) ...[
-                                          const SizedBox(height: 16),
-                                          actions(),
-                                          const SizedBox(height: 16),
-                                          assignmentList(),
-                                        ],
-                                      ],
-                                    ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
-        ],
-      ),
+      child: Stack(children: [
+        Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
+        Positioned.fill(child: SafeArea(child: LayoutBuilder(builder: (context, viewport) {
+          final desktop = viewport.maxWidth >= 1000;
+          final content = Column(children: [
+            _buildManagementHeader(),
+            if (!desktop) _buildManagementNavigation(),
+            Expanded(child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(desktop ? 18 : 16, desktop ? 12 : 16, 16, 30),
+              child: Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1500),
+                child: loading
+                  ? (section == ManagementSection.invitations ? _invitationSkeleton()
+                    : section == ManagementSection.audit ? _auditSkeleton() : _overviewSkeleton())
+                  : error != null
+                    ? GlassCard(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.error_outline_rounded, color: TechColors.statusRed, size: 22),
+                        const SizedBox(height: 8), _eyebrow('MANAGEMENT SERVICE ERROR'),
+                        const SizedBox(height: 6), Text(error!, textAlign: TextAlign.center,
+                          style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
+                        const SizedBox(height: 14), _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
+                      ])
+                    : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        if (section != ManagementSection.dataAccess) ...[
+                          surface(_title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section))),
+                          const SizedBox(height: 12),
+                        ],
+                        body(),
+                        if (section == ManagementSection.organization) ...[
+                          const SizedBox(height: 16), actions(), const SizedBox(height: 16), assignmentList(),
+                        ],
+                      ]),
+              )),
+            )),
+          ]);
+          if (!desktop) return content;
+          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _buildDashboardSidebar(),
+            Expanded(child: content),
+          ]);
+        }))),
+        if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
+      ]),
     ),
   );
+}
 }
