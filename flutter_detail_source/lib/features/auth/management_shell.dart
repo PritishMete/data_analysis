@@ -3629,7 +3629,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 labelStyle: TextStyle(
                   fontSize: 12,
                   letterSpacing: 0.45,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   color: selected ? TechColors.textPrimary : TechColors.textMuted,
                 ),
                 onTap: () => setState(() => section = tab.key),
