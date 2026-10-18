@@ -1434,27 +1434,87 @@ class _ManagementShellState extends State<ManagementShell> {
     ]));
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // Command-center hero: the existing InsightFlow glass language is retained,
+      // while the information hierarchy is closer to the approved dashboard mockup.
+      GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.standard,
+        settings: TechColors.panelGlass,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 22),
+        padding: const EdgeInsets.all(22),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxWidth < 700;
+          final heroCopy = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 7, height: 7,
+                  decoration: BoxDecoration(
+                    color: TechColors.statusGreen,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: TechColors.statusGreen.withValues(alpha: .45), blurRadius: 9)],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _eyebrow(isBranchHead ? 'BRANCH COMMAND CENTER' : 'ORGANIZATION COMMAND CENTER'),
+              ]),
+              const SizedBox(height: 12),
+              Text(
+                isBranchHead ? 'Your branch. In focus.' : 'Your organization. In focus.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: TechColors.textPrimary,
+                  fontSize: 27,
+                  height: 1.12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$organizationName  ·  ${_uiScopeLabel()}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.45),
+              ),
+              const SizedBox(height: 13),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                _overviewHeroTag(Icons.verified_user_outlined, _uiRoleLabel()),
+                _overviewHeroTag(Icons.location_on_outlined, '$locationCount locations'),
+                _overviewHeroTag(Icons.people_alt_outlined, '$peopleCount people'),
+              ]),
+            ],
+          );
+          final heroActions = Column(
+            crossAxisAlignment: compact ? CrossAxisAlignment.stretch : CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _actionChip('VIEW TEAM', Icons.groups_2_outlined,
+                _sectionAllowed(ManagementSection.people)
+                    ? () => setState(() => section = ManagementSection.people) : null,
+                accent: true),
+              const SizedBox(height: 9),
+              _actionChip('ORGANIZATION STRUCTURE', Icons.account_tree_outlined,
+                _sectionAllowed(ManagementSection.organization)
+                    ? () => setState(() => section = ManagementSection.organization) : null),
+            ],
+          );
+          if (compact) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              heroCopy, const SizedBox(height: 18), heroActions,
+            ]);
+          }
+          return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Expanded(child: heroCopy),
+            const SizedBox(width: 22),
+            SizedBox(width: 220, child: heroActions),
+          ]);
+        }),
+      ),
+      const SizedBox(height: 14),
       LayoutBuilder(builder: (context, constraints) {
-        final compact = constraints.maxWidth < 620;
-        final welcome = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(isBranchHead ? 'Welcome back to your branch' : 'Welcome back',
-            style: const TextStyle(color: TechColors.textPrimary, fontSize: 23, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          const Text("Here's what's happening in your organization.",
-            style: TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.4)),
-        ]);
-        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
-          OutlinedButton.icon(onPressed: () => setState(() => section = ManagementSection.organization),
-            icon: const Icon(Icons.account_tree_outlined, size: 16),
-            label: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 170), child: Text(organizationName, maxLines: 1, overflow: TextOverflow.ellipsis))),
-          OutlinedButton.icon(onPressed: loadAll, icon: const Icon(Icons.refresh_rounded, size: 16), label: const Text('Refresh')),
-        ]);
-        return Padding(padding: const EdgeInsets.only(bottom: 17), child: compact
-          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [welcome, const SizedBox(height: 12), controls])
-          : Row(children: [Expanded(child: welcome), const SizedBox(width: 12), Flexible(child: Align(alignment: Alignment.centerRight, child: controls))]));
-      }),
-      LayoutBuilder(builder: (context, constraints) {
-        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        final columns = constraints.maxWidth < 560 ? 2 : constraints.maxWidth < 950 ? 2 : 4;
         final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
         return Wrap(spacing: 10, runSpacing: 10, children: [
           SizedBox(width: width, child: _overviewSummaryCard('Team members', peopleCount.toString(), 'People in your organization', Icons.people_alt_outlined)),
@@ -1492,6 +1552,22 @@ class _ManagementShellState extends State<ManagementShell> {
       }),
     ]);
   }
+
+  Widget _overviewHeroTag(IconData icon, String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: TechColors.borderActive.withValues(alpha: .09),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: TechColors.borderActive.withValues(alpha: .20)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: TechColors.borderActive),
+      const SizedBox(width: 6),
+      Text(label, style: const TextStyle(
+        color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w600,
+      )),
+    ]),
+  );
 
   Widget _overviewStructureStep(String label, String detail, IconData icon) => _glassRow(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
