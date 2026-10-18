@@ -1,5 +1,7 @@
-// Canonical global historical animated background used across InsightFlow.
-// Keep this implementation as the single source of truth for every screen.
+// Canonical animated ambient background used across InsightFlow.
+// Keep one source of truth for every screen. Use broad, low-contrast color
+// fields rather than distinct circular blobs so the background never reads
+// as the old two-bubble animation.
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -74,7 +76,7 @@ class _TechAnimatedBackgroundState extends State<TechAnimatedBackground>
         builder: (context, _) {
           final t = reduceMotion ? 0.0 : _controller.value * 2 * math.pi;
           return CustomPaint(
-            painter: _TechBlobPainter(t: t),
+            painter: _TechAmbientPainter(t: t),
             size: Size.infinite,
           );
         },
@@ -83,50 +85,55 @@ class _TechAnimatedBackgroundState extends State<TechAnimatedBackground>
   }
 }
 
-class _TechBlobPainter extends CustomPainter {
-  const _TechBlobPainter({required this.t});
+class _TechAmbientPainter extends CustomPainter {
+  const _TechAmbientPainter({required this.t});
 
   final double t;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final blobs = [
-      (TechColors.borderActive, 0.50, _pos0),
-      (TechColors.statusBlue, 0.42, _pos1),
-      (TechColors.statusGreen, 0.38, _pos2),
+    if (size.isEmpty) return;
+
+    // Oversized, low-opacity radial fields blend together into ambient light.
+    // Their edges remain outside most of the viewport, avoiding visible
+    // circles or bubble-like shapes on either desktop or mobile.
+    final fields = [
+      (TechColors.borderActive, 1.05, _position0),
+      (TechColors.statusBlue, 0.98, _position1),
+      (TechColors.statusGreen, 0.92, _position2),
     ];
 
-    for (final (color, radiusFactor, posFn) in blobs) {
-      final center = posFn(size, t);
-      final radius = size.shortestSide * radiusFactor;
+    for (final (color, radiusFactor, positionFor) in fields) {
+      final center = positionFor(size, t);
+      final radius = size.longestSide * radiusFactor;
       final paint = Paint()
         ..shader = RadialGradient(
           colors: [
-            color.withValues(alpha: 0.18),
+            color.withValues(alpha: 0.085),
+            color.withValues(alpha: 0.025),
             color.withValues(alpha: 0.0),
           ],
-        ).createShader(Rect.fromCircle(center: center, radius: radius))
-        ..blendMode = BlendMode.plus;
-      canvas.drawCircle(center, radius, paint);
+          stops: const [0.0, 0.48, 1.0],
+        ).createShader(Rect.fromCircle(center: center, radius: radius));
+      canvas.drawRect(Offset.zero & size, paint);
     }
   }
 
-  static Offset _pos0(Size s, double t) => Offset(
-        s.width * (0.15 + 0.07 * math.sin(t * 0.8)),
-        s.height * (0.20 + 0.06 * math.cos(t * 0.7)),
+  static Offset _position0(Size size, double t) => Offset(
+        size.width * (0.16 + 0.035 * math.sin(t * 0.55)),
+        size.height * (0.18 + 0.035 * math.cos(t * 0.50)),
       );
 
-  static Offset _pos1(Size s, double t) => Offset(
-        s.width * (0.82 + 0.05 * math.cos(t * 1.1)),
-        s.height * (0.65 + 0.07 * math.sin(t * 0.9)),
+  static Offset _position1(Size size, double t) => Offset(
+        size.width * (0.83 + 0.035 * math.cos(t * 0.60)),
+        size.height * (0.68 + 0.045 * math.sin(t * 0.52)),
       );
 
-  static Offset _pos2(Size s, double t) => Offset(
-        s.width * (0.45 + 0.09 * math.sin(t * 0.6 + 1.5)),
-        s.height * (0.88 + 0.04 * math.cos(t * 1.2)),
+  static Offset _position2(Size size, double t) => Offset(
+        size.width * (0.48 + 0.045 * math.sin(t * 0.42 + 1.5)),
+        size.height * (0.92 + 0.025 * math.cos(t * 0.65)),
       );
 
   @override
-  bool shouldRepaint(covariant _TechBlobPainter old) =>
-      old.t != t;
+  bool shouldRepaint(covariant _TechAmbientPainter old) => old.t != t;
 }
