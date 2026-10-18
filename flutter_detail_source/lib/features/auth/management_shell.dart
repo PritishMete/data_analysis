@@ -3750,8 +3750,7 @@ class _ManagementShellState extends State<ManagementShell> {
       const MapEntry(ManagementSection.people, 'People & Invitations'),
       const MapEntry(ManagementSection.organization, 'Organization'),
       const MapEntry(ManagementSection.dataAccess, 'Branch Data & Access'),
-      const MapEntry(ManagementSection.people, 'Team Management'),
-      const MapEntry(ManagementSection.audit, 'Reports & Insights'),
+      const MapEntry(ManagementSection.invitations, 'Invitations'),
       const MapEntry(ManagementSection.audit, 'Audit Activity'),
     ];
     return Container(
@@ -3781,8 +3780,7 @@ class _ManagementShellState extends State<ManagementShell> {
           padding: const EdgeInsets.symmetric(horizontal: 10),
           children: [
             for (var i = 0; i < nav.length; i++)
-              if (_sectionAllowed(nav[i].key) && (i != 4 || _sectionAllowed(ManagementSection.people)) &&
-                  (i != 5 || _sectionAllowed(ManagementSection.audit)) && (i != 6 || _sectionAllowed(ManagementSection.audit)))
+              if (_sectionAllowed(nav[i].key))
                 Padding(padding: const EdgeInsets.only(bottom: 5), child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => setState(() => section = nav[i].key),
@@ -3796,8 +3794,7 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                     child: Row(children: [
                       Icon([Icons.home_rounded, Icons.people_alt_outlined, Icons.account_tree_outlined,
-                        Icons.storage_outlined, Icons.groups_outlined, Icons.query_stats_outlined,
-                        Icons.history_rounded][i], size: 18,
+                        Icons.mail_outline_rounded, Icons.history_rounded][i], size: 18,
                         color: section == nav[i].key ? TechColors.borderActive : TechColors.textMuted),
                       const SizedBox(width: 12),
                       Expanded(child: Text(nav[i].value, style: TextStyle(fontSize: 12,
