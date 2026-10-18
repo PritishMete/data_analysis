@@ -1055,7 +1055,7 @@ class _ManagementShellState extends State<ManagementShell> {
         const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth < 620 ? 2 : 4;
+            final columns = constraints.maxWidth < 560 ? 1 : constraints.maxWidth < 980 ? 2 : 4;
             final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
             return Wrap(
               spacing: 10,
@@ -1077,6 +1077,104 @@ class _ManagementShellState extends State<ManagementShell> {
           },
         ),
       ],
+    );
+  }
+
+  Widget _workspaceControlPanel() {
+    final role = _roleLabel(_managementRole());
+    final scope = _uiScopeLabel();
+    final isBranchHead = _managementRole() == 'branch_head';
+    final destinations = <(String, IconData, ManagementSection)>[
+      ('People', Icons.people_outline_rounded, ManagementSection.people),
+      ('Organization', Icons.account_tree_outlined, ManagementSection.organization),
+      ('Invitations', Icons.mail_outline_rounded, ManagementSection.invitations),
+    ].where((item) => _sectionAllowed(item.$3)).toList();
+
+    return GlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 17),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 700;
+          final identity = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: TechColors.borderActive.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: TechColors.borderActive.withValues(alpha: 0.28)),
+                ),
+                child: Icon(
+                  isBranchHead ? Icons.account_tree_rounded : Icons.dashboard_customize_outlined,
+                  color: TechColors.borderActive,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isBranchHead ? 'BRANCH CONTROL CENTER' : 'MANAGEMENT CONTROL CENTER',
+                      style: const TextStyle(
+                        color: TechColors.textMuted,
+                        fontSize: 10,
+                        letterSpacing: 1.15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      isBranchHead && scope.trim().isNotEmpty ? scope : role,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: TechColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final shortcuts = Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            alignment: compact ? WrapAlignment.start : WrapAlignment.end,
+            children: destinations.map((item) => TextButton.icon(
+              onPressed: () => setState(() => section = item.$3),
+              icon: Icon(item.$2, size: 15),
+              label: Text(item.$1),
+              style: TextButton.styleFrom(
+                foregroundColor: TechColors.textPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+                side: BorderSide(color: TechColors.borderActive.withValues(alpha: 0.22)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            )).toList(),
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [identity, const SizedBox(height: 14), shortcuts],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: identity),
+              const SizedBox(width: 14),
+              Flexible(child: shortcuts),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1231,12 +1329,14 @@ class _ManagementShellState extends State<ManagementShell> {
             },
           ),
         ),
+        const SizedBox(height: 12),
+        _workspaceControlPanel(),
         if (_managementRole() == 'branch_head') ...[
           const SizedBox(height: 12),
           _branchAuthorityCard(),
         ],
-        const SizedBox(height: 14),
-        _eyebrow(_managementRole() == 'branch_head' ? 'Branch summary' : 'Organization summary'),
+        const SizedBox(height: 18),
+        _eyebrow(_managementRole() == 'branch_head' ? 'Branch performance at a glance' : 'Organization summary'),
         const SizedBox(height: 9),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -3524,11 +3624,12 @@ class _ManagementShellState extends State<ManagementShell> {
               return GlassChip(
                 label: tab.value,
                 selected: selected,
-                selectedColor: TechColors.borderActive.withValues(alpha: 0.22),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                selectedColor: TechColors.borderActive.withValues(alpha: 0.24),
+                padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
                 labelStyle: TextStyle(
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 12,
+                  letterSpacing: 0.45,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                   color: selected ? TechColors.textPrimary : TechColors.textMuted,
                 ),
                 onTap: () => setState(() => section = tab.key),
