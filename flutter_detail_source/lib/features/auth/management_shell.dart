@@ -3624,7 +3624,7 @@ class _ManagementShellState extends State<ManagementShell> {
               return GlassChip(
                 label: tab.value,
                 selected: selected,
-                selectedColor: TechColors.borderActive.withValues(alpha: 0.24),
+                selectedColor: TechColors.borderActive.withValues(alpha: 0.22),
                 padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
                 labelStyle: TextStyle(
                   fontSize: 12,
