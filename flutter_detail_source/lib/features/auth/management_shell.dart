@@ -1248,231 +1248,249 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   Widget overviewView() {
-    final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
-    final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
-    final locationCount = _overviewCount(sum['location_count'], locations.length);
-    final sectionCount = _overviewCount(sum['section_count'], sections.length);
-    final peopleCount = _overviewCount(sum['people_count'], people.length);
-    final activeAssignments = assignments.where((a) => a['status'] == 'active').length;
-    final unassignedPeople = _unassignedPeople();
-    final attentionItems = <Widget>[];
-
-    if (unassignedPeople.isNotEmpty) {
-      attentionItems.add(
-        _glassRow(
-          child: Row(
-            children: [
-              const Icon(Icons.person_off_outlined, size: 18, color: TechColors.statusAmber),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('People without an active assignment', style: TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${unassignedPeople.length} people may need a location or section assignment.',
-                      style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35),
-                    ),
-                  ],
-                ),
-              ),
-              TextButton(onPressed: () => setState(() => section = ManagementSection.people), child: const Text('Review')),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (attentionItems.isEmpty) {
-      attentionItems.add(
-        _glassRow(
-          child: const Row(
-            children: [
-              Icon(Icons.check_circle_outline, size: 18, color: TechColors.statusGreen),
-              SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("You're all caught up", style: TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-                    SizedBox(height: 3),
-                    Text('There are no outstanding management actions right now.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    final org = overview['organization'] is Map
+        ? Map<String, dynamic>.from(overview['organization'] as Map)
+        : <String, dynamic>{};
+    final summary = overview['summary'] is Map
+        ? Map<String, dynamic>.from(overview['summary'] as Map)
+        : <String, dynamic>{};
+    final locationCount = _overviewCount(summary['location_count'], locations.length);
+    final sectionCount = _overviewCount(summary['section_count'], sections.length);
+    final peopleCount = _overviewCount(summary['people_count'], people.length);
+    final activeAssignments = assignments.where((a) => a['status']?.toString() == 'active').length;
     final recentActivity = audit.take(5).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GlassContainer(
-          useOwnLayer: true,
-          quality: GlassQuality.minimal,
-          settings: TechColors.sectionGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 620;
-              final organizationStatus = org['status']?.toString().trim();
-              final subtitle = organizationStatus == null || organizationStatus.isEmpty
-                  ? 'Manage your branch, people, authorized data access and activity from one place.'
-                  : 'Manage your organization, people, access and activity from one place. Status: $organizationStatus.';
-              final content = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _eyebrow(_managementRole() == 'branch_head' ? 'Branch Head workspace' : 'Organization overview'),
-                  const SizedBox(height: 7),
-                  Text(_overviewOrganizationName(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 7),
-                  Text(subtitle, style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.45)),
-                ],
-              );
-              if (compact) return content;
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(child: content),
-                  const SizedBox(width: 20),
-                  _statusDot(organizationStatus ?? 'active'),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        _workspaceControlPanel(),
-        if (_managementRole() == 'branch_head') ...[
-          const SizedBox(height: 12),
-          _branchAuthorityCard(),
-        ],
-        const SizedBox(height: 18),
-        _eyebrow(_managementRole() == 'branch_head' ? 'Branch performance at a glance' : 'Organization summary'),
-        const SizedBox(height: 9),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth < 620 ? 2 : 4;
-            final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SizedBox(width: width, child: _overviewSummaryCard('People', peopleCount.toString(), 'People across your organization', Icons.people_outline)),
-                SizedBox(width: width, child: _overviewSummaryCard('Locations', locationCount.toString(), 'Branches and locations', Icons.location_on_outlined)),
-                SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), 'Sections across your locations', Icons.account_tree_outlined)),
-                SizedBox(width: width, child: _overviewSummaryCard('Active assignments', activeAssignments.toString(), 'Current role and reporting assignments', Icons.assignment_ind_outlined)),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _eyebrow('Quick actions'),
-        const SizedBox(height: 9),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth < 820 ? 1 : 2;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            final actions = [
-              ('Add person', 'Review and manage people', Icons.person_add_alt_1_outlined, ManagementSection.people),
-              ('Manage organization', 'Locations, sections and leadership', Icons.account_tree_outlined, ManagementSection.organization),
-              ('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
-              ('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
-              ('View audit', 'Review recent management activity', Icons.history_rounded, ManagementSection.audit),
-            ];
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: actions.map((action) => SizedBox(
-                width: width,
-                child: _overviewQuickAction(action.$1, action.$2, action.$3, action.$4),
-              )).toList(),
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _eyebrow('Management attention'),
-        const SizedBox(height: 9),
-        Column(
-          children: attentionItems.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: item,
-          )).toList(),
-        ),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 900;
-            final activity = GlassCard(
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.all(15),
-              shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: _title('Recent activity', detail: 'Recent management events', icon: Icons.history_rounded)),
-                      TextButton(onPressed: () => setState(() => section = ManagementSection.audit), child: const Text('View audit')),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (recentActivity.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18),
-                      child: Text('No recent activity is available.', style: TextStyle(color: TechColors.textMuted, fontSize: 11)),
-                    )
-                  else
-                    ...recentActivity.map(_overviewActivityItem),
-                ],
-              ),
-            );
-            final structure = GlassCard(
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.all(15),
-              shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _title('Organization structure', detail: 'A quick view of how your organization is arranged', icon: Icons.account_tree_outlined),
-                  const SizedBox(height: 14),
-                  _overviewStructureStep('Organization', _overviewOrganizationName(), Icons.business_outlined),
-                  _overviewStructureConnector(),
-                  _overviewStructureStep('Branches / Locations', '$locationCount locations', Icons.location_on_outlined),
-                  _overviewStructureConnector(),
-                  _overviewStructureStep('Sections', '$sectionCount sections', Icons.account_tree_outlined),
-                  _overviewStructureConnector(),
-                  _overviewStructureStep('People', '$peopleCount people', Icons.people_outline),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => setState(() => section = ManagementSection.organization),
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 15),
-                      label: const Text('View organization'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-            return wide
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [Expanded(child: activity), const SizedBox(width: 12), Expanded(child: structure)],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [activity, const SizedBox(height: 12), structure],
-                  );
-          },
-        ),
-      ],
+    final primaryLocation = locations.isNotEmpty ? locations.first : <String, dynamic>{};
+    final organizationStatus = org['status']?.toString().trim();
+    final organizationName = _overviewOrganizationName();
+    final isBranchHead = _managementRole() == 'branch_head';
+
+    Widget panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(15)}) =>
+        GlassCard(margin: EdgeInsets.zero, padding: padding,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
+
+    Widget detailRow(String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(children: [
+        Expanded(child: Text(label, style: const TextStyle(color: TechColors.textMuted, fontSize: 11))),
+        const SizedBox(width: 8),
+        Flexible(child: Text(value.isEmpty ? '—' : value, textAlign: TextAlign.end,
+          maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600))),
+      ]),
     );
+
+    Widget teamRow(Map<String, dynamic> p, {bool header = false}) {
+      if (header) return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .07), borderRadius: BorderRadius.circular(9)),
+        child: const Row(children: [
+          Expanded(flex: 4, child: Text('NAME', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700))),
+          Expanded(flex: 3, child: Text('ROLE', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700))),
+          Expanded(flex: 4, child: Text('EMAIL', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700))),
+          SizedBox(width: 56, child: Text('STATUS', textAlign: TextAlign.end, style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700))),
+        ]),
+      );
+      final name = p['full_name']?.toString().trim() ?? '';
+      final role = p['role_id']?.toString() ?? '';
+      final email = p['email']?.toString() ?? '';
+      final status = p['status']?.toString() ?? 'Unknown';
+      final active = status.toLowerCase() == 'active';
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Row(children: [
+          Expanded(flex: 4, child: Row(children: [
+            Container(width: 29, height: 29, alignment: Alignment.center,
+              decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .13), borderRadius: BorderRadius.circular(9)),
+              child: Text(name.isEmpty ? '—' : name.split(RegExp(r'\s+')).take(2).map((v) => v[0]).join().toUpperCase(),
+                style: const TextStyle(color: TechColors.borderActive, fontSize: 10, fontWeight: FontWeight.w800))),
+            const SizedBox(width: 8),
+            Expanded(child: Text(name.isEmpty ? 'Profile incomplete' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600))),
+          ])),
+          Expanded(flex: 3, child: Text(_roleLabel(role), maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
+          Expanded(flex: 4, child: Text(email.isEmpty ? '—' : email, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
+          SizedBox(width: 56, child: Align(alignment: Alignment.centerRight, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            decoration: BoxDecoration(color: (active ? TechColors.statusGreen : TechColors.statusAmber).withValues(alpha: .12), borderRadius: BorderRadius.circular(20)),
+            child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: active ? TechColors.statusGreen : TechColors.statusAmber, fontSize: 9, fontWeight: FontWeight.w700)),
+          ))),
+        ]),
+      );
+    }
+
+    final teamPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: _title('Team overview', detail: '$peopleCount members in your organization', icon: Icons.people_alt_outlined)),
+        TextButton(onPressed: () => setState(() => section = ManagementSection.people), child: const Text('View all →')),
+      ]),
+      const SizedBox(height: 10),
+      if (people.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Text('No team members are available yet.', style: TextStyle(color: TechColors.textMuted, fontSize: 11)))
+      else
+        SingleChildScrollView(scrollDirection: Axis.horizontal, child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 460),
+          child: Column(children: [
+            teamRow(const <String, dynamic>{}, header: true),
+            ...people.take(5).map((p) => Column(children: [
+              teamRow(p), const Divider(color: TechColors.borderSubtle, height: 1),
+            ])),
+          ]),
+        )),
+      const SizedBox(height: 4),
+      Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => setState(() => section = ManagementSection.people), child: const Text('Manage team →'))),
+    ]));
+
+    final branchPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 44, height: 44, decoration: BoxDecoration(
+          color: TechColors.borderActive.withValues(alpha: .13), borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: TechColors.borderActive.withValues(alpha: .28))),
+          child: const Icon(Icons.account_tree_rounded, color: TechColors.borderActive, size: 23)),
+        const SizedBox(width: 11),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(organizationName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          _statusDot(organizationStatus?.isNotEmpty == true ? organizationStatus! : 'active'),
+        ])),
+      ]),
+      const SizedBox(height: 10),
+      const Divider(color: TechColors.borderSubtle, height: 1),
+      const SizedBox(height: 5),
+      detailRow('Workspace', isBranchHead ? 'Branch Head' : 'Organization'),
+      detailRow('Location', primaryLocation['name']?.toString() ?? primaryLocation['location_name']?.toString() ?? ''),
+      detailRow('Total people', peopleCount.toString()),
+      detailRow('Active assignments', activeAssignments.toString()),
+      detailRow('Pending invitations', invitations.where((i) => (i['status']?.toString() ?? '').toLowerCase() == 'pending').length.toString()),
+      const SizedBox(height: 7),
+      SizedBox(width: double.infinity, child: OutlinedButton.icon(
+        onPressed: () => setState(() => section = ManagementSection.organization),
+        icon: const Icon(Icons.settings_outlined, size: 16), label: const Text('Edit organization settings'))),
+    ]));
+
+    final quickActionsPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _title('Quick actions', icon: Icons.bolt_rounded),
+      const SizedBox(height: 10),
+      _overviewQuickAction('Add person', 'Invite or manage a team member', Icons.person_add_alt_1_outlined, ManagementSection.people),
+      const SizedBox(height: 8),
+      _overviewQuickAction('Manage organization', 'Locations and sections', Icons.account_tree_outlined, ManagementSection.organization),
+      const SizedBox(height: 8),
+      _overviewQuickAction('Review invitations', 'See invitation activity', Icons.mail_outline, ManagementSection.invitations),
+      const SizedBox(height: 8),
+      _overviewQuickAction('Manage access', 'Review access and assignments', Icons.admin_panel_settings_outlined, ManagementSection.dataAccess),
+    ]));
+
+    final activityPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: _title('Recent activity', detail: 'Latest management events', icon: Icons.history_rounded)),
+        TextButton(onPressed: () => setState(() => section = ManagementSection.audit), child: const Text('View all →')),
+      ]),
+      const SizedBox(height: 8),
+      if (recentActivity.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text('No recent activity is available.', style: TextStyle(color: TechColors.textMuted, fontSize: 11)))
+      else
+        ...recentActivity.map(_overviewActivityItem),
+    ]));
+
+    final operationsPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _title('Branch operations', detail: 'Locations, sections and access', icon: Icons.storage_outlined),
+      const SizedBox(height: 11),
+      if (locations.isEmpty)
+        _glassRow(child: Text('$locationCount locations configured', style: const TextStyle(color: TechColors.textMuted, fontSize: 11)))
+      else
+        ...locations.take(4).map((location) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _glassRow(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+          child: Row(children: [
+            const Icon(Icons.location_on_outlined, size: 16, color: TechColors.borderActive),
+            const SizedBox(width: 8),
+            Expanded(child: Text(location['name']?.toString() ?? location['location_name']?.toString() ?? 'Location',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600))),
+            Text('$sectionCount sections', style: const TextStyle(color: TechColors.textMuted, fontSize: 9)),
+          ]),
+        ))),
+      detailRow('Total sections', sectionCount.toString()),
+      detailRow('Active assignments', activeAssignments.toString()),
+      Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+        onPressed: () => setState(() => section = ManagementSection.dataAccess),
+        icon: const Icon(Icons.shield_outlined, size: 15), label: const Text('Review access'))),
+    ]));
+
+    final hierarchyPanel = panel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _title('Organization hierarchy', icon: Icons.hub_outlined),
+      const SizedBox(height: 12),
+      _overviewStructureStep('Organization', organizationName, Icons.business_outlined),
+      _overviewStructureConnector(),
+      _overviewStructureStep('Branches / locations', '$locationCount locations', Icons.location_on_outlined),
+      _overviewStructureConnector(),
+      _overviewStructureStep('Sections', '$sectionCount sections', Icons.account_tree_outlined),
+      _overviewStructureConnector(),
+      _overviewStructureStep('Team members', '$peopleCount people', Icons.people_outline),
+      const SizedBox(height: 6),
+      Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+        onPressed: () => setState(() => section = ManagementSection.organization),
+        icon: const Icon(Icons.arrow_forward_rounded, size: 15), label: const Text('View organization'))),
+    ]));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      LayoutBuilder(builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        final welcome = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(isBranchHead ? 'Welcome back to your branch' : 'Welcome back',
+            style: const TextStyle(color: TechColors.textPrimary, fontSize: 23, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          const Text("Here's what's happening in your organization.",
+            style: TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.4)),
+        ]);
+        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(onPressed: () => setState(() => section = ManagementSection.organization),
+            icon: const Icon(Icons.account_tree_outlined, size: 16),
+            label: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 170), child: Text(organizationName, maxLines: 1, overflow: TextOverflow.ellipsis))),
+          OutlinedButton.icon(onPressed: loadAll, icon: const Icon(Icons.refresh_rounded, size: 16), label: const Text('Refresh')),
+        ]);
+        return Padding(padding: const EdgeInsets.only(bottom: 17), child: compact
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [welcome, const SizedBox(height: 12), controls])
+          : Row(children: [Expanded(child: welcome), const SizedBox(width: 12), Flexible(child: Align(alignment: Alignment.centerRight, child: controls))]));
+      }),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+        return Wrap(spacing: 10, runSpacing: 10, children: [
+          SizedBox(width: width, child: _overviewSummaryCard('Team members', peopleCount.toString(), 'People in your organization', Icons.people_alt_outlined)),
+          SizedBox(width: width, child: _overviewSummaryCard('Datasets / locations', locationCount.toString(), 'Locations in your organization', Icons.storage_outlined)),
+          SizedBox(width: width, child: _overviewSummaryCard('Sections', sectionCount.toString(), 'Sections across locations', Icons.account_tree_outlined)),
+          SizedBox(width: width, child: _overviewSummaryCard('Active access', activeAssignments.toString(), 'Current active assignments', Icons.shield_outlined)),
+        ]);
+      }),
+      const SizedBox(height: 16),
+      LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth >= 1120) {
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(flex: 6, child: Column(children: [teamPanel, const SizedBox(height: 12), activityPanel])),
+            const SizedBox(width: 12),
+            Expanded(flex: 3, child: Column(children: [branchPanel, const SizedBox(height: 12), operationsPanel])),
+            const SizedBox(width: 12),
+            Expanded(flex: 3, child: Column(children: [quickActionsPanel, const SizedBox(height: 12), hierarchyPanel])),
+          ]);
+        }
+        if (constraints.maxWidth >= 720) {
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            teamPanel, const SizedBox(height: 12),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(children: [branchPanel, const SizedBox(height: 12), activityPanel])),
+              const SizedBox(width: 12),
+              Expanded(child: Column(children: [quickActionsPanel, const SizedBox(height: 12), operationsPanel, const SizedBox(height: 12), hierarchyPanel])),
+            ]),
+          ]);
+        }
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          teamPanel, const SizedBox(height: 12), branchPanel, const SizedBox(height: 12),
+          quickActionsPanel, const SizedBox(height: 12), activityPanel, const SizedBox(height: 12),
+          operationsPanel, const SizedBox(height: 12), hierarchyPanel,
+        ]);
+      }),
+    ]);
   }
 
   Widget _overviewStructureStep(String label, String detail, IconData icon) => _glassRow(
