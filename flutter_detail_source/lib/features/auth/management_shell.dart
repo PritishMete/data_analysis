@@ -3859,7 +3859,7 @@ class _ManagementShellState extends State<ManagementShell> {
                         const SizedBox(height: 6), Text(error!, textAlign: TextAlign.center,
                           style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
                         const SizedBox(height: 14), _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
-                      ])
+                      ]))
                     : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                         if (section != ManagementSection.dataAccess) ...[
                           surface(_title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section))),
