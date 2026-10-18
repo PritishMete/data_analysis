@@ -1311,6 +1311,7 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget overviewView() {
+    // Keep the redesigned overview limited to Branch Head; preserve other role dashboards.
     if (_managementRole() == 'branch_head') return _branchHeadOverviewView();
     final org = Map<String, dynamic>.from(overview['organization'] ?? const {});
     final sum = Map<String, dynamic>.from(overview['summary'] ?? const {});
