@@ -1187,7 +1187,7 @@ class _ManagementShellState extends State<ManagementShell> {
           child: const Icon(Icons.account_tree_rounded, color: TechColors.borderActive, size: 25)),
         const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(branchName, style: const TextStyle(color: TechColors.borderActive, fontSize: 14, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6), status('Active'),
+          const SizedBox(height: 6), Text(_uiScopeLabel(), style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
         ])),
       ]),
       const SizedBox(height: 14),
@@ -1209,7 +1209,7 @@ class _ManagementShellState extends State<ManagementShell> {
       if (team.isEmpty) const Text('No team members are available yet.', style: TextStyle(color: TechColors.textMuted, fontSize: 12))
       else ...[
         for (final p in team) ...[
-          const Divider(height: 1, color: TechColors.borderSubtle),
+          const Divider(height: 1, color: TechColors.borderMuted),
           Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(children: [
             Container(width: 33, height: 33, alignment: Alignment.center, decoration: BoxDecoration(
               shape: BoxShape.circle, color: TechColors.borderActive.withValues(alpha: .12)),
@@ -1225,7 +1225,7 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(width: 6), status(p['status']?.toString() ?? ''),
           ])),
         ],
-        const Divider(height: 1, color: TechColors.borderSubtle),
+        const Divider(height: 1, color: TechColors.borderMuted),
         Row(children: [
           Expanded(child: Text('Showing ' + team.length.toString() + ' of ' + peopleCount.toString() + ' people', style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
           TextButton(onPressed: () => setState(() => section = ManagementSection.people), child: const Text('Manage team')),
