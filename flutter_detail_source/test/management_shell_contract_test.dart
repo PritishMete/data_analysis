@@ -406,23 +406,20 @@ void main() {
     expect(headerStart, greaterThanOrEqualTo(0));
     expect(headerEnd, greaterThan(headerStart));
     final header = source.substring(headerStart, headerEnd);
-    expect(header, contains('GlassContainer('));
-    expect(header, contains('useOwnLayer: true'));
-    expect(header, contains('quality: GlassQuality.standard'));
-    expect(header, contains('settings: kInsightFlowFloatingBrandGlassSettings'));
-    expect(header, contains('LiquidRoundedSuperellipse(borderRadius: 16)'));
+    // Contract the active responsive dashboard header rather than the removed
+    // legacy glass-header implementation.
+    expect(header, contains('height: MediaQuery.sizeOf(context).width < 720 ? 124 : 76'));
     expect(header, contains('InsightFlow'));
-    // The header title and subtitle are role/scope-driven rather than
-    // hard-coded to an organization-owner label.
-    expect(header, contains('_roleWorkspaceTitle()'));
-    expect(header, contains('_roleWorkspaceSubtitle()'));
-    expect(source, contains("String _roleWorkspaceTitle()"));
-    expect(source, contains("String _roleWorkspaceSubtitle()"));
-    expect(header, contains('Refresh management data'));
-    expect(header, contains('Sign out'));
-
+    expect(header, contains('Search people, datasets, or insights'));
+    expect(header, contains('TextField('));
+    expect(header, contains('actorName'));
+    expect(header, contains('_uiRoleLabel()'));
     expect(header, contains("tooltip: 'Profile'"));
     expect(header, contains('onPressed: _showCurrentUserProfile'));
+    expect(header, contains('constraints.maxWidth < 720'));
+    expect(header, contains('Color(0xF0031222)'));
+    expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
+
     expect(source, contains('Future<Map<String, dynamic>> _loadCurrentUserProfile()'));
     expect(source, contains("getSelf('/me')"));
     expect(source, contains("getSelf('/profile/me')"));
