@@ -1735,9 +1735,13 @@ class _ManagementShellState extends State<ManagementShell> {
         .whereType<Object>().map((v) => v.toString().toLowerCase().trim());
       if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
       if (selectedLocation != null &&
-          p['location_id']?.toString() != selectedLocation) return false;
+          p['location_id']?.toString() != selectedLocation) {
+        return false;
+      }
       if (selectedSection != null &&
-          p['section_id']?.toString() != selectedSection) return false;
+          p['section_id']?.toString() != selectedSection) {
+        return false;
+      }
       if (selectedRole != null && p['role_id']?.toString() != selectedRole) return false;
       return true;
     }).toList();
