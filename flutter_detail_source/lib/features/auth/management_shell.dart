@@ -1240,172 +1240,428 @@ class _ManagementShellState extends State<ManagementShell> {
   }).toList();
 
   Widget overviewView() {
-    final summary = overview['summary'] is Map ? Map<String, dynamic>.from(overview['summary'] as Map) : <String, dynamic>{};
-    final orgName = _overviewOrganizationName();
+    final summary = overview['summary'] is Map
+        ? Map<String, dynamic>.from(overview['summary'] as Map)
+        : <String, dynamic>{};
     final branchHead = _managementRole() == 'branch_head';
     final peopleCount = _overviewCount(summary['people_count'], people.length);
     final locationCount = _overviewCount(summary['location_count'], locations.length);
     final sectionCount = _overviewCount(summary['section_count'], sections.length);
-    final activeCount = assignments.where((a) => (a['status']?.toString() ?? '').toLowerCase() == 'active').length;
-    final pendingCount = invitations.where((i) => (i['status']?.toString() ?? '').toLowerCase() == 'pending').length;
-    final latest = audit.take(4).toList();
+    final activeCount = assignments
+        .where((item) => (item['status']?.toString() ?? '').toLowerCase() == 'active')
+        .length;
+    final pendingCount = invitations
+        .where((item) => (item['status']?.toString() ?? '').toLowerCase() == 'pending')
+        .length;
+    final branch = locations.cast<Map<String, dynamic>?>().firstWhere(
+      (item) => item?['location_id']?.toString() == selectedLocation,
+      orElse: () => locations.isEmpty ? null : locations.first,
+    );
+    final branchName = branch?['name']?.toString().trim().isNotEmpty == true
+        ? branch!['name'].toString()
+        : _uiScopeLabel();
+    final actor = overview['actor'];
+    final actorName = actor is Map
+        ? (actor['full_name'] ?? actor['name'] ?? actor['email'] ?? _uiRoleLabel()).toString()
+        : _uiRoleLabel();
+    final latest = audit.take(5).toList();
 
-    Widget panel(String title, IconData icon, Widget child, {Widget? action}) => GlassCard(
-      margin: EdgeInsets.zero, padding: const EdgeInsets.all(16),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Container(width: 34, height: 34,
-            decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .12), borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: TechColors.borderActive.withValues(alpha: .24))),
-            child: Icon(icon, size: 18, color: TechColors.borderActive)),
-          const SizedBox(width: 10),
-          Expanded(child: Text(title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w800))),
-          ?action,
+    Widget panel(String title, IconData icon, Widget child, {Widget? action}) =>
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xB8051727),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF0B4164).withValues(alpha: .88)),
+            boxShadow: const [
+              BoxShadow(color: Color(0x1600BCEB), blurRadius: 18, offset: Offset(0, 4)),
+            ],
+          ),
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Icon(icon, color: const Color(0xFF4BCBFF), size: 21),
+                const SizedBox(width: 9),
+                Expanded(child: Text(title, style: const TextStyle(
+                  color: Color(0xFFDCEEFF), fontSize: 14, fontWeight: FontWeight.w700,
+                ))),
+                if (action != null) action,
+              ]),
+              const SizedBox(height: 13),
+              child,
+            ],
+          ),
+        );
+
+    Widget metric(String label, String value, String detail, IconData icon, Color accent) =>
+        Container(
+          constraints: const BoxConstraints(minHeight: 116),
+          padding: const EdgeInsets.all(15),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [accent.withValues(alpha: .13), const Color(0xB8041727)],
+            ),
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: accent.withValues(alpha: .9)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 43, height: 43,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: .35)),
+              ),
+              child: Icon(icon, color: accent, size: 23),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFFB9D8F6), fontSize: 11)),
+                const SizedBox(height: 8),
+                Text(value, style: const TextStyle(
+                  color: Colors.white, fontSize: 24, height: 1, fontWeight: FontWeight.w800,
+                )),
+                const SizedBox(height: 8),
+                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w600)),
+              ],
+            )),
+          ]),
+        );
+
+    final teamRows = people.take(5).map((person) {
+      final name = person['full_name']?.toString().trim().isNotEmpty == true
+          ? person['full_name'].toString()
+          : (person['email']?.toString() ?? 'Profile incomplete');
+      final role = _roleLabel(person['role_id']?.toString() ?? '');
+      final status = person['status']?.toString() ?? 'Unknown';
+      final active = status.toLowerCase() == 'active';
+      final initials = name.split(RegExp(r'\\s+')).take(2)
+          .map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase();
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 7),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0x332C6385))),
+        ),
+        child: Row(children: [
+          Container(
+            width: 30, height: 30, alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: [Color(0xFF1B6CB2), Color(0xFF0CBACB)]),
+            ),
+            child: Text(initials.isEmpty ? '?' : initials,
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 9),
+          Expanded(flex: 4, child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
+          Expanded(flex: 3, child: Text(role, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: (active ? const Color(0xFF00D5A0) : const Color(0xFFFFBE55)).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(status, style: TextStyle(
+              color: active ? const Color(0xFF00E6B0) : const Color(0xFFFFC96B),
+              fontSize: 9, fontWeight: FontWeight.w700,
+            )),
+          ),
         ]),
-        const SizedBox(height: 14), child,
+      );
+    }).toList();
+
+    final teamPanel = panel(
+      'Team Overview',
+      Icons.groups_2_outlined,
+      people.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('No team members are available in your authorized scope.',
+                style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 11)),
+            )
+          : Column(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A2942),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Row(children: [
+                  Expanded(flex: 4, child: Text('NAME', style: TextStyle(color: Color(0xFF8FB9DF), fontSize: 9, fontWeight: FontWeight.w700))),
+                  Expanded(flex: 3, child: Text('ROLE', style: TextStyle(color: Color(0xFF8FB9DF), fontSize: 9, fontWeight: FontWeight.w700))),
+                  Text('STATUS', style: TextStyle(color: Color(0xFF8FB9DF), fontSize: 9, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+              ...teamRows,
+              const SizedBox(height: 7),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Showing ${teamRows.length} of ${peopleCount} team members',
+                  style: const TextStyle(color: Color(0xFF8CB8DF), fontSize: 10)),
+              ),
+            ]),
+      action: TextButton(
+        onPressed: _sectionAllowed(ManagementSection.people)
+            ? () => setState(() => section = ManagementSection.people)
+            : null,
+        child: const Text('View all →', style: TextStyle(color: Color(0xFF12CFF4), fontSize: 11)),
+      ),
+    );
+
+    final branchPanel = panel(
+      'Branch Info',
+      Icons.apartment_rounded,
+      Column(children: [
+        _overviewDetailLine('Branch Name', branchName),
+        _overviewDetailLine('Locations', locationCount.toString()),
+        _overviewDetailLine('Sections', sectionCount.toString()),
+        _overviewDetailLine('Total Members', peopleCount.toString()),
+        _overviewDetailLine('Active Access', activeCount.toString()),
+        _overviewDetailLine('Pending Invitations', pendingCount.toString()),
+        const SizedBox(height: 8),
+        SizedBox(width: double.infinity, child: OutlinedButton.icon(
+          onPressed: _sectionAllowed(ManagementSection.organization)
+              ? () => setState(() => section = ManagementSection.organization)
+              : null,
+          icon: const Icon(Icons.settings_outlined, size: 16),
+          label: const Text('Edit Branch Settings'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFD4E9FF),
+            side: const BorderSide(color: Color(0xFF2376A7)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        )),
       ]),
     );
 
-    final teamRows = people.take(5).map((person) {
-      final name = person['full_name']?.toString().trim() ?? '';
-      final status = person['status']?.toString() ?? 'Unknown';
-      final active = status.toLowerCase() == 'active';
-      final role = _roleLabel(person['role_id']?.toString() ?? '');
-      final initials = name.isEmpty ? '?' : name.split(RegExp(r'\s+')).take(2).map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase();
-      return Padding(padding: const EdgeInsets.symmetric(vertical: 7), child: Row(children: [
-        Container(width: 31, height: 31, alignment: Alignment.center,
-          decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .13), shape: BoxShape.circle),
-          child: Text(initials, style: const TextStyle(color: TechColors.borderActive, fontSize: 10, fontWeight: FontWeight.w800))),
-        const SizedBox(width: 9),
-        Expanded(flex: 4, child: Text(name.isEmpty ? 'Profile incomplete' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600))),
-        Expanded(flex: 3, child: Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
-        SizedBox(width: 62, child: Align(alignment: Alignment.centerRight, child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: active ? TechColors.statusGreen : TechColors.statusAmber, fontSize: 9, fontWeight: FontWeight.w700)))),
-      ]));
-    }).toList();
-
-    final teamPanel = panel('People at a glance', Icons.groups_2_rounded,
-      people.isEmpty ? const Text('No team members to display yet.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
-      : Column(children: [
-        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-          decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .07), borderRadius: BorderRadius.circular(9)),
-          child: const Row(children: [
-            Expanded(flex: 4, child: Text('TEAM MEMBER', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800))),
-            Expanded(flex: 3, child: Text('ROLE', style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800))),
-            SizedBox(width: 62, child: Text('STATUS', textAlign: TextAlign.end, style: TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800))),
-          ]),
-        ), const SizedBox(height: 5), ...teamRows,
+    final quickActions = panel(
+      'Quick Actions',
+      Icons.bolt_rounded,
+      Column(children: [
+        if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('manager.assign') || _managementRole() == 'branch_head' || _managementRole() == 'organization_owner')
+          _dashboardAction('Invite Team Member', Icons.person_add_alt_1_rounded, _inviteEmployee, primary: true),
+        const SizedBox(height: 8),
+        _dashboardAction('Manage People', Icons.groups_outlined,
+          () => setState(() => section = ManagementSection.people)),
+        const SizedBox(height: 8),
+        _dashboardAction('Manage Permissions', Icons.shield_outlined,
+          () => setState(() => section = ManagementSection.dataAccess)),
+        const SizedBox(height: 8),
+        _dashboardAction('Review Audit Activity', Icons.query_stats_rounded,
+          () => setState(() => section = ManagementSection.audit)),
       ]),
-      action: TextButton(onPressed: _sectionAllowed(ManagementSection.people) ? () => setState(() => section = ManagementSection.people) : null, child: const Text('View all')));
+    );
 
-    final branchPanel = panel(branchHead ? 'Branch snapshot' : 'Organization snapshot', Icons.domain_rounded, Column(children: [
-      _overviewDetailLine('Scope', _uiScopeLabel()),
-      _overviewDetailLine('Locations', locationCount.toString()),
-      _overviewDetailLine('Sections', sectionCount.toString()),
-      _overviewDetailLine('People', peopleCount.toString()),
-      _overviewDetailLine('Unassigned people', _unassignedPeople().length.toString()),
-      _overviewDetailLine('Pending invitations', pendingCount.toString()),
-      _overviewDetailLine('Active assignments', activeCount.toString()),
-      const SizedBox(height: 8),
-      SizedBox(width: double.infinity, child: OutlinedButton.icon(
-        onPressed: _sectionAllowed(ManagementSection.organization) ? () => setState(() => section = ManagementSection.organization) : null,
-        icon: const Icon(Icons.tune_rounded, size: 16), label: const Text('Workspace settings'))),
-    ]));
-
-    final actionsPanel = panel('Workspace actions', Icons.flash_on_rounded, Column(children: [
-      _overviewQuickAction('People & invitations', 'Manage your team', Icons.person_add_alt_1_rounded, ManagementSection.people),
-      const SizedBox(height: 8),
-      _overviewQuickAction('Organization structure', 'Locations and sections', Icons.account_tree_rounded, ManagementSection.organization),
-      const SizedBox(height: 8),
-      _overviewQuickAction('Access control', 'Assignments and permissions', Icons.shield_outlined, ManagementSection.dataAccess),
-      const SizedBox(height: 8),
-      _overviewQuickAction('Invitation queue', '$pendingCount waiting for response', Icons.mark_email_unread_outlined, ManagementSection.invitations),
-    ]));
-
-    final activityPanel = panel('Recent activity', Icons.bolt_rounded,
+    final activityPanel = panel(
+      'Recent Activity',
+      Icons.schedule_rounded,
       latest.isEmpty
-        ? const Text('Activity will appear here as your team works.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
-        : Column(children: latest.map(_overviewActivityItem).toList()),
+          ? const Text('Recent management activity will appear here when available.',
+              style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 11))
+          : Column(children: latest.map(_overviewActivityItem).toList()),
       action: TextButton(
-        onPressed: _sectionAllowed(ManagementSection.audit) ? () => setState(() => section = ManagementSection.audit) : null,
-        child: const Text('View all'),
-      ));
+        onPressed: _sectionAllowed(ManagementSection.audit)
+            ? () => setState(() => section = ManagementSection.audit)
+            : null,
+        child: const Text('View all →', style: TextStyle(color: Color(0xFF12CFF4), fontSize: 11)),
+      ),
+    );
 
-    final structurePanel = panel('Workspace map', Icons.account_tree_rounded, Column(children: [
-      _overviewStructureStep('Organization', orgName, Icons.apartment_rounded),
-      _overviewStructureConnector(),
-      _overviewStructureStep('Locations', '$locationCount configured', Icons.place_outlined),
-      _overviewStructureConnector(),
-      _overviewStructureStep('Sections', '$sectionCount configured', Icons.grid_view_rounded),
-      _overviewStructureConnector(),
-      _overviewStructureStep('Team', '$peopleCount members', Icons.groups_2_rounded),
-    ]), action: TextButton(onPressed: _sectionAllowed(ManagementSection.organization) ? () => setState(() => section = ManagementSection.organization) : null, child: const Text('Explore')));
+    final hierarchyPanel = panel(
+      'Organization Hierarchy',
+      Icons.account_tree_outlined,
+      Column(children: [
+        _overviewStructureStep('Organization Owner', 'Organization-wide access', Icons.workspace_premium_outlined),
+        _overviewStructureConnector(),
+        _overviewStructureStep(_uiRoleLabel(), branchName, Icons.hub_outlined),
+        _overviewStructureConnector(),
+        _overviewStructureStep('Team Members', '$peopleCount members in authorized scope', Icons.groups_outlined),
+      ]),
+    );
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _workspaceControlPanel(),
-      const SizedBox(height: 12),
-      _branchAuthorityCard(),
-      const SizedBox(height: 14),
-      LayoutBuilder(builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 650;
-        final greeting = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('INSIGHTFLOW / MANAGEMENT', style: TextStyle(color: TechColors.borderActive, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4)),
-          const SizedBox(height: 7),
-          Text(branchHead ? 'Branch command center' : 'Organization command center',
-            style: const TextStyle(color: TechColors.textPrimary, fontSize: 27, fontWeight: FontWeight.w800, letterSpacing: -.5)),
-          const SizedBox(height: 6),
-          const Text('A clear view of your people, structure, and access.', style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-        ]);
-        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
-          OutlinedButton.icon(onPressed: loadAll, icon: const Icon(Icons.refresh_rounded, size: 16), label: const Text('Refresh')),
-          if (_sectionAllowed(ManagementSection.audit)) OutlinedButton.icon(
-            onPressed: () => setState(() => section = ManagementSection.audit),
-            icon: const Icon(Icons.timeline_rounded, size: 16), label: const Text('Activity')),
-        ]);
-        return Padding(padding: const EdgeInsets.fromLTRB(2, 4, 2, 18),
-          child: narrow ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [greeting, const SizedBox(height: 14), controls])
-            : Row(children: [Expanded(child: greeting), const SizedBox(width: 16), controls]));
-      }),
-      LayoutBuilder(builder: (context, constraints) {
-        final columns = constraints.maxWidth < 520 ? 2 : constraints.maxWidth < 900 ? 2 : 4;
-        final gap = 12.0;
-        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
-        return Wrap(spacing: gap, runSpacing: gap, children: [
-          SizedBox(width: width, child: _overviewSummaryCard('Team members', '$peopleCount', 'People in your scope', Icons.groups_2_rounded)),
-          SizedBox(width: width, child: _overviewSummaryCard('Locations', '$locationCount', 'Branches and locations', Icons.hub_rounded)),
-          SizedBox(width: width, child: _overviewSummaryCard('Sections', '$sectionCount', 'Operational groups', Icons.account_tree_rounded)),
-          SizedBox(width: width, child: _overviewSummaryCard('Active access', '$activeCount', '$pendingCount pending invitations', Icons.shield_moon_rounded)),
-        ]);
-      }),
-      const SizedBox(height: 14),
-      LayoutBuilder(builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 1060;
-        final medium = constraints.maxWidth >= 720;
-        if (wide) { return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(flex: 6, child: Column(children: [teamPanel, const SizedBox(height: 12), activityPanel])),
-          const SizedBox(width: 12),
-          Expanded(flex: 3, child: Column(children: [branchPanel, const SizedBox(height: 12), structurePanel])),
-          const SizedBox(width: 12), Expanded(flex: 3, child: actionsPanel),
-        ]); }
-        if (medium) { return Column(children: [
-          teamPanel, const SizedBox(height: 12),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Column(children: [branchPanel, const SizedBox(height: 12), structurePanel])),
-            const SizedBox(width: 12), Expanded(child: Column(children: [actionsPanel, const SizedBox(height: 12), activityPanel])),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+          final welcome = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Welcome back, $actorName!',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 23 : 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -.5,
+                )),
+              const SizedBox(height: 5),
+              const Text("Here's what's happening in your branch.",
+                style: TextStyle(color: Color(0xFFAED2F4), fontSize: 13)),
+            ],
+          );
+          final filters = Wrap(
+            spacing: 8, runSpacing: 8,
+            children: [
+              if (locations.isNotEmpty)
+                SizedBox(
+                  width: compact ? constraints.maxWidth : 210,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: locations.any((item) => item['location_id']?.toString() == selectedLocation)
+                        ? selectedLocation
+                        : locations.first['location_id']?.toString(),
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.hub_outlined, color: Color(0xFF18D5F3), size: 18),
+                      filled: true, fillColor: const Color(0xB8051727),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(9),
+                        borderSide: const BorderSide(color: Color(0xFF0C456B)),
+                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
+                    ),
+                    dropdownColor: const Color(0xFF061727),
+                    style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11),
+                    items: locations.map((item) => DropdownMenuItem<String>(
+                      value: item['location_id']?.toString(),
+                      child: Text(item['name']?.toString() ?? 'Branch', overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (value) => setState(() => selectedLocation = value),
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: loadAll,
+                icon: const Icon(Icons.refresh_rounded, size: 15),
+                label: const Text('Refresh'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFD9ECFF),
+                  side: const BorderSide(color: Color(0xFF0C456B)),
+                ),
+              ),
+            ],
+          );
+          if (compact) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              welcome, const SizedBox(height: 14), filters,
+            ]);
+          }
+          return Row(children: [
+            Expanded(child: welcome), const SizedBox(width: 18), filters,
+          ]);
+        }),
+        const SizedBox(height: 18),
+        LayoutBuilder(builder: (context, constraints) {
+          final gap = 12.0;
+          final columns = constraints.maxWidth < 570 ? 2 : 4;
+          final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+          return Wrap(spacing: gap, runSpacing: gap, children: [
+            SizedBox(width: width, child: metric('Team Members', peopleCount.toString(), 'People in your scope', Icons.groups_rounded, const Color(0xFF00CFFF))),
+            SizedBox(width: width, child: metric('Locations', locationCount.toString(), 'Configured branches', Icons.storage_rounded, const Color(0xFF168BFF))),
+            SizedBox(width: width, child: metric('Sections', sectionCount.toString(), 'Operational groups', Icons.article_outlined, const Color(0xFF00DDB7))),
+            SizedBox(width: width, child: metric('Active Access', activeCount.toString(), 'Authorized assignments', Icons.verified_user_outlined, const Color(0xFF00D89A))),
+          ]);
+        }),
+        const SizedBox(height: 14),
+        LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= 1080) {
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 7, child: teamPanel),
+              const SizedBox(width: 14),
+              Expanded(flex: 3, child: branchPanel),
+            ]);
+          }
+          if (constraints.maxWidth >= 720) {
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: teamPanel), const SizedBox(width: 12), Expanded(child: branchPanel),
+            ]);
+          }
+          return Column(children: [teamPanel, const SizedBox(height: 12), branchPanel]);
+        }),
+        const SizedBox(height: 14),
+        LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= 1080) {
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 5, child: activityPanel),
+              const SizedBox(width: 14),
+              Expanded(flex: 4, child: hierarchyPanel),
+              const SizedBox(width: 14),
+              Expanded(flex: 4, child: quickActions),
+            ]);
+          }
+          if (constraints.maxWidth >= 720) {
+            return Column(children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: activityPanel), const SizedBox(width: 12), Expanded(child: hierarchyPanel),
+              ]),
+              const SizedBox(height: 12), quickActions,
+            ]);
+          }
+          return Column(children: [
+            activityPanel, const SizedBox(height: 12), quickActions, const SizedBox(height: 12), hierarchyPanel,
+          ]);
+        }),
+        const SizedBox(height: 18),
+        const Divider(color: Color(0x332C6385)),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 9),
+          child: Row(children: [
+            Text('InsightFlow', style: TextStyle(color: Color(0xFF5CA4D8), fontSize: 10, fontWeight: FontWeight.w700)),
+            Text('  —  Empowering data-driven decisions', style: TextStyle(color: Color(0xFF8FB9DF), fontSize: 10)),
+            Spacer(),
+            Icon(Icons.circle, color: Color(0xFF00D89A), size: 8),
+            SizedBox(width: 6),
+            Text('Management data loaded', style: TextStyle(color: Color(0xFF8FB9DF), fontSize: 9)),
           ]),
-        ]); }
-        return Column(children: [
-          teamPanel, const SizedBox(height: 12), branchPanel, const SizedBox(height: 12),
-          actionsPanel, const SizedBox(height: 12), activityPanel, const SizedBox(height: 12), structurePanel,
-        ]);
-      }),
-      const SizedBox(height: 12),
-      Align(alignment: Alignment.centerLeft, child: Text('$orgName  ·  \${_uiScopeLabel()}  ·  \${_uiRoleLabel()}',
-        maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
-    ]);
+        ),
+      ],
+    );
   }
+
+  Widget _dashboardAction(String label, IconData icon, VoidCallback onPressed, {bool primary = false}) =>
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 17),
+          label: Align(alignment: Alignment.centerLeft, child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          style: OutlinedButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            foregroundColor: primary ? const Color(0xFF001522) : const Color(0xFFD7EBFF),
+            backgroundColor: primary ? const Color(0xFF00D4E8) : const Color(0x44105A82),
+            side: BorderSide(color: primary ? const Color(0xFF00D4E8) : const Color(0xFF1D6086)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+      );
+
+  Widget _dashboardAction(String label, IconData icon, VoidCallback onPressed, {bool primary = false}) =>
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, size: 17),
+          label: Align(alignment: Alignment.centerLeft, child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          style: OutlinedButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            foregroundColor: primary ? const Color(0xFF001522) : const Color(0xFFD7EBFF),
+            backgroundColor: primary ? const Color(0xFF00D4E8) : const Color(0x44105A82),
+            side: BorderSide(color: primary ? const Color(0xFF00D4E8) : const Color(0xFF1D6086)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+      );
 
   Widget _overviewDetailLine(String label, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -3472,102 +3728,115 @@ class _ManagementShellState extends State<ManagementShell> {
   );
 
   Widget _buildManagementHeader() {
-    // Mirrors DataScreen._buildGlassAppBar(): management is another
-    // InsightFlow workspace, not a separate admin theme.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: GlassQuality.standard,
-        settings: kInsightFlowFloatingBrandGlassSettings,
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
-        shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 700;
-            final identity = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF168BFF), Color(0xFF00DDF5)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: TechColors.borderActive.withValues(alpha: 0.18),
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 21),
-                ),
-                const SizedBox(width: 10),
-                const Text('InsightFlow', style: TextStyle(
-                  color: TechColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                )),
-              ],
-            );
-            final workspace = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _eyebrow(_roleWorkspaceTitle()),
-                const SizedBox(height: 3),
-                Text(_roleWorkspaceSubtitle(), style: const TextStyle(
-                  color: TechColors.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'monospace',
-                )),
-              ],
-            );
-            final controls = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Profile',
-                  onPressed: _showCurrentUserProfile,
-                  icon: const Icon(Icons.person_outline_rounded, size: 18, color: TechColors.textPrimary),
-                ),
-                IconButton(
-                  tooltip: 'Refresh management data',
-                  onPressed: loadAll,
-                  icon: const Icon(Icons.refresh_rounded, size: 18, color: TechColors.textPrimary),
-                ),
-                IconButton(
-                  tooltip: 'Sign out',
-                  onPressed: _confirmSignOut,
-                  icon: const Icon(Icons.logout, size: 18, color: TechColors.textPrimary),
-                ),
-              ],
-            );
-            if (compact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(children: [identity, const Spacer(), controls]),
-                  const SizedBox(height: 7),
-                  workspace,
-                ],
-              );
-            }
-            return Row(children: [
-              identity,
-              const Spacer(),
-              workspace,
-              const SizedBox(width: 14),
-              controls,
-            ]);
-          },
-        ),
+    final actor = overview['actor'];
+    final actorName = actor is Map
+        ? (actor['full_name'] ?? actor['name'] ?? actor['email'] ?? 'Account').toString()
+        : 'Account';
+    final email = actor is Map ? (actor['email']?.toString() ?? '') : '';
+    return Container(
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xF0031222),
+        border: Border(bottom: BorderSide(color: Color(0x44215A7A))),
       ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final compact = constraints.maxWidth < 720;
+        final brand = Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: [Color(0xFF168BFF), Color(0xFF00DDF5)]),
+              boxShadow: const [BoxShadow(color: Color(0x3300BCEB), blurRadius: 12)],
+            ),
+            child: const Icon(Icons.hub_rounded, color: Colors.white, size: 25),
+          ),
+          const SizedBox(width: 11),
+          const Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text('InsightFlow', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            Text('Data. Insights. Action.', style: TextStyle(color: Color(0xFF86B4D8), fontSize: 10)),
+          ]),
+        ]);
+        final searchField = SizedBox(
+          width: compact ? constraints.maxWidth : constraints.maxWidth * .43,
+          height: 42,
+          child: TextField(
+            textInputAction: TextInputAction.search,
+            onSubmitted: (value) {
+              setState(() {
+                search = value.trim();
+                section = ManagementSection.people;
+              });
+            },
+            style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 12),
+            decoration: InputDecoration(
+              hintText: 'Search people, datasets, or insights…',
+              hintStyle: const TextStyle(color: Color(0xFF8FB3D4), fontSize: 11),
+              prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFBBD8F2), size: 20),
+              filled: true, fillColor: const Color(0xB7051A2B),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFF1A5075)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFF168BFF)),
+              ),
+            ),
+          ),
+        );
+        final account = Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            tooltip: 'Audit activity',
+            onPressed: _sectionAllowed(ManagementSection.audit)
+                ? () => setState(() => section = ManagementSection.audit)
+                : null,
+            icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF24D6F5), size: 23),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 38, height: 38, alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: [Color(0xFF1764A5), Color(0xFF00A9D2)]),
+            ),
+            child: Text(actorName.trim().isEmpty ? 'IF' : actorName.trim().split(RegExp(r'\\s+')).take(2).map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase(),
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 9),
+          if (!compact) ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 145),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(actorName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+              Text(email.isEmpty ? _uiRoleLabel() : _uiRoleLabel(),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10)),
+            ]),
+          ),
+          IconButton(
+            tooltip: 'Profile',
+            onPressed: _showCurrentUserProfile,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFD9ECFF)),
+          ),
+        ]);
+        if (compact) {
+          return Row(children: [
+            brand, const Spacer(),
+            IconButton(tooltip: 'Profile', onPressed: _showCurrentUserProfile,
+              icon: const Icon(Icons.account_circle_outlined, color: Color(0xFFD9ECFF))),
+          ]);
+        }
+        return Row(children: [
+          SizedBox(width: 270, child: brand),
+          const SizedBox(width: 20),
+          Expanded(child: Align(alignment: Alignment.centerLeft, child: searchField)),
+          const Spacer(),
+          account,
+        ]);
+      }),
     );
   }
 
@@ -3618,122 +3887,163 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Widget _buildDashboardSidebar() {
-    final nav = <MapEntry<ManagementSection, String>>[
-      const MapEntry(ManagementSection.overview, 'Dashboard'),
-      const MapEntry(ManagementSection.people, 'People & Invitations'),
-      const MapEntry(ManagementSection.organization, 'Organization'),
-      const MapEntry(ManagementSection.dataAccess, 'Branch Data & Access'),
-      const MapEntry(ManagementSection.invitations, 'Invitations'),
-      const MapEntry(ManagementSection.audit, 'Audit Activity'),
+    final nav = <(ManagementSection, String, IconData)>[
+      (ManagementSection.overview, 'Dashboard', Icons.home_rounded),
+      (ManagementSection.people, 'People & Invitations', Icons.people_alt_outlined),
+      (ManagementSection.organization, 'Organization', Icons.account_tree_outlined),
+      (ManagementSection.dataAccess, 'Branch Data & Access', Icons.storage_rounded),
+      (ManagementSection.invitations, 'Invitations', Icons.mark_email_unread_outlined),
+      (ManagementSection.audit, 'Audit Activity', Icons.query_stats_outlined),
     ];
     return Container(
       width: 256,
-      decoration: BoxDecoration(
-        color: const Color(0xE6031120),
-        border: Border(right: BorderSide(color: TechColors.borderActive.withValues(alpha: .20))),
+      decoration: const BoxDecoration(
+        color: Color(0xF0031222),
+        border: Border(right: BorderSide(color: Color(0x44215A7A))),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
-          child: Row(children: [
-            Container(width: 40, height: 40,
-              decoration: BoxDecoration(shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [TechColors.borderActive, const Color(0xFF1764E8)])),
-              child: const Icon(Icons.hub_rounded, color: Colors.white, size: 24)),
-            const SizedBox(width: 10),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('InsightFlow', style: TextStyle(color: TechColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
-              Text('Data. Insights. Action.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
-            ])),
-          ]),
-        ),
-        const Divider(height: 1, color: Color(0x2228CFFF)),
-        const SizedBox(height: 12),
+        const SizedBox(height: 17),
         Expanded(child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           children: [
-            for (var i = 0; i < nav.length; i++)
-              if (_sectionAllowed(nav[i].key))
-                Padding(padding: const EdgeInsets.only(bottom: 5), child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => setState(() => section = nav[i].key),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: section == nav[i].key ? const Color(0xFF062B42) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: section == nav[i].key ? TechColors.borderActive.withValues(alpha: .72) : Colors.transparent),
+            for (final item in nav)
+              if (_sectionAllowed(item.$1))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(9),
+                    onTap: () => setState(() => section = item.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: section == item.$1 ? const Color(0xFF062C43) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: section == item.$1 ? const Color(0xFF00C9F2) : Colors.transparent,
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(item.$3, size: 19,
+                          color: section == item.$1 ? const Color(0xFF1BD6F6) : const Color(0xFFA3C5E4)),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(item.$2, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: section == item.$1 ? Colors.white : const Color(0xFFD0E5FA),
+                            fontWeight: section == item.$1 ? FontWeight.w700 : FontWeight.w500,
+                          ))),
+                      ]),
                     ),
-                    child: Row(children: [
-                      Icon([Icons.home_rounded, Icons.people_alt_outlined, Icons.account_tree_outlined,
-                        Icons.mail_outline_rounded, Icons.history_rounded, Icons.shield_outlined][i], size: 18,
-                        color: section == nav[i].key ? TechColors.borderActive : TechColors.textMuted),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(nav[i].value, style: TextStyle(fontSize: 12,
-                        color: section == nav[i].key ? TechColors.textPrimary : TechColors.textMuted,
-                        fontWeight: section == nav[i].key ? FontWeight.w700 : FontWeight.w500))),
-                    ]),
                   ),
-                )),
-            const SizedBox(height: 18),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: _eyebrow('MY BRANCH')),
-            const SizedBox(height: 10),
-            _glassRow(child: Row(children: [
-              const Icon(Icons.hub_outlined, color: TechColors.borderActive, size: 18),
-              const SizedBox(width: 9),
-              Expanded(child: Text(_uiScopeLabel(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: TechColors.textPrimary, fontSize: 11))),
-            ])),
+                ),
+            const SizedBox(height: 17),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 9),
+              child: Text('MY BRANCH', style: TextStyle(
+                color: Color(0xFF81ACD2), fontSize: 10, fontWeight: FontWeight.w700,
+              )),
+            ),
+            const SizedBox(height: 9),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0x8810273B),
+                border: Border.all(color: const Color(0xFF174F73)),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(children: [
+                const Icon(Icons.hub_outlined, color: Color(0xFF1BD6F6), size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_uiScopeLabel(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
+                const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF9DBDDC), size: 18),
+              ]),
+            ),
           ],
         )),
-        Padding(padding: const EdgeInsets.all(14), child: GlassCard(
-          margin: EdgeInsets.zero, padding: const EdgeInsets.all(13),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Icon(Icons.workspace_premium_rounded, color: TechColors.statusGreen, size: 22),
-              const SizedBox(width: 8),
-              Expanded(child: Text(_uiRoleLabel(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(13, 10, 13, 15),
+          child: Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: const Color(0xAA071B2B),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF15714F)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.workspace_premium_rounded, color: Color(0xFF00D89A), size: 21),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_uiRoleLabel(), style: const TextStyle(
+                  color: Color(0xFFE0F2FF), fontSize: 12, fontWeight: FontWeight.w700,
+                ))),
+              ]),
+              const SizedBox(height: 8),
+              Text('Manage your authorized team, organization structure, and data access.',
+                style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10, height: 1.4)),
             ]),
-            const SizedBox(height: 7),
-            Text('Manages branch operations, team and data access within authorized scope.',
-              style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
-          ]),
-        )),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(18, 0, 18, 13),
+          child: Text('InsightFlow v1.0.0', style: TextStyle(color: Color(0xFF5D92BE), fontSize: 10)),
+        ),
       ]),
     );
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.transparent,
+    backgroundColor: const Color(0xFF020D18),
     body: LiquidGlassScope(
       child: Stack(children: [
         Positioned.fill(child: GlassBackgroundSource(child: const TechAnimatedBackground())),
         Positioned.fill(child: SafeArea(child: LayoutBuilder(builder: (context, viewport) {
           final desktop = viewport.maxWidth >= 1000;
+          final header = _buildManagementHeader();
           final content = Column(children: [
-            _buildManagementHeader(),
             if (!desktop) _buildManagementNavigation(),
             Expanded(child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(desktop ? 18 : 16, desktop ? 12 : 16, 16, 30),
+              padding: EdgeInsets.fromLTRB(desktop ? 24 : 15, desktop ? 16 : 12, desktop ? 24 : 15, 26),
               child: Center(child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1500),
                 child: loading
                   ? (section == ManagementSection.invitations ? _invitationSkeleton()
                     : section == ManagementSection.audit ? _auditSkeleton() : _overviewSkeleton())
                   : error != null
-                    ? GlassCard(padding: const EdgeInsets.all(16), child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.error_outline_rounded, color: TechColors.statusRed, size: 22),
-                        const SizedBox(height: 8), _eyebrow('MANAGEMENT SERVICE ERROR'),
-                        const SizedBox(height: 6), Text(error!, textAlign: TextAlign.center,
-                          style: const TextStyle(color: TechColors.textPrimary, height: 1.4)),
-                        const SizedBox(height: 14), _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
-                      ]))
+                    ? Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE8061727),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF0C456B)),
+                        ),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.error_outline_rounded, color: Color(0xFFFFB65E), size: 24),
+                          const SizedBox(height: 9),
+                          const Text('Management service unavailable', style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w700,
+                          )),
+                          const SizedBox(height: 6),
+                          Text(error!, textAlign: TextAlign.center,
+                            style: const TextStyle(color: Color(0xFFB6D3EC), height: 1.4)),
+                          const SizedBox(height: 14),
+                          _actionChip('RETRY', Icons.refresh_rounded, loadAll, accent: true),
+                        ]),
+                      )
                     : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        if (section != ManagementSection.dataAccess) ...[
-                          surface(_title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section))),
-                          const SizedBox(height: 12),
+                        if (section != ManagementSection.overview && section != ManagementSection.dataAccess) ...[
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xB8051727),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFF0B4164)),
+                            ),
+                            child: _title(_sectionLabel(section), detail: _sectionDetail(section), icon: _sectionIcon(section)),
+                          ),
+                          const SizedBox(height: 14),
                         ],
                         body(),
                         if (section == ManagementSection.organization) ...[
@@ -3743,14 +4053,22 @@ class _ManagementShellState extends State<ManagementShell> {
               )),
             )),
           ]);
-          if (!desktop) return content;
-          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _buildDashboardSidebar(),
-            Expanded(child: content),
+          if (!desktop) {
+            return Column(children: [header, Expanded(child: content)]);
+          }
+          return Column(children: [
+            header,
+            Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _buildDashboardSidebar(),
+              Expanded(child: content),
+            ])),
           ]);
         }))),
         if (_selectedAssignmentProfile != null) _buildAssignmentProfileOverlay(),
       ]),
     ),
   );
+}
+
+
 }
