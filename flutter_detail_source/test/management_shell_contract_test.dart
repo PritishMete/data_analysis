@@ -228,7 +228,7 @@ void main() {
     expect(source, contains('Widget _overviewStructureStep('));
     expect(source, contains('Widget _overviewSkeleton()'));
     for (final label in [
-      'Welcome back, $actorName!',
+      r'Welcome back, $actorName!',
       'Team Members',
       'Locations',
       'Sections',
