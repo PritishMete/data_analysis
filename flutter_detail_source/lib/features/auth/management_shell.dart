@@ -1694,10 +1694,18 @@ class _ManagementShellState extends State<ManagementShell> {
     final query = search.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     final roleOptions = people.map((p) => p['role_id']?.toString() ?? '')
         .where((v) => v.isNotEmpty).toSet().toList()..sort();
-    final locationOptions = people.map((p) => p['location_name']?.toString() ?? '')
-        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
-    final sectionOptions = people.map((p) => p['section_name']?.toString() ?? '')
-        .where((v) => v.isNotEmpty && v.toLowerCase() != 'unassigned').toSet().toList()..sort();
+    // Keep selection values as authoritative IDs everywhere in the Management Cell.
+    // Organization cards already store IDs; using names in the People dropdowns
+    // caused the same selection state to mean two different things.
+    final locationOptions = List<Map<String, dynamic>>.from(locations)
+      ..sort((a, b) => (a['name']?.toString() ?? '')
+          .compareTo(b['name']?.toString() ?? ''));
+    final sectionOptions = sections.where((section) =>
+      selectedLocation == null ||
+      section['location_id']?.toString() == selectedLocation
+    ).toList()
+      ..sort((a, b) => (a['name']?.toString() ?? '')
+          .compareTo(b['name']?.toString() ?? ''));
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : const <String, dynamic>{};
@@ -1726,21 +1734,30 @@ class _ManagementShellState extends State<ManagementShell> {
         p['location_name'], p['section_name'], p['status']]
         .whereType<Object>().map((v) => v.toString().toLowerCase().trim());
       if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
-      if (selectedLocation != null && p['location_name']?.toString() != selectedLocation) return false;
-      if (selectedSection != null && p['section_name']?.toString() != selectedSection) return false;
+      if (selectedLocation != null &&
+          p['location_id']?.toString() != selectedLocation) return false;
+      if (selectedSection != null &&
+          p['section_id']?.toString() != selectedSection) return false;
       if (selectedRole != null && p['role_id']?.toString() != selectedRole) return false;
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    Widget metric(String label, int value, IconData icon) => Expanded(
-      child: _glassRow(padding: const EdgeInsets.all(13), child: Row(children: [
+    // Return a normal card. Expanded is only valid as a direct child of a Flex;
+    // wrapping Expanded in SizedBox on desktop (and placing it in a vertical
+    // Column on mobile) caused invalid layout constraints and blank grey panels.
+    Widget metric(String label, int value, IconData icon) => _glassRow(
+      padding: const EdgeInsets.all(13),
+      child: Row(children: [
         Icon(icon, size: 17, color: TechColors.borderActive),
         const SizedBox(width: 9),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-        ])),
-      ])),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
+          ],
+        )),
+      ]),
     );
     Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
       final name = p['full_name']?.toString().trim() ?? '';
@@ -1866,15 +1883,35 @@ class _ManagementShellState extends State<ManagementShell> {
             if (narrow) ...[
               DropdownButtonFormField<String>(
                 initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All locations')),
-                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedLocation = v),
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('All locations')),
+                  ...locationOptions.map((location) => DropdownMenuItem<String>(
+                    value: location['location_id']?.toString(),
+                    child: Text(location['name']?.toString() ?? 'Unnamed location',
+                      overflow: TextOverflow.ellipsis),
+                  )),
+                ],
+                onChanged: (v) => setState(() {
+                  selectedLocation = v;
+                  if (selectedSection != null &&
+                      !sections.any((section) =>
+                        section['section_id']?.toString() == selectedSection &&
+                        (v == null || section['location_id']?.toString() == v))) {
+                    selectedSection = null;
+                  }
+                }),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('All sections')),
+                  ...sectionOptions.map((section) => DropdownMenuItem<String>(
+                    value: section['section_id']?.toString(),
+                    child: Text(section['name']?.toString() ?? 'Unnamed section',
+                      overflow: TextOverflow.ellipsis),
+                  )),
+                ],
                 onChanged: (v) => setState(() => selectedSection = v),
               ),
               const SizedBox(height: 8),
@@ -1887,15 +1924,35 @@ class _ManagementShellState extends State<ManagementShell> {
             ] else Row(children: [
               Expanded(child: DropdownButtonFormField<String>(
                 initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All locations')),
-                  ...locationOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedLocation = v),
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('All locations')),
+                  ...locationOptions.map((location) => DropdownMenuItem<String>(
+                    value: location['location_id']?.toString(),
+                    child: Text(location['name']?.toString() ?? 'Unnamed location',
+                      overflow: TextOverflow.ellipsis),
+                  )),
+                ],
+                onChanged: (v) => setState(() {
+                  selectedLocation = v;
+                  if (selectedSection != null &&
+                      !sections.any((section) =>
+                        section['section_id']?.toString() == selectedSection &&
+                        (v == null || section['location_id']?.toString() == v))) {
+                    selectedSection = null;
+                  }
+                }),
               )),
               const SizedBox(width: 10),
               Expanded(child: DropdownButtonFormField<String>(
                 initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((v) => DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)))],
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('All sections')),
+                  ...sectionOptions.map((section) => DropdownMenuItem<String>(
+                    value: section['section_id']?.toString(),
+                    child: Text(section['name']?.toString() ?? 'Unnamed section',
+                      overflow: TextOverflow.ellipsis),
+                  )),
+                ],
                 onChanged: (v) => setState(() => selectedSection = v),
               )),
               const SizedBox(width: 10),
@@ -1910,7 +1967,12 @@ class _ManagementShellState extends State<ManagementShell> {
               }), icon: const Icon(Icons.filter_alt_off)),
             ]),
             if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
-              onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+              onPressed: () => setState(() {
+                search = '';
+                selectedLocation = null;
+                selectedSection = null;
+                selectedRole = null;
+              }),
               child: const Text('Clear filters'),
             )),
           ]),
@@ -1934,7 +1996,12 @@ class _ManagementShellState extends State<ManagementShell> {
             const SizedBox(height: 5),
             const Text('Try changing your search or clearing the selected filters.',
               textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-            TextButton(onPressed: () => setState(() { search = ''; selectedLocation = null; selectedSection = null; }),
+            TextButton(onPressed: () => setState(() {
+                search = '';
+                selectedLocation = null;
+                selectedSection = null;
+                selectedRole = null;
+              }),
               child: const Text('Clear search and filters')),
           ])))
         else if (narrow)
