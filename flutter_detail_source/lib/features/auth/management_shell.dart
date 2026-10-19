@@ -2692,6 +2692,27 @@ class _ManagementShellState extends State<ManagementShell> {
     };
   }
 
+  Future<void> _confirmSignOut() async {
+    final confirmed = await GlassDialog.show<bool>(
+      context: context,
+      title: 'Sign out?',
+      message: 'Are you sure you want to sign out?',
+      actions: [
+        GlassDialogAction(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        GlassDialogAction(
+          label: 'Sign Out',
+          isPrimary: true,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
+    );
+    if (confirmed != true || !mounted) return;
+    await InsightFlowSupabaseAuthService.signOut();
+  }
+
   void _showCurrentUserProfile() {
     setState(() {
       _selectedAssignmentProfile = <String, dynamic>{
@@ -3507,6 +3528,11 @@ class _ManagementShellState extends State<ManagementShell> {
             ]),
           ),
           IconButton(
+            tooltip: 'Sign out',
+            onPressed: _confirmSignOut,
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFFD9ECFF)),
+          ),
+          IconButton(
             tooltip: 'Profile',
             onPressed: _showCurrentUserProfile,
             icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFD9ECFF)),
@@ -3518,6 +3544,8 @@ class _ManagementShellState extends State<ManagementShell> {
             children: [
               Row(children: [
                 brand, const Spacer(),
+                IconButton(tooltip: 'Sign out', onPressed: _confirmSignOut,
+                  icon: const Icon(Icons.logout_rounded, color: Color(0xFFD9ECFF))),
                 IconButton(tooltip: 'Profile', onPressed: _showCurrentUserProfile,
                   icon: const Icon(Icons.account_circle_outlined, color: Color(0xFFD9ECFF))),
               ]),
