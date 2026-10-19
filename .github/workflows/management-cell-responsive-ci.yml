@@ -1,0 +1,39 @@
+name: Management Cell Responsive UI CI
+
+on:
+  push:
+    branches:
+      - feature/employee-management-cell
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/management-cell-responsive-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-tests-and-web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Build release web app
+        run: flutter build web --release --base-href /data_analysis/
