@@ -221,36 +221,39 @@ void main() {
     expect(source, contains("a['location_name']"));
     expect(source, contains("a['section_name']"));
     expect(source, contains("a['status']"));
-    expect(source, contains('Widget _overviewSummaryCard('));
-    expect(source, contains('Widget _overviewQuickAction('));
+    // The overview is now implemented as a single responsive role-aware view.
+    // Assert the active UI contract rather than requiring deleted legacy helpers.
+    expect(source, contains('Widget overviewView()'));
     expect(source, contains('Widget _overviewActivityItem('));
     expect(source, contains('Widget _overviewStructureStep('));
     expect(source, contains('Widget _overviewSkeleton()'));
-    // Dashboard contract follows the redesigned role-aware management overview.
-    expect(source, contains('INSIGHTFLOW / MANAGEMENT'));
-    expect(source, contains('Branch command center'));
-    expect(source, contains('Organization command center'));
-    expect(source, contains('People at a glance'));
-    expect(source, contains('Branch snapshot'));
-    expect(source, contains('Organization snapshot'));
-    expect(source, contains('Workspace actions'));
-    expect(source, contains('Recent activity'));
-    expect(source, contains('Workspace map'));
-    expect(source, contains('People & invitations'));
-    expect(source, contains('Organization structure'));
-    expect(source, contains('Access control'));
-    expect(source, contains('Invitation queue'));
-    expect(source, contains('Workspace settings'));
+    for (final label in [
+      'Welcome back, $actorName!',
+      'Team Members',
+      'Locations',
+      'Sections',
+      'Active Access',
+      'Team Overview',
+      'Branch Info',
+      'Quick Actions',
+      'Recent Activity',
+      'Organization Hierarchy',
+      'Invite Team Member',
+      'Manage People',
+      'Manage Permissions',
+      'Review Audit Activity',
+      'Edit Branch Settings',
+    ]) {
+      expect(source, contains(label));
+    }
+    expect(source, contains('audit.take(5)'));
+    expect(source, contains('section == ManagementSection.audit'));
     expect(source, contains('ManagementSection.organization'));
     expect(source, contains('ManagementSection.people'));
     expect(source, contains('ManagementSection.invitations'));
     expect(source, contains('ManagementSection.dataAccess'));
     expect(source, contains('ManagementSection.audit'));
-    expect(source, contains('_unassignedPeople()'));
-    expect(source, contains('audit.take(4)'));
     expect(source, contains('Widget _auditSkeleton()'));
-    expect(source, contains('section == ManagementSection.audit'));
-    expect(source, isNot(contains('metadata.entries.where')));
     expect(source, contains('_overviewSkeleton()'));
     expect(source, contains("Widget peopleView()"));
     expect(source, contains("View and manage the people in your organization"));
