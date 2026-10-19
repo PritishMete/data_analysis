@@ -91,11 +91,9 @@ class AuthGlassScaffold extends StatelessWidget {
                                     children: [
                                       Text(
                                         title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
-                                          fontSize: narrow ? 19 : 22,
+                                          fontSize: 22,
                                           fontWeight: FontWeight.w700,
                                           letterSpacing: 0.1,
                                         ),
