@@ -1342,7 +1342,7 @@ class _ManagementShellState extends State<ManagementShell> {
       final role = _roleLabel(person['role_id']?.toString() ?? '');
       final status = person['status']?.toString() ?? 'Unknown';
       final active = status.toLowerCase() == 'active';
-      final initials = name.split(RegExp(r'\\s+')).take(2)
+      final initials = name.split(RegExp(r'\s+')).take(2)
           .map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase();
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 7),
@@ -3786,7 +3786,7 @@ class _ManagementShellState extends State<ManagementShell> {
               shape: BoxShape.circle,
               gradient: LinearGradient(colors: [Color(0xFF1764A5), Color(0xFF00A9D2)]),
             ),
-            child: Text(actorName.trim().isEmpty ? 'IF' : actorName.trim().split(RegExp(r'\\s+')).take(2).map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase(),
+            child: Text(actorName.trim().isEmpty ? 'IF' : actorName.trim().split(RegExp(r'\s+')).take(2).map((part) => part.isEmpty ? '' : part[0]).join().toUpperCase(),
               style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(width: 9),
