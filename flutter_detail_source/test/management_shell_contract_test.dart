@@ -438,7 +438,7 @@ void main() {
     expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
     expect(header, contains('onPressed: _confirmSignOut'));
 
-    expect(header, contains('Icons.auto_awesome_rounded'));
+    expect(header, contains('Icons.hub_rounded'));
     expect(header, isNot(contains('Icons.terminal')));
 
     final authGate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
