@@ -434,7 +434,7 @@ void main() {
     expect(source, contains("label: 'Cancel'"));
     expect(source, contains("label: 'Sign Out'"));
     expect(source, contains('isPrimary: true'));
-    expect(source, contains('if (confirmed == true)'));
+    expect(source, contains('if (confirmed == true && mounted)'));
     expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
     expect(header, contains('onPressed: _confirmSignOut'));
 
