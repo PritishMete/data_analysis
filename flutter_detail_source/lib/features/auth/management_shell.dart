@@ -1627,8 +1627,6 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  }
-
   Widget _dashboardAction(String label, IconData icon, VoidCallback onPressed, {bool primary = false}) =>
       SizedBox(
         width: double.infinity,
