@@ -2709,8 +2709,9 @@ class _ManagementShellState extends State<ManagementShell> {
         ),
       ],
     );
-    if (confirmed != true || !mounted) return;
-    await InsightFlowSupabaseAuthService.signOut();
+    if (confirmed == true && mounted) {
+      await InsightFlowSupabaseAuthService.signOut();
+    }
   }
 
   void _showCurrentUserProfile() {
