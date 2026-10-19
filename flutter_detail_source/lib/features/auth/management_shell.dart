@@ -9,7 +9,6 @@ import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
-import '../../widgets/insightflow_floating_brand.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
 import 'authorization_management_screen.dart';
@@ -347,12 +346,6 @@ class _ManagementShellState extends State<ManagementShell> {
 
   bool _sectionAllowed(ManagementSection value) =>
       _allowedSections().contains(value);
-
-  String _roleWorkspaceTitle() =>
-      '${_uiRoleLabel().toUpperCase()} / MANAGEMENT';
-
-  String _roleWorkspaceSubtitle() =>
-      '${_uiScopeLabel()} management workspace';
 
   InputDecoration input(String label) => InputDecoration(
     labelText: label,
@@ -874,15 +867,6 @@ class _ManagementShellState extends State<ManagementShell> {
     ),
   );
 
-  String _overviewOrganizationName() {
-    final org = overview['organization'];
-    if (org is Map && org['name'] != null) {
-      final name = org['name'].toString().trim();
-      if (name.isNotEmpty) return name;
-    }
-    return 'Your organization';
-  }
-
   int _overviewCount(dynamic summaryValue, int fallback) {
     if (summaryValue is num) return summaryValue.toInt();
     final parsed = int.tryParse(summaryValue?.toString() ?? '');
@@ -908,103 +892,6 @@ class _ManagementShellState extends State<ManagementShell> {
     if (difference.inHours < 24) return '${difference.inHours} hr ago';
     if (difference.inDays < 7) return '${difference.inDays} days ago';
     return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
-  }
-
-  Widget _overviewSummaryCard(
-    String label,
-    String value,
-    String detail,
-    IconData icon,
-  ) {
-    return GlassCard(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(18),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 190;
-          final iconBadge = Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: TechColors.borderActive.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(
-                color: TechColors.borderActive.withValues(alpha: 0.28),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: TechColors.borderActive.withValues(alpha: 0.08),
-                  blurRadius: 14,
-                ),
-              ],
-            ),
-            child: Icon(icon, size: 20, color: TechColors.borderActive),
-          );
-          final metricText = Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 5),
-                Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 24, height: 1.0, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 7),
-                Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
-              ],
-            ),
-          );
-          return compact
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [iconBadge, const SizedBox(height: 12), metricText],
-                )
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [iconBadge, const SizedBox(width: 12), metricText],
-                );
-        },
-      ),
-    );
-  }
-
-  Widget _overviewQuickAction(
-    String label,
-    String detail,
-    IconData icon,
-    ManagementSection destination,
-  ) {
-    return GlassCard(
-      margin: EdgeInsets.zero,
-      padding: EdgeInsets.zero,
-      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => setState(() => section = destination),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: TechColors.borderActive),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: const TextStyle(color: TechColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 3),
-                    Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.35)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: TechColors.textMuted),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _overviewActivityItem(Map<String, dynamic> event) {
@@ -1083,167 +970,10 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _workspaceControlPanel() {
-    final role = _roleLabel(_managementRole());
-    final scope = _uiScopeLabel();
-    final isBranchHead = _managementRole() == 'branch_head';
-    final destinations = <(String, IconData, ManagementSection)>[
-      ('People', Icons.people_outline_rounded, ManagementSection.people),
-      ('Organization', Icons.account_tree_outlined, ManagementSection.organization),
-      ('Invitations', Icons.mail_outline_rounded, ManagementSection.invitations),
-    ].where((item) => _sectionAllowed(item.$3)).toList();
-
-    return GlassCard(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(16),
-      shape: const LiquidRoundedSuperellipse(borderRadius: 17),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 700;
-          final identity = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: TechColors.borderActive.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(color: TechColors.borderActive.withValues(alpha: 0.28)),
-                ),
-                child: Icon(
-                  isBranchHead ? Icons.account_tree_rounded : Icons.dashboard_customize_outlined,
-                  color: TechColors.borderActive,
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isBranchHead ? 'BRANCH CONTROL CENTER' : 'MANAGEMENT CONTROL CENTER',
-                      style: const TextStyle(
-                        color: TechColors.textMuted,
-                        fontSize: 10,
-                        letterSpacing: 1.15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      isBranchHead && scope.trim().isNotEmpty ? scope : role,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: TechColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-          final shortcuts = Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            alignment: compact ? WrapAlignment.start : WrapAlignment.end,
-            children: destinations.map((item) => TextButton.icon(
-              onPressed: () => setState(() => section = item.$3),
-              icon: Icon(item.$2, size: 15),
-              label: Text(item.$1),
-              style: TextButton.styleFrom(
-                foregroundColor: TechColors.textPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-                side: BorderSide(color: TechColors.borderActive.withValues(alpha: 0.22)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            )).toList(),
-          );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [identity, const SizedBox(height: 14), shortcuts],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: identity),
-              const SizedBox(width: 14),
-              Flexible(child: shortcuts),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _branchAuthorityCard() => GlassCard(
-    margin: EdgeInsets.zero,
-    padding: const EdgeInsets.all(15),
-    shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 560;
-        final hierarchy = Row(
-          children: [
-            const Icon(Icons.account_tree_outlined, color: TechColors.borderActive, size: 19),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 7,
-                runSpacing: 5,
-                children: [
-                  const Text('Organization Owner', style: TextStyle(
-                    color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700,
-                  )),
-                  const Icon(Icons.chevron_right_rounded, color: TechColors.textMuted, size: 15),
-                  Text('Branch Head · ${_uiScopeLabel()}', style: const TextStyle(
-                    color: TechColors.borderActive, fontSize: 11, fontWeight: FontWeight.w700,
-                  )),
-                  const Icon(Icons.chevron_right_rounded, color: TechColors.textMuted, size: 15),
-                  const Text('Branch team', style: TextStyle(
-                    color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700,
-                  )),
-                ],
-              ),
-            ),
-          ],
-        );
-        const note = Text(
-          'Management actions stay within your authorized branch scope. Organization-wide authority remains with the Organization Owner.',
-          style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.45),
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            hierarchy,
-            SizedBox(height: compact ? 9 : 7),
-            Padding(
-              padding: EdgeInsets.only(left: compact ? 0 : 28),
-              child: note,
-            ),
-          ],
-        );
-      },
-    ),
-  );
-
-  List<Map<String, dynamic>> _unassignedPeople() => people.where((person) {
-    final location = person['location_name']?.toString().trim() ?? '';
-    final sectionName = person['section_name']?.toString().trim() ?? '';
-    return location.isEmpty && sectionName.isEmpty;
-  }).toList();
-
   Widget overviewView() {
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : <String, dynamic>{};
-    final branchHead = _managementRole() == 'branch_head';
     final peopleCount = _overviewCount(summary['people_count'], people.length);
     final locationCount = _overviewCount(summary['location_count'], locations.length);
     final sectionCount = _overviewCount(summary['section_count'], sections.length);
@@ -1286,7 +1016,7 @@ class _ManagementShellState extends State<ManagementShell> {
                 Expanded(child: Text(title, style: const TextStyle(
                   color: Color(0xFFDCEEFF), fontSize: 14, fontWeight: FontWeight.w700,
                 ))),
-                if (action != null) action,
+                ?action,
               ]),
               const SizedBox(height: 13),
               child,
@@ -1405,7 +1135,7 @@ class _ManagementShellState extends State<ManagementShell> {
               const SizedBox(height: 7),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Showing ${teamRows.length} of ${peopleCount} team members',
+                child: Text('Showing ${teamRows.length} of $peopleCount team members',
                   style: const TextStyle(color: Color(0xFF8CB8DF), fontSize: 10)),
               ),
             ]),
@@ -2973,28 +2703,6 @@ class _ManagementShellState extends State<ManagementShell> {
       _showIdProof = false;
       _isCurrentUserProfile = true;
     });
-  }
-
-  Future<void> _confirmSignOut() async {
-    final confirmed = await GlassDialog.show<bool>(
-      context: context,
-      title: 'Sign out?',
-      message: 'Are you sure you want to sign out?',
-      actions: [
-        GlassDialogAction(
-          label: 'Cancel',
-          onPressed: () => Navigator.pop(context, false),
-        ),
-        GlassDialogAction(
-          label: 'Sign Out',
-          isPrimary: true,
-          onPressed: () => Navigator.pop(context, true),
-        ),
-      ],
-    );
-    if (confirmed == true) {
-      await InsightFlowSupabaseAuthService.signOut();
-    }
   }
 
   void _closeAssignmentProfile() {
