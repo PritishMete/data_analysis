@@ -14,6 +14,7 @@ import '../../core/profile/profile_form_widgets.dart';
 import '../../core/profile/profile_geo_data.dart';
 import 'auth_glass_widgets.dart';
 import 'management_shell.dart';
+import 'sign_in_screen.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
   const CompanyRegistrationScreen({super.key});
@@ -686,20 +687,27 @@ class _CompanyRegistrationScreenState
           ? 'Create your InsightFlow workspace and register its first branch.'
           : 'Verify your account to securely set up the workspace.',
       children: [
-        if (!authenticated)
+        if (!authenticated) ...[
+          const AuthGlassMessage(
+            text: 'Sign in with your verified InsightFlow email account before setting up an organization. Organization setup is available only to an authenticated account.',
+          ),
+          const SizedBox(height: 14),
           GlassButton.custom(
             onTap: _busy
                 ? () {}
-                : () => InsightFlowSupabaseAuthService.signInWithOAuth(
-                      OAuthProvider.google,
+                : () => Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => const SignInScreen(),
+                      ),
                     ),
             enabled: !_busy,
             width: double.infinity,
             height: 44,
             shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-            label: 'Continue with Google',
-            child: const Text('Continue with Google'),
-          )
+            label: 'Sign in with email',
+            child: const Text('Sign in with email'),
+          ),
+        ]
         else ...[
           _stepIndicator(),
           const SizedBox(height: 18),
