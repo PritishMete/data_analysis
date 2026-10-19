@@ -1627,23 +1627,7 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _dashboardAction(String label, IconData icon, VoidCallback onPressed, {bool primary = false}) =>
-      SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon, size: 17),
-          label: Align(alignment: Alignment.centerLeft, child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
-          style: OutlinedButton.styleFrom(
-            alignment: Alignment.centerLeft,
-            foregroundColor: primary ? const Color(0xFF001522) : const Color(0xFFD7EBFF),
-            backgroundColor: primary ? const Color(0xFF00D4E8) : const Color(0x44105A82),
-            side: BorderSide(color: primary ? const Color(0xFF00D4E8) : const Color(0xFF1D6086)),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        ),
-      );
+  }
 
   Widget _dashboardAction(String label, IconData icon, VoidCallback onPressed, {bool primary = false}) =>
       SizedBox(
