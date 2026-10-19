@@ -3718,8 +3718,8 @@ class _ManagementShellState extends State<ManagementShell> {
         : 'Account';
     final email = actor is Map ? (actor['email']?.toString() ?? '') : '';
     return Container(
-      height: 76,
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+      height: MediaQuery.sizeOf(context).width < 720 ? 124 : 76,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
       decoration: const BoxDecoration(
         color: Color(0xF0031222),
         border: Border(bottom: BorderSide(color: Color(0x44215A7A))),
@@ -3807,11 +3807,18 @@ class _ManagementShellState extends State<ManagementShell> {
           ),
         ]);
         if (compact) {
-          return Row(children: [
-            brand, const Spacer(),
-            IconButton(tooltip: 'Profile', onPressed: _showCurrentUserProfile,
-              icon: const Icon(Icons.account_circle_outlined, color: Color(0xFFD9ECFF))),
-          ]);
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(children: [
+                brand, const Spacer(),
+                IconButton(tooltip: 'Profile', onPressed: _showCurrentUserProfile,
+                  icon: const Icon(Icons.account_circle_outlined, color: Color(0xFFD9ECFF))),
+              ]),
+              const SizedBox(height: 5),
+              searchField,
+            ],
+          );
         }
         return Row(children: [
           SizedBox(width: 270, child: brand),
