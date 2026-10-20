@@ -485,13 +485,12 @@ void main() {
     expect(organizationStart, greaterThanOrEqualTo(0));
     expect(organizationEnd, greaterThan(organizationStart));
     final organizationView = source.substring(organizationStart, organizationEnd);
-    expect(
-      organizationView,
-      contains('Keep the heading and actions in separate rows at every width.'),
-    );
-    expect(organizationView, contains("_eyebrow('Organization structure')"));
-    expect(organizationView, contains('alignment: Alignment.centerRight'));
-    expect(organizationView, isNot(contains('Expanded(child: _eyebrow(\'Organization structure\'))'));
+    expect(organizationView, contains("_eyebrow('ORGANIZATION / STRUCTURE')"));
+    expect(organizationView, contains("Text('Branches and teams'"));
+    expect(organizationView, contains("stat('Branches / locations'"));
+    expect(organizationView, contains("stat('Active assignments'"));
+    expect(organizationView, contains('alignment: Alignment.centerLeft'));
+    expect(organizationView, isNot(contains('Expanded(child: _eyebrow(\\'Organization structure\\'))'));
 
   });
 }
