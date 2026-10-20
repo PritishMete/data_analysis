@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final accessSource = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     final managementNavigation = File(
       'lib/features/auth/management_navigation.dart',
     ).readAsStringSync();
@@ -254,6 +255,12 @@ void main() {
     expect(source, contains('ManagementSection.invitations'));
     expect(source, contains('ManagementSection.dataAccess'));
     expect(source, contains('ManagementSection.audit'));
+    // Dashboard redesign contracts for the four management workspaces.
+    expect(source, contains("Text('Audit Activity'"));
+    expect(source, contains("Text('Invitations'"));
+    expect(accessSource, contains("Text('Branch Data & Access'"));
+    expect(accessSource, contains("stat('Managed datasets'"));
+    expect(accessSource, contains("stat('Access requests'"));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_overviewSkeleton()'));
     expect(source, contains("Widget peopleView()"));
