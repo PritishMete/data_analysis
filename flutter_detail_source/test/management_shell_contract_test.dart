@@ -310,6 +310,15 @@ void main() {
     expect(source, contains('_invitationStatusChip'));
     expect(source, contains('_formatInvitationExpiry'));
     expect(source, contains('_invitationSkeleton()'));
+    // Loading placeholders should reuse the loaded dashboard's glass-panel,
+    // gradient hero, metric-card, and responsive activity-row geometry.
+    expect(source, contains('Widget metricCard() => Container('));
+    expect(source, contains('Widget panelContent({int rows = 3})'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('Widget _invitationSkeleton()'));
+    expect(source, contains('Color(0xE8113551)'));
+    expect(source, contains('BorderRadius.circular(16)'));
+    expect(source, contains('BorderRadius.circular(14)'));
     expect(source, contains("section == ManagementSection.invitations"));
     expect(source, contains('Invitation details'));
     expect(source, contains("item['invitation_id']"));
