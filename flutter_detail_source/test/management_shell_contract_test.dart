@@ -466,6 +466,20 @@ void main() {
     expect(navigationAfter, contains('GlassChip'));
     expect(navigationAfter, contains('height: 56'));
 
+    // The organization heading must not share a constrained desktop Row with
+    // the action chips; that caused one-character-per-line wrapping.
+    final organizationStart = source.indexOf('Widget organizationView()');
+    final organizationEnd = source.indexOf('Widget peopleView()', organizationStart);
+    expect(organizationStart, greaterThanOrEqualTo(0));
+    expect(organizationEnd, greaterThan(organizationStart));
+    final organizationView = source.substring(organizationStart, organizationEnd);
+    expect(
+      organizationView,
+      contains('Keep the heading and actions in separate rows at every width.'),
+    );
+    expect(organizationView, contains("_eyebrow('Organization structure')"));
+    expect(organizationView, contains('alignment: Alignment.centerRight'));
+    expect(organizationView, isNot(contains('Expanded(child: _eyebrow(\'Organization structure\'))'));
 
   });
 }
