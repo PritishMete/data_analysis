@@ -33,8 +33,9 @@ void main() {
     expect(navigation, isNot(contains('AUDIT LOG')));
     expect(navigation, isNot(contains('ANALYSIS')));
     expect(source, isNot(contains('_managementAnalysisNavChip')));
-    expect(source, contains("_title('Audit'"));
-    expect(source, contains('Review recent organization activity'));
+    expect(source, contains("Text('Audit Activity'"));
+    expect(source, contains('GOVERNANCE / TRACEABILITY'));
+    expect(source, contains('Review who changed what, when it happened'));
     expect(source, contains("'management.location.created'"));
     expect(source, contains("'Location created'"));
     expect(source, contains("'management.manager.assigned'"));
