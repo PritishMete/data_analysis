@@ -928,46 +928,83 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _overviewSkeleton() {
-    Widget block(double height, {double? width}) => Container(
+    Widget _overviewSkeleton() {
+    Widget block({double height = 12, double? width, double radius = 7}) => Container(
       height: height,
       width: width,
       decoration: BoxDecoration(
-        color: TechColors.panelBg.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: TechColors.textMuted.withValues(alpha: 0.10)),
+        color: TechColors.textMuted.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: TechColors.textMuted.withValues(alpha: 0.07)),
       ),
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        block(126),
-        const SizedBox(height: 14),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth < 560 ? 1 : constraints.maxWidth < 980 ? 2 : 4;
-            final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: List.generate(4, (_) => block(118, width: width)),
-            );
-          },
-        ),
-        const SizedBox(height: 14),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth < 820 ? 1 : 2;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: List.generate(4, (_) => block(88, width: width)),
-            );
-          },
-        ),
-      ],
+    Widget panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(15)}) => Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: const Color(0xB8051727),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF0B4164).withValues(alpha: .88)),
+        boxShadow: const [BoxShadow(color: Color(0x1600BCEB), blurRadius: 18, offset: Offset(0, 4))],
+      ),
+      child: child,
     );
+    Widget metricCard() => Container(
+      constraints: const BoxConstraints(minHeight: 116),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0x251B8AC0), Color(0xB8041727)]),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: const Color(0x5539BFEF)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 43, height: 43, decoration: BoxDecoration(color: const Color(0x2227C9F4), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0x4439BFEF))), child: Center(child: block(width: 17, height: 17, radius: 5))),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          block(width: 88, height: 10), const SizedBox(height: 9), block(width: 54, height: 24), const SizedBox(height: 8), block(width: 104, height: 10),
+        ])),
+      ]),
+    );
+    Widget panelContent({int rows = 3}) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [block(width: 26, height: 26, radius: 8), const SizedBox(width: 9), block(width: 120, height: 13)]),
+      const SizedBox(height: 14),
+      ...List.generate(rows, (i) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(children: [
+        if (i == 0) block(width: 30, height: 30, radius: 20),
+        if (i == 0) const SizedBox(width: 9),
+        Expanded(child: block(height: 11, width: i == 1 ? 155 : null)),
+        const SizedBox(width: 12),
+        block(width: 56, height: 10),
+      ]))),
+    ]);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE8113551), Color(0xC8061727), Color(0xB8051727)]),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF1374A2).withValues(alpha: .75)),
+          boxShadow: const [BoxShadow(color: Color(0x1800CFFF), blurRadius: 24, offset: Offset(0, 6))],
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: Center(child: block(width: 20, height: 20, radius: 6))),
+          const SizedBox(width: 13),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            block(width: 142, height: 10), const SizedBox(height: 10), block(width: 218, height: 23), const SizedBox(height: 8), block(width: 270, height: 12),
+          ])),
+        ]),
+      ),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 1 : constraints.maxWidth < 980 ? 2 : 4;
+        final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+        return Wrap(spacing: 10, runSpacing: 10, children: List.generate(4, (_) => SizedBox(width: width, child: metricCard())));
+      }),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 820 ? 1 : 2;
+        final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+        return Wrap(spacing: 12, runSpacing: 12, children: List.generate(4, (i) => SizedBox(width: width, child: panel(child: panelContent(rows: i == 0 ? 4 : 3)))));
+      }),
+    ]);
   }
 
   Widget overviewView() {
@@ -1906,33 +1943,55 @@ class _ManagementShellState extends State<ManagementShell> {
       const SizedBox(height:4),Text('\${filtered.length} of \${audit.length} activities',textAlign:TextAlign.end,style:const TextStyle(color:TechColors.textMuted,fontSize:10)),
     ]);
   }
-  Widget _auditSkeleton() {
-    Widget block({double height = 16, double? width}) => Container(
-      height: height,
-      width: width,
+    Widget _auditSkeleton() {
+    Widget block({double height = 12, double? width, double radius = 7}) => Container(
+      height: height, width: width,
+      decoration: BoxDecoration(color: TechColors.textMuted.withValues(alpha: .12), borderRadius: BorderRadius.circular(radius)),
+    );
+    Widget hero() => Container(
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: TechColors.textMuted.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(9),
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE8113551), Color(0xB8051727)]),
+        borderRadius: BorderRadius.circular(15), border: Border.all(color: const Color(0xFF164F70)),
       ),
+      child: Row(children: [
+        Container(width: 44, height: 44, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: Center(child: block(width: 20, height: 20, radius: 6))),
+        const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          block(width: 150, height: 10), const SizedBox(height: 9), block(width: 190, height: 23), const SizedBox(height: 7), block(width: 290, height: 12),
+        ])),
+      ]),
+    );
+    Widget metric(double width) => Container(
+      width: width, padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(color: const Color(0xB8051727), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0x5539BFEF))),
+      child: Row(children: [block(width: 20, height: 20, radius: 6), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [block(width: 45, height: 21), const SizedBox(height: 5), block(width: 105, height: 10)]))]),
     );
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        block(width: 150, height: 22),
-        const SizedBox(height: 9),
-        block(width: 290, height: 12),
-      ])),
+      hero(),
       const SizedBox(height: 12),
-      surface(block(height: 46)),
+      LayoutBuilder(builder: (context, constraints) {
+        final gap = 10.0, columns = constraints.maxWidth < 520 ? 1 : 3;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(3, (_) => metric(width)));
+      }),
+      const SizedBox(height: 14),
+      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xB8051727), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF164564))),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final search = block(height: 46);
+          final filter = block(height: 46);
+          return constraints.maxWidth < 560 ? Column(children: [search, const SizedBox(height: 10), filter]) : Row(children: [Expanded(flex: 3, child: search), const SizedBox(width: 10), Expanded(flex: 2, child: filter)]);
+        }),
+      ),
       const SizedBox(height: 12),
+      Row(children: [block(width: 130, height: 15), const Spacer(), block(width: 70, height: 10)]),
+      const SizedBox(height: 9),
       ...List.generate(4, (_) => Padding(
         padding: const EdgeInsets.only(bottom: 9),
-        child: surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          block(width: 190, height: 17),
-          const SizedBox(height: 10),
-          block(width: 130, height: 12),
-          const SizedBox(height: 8),
-          block(width: 220, height: 11),
-        ])),
+        child: _glassRow(padding: const EdgeInsets.all(14), child: LayoutBuilder(builder: (context, constraints) {
+          final identity = Row(children: [block(width: 36, height: 36, radius: 10), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [block(width: 190, height: 13), const SizedBox(height: 7), block(width: 120, height: 10), const SizedBox(height: 6), block(width: 215, height: 10)]))]);
+          final metadata = Column(crossAxisAlignment: CrossAxisAlignment.end, children: [block(width: 105, height: 10), const SizedBox(height: 7), block(width: 72, height: 18, radius: 20)]);
+          return constraints.maxWidth < 480 ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [identity, const SizedBox(height: 12), metadata]) : Row(children: [Expanded(child: identity), const SizedBox(width: 14), metadata]);
+        })),
       )),
     ]);
   }
@@ -2041,34 +2100,52 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
-  Widget _invitationSkeleton() {
-    Widget block({double height = 18, double width = double.infinity}) => Container(
+    Widget _invitationSkeleton() {
+    Widget block({double height = 12, double? width, double radius = 7}) => Container(
       height: height, width: width,
-      decoration: BoxDecoration(
-        color: TechColors.textMuted.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
-      ),
+      decoration: BoxDecoration(color: TechColors.textMuted.withValues(alpha: .12), borderRadius: BorderRadius.circular(radius)),
+    );
+    Widget metric(double width) => Container(
+      width: width, constraints: const BoxConstraints(minHeight: 86), padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0x221B8AC0), Color(0xB8051727)]), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0x5539BFEF))),
+      child: Row(children: [Container(width: 36, height: 36, decoration: BoxDecoration(color: const Color(0x2227C9F4), borderRadius: BorderRadius.circular(10)), child: Center(child: block(width: 18, height: 18, radius: 5))), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [block(width: 48, height: 22), const SizedBox(height: 5), block(width: 98, height: 10)]))]),
     );
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Wrap(spacing: 8, runSpacing: 8, children: List.generate(4, (_) => SizedBox(
-        width: 180,
-        child: surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          block(width: 62, height: 10), const SizedBox(height: 10), block(width: 42, height: 20),
-        ])),
-      ))),
-      const SizedBox(height: 12),
-      surface(Row(children: [
-        Expanded(child: block(height: 46)), const SizedBox(width: 10),
-        SizedBox(width: 180, child: block(height: 46)),
-      ])),
-      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE8113551), Color(0xB8051727)]), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF164F70))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(11)), child: Center(child: block(width: 19, height: 19, radius: 5))),
+          const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [block(width: 118, height: 10), const SizedBox(height: 9), block(width: 160, height: 25), const SizedBox(height: 7), block(width: 265, height: 12)])),
+        ]),
+      ),
+      const SizedBox(height: 17),
+      LayoutBuilder(builder: (context, constraints) {
+        final gap = 10.0, columns = constraints.maxWidth < 520 ? 2 : 4;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) => metric(width)));
+      }),
+      const SizedBox(height: 15),
+      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xB8051727), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF164564).withValues(alpha: .9))),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final search = block(height: 46), status = block(height: 46);
+          return constraints.maxWidth < 620 ? Column(children: [search, const SizedBox(height: 9), status]) : Row(children: [Expanded(flex: 3, child: search), const SizedBox(width: 10), Expanded(flex: 2, child: status)]);
+        }),
+      ),
+      const SizedBox(height: 14),
+      Row(children: [block(width: 135, height: 15), const Spacer(), block(width: 62, height: 11)]),
+      const SizedBox(height: 10),
       ...List.generate(3, (_) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: surface(Row(children: [
-          Expanded(flex: 3, child: block(width: 220)), const SizedBox(width: 18),
-          Expanded(flex: 2, child: block(width: 100)), const SizedBox(width: 18),
-          Expanded(flex: 2, child: block(width: 120)),
-        ])),
+        padding: const EdgeInsets.only(bottom: 9),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: const Color(0xA8061B2C), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFF164564).withValues(alpha: .8))),
+          child: LayoutBuilder(builder: (context, constraints) {
+            final identity = Row(children: [Container(width: 42, height: 42, decoration: BoxDecoration(color: const Color(0x2227C9F4), borderRadius: BorderRadius.circular(12)), child: Center(child: block(width: 19, height: 19, radius: 5))), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [block(width: 180, height: 13), const SizedBox(height: 7), block(width: 215, height: 10), const SizedBox(height: 7), Row(children: [block(width: 68, height: 19, radius: 20), const SizedBox(width: 7), block(width: 86, height: 19, radius: 20)])]))]);
+            final metadata = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [block(width: 95, height: 10), const SizedBox(height: 7), block(width: 150, height: 12), const SizedBox(height: 8), block(width: 110, height: 10)]);
+            return constraints.maxWidth < 650 ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [identity, const SizedBox(height: 13), metadata, const SizedBox(height: 10), Align(alignment: Alignment.centerLeft, child: block(width: 150, height: 34, radius: 8))]) : Row(children: [Expanded(flex: 5, child: identity), const SizedBox(width: 14), Expanded(flex: 4, child: metadata), const SizedBox(width: 10), block(width: 150, height: 34, radius: 8)]);
+          }),
+        ),
       )),
     ]);
   }
