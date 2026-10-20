@@ -256,6 +256,17 @@ void main() {
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_overviewSkeleton()'));
     expect(source, contains("Widget peopleView()"));
+    expect(source, contains("_eyebrow('PEOPLE DIRECTORY')"));
+    expect(source, contains("A clear view of your team, roles, and branch assignments."));
+    expect(source, contains("Pending invitations"));
+    expect(source, contains("people-location-"));
+    expect(source, contains("Team members"));
+    expect(source, contains("Widget _invitationMeta("));
+    expect(source, contains("_eyebrow('TEAM ONBOARDING')"));
+    expect(source, contains("Track every invitation from send to acceptance, with clear status and expiry details."));
+    expect(source, contains("Invitation activity"));
+    expect(source, contains("invitation-status-"));
+
     expect(source, contains("View and manage the people in your organization"));
     expect(source, contains("Search people"));
     expect(source, contains("No people match your search"));
