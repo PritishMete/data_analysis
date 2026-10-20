@@ -1454,42 +1454,61 @@ class _ManagementShellState extends State<ManagementShell> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE8113551), Color(0xC8061727), Color(0xB8051727)]),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF1374A2).withValues(alpha: .75)),
+            boxShadow: const [BoxShadow(color: Color(0x1800CFFF), blurRadius: 24, offset: Offset(0, 6))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _eyebrow('ORGANIZATION / STRUCTURE'),
+            const SizedBox(height: 8),
+            const Text('Organization structure', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -.4)),
+            const SizedBox(height: 6),
+            const Text('Map branches, leadership, and operational sections from one clear workspace.', style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45)),
+            const SizedBox(height: 16),
+            Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 8, children: [
+              if (_canUi('organization.structure.manage')) _actionChip('CREATE LOCATION', Icons.add_location_alt_outlined, createLocation),
+              if (_canUi('organization.structure.manage') || _canUi('organization.section.create')) _actionChip('CREATE SECTION', Icons.account_tree_outlined, createSection, accent: true),
+              _actionChip('REFRESH', Icons.refresh_rounded, loadAll),
+            ])),
+          ]),
+        ),
+        const SizedBox(height: 13),
+        LayoutBuilder(builder: (context, constraints) {
+          final gap = 10.0, columns = constraints.maxWidth < 500 ? 2 : 4;
+          final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+          Widget stat(String label, int value, IconData icon, Color accent) => Container(
+            width: width, padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(color: const Color(0xB8051727), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: .4))),
+            child: Row(children: [
+              Icon(icon, color: accent, size: 19), const SizedBox(width: 9),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(value.toString(), style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3), Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10)),
+              ])),
+            ]),
+          );
+          return Wrap(spacing: gap, runSpacing: gap, children: [
+            stat('Branches / locations', locations.length, Icons.apartment_rounded, const Color(0xFF00CFFF)),
+            stat('Operational sections', sections.length, Icons.account_tree_outlined, const Color(0xFF168BFF)),
+            stat('Active assignments', assignments.where((a) => a['status'] == 'active').length, Icons.verified_user_outlined, const Color(0xFF00D89A)),
+            stat('Team members', people.length, Icons.groups_2_outlined, const Color(0xFF00DDB7)),
+          ]);
+        }),
+        const SizedBox(height: 16),
+        Row(children: [
+          const Expanded(child: Text('Branches and teams', style: TextStyle(color: Color(0xFFE5F2FF), fontSize: 16, fontWeight: FontWeight.w800))),
+          Text(locations.length.toString() + ' locations', style: const TextStyle(color: Color(0xFF8FB9DF), fontSize: 10)),
+        ]),
+        const SizedBox(height: 9),
         // Keep the heading and actions in separate rows at every width.
         // In the desktop Row layout, the action Wrap can consume most of the
         // available width and leave the heading so narrow that Flutter wraps
         // "ORGANIZATION STRUCTURE" one character per line.
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _eyebrow('Organization structure'),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.end,
-                children: [
-                  if (_canUi('organization.structure.manage'))
-                    _actionChip(
-                      'CREATE LOCATION',
-                      Icons.add_location_alt_outlined,
-                      createLocation,
-                    ),
-                  if (_canUi('organization.structure.manage') ||
-                      _canUi('organization.section.create'))
-                    _actionChip(
-                      'CREATE SECTION',
-                      Icons.account_tree_outlined,
-                      createSection,
-                      accent: true,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 2),
         if (locations.isEmpty)
           surface(
             const Padding(
@@ -1843,7 +1862,41 @@ class _ManagementShellState extends State<ManagementShell> {
     final categories=audit.map(_auditCategory).toSet().toList()..sort();final query=auditSearch.trim().toLowerCase();
     final filtered=audit.where((e){if(auditCategory!=null&&_auditCategory(e)!=auditCategory)return false;if(query.isEmpty)return true;return [_auditActionLabel(e['action']?.toString()??'Activity'),_auditActor(e),_auditContext(e),e['outcome']?.toString()??'',e['action']?.toString()??''].join(' ').toLowerCase().contains(query);}).toList();
     return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-      _title('Audit',detail:'Review recent organization activity and understand who performed important management actions.',icon:Icons.history_rounded),const SizedBox(height:12),
+      Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xE8113551), Color(0xB8051727)]),
+        borderRadius: BorderRadius.circular(15), border: Border.all(color: const Color(0xFF164F70)),
+      ), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 44, height: 44, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.history_rounded, color: Color(0xFF43C8F3), size: 23)),
+        const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _eyebrow('GOVERNANCE / TRACEABILITY'),
+          const SizedBox(height: 7),
+          const Text('Audit Activity', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -.4)),
+          const SizedBox(height: 5),
+          const Text('Review who changed what, when it happened, and the outcome of each management action.', style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45)),
+        ])),
+        IconButton(tooltip: 'Refresh activity', onPressed: loadAll, icon: const Icon(Icons.refresh_rounded, color: Color(0xFFBFEAFF))),
+      ])),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, constraints) {
+        final gap = 10.0, columns = constraints.maxWidth < 520 ? 1 : 3;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        Widget stat(String label, int value, IconData icon, Color accent) => Container(
+          width: width, padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(color: const Color(0xB8051727), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: .4))),
+          child: Row(children: [Icon(icon, color: accent, size: 19), const SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value.toString(), style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3), Text(label, style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10)),
+          ]))]),
+        );
+        final successful = audit.where((e) => ['success', 'succeeded'].contains(e['outcome']?.toString().toLowerCase())).length;
+        final peopleEvents = audit.where((e) => _auditCategory(e) == 'People').length;
+        return Wrap(spacing: gap, runSpacing: gap, children: [
+          stat('Recorded activities', audit.length, Icons.receipt_long_outlined, const Color(0xFF00CFFF)),
+          stat('People & role events', peopleEvents, Icons.groups_outlined, const Color(0xFF168BFF)),
+          stat('Successful outcomes', successful, Icons.verified_outlined, const Color(0xFF00D89A)),
+        ]);
+      }),
+      const SizedBox(height: 14),
       LayoutBuilder(builder:(context,c){final search=TextField(key:const ValueKey('audit-search'),onChanged:(v)=>setState(()=>auditSearch=v),decoration:input('Search activity').copyWith(prefixIcon:const Icon(Icons.search_rounded,color:TechColors.textMuted),suffixIcon:auditSearch.isEmpty?null:IconButton(tooltip:'Clear search',onPressed:()=>setState(()=>auditSearch=''),icon:const Icon(Icons.close_rounded))));final filter=DropdownButtonFormField<String?>(key:ValueKey('audit-category-$auditCategory'),initialValue:auditCategory,decoration:input('Activity area'),items:[const DropdownMenuItem<String?>(value:null,child:Text('All activity')),...categories.map((v)=>DropdownMenuItem<String?>(value:v,child:Text(v)))],onChanged:(v)=>setState(()=>auditCategory=v));return c.maxWidth<560?Column(children:[search,const SizedBox(height:10),filter]):Row(children:[Expanded(flex:3,child:search),const SizedBox(width:10),Expanded(flex:2,child:filter)]);}),
       if(auditSearch.isNotEmpty||auditCategory!=null)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(() { auditSearch = ''; auditCategory = null; }),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))),
       const SizedBox(height:8),
@@ -2094,7 +2147,7 @@ class _ManagementShellState extends State<ManagementShell> {
     return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       LayoutBuilder(builder:(context,c){
         final compact=c.maxWidth<640;
-        final heading=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[_eyebrow('TEAM ONBOARDING'),const SizedBox(height:7),const Text('Invitations',style:TextStyle(color:Color(0xFFE8F4FF),fontSize:25,fontWeight:FontWeight.w800,letterSpacing:-.4)),const SizedBox(height:5),const Text('Track every invitation from send to acceptance, with clear status and expiry details.',style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.45))]);
+        final heading=Container(padding:const EdgeInsets.all(17),decoration:BoxDecoration(gradient:const LinearGradient(begin:Alignment.topLeft,end:Alignment.bottomRight,colors:[Color(0xE8113551),Color(0xB8051727)]),borderRadius:BorderRadius.circular(14),border:Border.all(color:const Color(0xFF164F70))),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[Container(width:40,height:40,alignment:Alignment.center,decoration:BoxDecoration(color:const Color(0xFF0D3854),borderRadius:BorderRadius.circular(11)),child:const Icon(Icons.mark_email_unread_outlined,color:Color(0xFF43C8F3),size:21)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[_eyebrow('TEAM ONBOARDING'),const SizedBox(height:7),const Text('Invitations',style:TextStyle(color:Color(0xFFE8F4FF),fontSize:25,fontWeight:FontWeight.w800,letterSpacing:-.4)),const SizedBox(height:5),const Text('Track every invitation from send to acceptance, with clear status and expiry details.',style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.45))]))]));
         final actions=Wrap(spacing:8,runSpacing:8,children:[
           OutlinedButton.icon(onPressed:loadAll,icon:const Icon(Icons.refresh_rounded,size:16),label:const Text('Refresh'),style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFD8ECFF),side:const BorderSide(color:Color(0xFF1D6086)))),
           if(_canUi('invitation.manage')||_canUi('invitation.create')||_canUi('people.invite'))FilledButton.icon(onPressed:_inviteEmployee,icon:const Icon(Icons.send_rounded,size:16),label:const Text('Send invitation'),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF00CFE8),foregroundColor:const Color(0xFF001522))),
