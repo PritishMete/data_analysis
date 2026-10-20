@@ -1685,347 +1685,127 @@ class _ManagementShellState extends State<ManagementShell> {
   }
   Widget peopleView() {
     final query = search.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-    final roleOptions = people.map((p) => p['role_id']?.toString() ?? '')
-        .where((v) => v.isNotEmpty).toSet().toList()..sort();
-    // Keep selection values as authoritative IDs everywhere in the Management Cell.
-    // Organization cards already store IDs; using names in the People dropdowns
-    // caused the same selection state to mean two different things.
-    final locationOptions = List<Map<String, dynamic>>.from(locations)
-      ..sort((a, b) => (a['name']?.toString() ?? '')
-          .compareTo(b['name']?.toString() ?? ''));
-    final sectionOptions = sections.where((section) =>
-      selectedLocation == null ||
-      section['location_id']?.toString() == selectedLocation
-    ).toList()
-      ..sort((a, b) => (a['name']?.toString() ?? '')
-          .compareTo(b['name']?.toString() ?? ''));
-    final summary = overview['summary'] is Map
-        ? Map<String, dynamic>.from(overview['summary'] as Map)
-        : const <String, dynamic>{};
-    final roleCounts = summary['role_counts'] is Map
-        ? Map<String, dynamic>.from(summary['role_counts'] as Map)
-        : const <String, dynamic>{};
-    int backendCount(String key, int fallback) {
-      final value = roleCounts[key] ?? summary['${key}_count'];
-      return int.tryParse(value?.toString() ?? '') ?? fallback;
-    }
-    final totalPeople = int.tryParse(summary['total_people']?.toString() ?? '') ?? people.length;
-    final branchHeadCount = backendCount('branch_head', people.where((p) => p['role_id'] == 'branch_head').length);
-    final managerCount = backendCount('manager', people.where((p) => p['role_id'] == 'manager').length);
-    final teamLeadCount = backendCount('team_lead', people.where((p) => p['role_id'] == 'team_lead').length);
-    const professionalRoles = <String>{'data_analyst','senior_data_analyst','business_analyst','data_scientist','data_engineer','ml_engineer','analytics_engineer','bi_developer','data_architect','data_quality_analyst','data_governance_analyst'};
-    final professionalMemberCount = people.where((p) => professionalRoles.contains(p['role_id']?.toString())).length;
+    final roleOptions = people.map((p) => p['role_id']?.toString() ?? '').where((v) => v.isNotEmpty).toSet().toList()..sort();
+    final locationOptions = List<Map<String, dynamic>>.from(locations)..sort((a,b) => (a['name']?.toString() ?? '').compareTo(b['name']?.toString() ?? ''));
+    final sectionOptions = sections.where((item) => selectedLocation == null || item['location_id']?.toString() == selectedLocation).toList()..sort((a,b) => (a['name']?.toString() ?? '').compareTo(b['name']?.toString() ?? ''));
     final activeCount = people.where((p) => (p['status']?.toString().toLowerCase() ?? '') == 'active').length;
     final assignedCount = people.where((p) {
-      final loc = p['location_name']?.toString() ?? '';
-      final sec = p['section_name']?.toString() ?? '';
-      return loc.isNotEmpty && loc.toLowerCase() != 'unassigned' &&
-          sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
+      final l = p['location_name']?.toString().trim() ?? '', sec = p['section_name']?.toString().trim() ?? '';
+      return l.isNotEmpty && l.toLowerCase() != 'unassigned' && sec.isNotEmpty && sec.toLowerCase() != 'unassigned';
+    }).length;
+    final pendingCount = invitations.where((item) {
+      final status = item['status']?.toString().trim().toLowerCase() ?? '';
+      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
+      return status == 'invited' && (expiry == null || !expiry.isBefore(DateTime.now()));
     }).length;
     final filtered = people.where((p) {
-      final fields = [p['full_name'], p['email'], p['employee_id'], p['role_id'],
-        p['location_name'], p['section_name'], p['status']]
-        .whereType<Object>().map((v) => v.toString().toLowerCase().trim());
+      final fields = [p['full_name'],p['email'],p['employee_id'],p['role_id'],p['location_name'],p['section_name'],p['status']].whereType<Object>().map((v) => v.toString().toLowerCase().trim());
       if (query.isNotEmpty && !fields.any((v) => v.contains(query))) return false;
-      if (selectedLocation != null &&
-          p['location_id']?.toString() != selectedLocation) {
-        return false;
-      }
-      if (selectedSection != null &&
-          p['section_id']?.toString() != selectedSection) {
-        return false;
-      }
+      if (selectedLocation != null && p['location_id']?.toString() != selectedLocation) return false;
+      if (selectedSection != null && p['section_id']?.toString() != selectedSection) return false;
       if (selectedRole != null && p['role_id']?.toString() != selectedRole) return false;
       return true;
     }).toList();
     final hasFilters = search.trim().isNotEmpty || selectedLocation != null || selectedSection != null || selectedRole != null;
-    // Return a normal card. Expanded is only valid as a direct child of a Flex;
-    // wrapping Expanded in SizedBox on desktop (and placing it in a vertical
-    // Column on mobile) caused invalid layout constraints and blank grey panels.
-    Widget metric(String label, int value, IconData icon) => _glassRow(
-      padding: const EdgeInsets.all(13),
+
+    Widget metric(String label, int value, IconData icon, Color accent) => Container(
+      constraints: const BoxConstraints(minHeight: 88), padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(gradient: LinearGradient(colors: [accent.withValues(alpha: .14), const Color(0xB8051727)]), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: .48))),
       child: Row(children: [
-        Icon(icon, size: 17, color: TechColors.borderActive),
-        const SizedBox(width: 9),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$value', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-            Text(label, style: const TextStyle(fontSize: 10, color: TechColors.textMuted)),
-          ],
-        )),
+        Container(width: 38,height:38,alignment:Alignment.center,decoration:BoxDecoration(color:accent.withValues(alpha:.14),borderRadius:BorderRadius.circular(11)),child:Icon(icon,color:accent,size:20)),
+        const SizedBox(width:10),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisAlignment:MainAxisAlignment.center,children:[
+          Text(value.toString(),style:const TextStyle(color:Colors.white,fontSize:22,fontWeight:FontWeight.w800)),
+          const SizedBox(height:4),Text(label,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFF9DBDDC),fontSize:10,fontWeight:FontWeight.w600)),
+        ])),
       ]),
     );
-    Widget personCard(Map<String, dynamic> p, {bool compact = false}) {
-      final name = p['full_name']?.toString().trim() ?? '';
-      final employeeId = p['employee_id']?.toString().trim() ?? '';
-      final role = _roleLabel(p['role_id']?.toString() ?? '—');
-      final location = p['location_name']?.toString() ?? 'Unassigned';
-      final subsection = p['section_name']?.toString() ?? 'Unassigned';
-      final status = p['status']?.toString() ?? 'Unknown';
-      final assignmentId = p['assignment_id']?.toString() ?? '';
-      final target = assignments.where((a) =>
-        assignmentId.isNotEmpty &&
-        a['assignment_id']?.toString() == assignmentId).firstOrNull ??
-        assignments.where((a) =>
-          employeeId.isNotEmpty &&
-          a['employee_id']?.toString() == employeeId).firstOrNull ??
-        (assignmentId.isNotEmpty ? p : null);
-      return _glassRow(padding: const EdgeInsets.all(14), child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(width: 38, height: 38, alignment: Alignment.center,
-              decoration: BoxDecoration(color: TechColors.borderActive.withValues(alpha: .14), borderRadius: BorderRadius.circular(12)),
-              child: const Icon(Icons.person_outline, color: TechColors.borderActive, size: 19)),
-            const SizedBox(width: 11),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name.isEmpty ? 'Profile incomplete' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              if (p['email']?.toString().isNotEmpty ?? false) ...[
-                const SizedBox(height: 3),
-                Text(p['email'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: TechColors.textMuted)),
-              ],
-              if (employeeId.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(employeeId, style: const TextStyle(fontSize: 10, color: TechColors.textMuted, fontFamily: 'monospace')),
-              ],
-            ])),
-            const SizedBox(width: 8),
-            _statusDot(status),
+
+    Widget personCard(Map<String,dynamic> p) {
+      final name=p['full_name']?.toString().trim()??'', email=p['email']?.toString().trim()??'', employeeId=p['employee_id']?.toString().trim()??'';
+      final roleId=p['role_id']?.toString()??'', role=_roleLabel(roleId.isEmpty?'—':roleId);
+      final location=p['location_name']?.toString().trim()??'', sectionName=p['section_name']?.toString().trim()??'', status=p['status']?.toString().trim()??'Unknown';
+      final assignmentId=p['assignment_id']?.toString()??'';
+      final target=assignments.where((a)=>assignmentId.isNotEmpty&&a['assignment_id']?.toString()==assignmentId).firstOrNull ??
+        assignments.where((a)=>employeeId.isNotEmpty&&a['employee_id']?.toString()==employeeId).firstOrNull ?? (assignmentId.isNotEmpty?p:null);
+      final displayName=name.isEmpty?'Profile incomplete':name;
+      final initials=displayName.split(RegExp(r'\s+')).where((v)=>v.isNotEmpty).take(2).map((v)=>v[0]).join().toUpperCase();
+      final active=status.toLowerCase()=='active';
+      return Container(
+        padding:const EdgeInsets.all(14),
+        decoration:BoxDecoration(color:const Color(0xA8061B2C),borderRadius:BorderRadius.circular(14),border:Border.all(color:const Color(0xFF164564).withValues(alpha:.8))),
+        child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+          Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Container(width:44,height:44,alignment:Alignment.center,decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF176CB3),Color(0xFF08AFC3)]),borderRadius:BorderRadius.circular(13)),child:Text(initials.isEmpty?'?':initials,style:const TextStyle(color:Colors.white,fontSize:13,fontWeight:FontWeight.w800))),
+            const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(displayName,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFFE5F2FF),fontSize:14,fontWeight:FontWeight.w700)),
+              const SizedBox(height:4),Text(email.isEmpty?'Email not available':email,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFF9DBDDC),fontSize:11)),
+              if(employeeId.isNotEmpty)...[const SizedBox(height:4),Text(employeeId,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFF76A9D0),fontSize:10,fontFamily:'monospace'))],
+            ])),const SizedBox(width:8),_statusDot(status),
           ]),
-          const SizedBox(height: 12),
-          Wrap(spacing: 7, runSpacing: 7, children: [
-            _verificationBadge(role, true),
-            _verificationBadge(status, status.toLowerCase() == 'active'),
-          ]),
-          const SizedBox(height: 9),
-          Row(children: [
-            const Icon(Icons.location_on_outlined, size: 14, color: TechColors.textMuted),
-            const SizedBox(width: 5),
-            Expanded(child: Text(location, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            const Icon(Icons.account_tree_outlined, size: 14, color: TechColors.textMuted),
-            const SizedBox(width: 5),
-            Expanded(child: Text(subsection, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: TechColors.textMuted))),
-          ]),
-          if (target != null) ...[
-            const SizedBox(height: 10),
-            Align(alignment: Alignment.centerRight, child: TextButton.icon(
-              onPressed: () => _showAssignmentProfile(target),
-              icon: const Icon(Icons.person_search_outlined, size: 16),
-              label: const Text('View profile'),
-            )),
-          ],
-        ],
-      ));
+          const SizedBox(height:12),Wrap(spacing:7,runSpacing:7,children:[_verificationBadge(role,true),_verificationBadge(status,active)]),
+          const SizedBox(height:11),
+          Container(padding:const EdgeInsets.all(10),decoration:BoxDecoration(color:const Color(0xFF061522),borderRadius:BorderRadius.circular(10)),child:Column(children:[
+            Row(children:[const Icon(Icons.location_on_outlined,size:15,color:Color(0xFF43C8F3)),const SizedBox(width:7),Expanded(child:Text(location.isEmpty?'Unassigned location':location,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFFB8D5EF),fontSize:11)))]),
+            const SizedBox(height:7),Row(children:[const Icon(Icons.account_tree_outlined,size:15,color:Color(0xFF43C8F3)),const SizedBox(width:7),Expanded(child:Text(sectionName.isEmpty?'Unassigned section':sectionName,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFFB8D5EF),fontSize:11)))]),
+          ])),
+          if(target!=null)...[const SizedBox(height:7),Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>_showAssignmentProfile(target),icon:const Icon(Icons.open_in_new_rounded,size:15),label:const Text('View profile')))],
+        ]),
+      );
     }
-    return LayoutBuilder(builder: (context, constraints) {
-      final narrow = constraints.maxWidth < 680;
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _title('People', detail: 'View and manage the people in your organization', icon: Icons.people_outline),
-        const SizedBox(height: 12),
-        if (people.isNotEmpty) ...[
-          if (narrow) ...[
-            metric('Total people', totalPeople, Icons.people_outline),
-            const SizedBox(height: 7),
-            metric('Branch Heads', branchHeadCount, Icons.badge_outlined),
-            const SizedBox(height: 7),
-            metric('Managers', managerCount, Icons.manage_accounts_outlined),
-            const SizedBox(height: 7),
-            metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined),
-            const SizedBox(height: 7),
-            metric('Professional members', professionalMemberCount, Icons.person_outline),
-            const SizedBox(height: 7),
-            metric('Active members', activeCount, Icons.verified_user_outlined),
-            const SizedBox(height: 7),
-            metric('Assigned', assignedCount, Icons.account_tree_outlined),
-          ] else Wrap(
-            spacing: 9,
-            runSpacing: 9,
-            children: [
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Total people', totalPeople, Icons.people_outline)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Branch Heads', branchHeadCount, Icons.badge_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Managers', managerCount, Icons.manage_accounts_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Team Leads', teamLeadCount, Icons.supervisor_account_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Professional members', professionalMemberCount, Icons.person_outline)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Active members', activeCount, Icons.verified_user_outlined)),
-              SizedBox(width: (constraints.maxWidth - 36) / 5, child: metric('Assigned', assignedCount, Icons.account_tree_outlined)),
-            ],
-          ),
-          const SizedBox(height: 12),
-        ],
-        GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(12),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            TextField(
-              onChanged: (v) => setState(() => search = v),
-              style: const TextStyle(color: TechColors.textPrimary, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Search people',
-                prefixIcon: const Icon(Icons.search, size: 19),
-                suffixIcon: search.isEmpty ? null : IconButton(
-                  tooltip: 'Clear search', icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => setState(() => search = ''),
-                ),
-                isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 9),
-            if (narrow) ...[
-              DropdownButtonFormField<String>(
-                initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
-                items: [
-                  const DropdownMenuItem<String>(value: null, child: Text('All locations')),
-                  ...locationOptions.map((location) => DropdownMenuItem<String>(
-                    value: location['location_id']?.toString(),
-                    child: Text(location['name']?.toString() ?? 'Unnamed location',
-                      overflow: TextOverflow.ellipsis),
-                  )),
-                ],
-                onChanged: (v) => setState(() {
-                  selectedLocation = v;
-                  if (selectedSection != null &&
-                      !sections.any((section) =>
-                        section['section_id']?.toString() == selectedSection &&
-                        (v == null || section['location_id']?.toString() == v))) {
-                    selectedSection = null;
-                  }
-                }),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
-                items: [
-                  const DropdownMenuItem<String>(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((section) => DropdownMenuItem<String>(
-                    value: section['section_id']?.toString(),
-                    child: Text(section['name']?.toString() ?? 'Unnamed section',
-                      overflow: TextOverflow.ellipsis),
-                  )),
-                ],
-                onChanged: (v) => setState(() => selectedSection = v),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: selectedRole, isExpanded: true, decoration: const InputDecoration(labelText: 'Role', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All roles')),
-                  ...roleOptions.map((v) => DropdownMenuItem(value: v, child: Text(_roleLabel(v), overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedRole = v),
-              ),
-            ] else Row(children: [
-              Expanded(child: DropdownButtonFormField<String>(
-                initialValue: selectedLocation, isExpanded: true, decoration: const InputDecoration(labelText: 'Location', isDense: true),
-                items: [
-                  const DropdownMenuItem<String>(value: null, child: Text('All locations')),
-                  ...locationOptions.map((location) => DropdownMenuItem<String>(
-                    value: location['location_id']?.toString(),
-                    child: Text(location['name']?.toString() ?? 'Unnamed location',
-                      overflow: TextOverflow.ellipsis),
-                  )),
-                ],
-                onChanged: (v) => setState(() {
-                  selectedLocation = v;
-                  if (selectedSection != null &&
-                      !sections.any((section) =>
-                        section['section_id']?.toString() == selectedSection &&
-                        (v == null || section['location_id']?.toString() == v))) {
-                    selectedSection = null;
-                  }
-                }),
-              )),
-              const SizedBox(width: 10),
-              Expanded(child: DropdownButtonFormField<String>(
-                initialValue: selectedSection, isExpanded: true, decoration: const InputDecoration(labelText: 'Section', isDense: true),
-                items: [
-                  const DropdownMenuItem<String>(value: null, child: Text('All sections')),
-                  ...sectionOptions.map((section) => DropdownMenuItem<String>(
-                    value: section['section_id']?.toString(),
-                    child: Text(section['name']?.toString() ?? 'Unnamed section',
-                      overflow: TextOverflow.ellipsis),
-                  )),
-                ],
-                onChanged: (v) => setState(() => selectedSection = v),
-              )),
-              const SizedBox(width: 10),
-              Expanded(child: DropdownButtonFormField<String>(
-                initialValue: selectedRole, isExpanded: true, decoration: const InputDecoration(labelText: 'Role', isDense: true),
-                items: [const DropdownMenuItem(value: null, child: Text('All roles')),
-                  ...roleOptions.map((v) => DropdownMenuItem(value: v, child: Text(_roleLabel(v), overflow: TextOverflow.ellipsis)))],
-                onChanged: (v) => setState(() => selectedRole = v),
-              )),
-              if (hasFilters) IconButton(tooltip: 'Clear filters', onPressed: () => setState(() {
-                search = ''; selectedLocation = null; selectedSection = null; selectedRole = null;
-              }), icon: const Icon(Icons.filter_alt_off)),
-            ]),
-            if (narrow && hasFilters) Align(alignment: Alignment.centerRight, child: TextButton(
-              onPressed: () => setState(() {
-                search = '';
-                selectedLocation = null;
-                selectedSection = null;
-                selectedRole = null;
-              }),
-              child: const Text('Clear filters'),
-            )),
-          ]),
-        ),
-        const SizedBox(height: 12),
-        if (people.isEmpty)
-          surface(const Padding(padding: EdgeInsets.all(28), child: Column(children: [
-            Icon(Icons.people_outline, size: 30, color: TechColors.textMuted),
-            SizedBox(height: 9),
-            Text('No people yet', style: TextStyle(fontWeight: FontWeight.w700)),
-            SizedBox(height: 5),
-            Text('People added to your organization will appear here.', textAlign: TextAlign.center,
-              style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-          ])))
-        else if (filtered.isEmpty)
-          surface(Padding(padding: const EdgeInsets.all(28), child: Column(children: [
-            const Icon(Icons.search_off, size: 28, color: TechColors.textMuted),
-            const SizedBox(height: 9),
-            Text(query.isNotEmpty ? 'No people match your search' : 'No people match these filters',
-              style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 5),
-            const Text('Try changing your search or clearing the selected filters.',
-              textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, fontSize: 12)),
-            TextButton(onPressed: () => setState(() {
-                search = '';
-                selectedLocation = null;
-                selectedSection = null;
-                selectedRole = null;
-              }),
-              child: const Text('Clear search and filters')),
-          ])))
-        else if (narrow)
-          Column(children: filtered.map((p) => Padding(
-            padding: const EdgeInsets.only(bottom: 8), child: personCard(p, compact: true),
-          )).toList())
-        else
-          GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(10),
-            shape: const LiquidRoundedSuperellipse(borderRadius: 16),
-            child: Column(children: [
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                child: Row(children: const [
-                  Expanded(flex: 3, child: Text('PERSON', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('ROLE', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  Expanded(flex: 2, child: Text('LOCATION / SECTION', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                  SizedBox(width: 78, child: Text('STATUS', style: TextStyle(fontSize: 10, color: TechColors.textMuted))),
-                ]),
-              ),
-              const Divider(height: 1),
-              ...filtered.map((p) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: personCard(p),
-              )),
-            ]),
-          ),
-      ]);
-    });
+
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      LayoutBuilder(builder:(context,c){
+        final compact=c.maxWidth<640;
+        final heading=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          _eyebrow('PEOPLE DIRECTORY'),const SizedBox(height:7),
+          const Text('People',style:TextStyle(color:Color(0xFFE8F4FF),fontSize:25,fontWeight:FontWeight.w800,letterSpacing:-.4)),
+          const SizedBox(height:5),const Text('A clear view of your team, roles, and branch assignments.',style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.45)),
+        ]);
+        final actions=Wrap(spacing:8,runSpacing:8,children:[
+          OutlinedButton.icon(onPressed:loadAll,icon:const Icon(Icons.refresh_rounded,size:16),label:const Text('Refresh'),style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFD8ECFF),side:const BorderSide(color:Color(0xFF1D6086)))),
+          if(_canUi('invitation.manage')||_canUi('invitation.create')||_canUi('people.invite'))
+            FilledButton.icon(onPressed:_inviteEmployee,icon:const Icon(Icons.person_add_alt_1_rounded,size:17),label:const Text('Invite member'),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF00CFE8),foregroundColor:const Color(0xFF001522))),
+        ]);
+        if(compact)return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[heading,const SizedBox(height:14),Align(alignment:Alignment.centerLeft,child:actions)]);
+        return Row(crossAxisAlignment:CrossAxisAlignment.end,children:[Expanded(child:heading),const SizedBox(width:16),actions]);
+      }),
+      const SizedBox(height:17),
+      LayoutBuilder(builder:(context,c){
+        final columns=c.maxWidth<520?2:4,gap=10.0,width=(c.maxWidth-gap*(columns-1))/columns;
+        return Wrap(spacing:gap,runSpacing:gap,children:[
+          SizedBox(width:width,child:metric('Total people',people.length,Icons.groups_2_outlined,const Color(0xFF00CFFF))),
+          SizedBox(width:width,child:metric('Active members',activeCount,Icons.verified_user_outlined,const Color(0xFF00D89A))),
+          SizedBox(width:width,child:metric('Assigned',assignedCount,Icons.account_tree_outlined,const Color(0xFF168BFF))),
+          SizedBox(width:width,child:metric('Pending invitations',pendingCount,Icons.mark_email_unread_outlined,const Color(0xFF00DDB7))),
+        ]);
+      }),
+      const SizedBox(height:15),
+      Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:const Color(0xB8051727),borderRadius:BorderRadius.circular(14),border:Border.all(color:const Color(0xFF164564).withValues(alpha:.9))),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        TextField(onChanged:(v)=>setState(()=>search=v),style:const TextStyle(color:Color(0xFFE5F2FF),fontSize:13),decoration:InputDecoration(hintText:'Search name, email, employee ID, or role',hintStyle:const TextStyle(color:Color(0xFF7399B8),fontSize:12),prefixIcon:const Icon(Icons.search_rounded,size:19,color:Color(0xFF43C8F3)),suffixIcon:search.isEmpty?null:IconButton(tooltip:'Clear search',onPressed:()=>setState(()=>search=''),icon:const Icon(Icons.close_rounded,size:18)),filled:true,fillColor:const Color(0xFF061522),isDense:true,border:OutlineInputBorder(borderRadius:BorderRadius.circular(11)))),
+        const SizedBox(height:11),
+        LayoutBuilder(builder:(context,c){
+          final narrow=c.maxWidth<680;
+          final filters=<Widget>[
+            DropdownButtonFormField<String?>(key:ValueKey('people-location-$selectedLocation'),initialValue:selectedLocation,isExpanded:true,decoration:input('Branch / location').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All locations')),...locationOptions.map((v)=>DropdownMenuItem<String?>(value:v['location_id']?.toString(),child:Text(v['name']?.toString()??'Unnamed location',overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>{selectedLocation=v;if(selectedSection!=null&&!sections.any((item)=>item['section_id']?.toString()==selectedSection&&(v==null||item['location_id']?.toString()==v)))selectedSection=null;})),
+            DropdownButtonFormField<String?>(key:ValueKey('people-section-$selectedSection'),initialValue:selectedSection,isExpanded:true,decoration:input('Section').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All sections')),...sectionOptions.map((v)=>DropdownMenuItem<String?>(value:v['section_id']?.toString(),child:Text(v['name']?.toString()??'Unnamed section',overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>selectedSection=v)),
+            DropdownButtonFormField<String?>(key:ValueKey('people-role-$selectedRole'),initialValue:selectedRole,isExpanded:true,decoration:input('Role').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All roles')),...roleOptions.map((v)=>DropdownMenuItem<String?>(value:v,child:Text(_roleLabel(v),overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>selectedRole=v)),
+          ];
+          if(narrow)return Column(children:[for(var i=0;i<filters.length;i++)... [filters[i],if(i+1<filters.length)const SizedBox(height:9)]]);
+          return Row(children:[for(var i=0;i<filters.length;i++)...[Expanded(child:filters[i]),if(i+1<filters.length)const SizedBox(width:10)]]);
+        }),
+        if(hasFilters)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(()=>{search='';selectedLocation=null;selectedSection=null;selectedRole=null;}),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))),
+      ])),
+      const SizedBox(height:14),Row(children:[const Expanded(child:Text('Team members',style:TextStyle(color:Color(0xFFE0F0FF),fontSize:15,fontWeight:FontWeight.w700))),Text('\${filtered.length} shown',style:const TextStyle(color:Color(0xFF8FB9DF),fontSize:11))]),const SizedBox(height:10),
+      if(people.isEmpty)surface(const Padding(padding:EdgeInsets.symmetric(vertical:32,horizontal:16),child:Column(children:[Icon(Icons.groups_outlined,size:32,color:Color(0xFF43C8F3)),SizedBox(height:11),Text('No people yet',style:TextStyle(color:Color(0xFFE5F2FF),fontWeight:FontWeight.w700)),SizedBox(height:6),Text('Invited team members will appear here after they join your workspace.',textAlign:TextAlign.center,style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.5))])))
+      else if(filtered.isEmpty)surface(Padding(padding:const EdgeInsets.all(28),child:Column(children:[const Icon(Icons.search_off_rounded,size:29,color:Color(0xFF43C8F3)),const SizedBox(height:10),Text(query.isNotEmpty?'No people match your search':'No people match these filters',style:const TextStyle(color:Color(0xFFE5F2FF),fontWeight:FontWeight.w700)),const SizedBox(height:6),const Text('Try a different search or update your branch, section, and role filters.',textAlign:TextAlign.center,style:TextStyle(color:Color(0xFF9DBDDC,fontSize:12)),),TextButton.icon(onPressed:()=>setState(()=>{search='';selectedLocation=null;selectedSection=null;selectedRole=null;}),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))])))
+      else LayoutBuilder(builder:(context,c){
+        final columns=c.maxWidth<900?1:2;
+        if(columns==1)return Column(children:filtered.map((p)=>Padding(padding:const EdgeInsets.only(bottom:9),child:personCard(p))).toList());
+        final width=(c.maxWidth-12)/2;
+        return Wrap(spacing:12,runSpacing:12,children:filtered.map((p)=>SizedBox(width:width,child:personCard(p))).toList());
+      }),
+    ]);
   }
 
   String _auditActionLabel(String raw) {
@@ -2282,212 +2062,98 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
   Widget invitationView() {
-    final query = invitationSearch.trim().toLowerCase();
-    final now = DateTime.now();
-    final observedStatuses = invitations.map((item) => item['status']?.toString().trim().toLowerCase() ?? '')
-        .where((value) => value.isNotEmpty).toSet();
-
-    final pending = invitations.where((item) {
-      final status = item['status']?.toString().trim().toLowerCase() ?? '';
-      if (status != 'invited') return false;
-      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
-      return expiry == null || !expiry.isBefore(now);
-    }).length;
-    final accepted = invitations.where((item) => item['status']?.toString().trim().toLowerCase() == 'accepted').length;
-    final expired = invitations.where((item) {
-      final status = item['status']?.toString().trim().toLowerCase() ?? '';
-      if (status == 'expired') return true;
-      if (status != 'invited') return false;
-      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
-      return expiry != null && expiry.isBefore(now);
-    }).length;
-    final revoked = invitations.where((item) => item['status']?.toString().trim().toLowerCase() == 'revoked').length;
-
-    final filtered = invitations.where((item) {
-      final rawStatus = item['status']?.toString() ?? '';
-      final status = rawStatus.trim().toLowerCase();
-      if (invitationStatus != null && status != invitationStatus) return false;
-      final person = _invitationPerson(item);
-      final roleId = item['role_id']?.toString() ?? '';
-      final expiry = DateTime.tryParse(item['expires_at']?.toString() ?? '');
-      final expiredByDate = status == 'invited' && expiry != null && expiry.isBefore(now);
-      final searchable = [
-        item['email'], person?['full_name'], item['employee_id'], roleId,
-        _roleLabel(roleId), _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate),
-      ].whereType<Object>().join(' ').toLowerCase();
-      return query.isEmpty || searchable.contains(query);
+    final query=invitationSearch.trim().toLowerCase(), now=DateTime.now();
+    final observedStatuses=invitations.map((item)=>item['status']?.toString().trim().toLowerCase()??'').where((v)=>v.isNotEmpty).toSet();
+    bool isExpired(Map<String,dynamic> item) {
+      final status=item['status']?.toString().trim().toLowerCase()??'', expiry=DateTime.tryParse(item['expires_at']?.toString()??'');
+      return status=='expired'||(status=='invited'&&expiry!=null&&expiry.isBefore(now));
+    }
+    final pending=invitations.where((item){final status=item['status']?.toString().trim().toLowerCase()??'',expiry=DateTime.tryParse(item['expires_at']?.toString()??'');return status=='invited'&&(expiry==null||!expiry.isBefore(now));}).length;
+    final accepted=invitations.where((item)=>item['status']?.toString().trim().toLowerCase()=='accepted').length;
+    final expired=invitations.where(isExpired).length;
+    final revoked=invitations.where((item)=>item['status']?.toString().trim().toLowerCase()=='revoked').length;
+    final filtered=invitations.where((item){
+      final raw=item['status']?.toString()??'',status=raw.trim().toLowerCase(),person=_invitationPerson(item);
+      final role=item['recipient_role_id']?.toString()??item['role_id']?.toString()??'',expiry=DateTime.tryParse(item['expires_at']?.toString()??'');
+      final label=_invitationStatusLabel(raw,expiredByDate:status=='invited'&&expiry!=null&&expiry.isBefore(now));
+      if(invitationStatus!=null){final matches=invitationStatus=='expired'?isExpired(item):status==invitationStatus;if(!matches)return false;}
+      final searchable=[item['email'],item['recipient_display'],person?['full_name'],item['employee_id'],role,_roleLabel(role),item['sender_name'],item['location_name'],label].whereType<Object>().join(' ').toLowerCase();
+      return query.isEmpty||searchable.contains(query);
     }).toList();
-
-    final cards = <(String, int, IconData)>[
-      ('Total', invitations.length, Icons.mail_outline),
-      if (observedStatuses.contains('invited')) ('Pending', pending, Icons.schedule_outlined),
-      if (observedStatuses.contains('accepted')) ('Accepted', accepted, Icons.check_circle_outline),
-      if (observedStatuses.contains('expired') || expired > 0) ('Expired', expired, Icons.timer_off_outlined),
-      if (observedStatuses.contains('revoked')) ('Revoked', revoked, Icons.block_outlined),
+    final cards=< (String,int,IconData,Color) >[
+      ('Total invitations',invitations.length,Icons.mail_outline_rounded,const Color(0xFF00CFFF)),
+      ('Pending',pending,Icons.schedule_rounded,const Color(0xFF168BFF)),
+      ('Accepted',accepted,Icons.check_circle_outline_rounded,const Color(0xFF00D89A)),
+      ('Expired / revoked',expired+revoked,Icons.timer_off_outlined,const Color(0xFFFFB454)),
     ];
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (_canUi('invitation.manage'))
-        Align(
-          alignment: Alignment.centerRight,
-          child: FilledButton.icon(
-            onPressed: _inviteEmployee,
-            icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
-            label: const Text('Invite employee'),
-          ),
-        ),
-      const SizedBox(height: 10),
-      LayoutBuilder(builder: (context, constraints) {
-        final count = constraints.maxWidth >= 900 ? cards.length.clamp(1, 5)
-            : constraints.maxWidth >= 560 ? 3 : 2;
-        final itemWidth = (constraints.maxWidth - (count - 1) * 8) / count;
-        return Wrap(spacing: 8, runSpacing: 8, children: cards.map((metric) => SizedBox(
-          width: itemWidth,
-          child: surface(Row(children: [
-            Icon(metric.$3, size: 16, color: TechColors.textMuted), const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(metric.$1, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-              Text(metric.$2.toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700)),
-            ])),
-          ])),
-        )).toList());
+    Widget metric(String label,int value,IconData icon,Color accent)=>Container(
+      constraints:const BoxConstraints(minHeight:86),padding:const EdgeInsets.all(13),
+      decoration:BoxDecoration(gradient:LinearGradient(colors:[accent.withValues(alpha:.13),const Color(0xB8051727)]),borderRadius:BorderRadius.circular(12),border:Border.all(color:accent.withValues(alpha:.48))),
+      child:Row(children:[Container(width:36,height:36,alignment:Alignment.center,decoration:BoxDecoration(color:accent.withValues(alpha:.13),borderRadius:BorderRadius.circular(10)),child:Icon(icon,color:accent,size:19)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisAlignment:MainAxisAlignment.center,children:[Text(value.toString(),style:const TextStyle(color:Colors.white,fontSize:22,fontWeight:FontWeight.w800)),const SizedBox(height:3),Text(label,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFF9DBDDC),fontSize:10,fontWeight:FontWeight.w600))]))]),
+    );
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      LayoutBuilder(builder:(context,c){
+        final compact=c.maxWidth<640;
+        final heading=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[_eyebrow('TEAM ONBOARDING'),const SizedBox(height:7),const Text('Invitations',style:TextStyle(color:Color(0xFFE8F4FF),fontSize:25,fontWeight:FontWeight.w800,letterSpacing:-.4)),const SizedBox(height:5),const Text('Track every invitation from send to acceptance, with clear status and expiry details.',style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.45))]);
+        final actions=Wrap(spacing:8,runSpacing:8,children:[
+          OutlinedButton.icon(onPressed:loadAll,icon:const Icon(Icons.refresh_rounded,size:16),label:const Text('Refresh'),style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFD8ECFF),side:const BorderSide(color:Color(0xFF1D6086)))),
+          if(_canUi('invitation.manage')||_canUi('invitation.create')||_canUi('people.invite'))FilledButton.icon(onPressed:_inviteEmployee,icon:const Icon(Icons.send_rounded,size:16),label:const Text('Send invitation'),style:FilledButton.styleFrom(backgroundColor:const Color(0xFF00CFE8),foregroundColor:const Color(0xFF001522))),
+        ]);
+        if(compact)return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[heading,const SizedBox(height:14),Align(alignment:Alignment.centerLeft,child:actions)]);
+        return Row(crossAxisAlignment:CrossAxisAlignment.end,children:[Expanded(child:heading),const SizedBox(width:16),actions]);
       }),
-      const SizedBox(height: 12),
-      LayoutBuilder(builder: (context, constraints) => Wrap(
-        spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(width: constraints.maxWidth >= 520 ? 320 : constraints.maxWidth, child: TextField(
-            onChanged: (value) => setState(() => invitationSearch = value),
-            decoration: input('Search invitations').copyWith(
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: invitationSearch.isEmpty ? null : IconButton(
-                tooltip: 'Clear search',
-                onPressed: () => setState(() => invitationSearch = ''),
-                icon: const Icon(Icons.close),
-              ),
-            ),
-          )),
-          SizedBox(width: constraints.maxWidth >= 520 ? 190 : constraints.maxWidth,
-            child: DropdownButtonFormField<String?>(
-              initialValue: invitationStatus, decoration: input('Status'),
-              dropdownColor: TechColors.panelBg,
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('All statuses')),
-                ...invitations.map((item) => item['status']?.toString().trim() ?? '')
-                  .where((value) => value.isNotEmpty).toSet()
-                  .map((value) => DropdownMenuItem<String>(
-                    value: value.toLowerCase(), child: Text(_invitationStatusLabel(value)),
-                  )),
-              ],
-              onChanged: (value) => setState(() => invitationStatus = value),
-            )),
-          if (invitationSearch.isNotEmpty || invitationStatus != null)
-            TextButton.icon(
-              onPressed: () => setState(() { invitationSearch = ''; invitationStatus = null; }),
-              icon: const Icon(Icons.refresh, size: 16), label: const Text('Clear filters'),
-            ),
-        ],
-      )),
-      const SizedBox(height: 12),
-      if (invitations.isEmpty)
-        surface(const Padding(
-          padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-          child: Column(children: [
-            Icon(Icons.mail_outline, size: 30, color: TechColors.textMuted),
-            SizedBox(height: 10),
-            Text('No invitations', textAlign: TextAlign.center,
-              style: TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
-            SizedBox(height: 6),
-            Text('There are currently no invitations available to display.',
-              textAlign: TextAlign.center, style: TextStyle(color: TechColors.textMuted, height: 1.4)),
-          ]),
-        ))
-      else if (filtered.isEmpty)
-        surface(Padding(
-          padding: const EdgeInsets.all(22),
-          child: Column(children: [
-            const Icon(Icons.search_off, color: TechColors.textMuted), const SizedBox(height: 8),
-            Text(invitationSearch.isNotEmpty ? 'No invitations match your search'
-                : 'No invitations match the selected status',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w600)),
-            if (invitationSearch.isNotEmpty || invitationStatus != null) ...[
-              const SizedBox(height: 10),
-              TextButton(onPressed: () => setState(() { invitationSearch = ''; invitationStatus = null; }),
-                child: const Text('Clear search and filters')),
-            ],
-          ]),
-        ))
-      else
-        ...filtered.map((item) {
-          final rawStatus = item['status']?.toString() ?? '';
-          final status = rawStatus.trim().toLowerCase();
-          final expiry = item['expires_at']?.toString() ?? '';
-          final expiryDate = DateTime.tryParse(expiry);
-          final expiredByDate = status == 'invited' && expiryDate != null && expiryDate.isBefore(now);
-          final label = _invitationStatusLabel(rawStatus, expiredByDate: expiredByDate);
-          final person = _invitationPerson(item);
-          final fullName = item['recipient_display']?.toString().trim().isNotEmpty == true
-              ? item['recipient_display']!.toString().trim()
-              : (person?['full_name']?.toString().trim() ?? '');
-          final role = item['recipient_role_id']?.toString() ?? item['role_id']?.toString() ?? '';
-          final senderName = item['sender_name']?.toString().trim() ?? '';
-          final senderRole = item['sender_role_id']?.toString().trim() ?? '';
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: surface(LayoutBuilder(builder: (context, constraints) {
-              final compact = constraints.maxWidth < 620;
-              final narrow = constraints.maxWidth < 480;
-              final identity = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(fullName.isEmpty ? (item['email']?.toString() ?? 'Invitee email unavailable') : fullName,
-                  maxLines: narrow ? 2 : 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textPrimary, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 3),
-                Text('TO · ${item['email']?.toString() ?? 'Email unavailable'}', maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-                if (senderName.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    'FROM · $senderName${senderRole.isEmpty ? '' : ' · ${_roleLabel(senderRole)}'}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: TechColors.textMuted, fontSize: 10),
-                  ),
-                ],
-              ]);
-              if (compact) {
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  identity, const SizedBox(height: 10),
-                  Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    _invitationStatusChip(label, rawStatus),
-                    Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role),
-                      style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace')),
-                    Text('Expires ${_formatInvitationExpiry(expiry)}',
-                      style: const TextStyle(color: TechColors.textMuted, fontSize: 11)),
-                    Tooltip(message: 'View invitation details', child: TextButton.icon(onPressed: () => _showInvitationDetails(item),
-                      icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details'))),
-                  ]),
-                ]);
-              }
-              final details = Row(mainAxisSize: MainAxisSize.min, children: [
-                _invitationStatusChip(label, rawStatus), const SizedBox(width: 10),
-                Flexible(child: Text(role.isEmpty ? 'Role unavailable' : _roleLabel(role), maxLines: 1,
-                  overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, fontFamily: 'monospace'))),
-                const SizedBox(width: 10),
-                Flexible(child: Text('Expires ${_formatInvitationExpiry(expiry)}', maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: TechColors.textMuted, fontSize: 11))),
-                const SizedBox(width: 4),
-                TextButton.icon(onPressed: () => _showInvitationDetails(item),
-                  icon: const Icon(Icons.info_outline, size: 15), label: const Text('Details')),
-              ]);
-              return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                Expanded(flex: 3, child: identity), const SizedBox(width: 18),
-                Expanded(flex: 4, child: details),
-              ]);
-            })),
-          );
-        }),
+      const SizedBox(height:17),
+      LayoutBuilder(builder:(context,c){final gap=10.0,columns=c.maxWidth<520?2:4,width=(c.maxWidth-gap*(columns-1))/columns;return Wrap(spacing:gap,runSpacing:gap,children:cards.map((v)=>SizedBox(width:width,child:metric(v.$1,v.$2,v.$3,v.$4))).toList());}),
+      const SizedBox(height:15),
+      Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:const Color(0xB8051727),borderRadius:BorderRadius.circular(14),border:Border.all(color:const Color(0xFF164564).withValues(alpha:.9))),child:LayoutBuilder(builder:(context,c){
+        final compact=c.maxWidth<620;
+        final searchField=TextField(onChanged:(v)=>setState(()=>invitationSearch=v),style:const TextStyle(color:Color(0xFFE5F2FF),fontSize:13),decoration:InputDecoration(hintText:'Search email, person, role, or branch',hintStyle:const TextStyle(color:Color(0xFF7399B8),fontSize:12),prefixIcon:const Icon(Icons.search_rounded,size:19,color:Color(0xFF43C8F3)),suffixIcon:invitationSearch.isEmpty?null:IconButton(tooltip:'Clear search',onPressed:()=>setState(()=>invitationSearch=''),icon:const Icon(Icons.close_rounded,size:18)),filled:true,fillColor:const Color(0xFF061522),isDense:true,border:OutlineInputBorder(borderRadius:BorderRadius.circular(11))));
+        final statusFilter=DropdownButtonFormField<String?>(key:ValueKey('invitation-status-$invitationStatus'),initialValue:invitationStatus,isExpanded:true,decoration:input('Invitation status').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[
+          const DropdownMenuItem<String?>(value:null,child:Text('All statuses')),const DropdownMenuItem<String?>(value:'invited',child:Text('Pending')),const DropdownMenuItem<String?>(value:'accepted',child:Text('Accepted')),
+          if(observedStatuses.contains('expired')||expired>0)const DropdownMenuItem<String?>(value:'expired',child:Text('Expired')),
+          if(observedStatuses.contains('revoked'))const DropdownMenuItem<String?>(value:'revoked',child:Text('Revoked')),
+        ],onChanged:(v)=>setState(()=>invitationStatus=v));
+        return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+          if(compact)...[searchField,const SizedBox(height:9),statusFilter] else Row(children:[Expanded(flex:3,child:searchField),const SizedBox(width:10),Expanded(flex:2,child:statusFilter)]),
+          if(invitationSearch.isNotEmpty||invitationStatus!=null)Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>setState(()=>{invitationSearch='';invitationStatus=null;}),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))),
+        ]);
+      })),
+      const SizedBox(height:14),Row(children:[const Expanded(child:Text('Invitation activity',style:TextStyle(color:Color(0xFFE0F0FF),fontSize:15,fontWeight:FontWeight.w700))),Text('\${filtered.length} shown',style:const TextStyle(color:Color(0xFF8FB9DF),fontSize:11))]),const SizedBox(height:10),
+      if(invitations.isEmpty)surface(const Padding(padding:EdgeInsets.symmetric(vertical:32,horizontal:16),child:Column(children:[Icon(Icons.mark_email_unread_outlined,size:32,color:Color(0xFF43C8F3)),SizedBox(height:11),Text('No invitations yet',style:TextStyle(color:Color(0xFFE5F2FF),fontWeight:FontWeight.w700)),SizedBox(height:6),Text('New invitations will appear here with their role, sender, and expiry details.',textAlign:TextAlign.center,style:TextStyle(color:Color(0xFF9DBDDC),fontSize:12,height:1.5))])))
+      else if(filtered.isEmpty)surface(Padding(padding:const EdgeInsets.all(28),child:Column(children:[const Icon(Icons.search_off_rounded,size:29,color:Color(0xFF43C8F3)),const SizedBox(height:10),Text(invitationSearch.isNotEmpty?'No invitations match your search':'No invitations match the selected status',style:const TextStyle(color:Color(0xFFE5F2FF),fontWeight:FontWeight.w700)),const SizedBox(height:6),const Text('Try a different search or clear the selected filters.',textAlign:TextAlign.center,style:TextStyle(color:Color(0xFF9DBDDC,fontSize:12)),),TextButton.icon(onPressed:()=>setState(()=>{invitationSearch='';invitationStatus=null;}),icon:const Icon(Icons.filter_alt_off_rounded,size:16),label:const Text('Clear search and filters'))])))
+      else ...filtered.map((item){
+        final raw=item['status']?.toString()??'',status=raw.trim().toLowerCase(),expiry=item['expires_at']?.toString()??'',expiryDate=DateTime.tryParse(expiry);
+        final expiredByDate=status=='invited'&&expiryDate!=null&&expiryDate.isBefore(now),label=_invitationStatusLabel(raw,expiredByDate:expiredByDate),person=_invitationPerson(item);
+        final recipient=item['recipient_display']?.toString().trim().isNotEmpty==true?item['recipient_display']!.toString().trim():(person?['full_name']?.toString().trim()??'');
+        final email=item['email']?.toString().trim()??'',role=item['recipient_role_id']?.toString()??item['role_id']?.toString()??'',sender=item['sender_name']?.toString().trim()??'',senderRole=item['sender_role_id']?.toString().trim()??'',branch=item['location_name']?.toString().trim()??'';
+        final displayName=recipient.isEmpty?(email.isEmpty?'Invitee details unavailable':email):recipient;
+        final stateColor=expiredByDate||status=='expired'||status=='revoked'?const Color(0xFFFF8A8A):status=='accepted'?const Color(0xFF00D89A):const Color(0xFF54C8FF);
+        return Padding(padding:const EdgeInsets.only(bottom:9),child:Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:const Color(0xA8061B2C),borderRadius:BorderRadius.circular(14),border:Border.all(color:const Color(0xFF164564).withValues(alpha:.8))),child:LayoutBuilder(builder:(context,c){
+          final compact=c.maxWidth<650;
+          final identity=Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Container(width:42,height:42,alignment:Alignment.center,decoration:BoxDecoration(color:stateColor.withValues(alpha:.14),borderRadius:BorderRadius.circular(12),border:Border.all(color:stateColor.withValues(alpha:.3))),child:Icon(Icons.mail_outline_rounded,color:stateColor,size:20)),
+            const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Text(displayName,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFFE5F2FF),fontSize:13,fontWeight:FontWeight.w700)),
+              const SizedBox(height:4),Text(email.isEmpty?'Email unavailable':email,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFF9DBDDC),fontSize:11)),
+              const SizedBox(height:6),Wrap(spacing:7,runSpacing:6,children:[_invitationStatusChip(label,expiredByDate?'expired':raw),if(role.isNotEmpty)_verificationBadge(_roleLabel(role),true)]),
+            ])),
+          ]);
+          final metadata=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            if(branch.isNotEmpty)_invitationMeta(Icons.location_on_outlined,'BRANCH',branch),
+            if(sender.isNotEmpty)...[const SizedBox(height:7),_invitationMeta(Icons.person_outline_rounded,'SENT BY',sender+(senderRole.isEmpty?'':' · '+_roleLabel(senderRole)))],
+            const SizedBox(height:7),_invitationMeta(Icons.schedule_rounded,'EXPIRES',_formatInvitationExpiry(expiry)),
+          ]);
+          final details=OutlinedButton.icon(onPressed:()=>_showInvitationDetails(item),icon:const Icon(Icons.info_outline_rounded,size:15),label:const Text('View invitation details'),style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFD8ECFF),side:const BorderSide(color:Color(0xFF1D6086))));
+          if(compact)return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[identity,const SizedBox(height:13),metadata,const SizedBox(height:10),Align(alignment:Alignment.centerLeft,child:details)]);
+          return Row(crossAxisAlignment:CrossAxisAlignment.center,children:[Expanded(flex:5,child:identity),const SizedBox(width:14),Expanded(flex:4,child:metadata),const SizedBox(width:10),details]);
+        })));
+      }),
     ]);
   }
+
+  Widget _invitationMeta(IconData icon,String label,String value)=>Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+    Icon(icon,size:14,color:const Color(0xFF43C8F3)),const SizedBox(width:7),SizedBox(width:62,child:Text(label,style:const TextStyle(color:Color(0xFF6FA3C9),fontSize:9,fontWeight:FontWeight.w700,letterSpacing:.4))),const SizedBox(width:6),Expanded(child:Text(value.isEmpty?'—':value,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(color:Color(0xFFB8D5EF),fontSize:10))),
+  ]);
 
   String _sectionLabel(ManagementSection value) => switch (value) {
     ManagementSection.overview => 'Management Overview',
