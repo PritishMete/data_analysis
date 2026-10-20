@@ -490,7 +490,7 @@ void main() {
     expect(organizationView, contains("stat('Branches / locations'"));
     expect(organizationView, contains("stat('Active assignments'"));
     expect(organizationView, contains('alignment: Alignment.centerLeft'));
-    expect(organizationView, isNot(contains('Expanded(child: _eyebrow(\\'Organization structure\\'))'));
+    expect(organizationView, isNot(contains('Expanded(child: _eyebrow')));
 
   });
 }
