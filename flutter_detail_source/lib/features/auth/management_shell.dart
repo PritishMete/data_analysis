@@ -1454,47 +1454,40 @@ class _ManagementShellState extends State<ManagementShell> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 760;
-            final controls = Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.end,
-              children: [
-                if (_canUi('organization.structure.manage'))
-                  _actionChip(
-                    'CREATE LOCATION',
-                    Icons.add_location_alt_outlined,
-                    createLocation,
-                  ),
-                if (_canUi('organization.structure.manage') ||
-                    _canUi('organization.section.create'))
-                  _actionChip(
-                    'CREATE SECTION',
-                    Icons.account_tree_outlined,
-                    createSection,
-                    accent: true,
-                  ),
-              ],
-            );
-            return compact
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _eyebrow('Organization structure'),
-                      const SizedBox(height: 8),
-                      controls,
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(child: _eyebrow('Organization structure')),
-                      controls,
-                    ],
-                  );
-          },
+        // Keep the heading and actions in separate rows at every width.
+        // In the desktop Row layout, the action Wrap can consume most of the
+        // available width and leave the heading so narrow that Flutter wraps
+        // "ORGANIZATION STRUCTURE" one character per line.
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _eyebrow('Organization structure'),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (_canUi('organization.structure.manage'))
+                    _actionChip(
+                      'CREATE LOCATION',
+                      Icons.add_location_alt_outlined,
+                      createLocation,
+                    ),
+                  if (_canUi('organization.structure.manage') ||
+                      _canUi('organization.section.create'))
+                    _actionChip(
+                      'CREATE SECTION',
+                      Icons.account_tree_outlined,
+                      createSection,
+                      accent: true,
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         if (locations.isEmpty)
