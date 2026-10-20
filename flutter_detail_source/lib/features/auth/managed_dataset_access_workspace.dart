@@ -248,13 +248,42 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        const Text('Access', style: TextStyle(color: TechColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w700)),
-        const Text('Review managed resources and the access levels available to people in your organization.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+      _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 42, height: 42, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.shield_outlined, color: Color(0xFF43C8F3), size: 22)),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Branch Data & Access', style: TextStyle(color: Color(0xFFE5F2FF), fontSize: 23, fontWeight: FontWeight.w800, letterSpacing: -.4)),
+            SizedBox(height: 5),
+            Text('Manage source datasets, review access requests, and work within your authorized scope.', style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45)),
+          ])),
+        ]),
+        const SizedBox(height: 16),
+        LayoutBuilder(builder: (context, constraints) {
+          final gap = 9.0, columns = constraints.maxWidth < 520 ? 2 : 4;
+          final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+          Widget stat(String label, int value, IconData icon, Color accent) => Container(
+            width: width, padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(color: const Color(0xFF061522), borderRadius: BorderRadius.circular(11), border: Border.all(color: accent.withValues(alpha: .35))),
+            child: Row(children: [Icon(icon, color: accent, size: 18), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(value.toString(), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3), Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 9)),
+            ]))]),
+          );
+          return Wrap(spacing: gap, runSpacing: gap, children: [
+            stat('Managed datasets', datasets.length, Icons.dataset_outlined, const Color(0xFF00CFFF)),
+            stat('Catalog resources', catalog.length, Icons.storage_outlined, const Color(0xFF168BFF)),
+            stat('Access requests', requests.length, Icons.pending_actions_outlined, const Color(0xFFFFB454)),
+            stat('People in scope', members.length, Icons.groups_outlined, const Color(0xFF00D89A)),
+          ]);
+        }),
+        const SizedBox(height: 14),
+        Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
+        ]),
       ])),
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
