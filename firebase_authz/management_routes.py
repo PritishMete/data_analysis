@@ -46,12 +46,13 @@ def _token(value: str | None) -> str:
 
 def _claims(authorization: str | None) -> dict:
     try:
+        provider = os.environ.get("AUTHN_PROVIDER_MODE", "").strip().lower()
+        if provider != "supabase":
+            raise AuthenticationRequired(
+                "Supabase authentication is required; AUTHN_PROVIDER_MODE must be 'supabase'."
+            )
         token = _token(authorization)
-        provider = os.environ.get("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
-        if provider == "supabase":
-            return verify_supabase_access_token(token, require_email_verified=True)
-        from .service import verify_id_token, require_email_verified
-        return require_email_verified(verify_id_token(token))
+        return verify_supabase_access_token(token, require_email_verified=True)
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc)) from exc
 
