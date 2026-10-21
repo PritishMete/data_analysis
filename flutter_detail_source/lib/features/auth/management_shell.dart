@@ -1542,7 +1542,7 @@ class _ManagementShellState extends State<ManagementShell> {
         const SizedBox(height: 16),
         Row(children: [
           const Expanded(child: Text('Branches and teams', style: TextStyle(color: Color(0xFFE5F2FF), fontSize: 16, fontWeight: FontWeight.w800))),
-          Text(locations.length.toString() + ' locations', style: const TextStyle(color: Color(0xFF8FB9DF), fontSize: 10)),
+          Text('${locations.length} locations', style: const TextStyle(color: Color(0xFF8FB9DF), fontSize: 10)),
         ]),
         const SizedBox(height: 9),
         // Keep the heading and actions in separate rows at every width.
@@ -2275,7 +2275,7 @@ class _ManagementShellState extends State<ManagementShell> {
           ]);
           final metadata=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
             if(branch.isNotEmpty)_invitationMeta(Icons.location_on_outlined,'BRANCH',branch),
-            if(sender.isNotEmpty)...[const SizedBox(height:7),_invitationMeta(Icons.person_outline_rounded,'SENT BY',sender+(senderRole.isEmpty?'':' · '+_roleLabel(senderRole)))],
+            if(sender.isNotEmpty)...[const SizedBox(height:7),_invitationMeta(Icons.person_outline_rounded,'SENT BY','$sender${senderRole.isEmpty ? '' : ' · ${_roleLabel(senderRole)}'}')],
             const SizedBox(height:7),_invitationMeta(Icons.schedule_rounded,'EXPIRES',_formatInvitationExpiry(expiry)),
           ]);
           final details=OutlinedButton.icon(onPressed:()=>_showInvitationDetails(item),icon:const Icon(Icons.info_outline_rounded,size:15),label:const Text('View invitation details'),style:OutlinedButton.styleFrom(foregroundColor:const Color(0xFFD8ECFF),side:const BorderSide(color:Color(0xFF1D6086))));
