@@ -276,7 +276,7 @@ void main() {
     expect(source, contains("invitation-status-"));
 
     expect(source, contains("A clear view of your team, roles, and branch assignments."));
-    expect(source, contains("Search people"));
+    expect(source, contains("Search name, email, employee ID, or role"));
     expect(source, contains("No people match your search"));
     expect(source, contains("No people match these filters"));
     expect(source, contains("No people yet"));
@@ -297,7 +297,7 @@ void main() {
     expect(source, contains("_showAssignmentProfile(target)"));
     expect(source, contains("selectedLocation"));
     expect(source, contains("selectedSection"));
-    expect(source, contains("constraints.maxWidth < 680"));
+    expect(source, contains("final compact = constraints.maxWidth < 620"));
     expect(source, contains("request('')"));
     expect(source, contains("maps(r[5]['invitations'])"));
     expect(source, contains('Widget invitationView()'));
