@@ -54,3 +54,52 @@ def test_firebase_shaped_token_is_not_routed_to_firebase(monkeypatch):
     monkeypatch.setattr("firebase_authz.supabase_auth.verify_supabase_access_token", reject_supabase)
     with pytest.raises(AuthenticationRequired, match="Supabase token verification failed"):
         service.verify_id_token("firebase-shaped-token")
+
+
+@pytest.mark.parametrize("mode", [None, "", "firebase", "dual", "invalid"])
+def test_management_claims_reject_non_supabase_provider(monkeypatch, mode):
+    from fastapi import HTTPException
+    from firebase_authz import management_routes
+
+    if mode is None:
+        monkeypatch.delenv("AUTHN_PROVIDER_MODE", raising=False)
+    else:
+        monkeypatch.setenv("AUTHN_PROVIDER_MODE", mode)
+
+    def verifier_must_not_run(*args, **kwargs):
+        pytest.fail("Supabase token verifier must not run with invalid provider configuration")
+
+    monkeypatch.setattr(management_routes, "verify_supabase_access_token", verifier_must_not_run)
+    with pytest.raises(HTTPException) as exc:
+        management_routes._claims("Bearer any-token")
+    assert exc.value.status_code == 401
+
+
+def test_management_claims_reject_missing_authorization(monkeypatch):
+    from fastapi import HTTPException
+    from firebase_authz import management_routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    with pytest.raises(HTTPException) as exc:
+        management_routes._claims(None)
+    assert exc.value.status_code == 401
+
+
+def test_management_claims_use_supabase_verifier_only(monkeypatch):
+    from firebase_authz import management_routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    expected = {"uid": "verified-subject", "provider": "supabase", "email_verified": True}
+    captured = {}
+
+    def verify(token, require_email_verified=False):
+        captured["token"] = token
+        captured["require_email_verified"] = require_email_verified
+        return expected
+
+    monkeypatch.setattr(management_routes, "verify_supabase_access_token", verify)
+    assert management_routes._claims("Bearer valid-supabase-token") == expected
+    assert captured == {
+        "token": "valid-supabase-token",
+        "require_email_verified": True,
+    }
