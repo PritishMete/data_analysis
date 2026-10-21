@@ -61,6 +61,7 @@ def test_management_claims_reject_non_supabase_provider(monkeypatch, mode):
     from fastapi import HTTPException
     from firebase_authz import management_routes
 
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     if mode is None:
         monkeypatch.delenv("AUTHN_PROVIDER_MODE", raising=False)
     else:
@@ -80,6 +81,7 @@ def test_management_claims_reject_missing_authorization(monkeypatch):
     from firebase_authz import management_routes
 
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     with pytest.raises(HTTPException) as exc:
         management_routes._claims(None)
     assert exc.value.status_code == 401
@@ -89,6 +91,7 @@ def test_management_claims_use_supabase_verifier_only(monkeypatch):
     from firebase_authz import management_routes
 
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     expected = {"uid": "verified-subject", "provider": "supabase", "email_verified": True}
     captured = {}
 
@@ -212,3 +215,22 @@ def test_render_environment_never_allows_middleware_auth_bypass(monkeypatch):
     response = TestClient(app).get("/protected")
 
     assert response.status_code == 401
+
+@pytest.mark.parametrize("persistence", [None, "", "firebase", "unknown"])
+def test_management_claims_reject_non_supabase_persistence(monkeypatch, persistence):
+    from fastapi import HTTPException
+    from firebase_authz import management_routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    if persistence is None:
+        monkeypatch.delenv("AUTHZ_PERSISTENCE_PROVIDER", raising=False)
+    else:
+        monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", persistence)
+
+    def verifier_must_not_run(*args, **kwargs):
+        pytest.fail("Management token verifier must not run with non-Supabase persistence")
+
+    monkeypatch.setattr(management_routes, "verify_supabase_access_token", verifier_must_not_run)
+    with pytest.raises(HTTPException) as exc:
+        management_routes._claims("Bearer any-token")
+    assert exc.value.status_code == 401
