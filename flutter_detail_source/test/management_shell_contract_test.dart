@@ -331,8 +331,8 @@ void main() {
     expect(source, contains('void _showInvitationDetails('));
     expect(source, contains('showDialog<void>'));
     expect(invitationUi, contains('_showInvitationDetails(item)'));
-    expect(invitationUi, contains('Search invitations'));
-    expect(invitationUi, contains('Clear filters'));
+    expect(invitationUi, contains('Search email, person, role, or branch'));
+    expect(invitationUi, contains('Clear search and filters'));
     expect(source, contains('Future<void> _inviteEmployee() async'));
     expect(source, contains('GlassDialog.show<Map<String, dynamic>>'));
     expect(source, contains("title: 'Invite employee'"));
@@ -382,9 +382,9 @@ void main() {
     expect(invitationUi, isNot(contains('Resend')));
     expect(invitationUi, isNot(contains('Cancel invitation')));
     expect(invitationUi, isNot(contains('Revoke invitation')));
-    expect(source, contains('Search invitations'));
+    expect(source, contains('Search email, person, role, or branch'));
     expect(source, contains("tooltip:'Clear search'"));
-    expect(source, contains('Clear filters'));
+    expect(source, contains('Clear search and filters'));
     expect(source, contains('No invitations'));
     expect(source, contains('No invitations match your search'));
     expect(source, contains('No invitations match the selected status'));
