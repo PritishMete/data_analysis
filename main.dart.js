@@ -120443,7 +120443,7 @@ aNu(){var s=this,r=null,q="organization.structure.manage",p=A.b6(16),o=A.ci(B.vG
 if(s.h8(q))l.push(s.yv("CREATE LOCATION",B.a5f,s.gaH0()))
 if(s.h8(q)||s.h8("organization.section.create"))l.push(s.yw("CREATE SECTION",B.eq,s.gaH1(),!0))
 l.push(s.yv("REFRESH",B.ib,s.gwR()))
-p=A.b([A.aY(r,A.a9(A.b([n,B.X,B.bZ9,B.aP,B.c_c,B.bv,new A.cM(B.aY,r,r,A.eq(B.Z,l,B.bc,B.Z,8,8),r)],m),B.K,B.f,B.i),B.n,r,r,new A.aB(r,r,o,p,B.zP,B.yH,r,B.v),r,r,r,B.bY,r,r,r),B.fk,A.dz(new A.b46(s)),B.bv,A.au(A.b([B.a3Z,A.T(B.j.k(s.w.length)+" locations",r,r,r,r,B.PN,r,r)],m),B.o,B.f,B.i,0,r),B.cS,B.fl],m)
+p=A.b([A.aY(r,A.a9(A.b([n,B.X,B.bZ9,B.aP,B.c_c,B.bv,new A.cM(B.aY,r,r,A.eq(B.Z,l,B.bc,B.Z,8,8),r)],m),B.K,B.f,B.i),B.n,r,r,new A.aB(r,r,o,p,B.zP,B.yH,r,B.v),r,r,r,B.bY,r,r,r),B.fk,A.dz(new A.b46(s)),B.bv,A.au(A.b([B.a3Z,A.T(""+s.w.length+" locations",r,r,r,r,B.PN,r,r)],m),B.o,B.f,B.i,0,r),B.cS,B.fl],m)
 if(s.w.length===0)p.push(A.cD(B.bNR,B.J,B.bO,r,r,B.bx,!1))
 o=s.w
 B.c.H(p,new A.E(o,new A.b47(s,new A.b49(s)),A.F(o).i("E<1,j>")))
