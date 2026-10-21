@@ -56,4 +56,21 @@ void main() {
     expect(peopleView, contains("selectedSection = null;"));
     expect(peopleView, contains("search = '';"));
   });
+
+  test('People directory exposes search and recoverable empty states', () {
+    final source =
+        File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final start = source.indexOf('Widget peopleView() {');
+    final end = source.indexOf('\n  Widget ', start + 10);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+
+    final peopleView = source.substring(start, end);
+    expect(peopleView, contains("A clear view of your team, roles, and branch assignments."));
+    expect(peopleView, contains("Search people"));
+    expect(peopleView, contains("No people match your search"));
+    expect(peopleView, contains("No people match these filters"));
+    expect(peopleView, contains("No people yet"));
+    expect(peopleView, contains("Clear search and filters"));
+  });
 }
