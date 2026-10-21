@@ -123,3 +123,41 @@ def test_organization_registration_rejects_missing_authn_provider_mode(monkeypat
             authorization="Bearer token",
         )
     assert exc.value.status_code == 401
+
+@pytest.mark.parametrize(
+    ("authn_mode", "persistence_mode"),
+    [
+        (None, "supabase"),
+        ("", "supabase"),
+        ("firebase", "supabase"),
+        ("supabase", None),
+        ("supabase", ""),
+        ("supabase", "firebase"),
+        ("supabase", "unknown"),
+    ],
+)
+def test_authz_route_token_parser_rejects_invalid_provider_configuration(
+    monkeypatch, authn_mode, persistence_mode
+):
+    from firebase_authz import routes
+
+    if authn_mode is None:
+        monkeypatch.delenv("AUTHN_PROVIDER_MODE", raising=False)
+    else:
+        monkeypatch.setenv("AUTHN_PROVIDER_MODE", authn_mode)
+    if persistence_mode is None:
+        monkeypatch.delenv("AUTHZ_PERSISTENCE_PROVIDER", raising=False)
+    else:
+        monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", persistence_mode)
+
+    with pytest.raises(AuthenticationRequired, match="must both be 'supabase'"):
+        routes._token("Bearer token")
+
+
+def test_authz_route_token_parser_rejects_blank_bearer(monkeypatch):
+    from firebase_authz import routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    with pytest.raises(AuthenticationRequired, match="Authentication required"):
+        routes._token("Bearer   ")
