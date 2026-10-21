@@ -397,7 +397,7 @@ void main() {
 
     final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
     expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
-    expect(access, contains("Text('Access'"));
+    expect(access, contains("Text('Branch Data & Access'"));
     expect(access, contains('Search managed resources'));
     expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this scope yet.'));
