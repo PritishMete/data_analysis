@@ -275,7 +275,7 @@ void main() {
     expect(source, contains("Invitation activity"));
     expect(source, contains("invitation-status-"));
 
-    expect(source, contains("View and manage the people in your organization"));
+    expect(source, contains("A clear view of your team, roles, and branch assignments."));
     expect(source, contains("Search people"));
     expect(source, contains("No people match your search"));
     expect(source, contains("No people match these filters"));
