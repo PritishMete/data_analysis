@@ -161,3 +161,54 @@ def test_authz_route_token_parser_rejects_blank_bearer(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     with pytest.raises(AuthenticationRequired, match="Authentication required"):
         routes._token("Bearer   ")
+
+def test_middleware_enforces_auth_when_auth_required_false_in_production(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+
+    monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "false")
+    monkeypatch.setenv("INSIGHTFLOW_ENV", "production")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+
+    app = FastAPI()
+    app.add_middleware(FirebaseAuthorizationMiddleware)
+    response = TestClient(app).get("/protected")
+
+    assert response.status_code == 401
+
+
+def test_middleware_bypass_is_available_only_in_explicit_test_environment(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+
+    monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "false")
+    monkeypatch.setenv("INSIGHTFLOW_ENV", "test")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+
+    app = FastAPI()
+    app.add_middleware(FirebaseAuthorizationMiddleware)
+    response = TestClient(app).get("/protected")
+
+    # The request reaches routing (404) instead of being rejected by auth.
+    assert response.status_code == 404
+
+
+def test_render_environment_never_allows_middleware_auth_bypass(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+
+    monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "false")
+    monkeypatch.setenv("INSIGHTFLOW_ENV", "test")
+    monkeypatch.setenv("RENDER", "true")
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+
+    app = FastAPI()
+    app.add_middleware(FirebaseAuthorizationMiddleware)
+    response = TestClient(app).get("/protected")
+
+    assert response.status_code == 401
