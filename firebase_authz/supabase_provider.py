@@ -482,6 +482,7 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
                 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:principal
                   AND status='active' AND location_id IS NOT NULL
+                  AND role_id='branch_head'
                 ORDER BY location_id
             """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all()
             if len(actor_location_rows) == 1:
@@ -507,15 +508,20 @@ def create_invitation(claims: dict[str, Any], workspace_id: str, email: str,
             SELECT role_id FROM member_roles
             WHERE organization_id=:org AND principal_id=:principal
         """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
-        if "organization_owner" not in actor_roles:
+        is_owner = "organization_owner" in actor_roles
+        if not is_owner:
+            # A stale member_roles row is not sufficient to retain invitation
+            # privileges. Require the authoritative active Branch Head grant
+            # for the exact target branch.
             scoped = db.execute(text("""
                 SELECT 1 FROM organizational_assignments
                 WHERE organization_id=:org AND principal_id=:principal
-                  AND location_id=:location AND status='active'
+                  AND location_id=:location AND role_id='branch_head'
+                  AND status='active'
                 LIMIT 1
             """), {"org": workspace_id, "principal": actor["principal_id"], "location": location_id}).scalar_one_or_none()
             if scoped is None:
-                raise AuthzError("Selected branch/location is outside your management scope.")
+                raise AuthzError("Only an active Branch Head assigned to this branch can manage its invitations.")
         organization_name = db.execute(
             text("SELECT name FROM organizations WHERE organization_id=:org"),
             {"org": workspace_id},
@@ -686,11 +692,15 @@ def accept_invitation(claims: dict[str, Any], workspace_id: str | None, invitati
                        {"provider": provider, "subject": subject, "uid": uid, "principal": principal_id})
 
         existing_member = db.execute(
-            text("""SELECT employee_id FROM organization_members
+            text("""SELECT employee_id, status FROM organization_members
                     WHERE organization_id=:org AND principal_id=:principal
                     FOR UPDATE"""),
             {"org": workspace_id, "principal": principal_id},
         ).mappings().first()
+        if existing_member and str(existing_member.get("status") or "").strip().lower() in {
+            "suspended", "removed", "revoked", "inactive", "disabled",
+        }:
+            raise AuthzError("This membership is suspended or removed and cannot be reactivated by an invitation.")
         employee_id = (
             str(existing_member["employee_id"])
             if existing_member and existing_member["employee_id"]
