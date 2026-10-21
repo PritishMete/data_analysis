@@ -105,14 +105,25 @@ def route_policy(path: str) -> tuple[str, bool] | None:
     return "analysis.run", True
 
 
+def _authentication_required() -> bool:
+    """Allow auth bypass only in an explicitly marked, non-Render test process.
+
+    INSIGHTFLOW_AUTH_REQUIRED=false is not a production kill switch. Render
+    always enforces authentication, even if that variable is accidentally set
+    to false or a test-mode variable leaks into the environment.
+    """
+    if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"):
+        return True
+    auth_required = os.getenv("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower()
+    if auth_required in {"1", "true", "yes", "on"}:
+        return True
+    environment = os.getenv("INSIGHTFLOW_ENV", "production").strip().lower()
+    return environment not in {"test", "testing"}
+
+
 class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable):
-        if os.getenv("INSIGHTFLOW_AUTH_REQUIRED", "true").strip().lower() not in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }:
+        if not _authentication_required():
             return await call_next(request)
 
         managed_policy = managed_dataset_route_policy(request.method, request.url.path)
