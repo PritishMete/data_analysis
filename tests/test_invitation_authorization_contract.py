@@ -11,7 +11,7 @@ def _function_source(name: str, next_name: str) -> str:
 
 
 def test_invitation_creation_requires_active_branch_head_assignment():
-    source = _function_source("create_invitation", "list_invitations")
+    source = _function_source("create_invitation", "pending_invitations")
     assert "role_id='branch_head'" in source
     assert "location_id=:location AND role_id='branch_head'" in source
     assert "status='active'" in source
@@ -19,7 +19,7 @@ def test_invitation_creation_requires_active_branch_head_assignment():
 
 
 def test_lower_level_assignments_do_not_derive_branch_head_invitation_scope():
-    source = _function_source("create_invitation", "list_invitations")
+    source = _function_source("create_invitation", "pending_invitations")
     branch_resolution = source.split("actor_location_rows = db.execute", 1)[1].split(".scalars().all()", 1)[0]
     assert "role_id='branch_head'" in branch_resolution
 
