@@ -117,6 +117,21 @@ def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
         (str(row["role_id"]) for row in rows),
         key=lambda value: ROLE_LEVELS.get(value, 0),
     )
+    # A person has one active branch context. Multiple section assignments
+    # inside that branch are allowed, but cross-branch assignments fail closed.
+    # Organization Owners are the only organization-wide exception.
+    if role_id != "organization_owner":
+        active_branch_ids = {
+            str(row["location_id"])
+            for row in rows
+            if row["location_id"] is not None
+            and str(row["role_id"]) != "organization_owner"
+        }
+        if len(active_branch_ids) > 1:
+            raise AuthzError(
+                "Your account has active assignments in multiple branches. "
+                "Ask an Organization Owner to correct your branch assignment."
+            )
     if role_id == "organization_owner":
         return {
             "role_id": role_id,

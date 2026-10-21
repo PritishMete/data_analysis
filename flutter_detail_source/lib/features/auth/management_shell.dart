@@ -265,6 +265,8 @@ class _ManagementShellState extends State<ManagementShell> {
     return actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
   }
 
+  bool get _isOrganizationOwner => _managementRole() == 'organization_owner';
+
   Map<String, dynamic> _uiPolicy() {
     final raw = overview['ui_policy'];
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
@@ -429,13 +431,15 @@ class _ManagementShellState extends State<ManagementShell> {
               autofillHints: const [AutofillHints.email],
               decoration: input('Employee email'),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: locationId,
-              decoration: input('Branch / Location'),
-              items: locations.map((value) => DropdownMenuItem<String>(value: value['location_id'].toString(), child: Text(value['name'].toString()))).toList(),
-              onChanged: (value) { if (value != null) setDialogState(() => locationId = value); },
-            ),
+            if (_isOrganizationOwner) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: locationId,
+                decoration: input('Branch / Location'),
+                items: locations.map((value) => DropdownMenuItem<String>(value: value['location_id'].toString(), child: Text(value['name'].toString()))).toList(),
+                onChanged: (value) { if (value != null) setDialogState(() => locationId = value); },
+              ),
+            ],
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: role,
@@ -1279,7 +1283,7 @@ class _ManagementShellState extends State<ManagementShell> {
           final filters = Wrap(
             spacing: 8, runSpacing: 8,
             children: [
-              if (locations.isNotEmpty)
+              if (_isOrganizationOwner && locations.isNotEmpty)
                 SizedBox(
                   width: compact ? constraints.maxWidth : 210,
                   child: DropdownButtonFormField<String>(
@@ -1843,7 +1847,8 @@ class _ManagementShellState extends State<ManagementShell> {
         LayoutBuilder(builder:(context,c){
           final narrow=c.maxWidth<680;
           final filters=<Widget>[
-            DropdownButtonFormField<String?>(key:ValueKey('people-location-$selectedLocation'),initialValue:selectedLocation,isExpanded:true,decoration:input('Branch / location').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All locations')),...locationOptions.map((v)=>DropdownMenuItem<String?>(value:v['location_id']?.toString(),child:Text(v['name']?.toString()??'Unnamed location',overflow:TextOverflow.ellipsis)))],onChanged:(v) => setState(() { selectedLocation = v; if (selectedSection != null && !sections.any((item) => item['section_id']?.toString() == selectedSection && (v == null || item['location_id']?.toString() == v))) { selectedSection = null; } })),
+            if (_isOrganizationOwner)
+              DropdownButtonFormField<String?>(key:ValueKey('people-location-$selectedLocation'),initialValue:selectedLocation,isExpanded:true,decoration:input('Branch / location').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All locations')),...locationOptions.map((v)=>DropdownMenuItem<String?>(value:v['location_id']?.toString(),child:Text(v['name']?.toString()??'Unnamed location',overflow:TextOverflow.ellipsis)))],onChanged:(v) => setState(() { selectedLocation = v; if (selectedSection != null && !sections.any((item) => item['section_id']?.toString() == selectedSection && (v == null || item['location_id']?.toString() == v))) { selectedSection = null; } })),
             DropdownButtonFormField<String?>(key:ValueKey('people-section-$selectedSection'),initialValue:selectedSection,isExpanded:true,decoration:input('Section').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All sections')),...sectionOptions.map((v)=>DropdownMenuItem<String?>(value:v['section_id']?.toString(),child:Text(v['name']?.toString()??'Unnamed section',overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>selectedSection=v)),
             DropdownButtonFormField<String?>(key:ValueKey('people-role-$selectedRole'),initialValue:selectedRole,isExpanded:true,decoration:input('Role').copyWith(isDense:true),dropdownColor:const Color(0xFF061727),items:[const DropdownMenuItem<String?>(value:null,child:Text('All roles')),...roleOptions.map((v)=>DropdownMenuItem<String?>(value:v,child:Text(_roleLabel(v),overflow:TextOverflow.ellipsis)))],onChanged:(v)=>setState(()=>selectedRole=v)),
           ];
@@ -3524,9 +3529,9 @@ class _ManagementShellState extends State<ManagementShell> {
                   ),
                 ),
             const SizedBox(height: 17),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 9),
-              child: Text('MY BRANCH', style: TextStyle(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              child: Text(_isOrganizationOwner ? 'ORGANIZATION' : 'MY BRANCH', style: const TextStyle(
                 color: Color(0xFF81ACD2), fontSize: 10, fontWeight: FontWeight.w700,
               )),
             ),
@@ -3543,7 +3548,6 @@ class _ManagementShellState extends State<ManagementShell> {
                 const SizedBox(width: 8),
                 Expanded(child: Text(_uiScopeLabel(), maxLines: 2, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
-                const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF9DBDDC), size: 18),
               ]),
             ),
           ],
