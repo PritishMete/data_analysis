@@ -67,7 +67,7 @@ void main() {
 
     final peopleView = source.substring(start, end);
     expect(peopleView, contains("A clear view of your team, roles, and branch assignments."));
-    expect(peopleView, contains("Search people"));
+    expect(peopleView, contains("Search name, email, employee ID, or role"));
     expect(peopleView, contains("No people match your search"));
     expect(peopleView, contains("No people match these filters"));
     expect(peopleView, contains("No people yet"));
