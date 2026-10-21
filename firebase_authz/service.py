@@ -64,20 +64,21 @@ def initialize_firebase():
         return firebase_admin.initialize_app(cred, options)
 
 def verify_id_token(id_token: str) -> dict[str, Any]:
-    if not id_token:
-        raise AuthenticationRequired("Firebase authentication required.")
-    mode = os.getenv("AUTHN_PROVIDER_MODE", "firebase").strip().lower()
-    if mode in {"supabase", "dual"}:
-        # Supabase JWTs have three dot-separated segments. Firebase remains the
-        # default and is selected for all other tokens in dual mode.
-        if mode == "supabase" or id_token.count(".") == 2:
-            from .supabase_auth import verify_supabase_access_token
-            return verify_supabase_access_token(id_token)
-    initialize_firebase()
-    try:
-        return auth.verify_id_token(id_token, check_revoked=True)
-    except Exception as exc:
-        raise AuthenticationRequired("Firebase authentication failed.") from exc
+    """Verify an access token using the only supported provider: Supabase Auth.
+
+    Provider configuration is deliberately fail-closed. Firebase remains in this
+    module only for legacy data/migration helpers; it is never an authentication
+    fallback for protected HTTP requests.
+    """
+    mode = os.getenv("AUTHN_PROVIDER_MODE", "").strip().lower()
+    if mode != "supabase":
+        raise AuthenticationRequired(
+            "Supabase authentication is required; AUTHN_PROVIDER_MODE must be 'supabase'."
+        )
+    if not id_token or not isinstance(id_token, str):
+        raise AuthenticationRequired("Supabase authentication required.")
+    from .supabase_auth import verify_supabase_access_token
+    return verify_supabase_access_token(id_token)
 
 def _get(path: str):
     initialize_firebase()
