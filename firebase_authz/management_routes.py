@@ -10,6 +10,7 @@ import os
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import IntegrityError
 
 from .service import AuthzError, AuthenticationRequired
 from .supabase_auth import verify_supabase_access_token
@@ -101,6 +102,14 @@ def _dispatch(fn, *args, **kwargs):
         raise HTTPException(401, str(exc)) from exc
     except ManagementConflict as exc:
         raise HTTPException(409, str(exc)) from exc
+    except IntegrityError as exc:
+        if "A person can have active assignments in only one branch." in str(exc.orig):
+            raise HTTPException(
+                409,
+                "This person already has an active assignment in another branch. "
+                "Deactivate that assignment before reassigning them.",
+            ) from exc
+        raise HTTPException(409, "The requested assignment conflicts with current organizational state.") from exc
     except AuthzError as exc:
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
