@@ -225,6 +225,15 @@ void main() {
     expect(source, contains("a['status']"));
     // The overview is now implemented as a single responsive role-aware view.
     // Assert the active UI contract rather than requiring deleted legacy helpers.
+    // Sidebar branch identity must be data-backed: company + branch name,
+    // with the branch-head-provided identifier shown as secondary metadata.
+    expect(source, contains('Map<String, dynamic>? get _currentBranchSummary'));
+    expect(source, contains("overview['organization']"));
+    expect(source, contains("branch['branch_identifier']"));
+    expect(source, contains("'\$companyName.\$branchName'"));
+    expect(source, contains("'Branch ID: \\${_branchIdentifier()}'"));
+    expect(source, contains('fontSize: 9'));
+    expect(source, contains('fontWeight: FontWeight.w700'));
     expect(source, contains('Widget overviewView()'));
     expect(source, contains('Widget _overviewActivityItem('));
     expect(source, contains('Widget _overviewStructureStep('));
