@@ -35,4 +35,4 @@ def test_invitation_acceptance_cannot_reactivate_suspended_or_removed_membership
 def test_invitation_acceptance_keeps_invitation_role_server_authoritative():
     source = _function_source("accept_invitation", "mark_invitation_password_setup")
     assert 'invitation["role_id"]' in source
-    assert 'invitation["location_id"]' in source
+    assert 'invitation.get("location_id")' in source
