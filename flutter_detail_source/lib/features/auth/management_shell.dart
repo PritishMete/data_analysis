@@ -3477,6 +3477,39 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+  Map<String, dynamic>? get _currentBranchSummary {
+    final actor = overview['actor'];
+    final locationId = actor is Map
+        ? actor['location_id']?.toString().trim() ?? ''
+        : '';
+    if (locationId.isEmpty) return null;
+
+    for (final branch in locations) {
+      if (branch['location_id']?.toString() == locationId) return branch;
+    }
+    final overviewLocations = maps(overview['locations']);
+    for (final branch in overviewLocations) {
+      if (branch['location_id']?.toString() == locationId) return branch;
+    }
+    return null;
+  }
+
+  String _branchCardTitle() {
+    final organization = overview['organization'];
+    final companyName = organization is Map
+        ? organization['name']?.toString().trim() ?? ''
+        : '';
+    final branchName = _currentBranchSummary?['name']?.toString().trim() ?? '';
+    if (companyName.isNotEmpty && branchName.isNotEmpty) {
+      return '$companyName.$branchName';
+    }
+    if (branchName.isNotEmpty) return branchName;
+    return _uiScopeLabel();
+  }
+
+  String _branchIdentifier() =>
+      _currentBranchSummary?['branch_identifier']?.toString().trim() ?? '';
+
   Widget _buildDashboardSidebar() {
     final nav = <(ManagementSection, String, IconData)>[
       (ManagementSection.overview, 'Dashboard', Icons.home_rounded),
@@ -3543,12 +3576,44 @@ class _ManagementShellState extends State<ManagementShell> {
                 border: Border.all(color: const Color(0xFF174F73)),
                 borderRadius: BorderRadius.circular(9),
               ),
-              child: Row(children: [
-                const Icon(Icons.hub_outlined, color: Color(0xFF1BD6F6), size: 18),
-                const SizedBox(width: 8),
-                Expanded(child: Text(_uiScopeLabel(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
-              ]),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.hub_outlined, color: Color(0xFF1BD6F6), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _isOrganizationOwner ? _uiScopeLabel() : _branchCardTitle(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFD9ECFF),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (!_isOrganizationOwner && _branchIdentifier().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Branch ID: ${_branchIdentifier()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF81ACD2),
+                              fontSize: 9,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         )),
