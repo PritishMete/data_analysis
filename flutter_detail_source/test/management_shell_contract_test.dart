@@ -337,7 +337,7 @@ void main() {
     expect(source, contains('GlassDialog.show<Map<String, dynamic>>'));
     expect(source, contains("title: 'Invite employee'"));
     expect(source, contains("GlassDialogAction("));
-    expect(source, contains("label: const Text('Invite employee')"));
+    expect(source, contains("label: const Text('Invite member')"));
     final invitationRoleStart = source.indexOf(
       "const roleOptions = <String>[",
       source.indexOf("Future<void> _inviteEmployee() async"),
