@@ -231,7 +231,7 @@ void main() {
     expect(source, contains("overview['organization']"));
     expect(source, contains("branch['branch_identifier']"));
     expect(source, contains("'\$companyName.\$branchName'"));
-    expect(source, contains("'Branch ID: \\${_branchIdentifier()}'"));
+    expect(source, contains("'Branch ID: \${_branchIdentifier()}'"));
     expect(source, contains('fontSize: 9'));
     expect(source, contains('fontWeight: FontWeight.w700'));
     expect(source, contains('Widget overviewView()'));
