@@ -75,10 +75,10 @@ def verify_id_token(id_token: str) -> dict[str, Any]:
         raise AuthenticationRequired(
             "Supabase authentication is required; AUTHN_PROVIDER_MODE must be 'supabase'."
         )
-    if not id_token or not isinstance(id_token, str):
+    if not isinstance(id_token, str) or not id_token.strip():
         raise AuthenticationRequired("Supabase authentication required.")
     from .supabase_auth import verify_supabase_access_token
-    return verify_supabase_access_token(id_token)
+    return verify_supabase_access_token(id_token.strip())
 
 def _get(path: str):
     initialize_firebase()
