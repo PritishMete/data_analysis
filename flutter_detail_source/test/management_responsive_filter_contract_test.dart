@@ -15,13 +15,13 @@ void main() {
     expect(
       peopleView,
       contains(
-        'Widget metric(String label, int value, IconData icon) => _glassRow(',
+        'Widget metric(String label, int value, IconData icon, Color accent) => Container(',
       ),
     );
     expect(
       peopleView,
       isNot(contains(
-        'Widget metric(String label, int value, IconData icon) => Expanded(',
+        'Widget metric(String label, int value, IconData icon, Color accent) => Expanded(',
       )),
     );
   });
@@ -38,8 +38,8 @@ void main() {
     final peopleView = source.substring(start, end);
     expect(peopleView, contains("p['location_id']?.toString() != selectedLocation"));
     expect(peopleView, contains("p['section_id']?.toString() != selectedSection"));
-    expect(peopleView, contains("value: location['location_id']?.toString()"));
-    expect(peopleView, contains("value: section['section_id']?.toString()"));
+    expect(peopleView, contains("value:v['location_id']?.toString()"));
+    expect(peopleView, contains("value:v['section_id']?.toString()"));
   });
 
   test('Clear filters resets search, location, section, and role', () {

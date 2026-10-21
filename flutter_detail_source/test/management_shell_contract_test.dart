@@ -45,7 +45,7 @@ void main() {
     expect(source, contains("event['created_at']"));
     expect(source, contains("event['metadata']"));
     expect(source, contains("Search activity"));
-    expect(source, contains("tooltip: 'Clear search'"));
+    expect(source, contains("tooltip:'Clear search'"));
     expect(source, contains('Activity area'));
     expect(source, contains('Clear search and filters'));
     expect(source, contains('No activity to show yet'));
@@ -383,7 +383,7 @@ void main() {
     expect(invitationUi, isNot(contains('Cancel invitation')));
     expect(invitationUi, isNot(contains('Revoke invitation')));
     expect(source, contains('Search invitations'));
-    expect(source, contains("tooltip: 'Clear search'"));
+    expect(source, contains("tooltip:'Clear search'"));
     expect(source, contains('Clear filters'));
     expect(source, contains('No invitations'));
     expect(source, contains('No invitations match your search'));
