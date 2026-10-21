@@ -229,7 +229,7 @@ void main() {
     // with the branch-head-provided identifier shown as secondary metadata.
     expect(source, contains('Map<String, dynamic>? get _currentBranchSummary'));
     expect(source, contains("overview['organization']"));
-    expect(source, contains("branch['branch_identifier']"));
+    expect(source, contains("_currentBranchSummary?['branch_identifier']"));
     expect(source, contains("'\$companyName.\$branchName'"));
     expect(source, contains("'Branch ID: \${_branchIdentifier()}'"));
     expect(source, contains('fontSize: 9'));
