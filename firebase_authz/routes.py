@@ -287,12 +287,14 @@ def founder_organization_register(
         logger.info("organization_register provider=%s", provider)
         registration_diagnostics.stage("AUTH_TOKEN_VERIFICATION_START")
         if provider == "supabase":
-            from .supabase_auth import verify_supabase_access_token
             from .supabase_provider import (
                 OrganizationRegistrationConflict,
                 register_organization,
             )
-            claims = verify_supabase_access_token(_token(authorization), require_email_verified=True)
+            # All HTTP authentication must pass through the shared fail-closed
+            # provider policy; direct verifier calls would bypass
+            # AUTHN_PROVIDER_MODE when it is missing or invalid.
+            claims = require_email_verified(verify_id_token(_token(authorization)))
             registration_diagnostics.stage("JWKS_OR_TOKEN_VERIFICATION_COMPLETE")
             required = {
                 "organization name": req.organization_name,
