@@ -63,8 +63,21 @@ class ProfileUpsertRequest(BaseModel):
     id_proof_number: str
 
 def _token(value):
-    if not value or not value.startswith("Bearer "): raise HTTPException(401,"Firebase authentication required.")
-    return value[7:].strip()
+    # The /v1/authz router must never choose Firebase verification as a
+    # fallback when either production provider setting is missing or invalid.
+    authn_provider = os.environ.get("AUTHN_PROVIDER_MODE", "").strip().lower()
+    persistence_provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
+    if authn_provider != "supabase" or persistence_provider != "supabase":
+        raise AuthenticationRequired(
+            "Supabase authentication and authorization are required; "
+            "AUTHN_PROVIDER_MODE and AUTHZ_PERSISTENCE_PROVIDER must both be 'supabase'."
+        )
+    if not value or not value.startswith("Bearer "):
+        raise AuthenticationRequired("Authentication required.")
+    token = value[7:].strip()
+    if not token:
+        raise AuthenticationRequired("Authentication required.")
+    return token
 
 
 @router.get("/profile/me")
