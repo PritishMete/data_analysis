@@ -8,6 +8,7 @@ def test_provider_diagnostics_reports_safe_normalized_provider(monkeypatch):
     from main import app
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "  SuPABASE ")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("BUILD_GIT_SHA", "diagnostic-commit")
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "diagnostic-user"})
 
@@ -31,6 +32,7 @@ def test_provider_diagnostics_does_not_return_secrets(monkeypatch):
     from main import app
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "must-not-appear")
     monkeypatch.setenv("DATABASE_URL", "postgresql://secret-password@example.invalid/db")
     monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "diagnostic-user"})
