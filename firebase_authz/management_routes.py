@@ -47,9 +47,11 @@ def _token(value: str | None) -> str:
 def _claims(authorization: str | None) -> dict:
     try:
         provider = os.environ.get("AUTHN_PROVIDER_MODE", "").strip().lower()
-        if provider != "supabase":
+        persistence = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
+        if provider != "supabase" or persistence != "supabase":
             raise AuthenticationRequired(
-                "Supabase authentication is required; AUTHN_PROVIDER_MODE must be 'supabase'."
+                "Supabase authentication is required; AUTHN_PROVIDER_MODE and "
+                "AUTHZ_PERSISTENCE_PROVIDER must both be 'supabase'."
             )
         token = _token(authorization)
         return verify_supabase_access_token(token, require_email_verified=True)
