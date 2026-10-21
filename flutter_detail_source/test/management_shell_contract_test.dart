@@ -292,8 +292,8 @@ void main() {
     expect(source, contains('final reportsPerson = people.where((person) =>'));
     expect(source, contains('final reportsName ='));
     expect(source, contains("label: const Text('Retry profile')"));
-    expect(source, contains("final assignmentId = p['assignment_id']?.toString() ?? '';"));
-    expect(source, contains("a['assignment_id']?.toString() == assignmentId"));
+    expect(source, contains("final assignmentId=p['assignment_id']?.toString()??'';"));
+    expect(source, contains("a['assignment_id']?.toString()==assignmentId"));
     expect(source, contains("_showAssignmentProfile(target)"));
     expect(source, contains("selectedLocation"));
     expect(source, contains("selectedSection"));
