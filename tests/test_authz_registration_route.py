@@ -8,6 +8,7 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
     from firebase_authz.service import AuthzError
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setattr(
         "firebase_authz.supabase_auth.verify_supabase_access_token",
         lambda token, require_email_verified=True: {
