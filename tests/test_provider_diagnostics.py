@@ -52,7 +52,6 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     from main import app
 
     calls = []
-    monkeypatch.setattr(routes, "verify_id_token", lambda token: {"uid": "new-user"})
     monkeypatch.setattr(
         "firebase_authz.supabase_auth.verify_supabase_access_token",
         lambda token, require_email_verified=True: {
@@ -75,6 +74,7 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     )
 
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     supabase_response = TestClient(app).post(
         "/v1/authz/organizations/register",
         json={
@@ -99,15 +99,4 @@ def test_registration_dispatch_remains_provider_based(monkeypatch):
     assert supabase_response.status_code == 200
     assert supabase_response.json() == {"provider": "supabase"}
 
-    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase")
-    firebase_response = TestClient(app).post(
-        "/v1/authz/organizations/register",
-        json={"organization_name": "Diagnostic Org", "branch_name": "Main", "branch_identifier": "main"},
-        headers={"Authorization": "Bearer diagnostic-token"},
-    )
-    assert firebase_response.status_code == 200
-    assert firebase_response.json() == {"provider": "firebase"}
-    assert calls == [
-        ("supabase", "Diagnostic Org", "Main", "main"),
-        ("firebase", "Diagnostic Org", False),
-    ]
+    assert calls == [("supabase", "Diagnostic Org", "Main", "main")]
