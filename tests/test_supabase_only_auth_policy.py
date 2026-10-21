@@ -103,3 +103,23 @@ def test_management_claims_use_supabase_verifier_only(monkeypatch):
         "token": "valid-supabase-token",
         "require_email_verified": True,
     }
+
+
+def test_organization_registration_rejects_missing_authn_provider_mode(monkeypatch):
+    from fastapi import HTTPException
+    from firebase_authz import routes
+
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.delenv("AUTHN_PROVIDER_MODE", raising=False)
+
+    def registration_must_not_run(*args, **kwargs):
+        pytest.fail("Organization registration must not bypass the provider policy")
+
+    monkeypatch.setattr("firebase_authz.supabase_provider.register_organization", registration_must_not_run)
+
+    with pytest.raises(HTTPException) as exc:
+        routes.founder_organization_register(
+            routes.FounderOrganizationRegistration(),
+            authorization="Bearer token",
+        )
+    assert exc.value.status_code == 401
