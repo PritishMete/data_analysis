@@ -517,5 +517,23 @@ void main() {
     expect(organizationView, contains('alignment: Alignment.centerLeft'));
     expect(organizationView, isNot(contains('Expanded(child: _eyebrow')));
 
+    // Management navigation must be driven exclusively by the server's
+    // validated UI policy. Missing, malformed, empty, or unknown policy
+    // values must not fall back to a role-derived menu.
+    expect(source, contains('List<ManagementSection>? _parseAllowedSections(dynamic rawPolicy)'));
+    expect(source, contains("final policySections = _parseAllowedSections(r[0]['ui_policy']);"));
+    expect(source, contains('if (roleId.isEmpty || policySections == null)'));
+    expect(source, contains('Management permissions could not be verified.'));
+    expect(source, contains('if (section == null || parsed.contains(section)) return null;'));
+    expect(source, contains('if (!parsed.contains(ManagementSection.overview)) return null;'));
+    final allowedStart = source.indexOf('List<ManagementSection> _allowedSections()');
+    final allowedEnd = source.indexOf('bool _sectionAllowed', allowedStart);
+    expect(allowedStart, greaterThanOrEqualTo(0));
+    expect(allowedEnd, greaterThan(allowedStart));
+    final allowedPolicy = source.substring(allowedStart, allowedEnd);
+    expect(allowedPolicy, contains("_parseAllowedSections(overview['ui_policy'])"));
+    expect(allowedPolicy, isNot(contains('switch (_managementRole())')));
+    expect(allowedPolicy, isNot(contains("case 'manager':")));
+
   });
 }
