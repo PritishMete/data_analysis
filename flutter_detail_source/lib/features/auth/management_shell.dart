@@ -1024,9 +1024,12 @@ class _ManagementShellState extends State<ManagementShell> {
         ? branch!['name'].toString()
         : _uiScopeLabel();
     final actor = overview['actor'];
-    final actorName = actor is Map
-        ? (actor['full_name'] ?? actor['name'] ?? actor['email'] ?? _uiRoleLabel()).toString()
-        : _uiRoleLabel();
+    // A greeting should address the person, never fall back to their role or
+    // email address when a profile name is unavailable.
+    final rawActorName = actor is Map
+        ? (actor['full_name'] ?? actor['name'] ?? '').toString().trim()
+        : '';
+    final actorName = rawActorName.isEmpty ? 'there' : rawActorName;
     final latest = audit.take(5).toList();
 
     Widget panel(String title, IconData icon, Widget child, {Widget? action}) =>
@@ -3321,7 +3324,7 @@ class _ManagementShellState extends State<ManagementShell> {
         : 'Account';
     final email = actor is Map ? (actor['email']?.toString() ?? '') : '';
     return Container(
-      height: MediaQuery.sizeOf(context).width < 720 ? 124 : 76,
+      height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
       decoration: const BoxDecoration(
         color: Color(0xF0031222),
@@ -3398,7 +3401,7 @@ class _ManagementShellState extends State<ManagementShell> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
               Text(actorName, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-              Text(email.isEmpty ? _uiRoleLabel() : _uiRoleLabel(),
+              Text(_uiRoleLabel(),
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 10)),
             ]),
@@ -3425,6 +3428,63 @@ class _ManagementShellState extends State<ManagementShell> {
                 IconButton(tooltip: 'Profile', onPressed: _showCurrentUserProfile,
                   icon: const Icon(Icons.account_circle_outlined, color: Color(0xFFD9ECFF))),
               ]),
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF1764A5), Color(0xFF00A9D2)],
+                      ),
+                    ),
+                    child: Text(
+                      actorName.trim().isEmpty
+                          ? 'IF'
+                          : actorName.trim().split(RegExp(r'\\s+')).take(2)
+                              .map((part) => part.isEmpty ? '' : part[0])
+                              .join()
+                              .toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          actorName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          _uiRoleLabel(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF9DBDDC),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 5),
               searchField,
             ],
