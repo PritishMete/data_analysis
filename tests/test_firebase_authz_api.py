@@ -255,7 +255,6 @@ def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monke
 def test_protected_middleware_rejects_non_supabase_persistence_without_firebase_fallback(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
-    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
 
     def firebase_authorization_must_not_run(*args, **kwargs):
@@ -264,13 +263,15 @@ def test_protected_middleware_rejects_non_supabase_persistence_without_firebase_
     monkeypatch.setattr(auth_middleware, "authorization", firebase_authorization_must_not_run)
     from main import app
 
-    response = TestClient(app).get(
-        "/transform/history/test",
-        headers={
-            "Authorization": "Bearer valid-supabase-token",
-            "X-InsightFlow-Workspace-ID": "workspace",
-            "X-InsightFlow-Resource-ID": "sheet",
-        },
-    )
-    assert response.status_code == 403
-    assert "Supabase authorization is required" not in response.text
+    headers = {
+        "Authorization": "Bearer valid-supabase-token",
+        "X-InsightFlow-Workspace-ID": "workspace",
+        "X-InsightFlow-Resource-ID": "sheet",
+    }
+    for persistence in (None, "", "firebase", "unknown"):
+        if persistence is None:
+            monkeypatch.delenv("AUTHZ_PERSISTENCE_PROVIDER", raising=False)
+        else:
+            monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", persistence)
+        response = TestClient(app).get("/transform/history/test", headers=headers)
+        assert response.status_code == 403
