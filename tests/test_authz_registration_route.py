@@ -23,14 +23,9 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
     )
 
     def reject_duplicate(claims, organization_name, branch_name, branch_identifier, **kwargs):
-        raise AuthzError(
-            "This account already has an active organization membership."
-        )
+        raise AuthzError("This account already has an active organization membership.")
 
-    monkeypatch.setattr(
-        "firebase_authz.supabase_provider.register_organization",
-        reject_duplicate,
-    )
+    monkeypatch.setattr("firebase_authz.supabase_provider.register_organization", reject_duplicate)
 
     with pytest.raises(HTTPException) as exc_info:
         routes.founder_organization_register(
@@ -60,12 +55,14 @@ def test_founder_registration_maps_authorization_conflict_to_403(monkeypatch):
 
 def test_founder_registration_keeps_validation_errors_as_400(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setattr(
         "firebase_authz.supabase_auth.verify_supabase_access_token",
         lambda token, require_email_verified=True: {
             "uid": "validation-route-user",
             "sub": "validation-route-user",
             "email": "validation@example.com",
+            "email_verified": True,
         },
     )
 
@@ -82,19 +79,47 @@ def test_founder_registration_keeps_validation_errors_as_400(monkeypatch):
     assert exc_info.value.status_code == 400
 
 
-
 def test_founder_registration_allows_unverified_phone(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
-    monkeypatch.setattr("firebase_authz.supabase_auth.verify_supabase_access_token",
-        lambda token, require_email_verified=True: {"uid":"phone-route-user","sub":"phone-route-user","email":"phone@example.com","email_verified":True,"email_confirmed_at":"2026-10-01T00:00:00Z","phone":None,"phone_confirmed_at":None})
-    monkeypatch.setattr("firebase_authz.supabase_provider.register_organization",
-        lambda *args, **kwargs: {"workspace_id":"org-phone","employee_id":"EMP001"})
-    response=routes.founder_organization_register(routes.FounderOrganizationRegistration(
-        organization_name="Phone Company",branch_name="Main Branch",branch_identifier="PHONE-ORG",full_name="Phone User",
-        phone="+919876543210",phone_country_calling_code="+91",phone_national_number="9876543210",address_line1="1 Phone Way",
-        state="West Bengal",state_code="IN-WB",postal_code="700001",country="India",country_code="IN",id_proof_type="passport",id_proof_number="TEST-PHONE"),
-        authorization="Bearer test-token")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setattr(
+        "firebase_authz.supabase_auth.verify_supabase_access_token",
+        lambda token, require_email_verified=True: {
+            "uid": "phone-route-user",
+            "sub": "phone-route-user",
+            "email": "phone@example.com",
+            "email_verified": True,
+            "email_confirmed_at": "2026-10-01T00:00:00Z",
+            "phone": None,
+            "phone_confirmed_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "firebase_authz.supabase_provider.register_organization",
+        lambda *args, **kwargs: {"workspace_id": "org-phone", "employee_id": "EMP001"},
+    )
+    response = routes.founder_organization_register(
+        routes.FounderOrganizationRegistration(
+            organization_name="Phone Company",
+            branch_name="Main Branch",
+            branch_identifier="PHONE-ORG",
+            full_name="Phone User",
+            phone="+919876543210",
+            phone_country_calling_code="+91",
+            phone_national_number="9876543210",
+            address_line1="1 Phone Way",
+            state="West Bengal",
+            state_code="IN-WB",
+            postal_code="700001",
+            country="India",
+            country_code="IN",
+            id_proof_type="passport",
+            id_proof_number="TEST-PHONE",
+        ),
+        authorization="Bearer test-token",
+    )
     assert response["workspace_id"] == "org-phone"
+
 
 def test_founder_registration_rejects_client_phone_verified_field():
     with pytest.raises(ValueError):
