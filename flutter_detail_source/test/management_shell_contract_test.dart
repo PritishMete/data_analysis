@@ -135,6 +135,14 @@ void main() {
     expect(source, isNot(contains("month + '/' + day + '/' + ist.year.toString()")));
     expect(source, contains("'PROFILE COMPLETENESS'"));
     expect(source, contains('BRANCH HEAD'));
+    // Account header must distinguish an employee's assigned professional
+    // role from the broad employee authorization role.
+    expect(source, contains("managementRole.toLowerCase() == 'employee'"));
+    expect(source, contains("'assigned_role'"));
+    expect(source, contains("'employee_role'"));
+    expect(source, contains("'job_role'"));
+    expect(source, contains("'designation'"));
+    expect(source, contains("return _roleLabel(assigned);"));
     expect(source, contains('No active Managers assigned'));
     // Assignment Registry layout contract: keep compact identifiers intact,
     // bound the action control, and provide an explicit narrow-width path.
