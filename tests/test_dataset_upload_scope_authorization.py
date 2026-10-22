@@ -109,7 +109,7 @@ def test_manager_cannot_upload_to_another_branch(monkeypatch):
 
     with pytest.raises(
         supabase_provider.AuthzError,
-        match="without your active upload assignment",
+        match="without your active branch assignment",
     ):
         supabase_provider.authorize_dataset_upload_scope(
             _claims(), "workspace-1", location_id="branch-b"
