@@ -342,7 +342,7 @@ def _role_counts(db, organization_id: str, location_id: str | None = None) -> di
 
 def _location_summary(db, organization_id: str, location_id: str) -> dict[str, Any]:
     location = _location(db, organization_id, location_id)
-    manager = db.execute(text("""
+    managers = db.execute(text("""
         SELECT oa.assignment_id, oa.principal_id, m.employee_id,
                profile.full_name
         FROM organizational_assignments oa
@@ -353,8 +353,8 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
          AND profile.principal_id=m.principal_id
         WHERE oa.organization_id=:org AND oa.location_id=:location
           AND oa.role_id='manager' AND oa.status='active'
-        LIMIT 1
-    """), {"org": organization_id, "location": location_id}).mappings().first()
+        ORDER BY oa.created_at, oa.assignment_id
+    """), {"org": organization_id, "location": location_id}).mappings().all()
     branch_head = db.execute(text("""
         SELECT oa.assignment_id, oa.principal_id, m.employee_id,
                profile.full_name
@@ -377,7 +377,9 @@ def _location_summary(db, organization_id: str, location_id: str) -> dict[str, A
     return {
         **location,
         "branch_head": dict(branch_head) if branch_head else None,
-        "manager": dict(manager) if manager else None,
+        "manager": dict(managers[0]) if managers else None,
+        "managers": [dict(manager) for manager in managers],
+        "manager_count": len(managers),
         "member_count": sum(counts.get(role_id, 0) for role_id in _PROFESSIONAL_ROLE_IDS),
         "team_lead_count": counts.get("team_lead", 0),
         "section_count": int(section_count),
@@ -955,21 +957,19 @@ def assign_manager(claims: dict[str, Any], workspace_id: str,
             raise AuthzError("Cannot assign a manager to an inactive location.")
         candidate = _member_principal(db, org, principal_id)
         existing = db.execute(text("""
-            SELECT oa.assignment_id, oa.principal_id, m.employee_id
-            FROM organizational_assignments oa
-            JOIN organization_members m
-              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-            WHERE oa.organization_id=:org AND oa.location_id=:location
-              AND oa.role_id='manager' AND oa.status='active'
+            SELECT assignment_id
+            FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:principal
+              AND location_id=:location AND role_id='manager' AND status='active'
             LIMIT 1
             FOR UPDATE
-        """), {"org": org, "location": location_id}).mappings().first()
+        """), {
+            "org": org,
+            "principal": candidate["principal_id"],
+            "location": location_id,
+        }).mappings().first()
         if existing:
-            if existing["principal_id"] == candidate["principal_id"]:
-                return _assignment(db, org, existing["assignment_id"])
-            raise ManagementConflict(
-                "This location already has an active manager. Use the manager replacement operation."
-            )
+            return _assignment(db, org, existing["assignment_id"])
         assignment_id = _id("asg")
         _ensure_assignment_role(db, org, candidate["principal_id"], "manager")
         db.execute(text("""
@@ -994,18 +994,24 @@ def replace_manager(claims: dict[str, Any], workspace_id: str,
         if location["status"] != "active":
             raise AuthzError("Cannot change the manager of an inactive location.")
         candidate = _member_principal(db, org, principal_id)
-        current = db.execute(text("""
+        current_rows = db.execute(text("""
             SELECT oa.assignment_id, oa.principal_id, m.employee_id
             FROM organizational_assignments oa
             JOIN organization_members m
               ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
             WHERE oa.organization_id=:org AND oa.location_id=:location
               AND oa.role_id='manager' AND oa.status='active'
-            LIMIT 1
+            ORDER BY oa.created_at, oa.assignment_id
             FOR UPDATE
-        """), {"org": org, "location": location_id}).mappings().first()
-        if not current:
+        """), {"org": org, "location": location_id}).mappings().all()
+        if not current_rows:
             raise ManagementConflict("This location does not currently have an active manager.")
+        if len(current_rows) > 1:
+            raise ManagementConflict(
+                "This location has multiple active managers. Add managers with Assign Manager; "
+                "replacement requires selecting a specific manager."
+            )
+        current = current_rows[0]
         if current["principal_id"] == candidate["principal_id"]:
             return _assignment(db, org, current["assignment_id"])
         _ensure_assignment_role(db, org, candidate["principal_id"], "manager")
