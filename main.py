@@ -335,8 +335,9 @@ def _run_production_authz_migrations() -> None:
     if provider != "supabase":
         return
     if not os.environ.get("DATABASE_URL", "").strip():
-        logger.error("[authz] DATABASE_URL is missing; production migrations cannot run.")
-        return
+        raise RuntimeError(
+            "[authz] DATABASE_URL is missing; refusing to start with unverified Supabase authorization schema."
+        )
     try:
         from tools.run_authz_migrations import run_migrations
 
@@ -347,24 +348,12 @@ def _run_production_authz_migrations() -> None:
         raise
 
 
-# Run the same idempotent migration runner at service startup as a safety
-# net for the live Render service, whose Build Command may not include the
-# Blueprint migration step. This keeps Supabase schema and application code
-# synchronized without introducing a second migration system.
+# Complete required database initialization inside FastAPI startup. A background
+# daemon allowed /health to return success while authz migration verification
+# was still pending or had failed; startup now fails closed instead.
 def _initialize_production_database() -> None:
-    # Database verification can be slow on a cold Render/Supabase connection.
-    # Do not block Uvicorn's startup lifecycle on remote database work; the
-    # service must bind Render's port first. Exceptions in this daemon task
-    # remain visible in the process logs instead of being swallowed.
-    def _initialize_in_background() -> None:
-        _run_production_authz_migrations()
-        init_db()
-
-    threading.Thread(
-        target=_initialize_in_background,
-        name="insightflow-production-database-init",
-        daemon=True,
-    ).start()
+    _run_production_authz_migrations()
+    init_db()
 
 
 app.add_event_handler("startup", _initialize_production_database)
