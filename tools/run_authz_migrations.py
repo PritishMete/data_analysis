@@ -176,13 +176,31 @@ def verify_organizational_structure(engine) -> None:
             """
         )).all()
     indexes = {row[0]: row[1] for row in rows}
-    if "uq_active_manager_per_location" not in indexes:
-        raise RuntimeError("Missing uq_active_manager_per_location.")
-    manager_index = indexes["uq_active_manager_per_location"].lower()
-    if "role_id = 'manager'" not in manager_index or "status = 'active'" not in manager_index:
-        raise RuntimeError("uq_active_manager_per_location is not the required active-manager constraint.")
-    if "uq_active_assignment_context" not in indexes:
+    verify_assignment_indexes(indexes)
+
+
+def verify_assignment_indexes(indexes: dict[str, str]) -> None:
+    """Validate current assignment integrity without requiring the retired manager-only index."""
+    if "uq_active_manager_per_location" in indexes:
+        raise RuntimeError(
+            "Obsolete uq_active_manager_per_location index remains; migration 0033 must remove it."
+        )
+
+    context_index = indexes.get("uq_active_assignment_context")
+    if context_index is None:
         raise RuntimeError("Missing uq_active_assignment_context.")
+    definition = context_index.lower()
+    required_columns = ("organization_id", "principal_id", "location_id", "role_id")
+    missing_columns = [column for column in required_columns if column not in definition]
+    if missing_columns:
+        raise RuntimeError(
+            "uq_active_assignment_context is missing required assignment keys: "
+            + ",".join(missing_columns)
+        )
+    if "unique index" not in definition or "status = 'active'" not in definition:
+        raise RuntimeError(
+            "uq_active_assignment_context must uniquely constrain active assignments."
+        )
 
 
 
