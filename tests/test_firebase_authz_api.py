@@ -44,8 +44,7 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
-        auth_middleware,
-        "authorization",
+        "firebase_authz.supabase_provider.authorize",
         lambda *args, **kwargs: (_ for _ in ()).throw(auth_middleware.PermissionDenied("sensitive-internal-detail")),
     )
     from main import app
@@ -67,8 +66,7 @@ def test_authorized_user_reaches_protected_api(monkeypatch):
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
-        auth_middleware,
-        "authorization",
+        "firebase_authz.supabase_provider.authorize",
         lambda *args, **kwargs: {
             "allowed": True,
             "uid": "alice",
