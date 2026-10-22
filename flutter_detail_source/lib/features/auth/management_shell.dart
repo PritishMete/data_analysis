@@ -1638,12 +1638,30 @@ class _ManagementShellState extends State<ManagementShell> {
                   emptyText: 'No active Branch Head assignment',
                 ),
                 const SizedBox(height: 7),
-                leadershipRow(
-                  'MANAGER',
-                  Icons.manage_accounts_outlined,
-                  managers.isEmpty ? null : managers.first,
-                  emptyText: 'No separate manager assigned',
-                ),
+                if (managers.isEmpty)
+                  leadershipRow(
+                    'MANAGER',
+                    Icons.manage_accounts_outlined,
+                    null,
+                    emptyText: 'No active Managers assigned',
+                  )
+                else
+                  ...managers.asMap().entries.map((entry) {
+                    final managerIndex = entry.key;
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: managerIndex == managers.length - 1 ? 0 : 7,
+                      ),
+                      child: leadershipRow(
+                        managers.length == 1
+                            ? 'MANAGER'
+                            : 'MANAGER ${managerIndex + 1}/${managers.length}',
+                        Icons.manage_accounts_outlined,
+                        entry.value,
+                        emptyText: 'No active Managers assigned',
+                      ),
+                    );
+                  }),
                 if (secs.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _eyebrow('Sections'),
