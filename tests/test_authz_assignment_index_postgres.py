@@ -120,19 +120,29 @@ def test_postgres_migration_definition_allows_multiple_managers_and_rejects_dupl
             """))
 
 
-def test_postgres_migration_rerun_is_idempotent_for_assignment_schema(postgres_engine):
-    for filename in (
+def test_migration_runner_skips_completed_versions_and_verifies_schema(
+    postgres_engine, monkeypatch, tmp_path
+):
+    import shutil
+
+    from tools import run_authz_migrations as runner
+
+    versions = (
         "0008_organizational_structure.sql",
         "0030_single_active_branch_assignment.sql",
         "0033_allow_multiple_managers_per_location.sql",
-    ):
-        _apply_sql(postgres_engine, filename)
-    for filename in (
-        "0008_organizational_structure.sql",
-        "0030_single_active_branch_assignment.sql",
-        "0033_allow_multiple_managers_per_location.sql",
-    ):
-        _apply_sql(postgres_engine, filename)
+    )
+    for filename in versions:
+        shutil.copyfile(MIGRATIONS / filename, tmp_path / filename)
+    monkeypatch.setattr(runner, "MIGRATIONS", tmp_path)
+
+    applied, already = runner.apply_pending(postgres_engine)
+    assert applied == [filename[:-4] for filename in versions]
+    assert already == []
+
+    applied_again, already_again = runner.apply_pending(postgres_engine)
+    assert applied_again == []
+    assert already_again == [filename[:-4] for filename in versions]
 
     indexes = _read_index_definition(postgres_engine)
     assert "uq_active_manager_per_location" not in indexes
