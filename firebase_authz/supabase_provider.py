@@ -1806,7 +1806,7 @@ def authorize_dataset_upload_scope(
         target_location = str(location_id)
         if not target_location or target_location not in assigned_locations:
             raise AuthzError(
-                "The dataset belongs to a branch without your active upload assignment."
+                "The dataset belongs to a branch without your active branch assignment."
             )
 
     return {
