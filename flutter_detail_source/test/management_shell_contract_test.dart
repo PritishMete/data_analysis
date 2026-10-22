@@ -451,7 +451,7 @@ void main() {
     final header = source.substring(headerStart, headerEnd);
     // Contract the active responsive dashboard header rather than the removed
     // legacy glass-header implementation.
-    expect(header, contains('height: MediaQuery.sizeOf(context).width < 720 ? 124 : 76'));
+    expect(header, contains('height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76'));
     expect(header, contains('InsightFlow'));
     expect(header, contains('Search people, datasets, or insights'));
     expect(header, contains('TextField('));
