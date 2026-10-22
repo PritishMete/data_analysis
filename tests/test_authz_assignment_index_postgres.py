@@ -179,9 +179,24 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
     monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
 
     import main
+    from core import db as core_db
 
+    # main imports init_db by name, but the actual function uses core.db's
+    # module-level engine. Bind that engine to the disposable PostgreSQL
+    # service so this test exercises the real follow-up application DB setup.
+    monkeypatch.setattr(core_db, "engine", postgres_engine)
+    actual_init_db = main.init_db
     startup_calls = []
-    monkeypatch.setattr(main, "init_db", lambda: startup_calls.append("application-db-init"))
+    expected_versions = {path.stem for path in runner.migration_files()}
+
+    def verified_application_db_init():
+        # This assertion runs at the exact point main.py calls init_db; all
+        # authz migrations and their history must already have committed.
+        assert {row.version for row in _history(postgres_engine)} == expected_versions
+        startup_calls.append("application-db-init")
+        actual_init_db()
+
+    monkeypatch.setattr(main, "init_db", verified_application_db_init)
     test_environment = {
         "AUTHZ_PERSISTENCE_PROVIDER": "supabase",
         "DATABASE_URL": DATABASE_URL,
