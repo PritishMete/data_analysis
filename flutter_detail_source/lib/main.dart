@@ -84,11 +84,11 @@ void main() async {
     }
   }
 
-  runApp(ElectricAIApp(firebaseInitError: firebaseInitError));
+  runApp(InsightFlowApp(firebaseInitError: firebaseInitError));
 }
 
-class ElectricAIApp extends StatelessWidget {
-  const ElectricAIApp({super.key, this.firebaseInitError});
+class InsightFlowApp extends StatelessWidget {
+  const InsightFlowApp({super.key, this.firebaseInitError});
 
   final String? firebaseInitError;
 
@@ -156,6 +156,7 @@ class ElectricAIApp extends StatelessWidget {
         ),
       ),
       child: CupertinoApp(
+        title: 'InsightFlow',
         debugShowCheckedModeBanner: false,
         theme: const CupertinoThemeData(brightness: Brightness.dark),
         // CupertinoApp only wires up Cupertino localizations by default.
