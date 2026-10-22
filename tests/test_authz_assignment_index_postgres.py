@@ -30,6 +30,7 @@ def postgres_engine():
     # CI provisions a new PostgreSQL service database for this test job.
     engine = create_engine(DATABASE_URL, future=True)
     with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS insightflow_schema_migrations CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS organizational_assignments CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS organization_members CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sections CASCADE"))
@@ -47,7 +48,6 @@ def postgres_engine():
                 PRIMARY KEY (organization_id, principal_id)
             )
         """))
-        conn.execute(text("CREATE TABLE insightflow_schema_migrations (version TEXT PRIMARY KEY)"))
     try:
         yield engine
     finally:
