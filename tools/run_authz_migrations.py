@@ -179,27 +179,103 @@ def verify_organizational_structure(engine) -> None:
     verify_assignment_indexes(indexes)
 
 
+def _normalize_sql_expression(value: str) -> str:
+    """Normalize PostgreSQL's harmless formatting/casts without losing token boundaries."""
+    import re
+
+    value = value.strip().lower().replace('"', "")
+    value = re.sub(r"::(?:pg_catalog\\.)?(?:text|varchar|character varying)\\b", "", value)
+    value = re.sub(r"\\s+", "", value)
+    while value.startswith("(") and value.endswith(")"):
+        depth = 0
+        encloses_all = True
+        for position, character in enumerate(value):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0 and position != len(value) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all:
+            break
+        value = value[1:-1]
+    return value
+
+
+def _index_key_expressions(definition: str) -> list[str]:
+    """Extract top-level index key expressions, respecting nested COALESCE parentheses."""
+    import re
+
+    match = re.search(r"\\bon\\s+.+?\\s+using\\s+\\w+\\s*\\(", definition, re.IGNORECASE)
+    if not match:
+        raise RuntimeError("uq_active_assignment_context has an unreadable index definition.")
+    start = match.end()
+    depth = 1
+    quote = None
+    keys: list[str] = []
+    segment_start = start
+    index = start
+    while index < len(definition):
+        char = definition[index]
+        if quote:
+            if char == quote:
+                if index + 1 < len(definition) and definition[index + 1] == quote:
+                    index += 1
+                else:
+                    quote = None
+        elif char in ("'", '"'):
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                keys.append(definition[segment_start:index].strip())
+                return [_normalize_sql_expression(key) for key in keys]
+        elif char == "," and depth == 1:
+            keys.append(definition[segment_start:index].strip())
+            segment_start = index + 1
+        index += 1
+    raise RuntimeError("uq_active_assignment_context has an unterminated key list.")
+
+
 def verify_assignment_indexes(indexes: dict[str, str]) -> None:
-    """Validate current assignment integrity without requiring the retired manager-only index."""
+    """Validate the exact active-assignment uniqueness contract created by migration 0008."""
     if "uq_active_manager_per_location" in indexes:
         raise RuntimeError(
             "Obsolete uq_active_manager_per_location index remains; migration 0033 must remove it."
         )
 
-    context_index = indexes.get("uq_active_assignment_context")
-    if context_index is None:
+    definition = indexes.get("uq_active_assignment_context")
+    if definition is None:
         raise RuntimeError("Missing uq_active_assignment_context.")
-    definition = context_index.lower()
-    required_columns = ("organization_id", "principal_id", "location_id", "role_id")
-    missing_columns = [column for column in required_columns if column not in definition]
-    if missing_columns:
+    import re
+
+    if not re.search(r"^\\s*create\\s+unique\\s+index\\b", definition, re.IGNORECASE):
+        raise RuntimeError("uq_active_assignment_context must be a unique index.")
+
+    expected_keys = [
+        "organization_id",
+        "principal_id",
+        "coalesce(location_id,'')",
+        "coalesce(section_id,'')",
+        "role_id",
+    ]
+    actual_keys = _index_key_expressions(definition)
+    if actual_keys != expected_keys:
+        missing = [key for key in expected_keys if key not in actual_keys]
         raise RuntimeError(
-            "uq_active_assignment_context is missing required assignment keys: "
-            + ",".join(missing_columns)
+            "uq_active_assignment_context has incorrect assignment keys; "
+            "expected organization_id, principal_id, COALESCE(location_id, ''), "
+            "COALESCE(section_id, ''), role_id"
+            + (("; missing " + ",".join(missing)) if missing else "")
         )
-    if "unique index" not in definition or "status = 'active'" not in definition:
+
+    predicate_match = re.search(r"\\bwhere\\b(.+)$", definition, re.IGNORECASE | re.DOTALL)
+    if not predicate_match or _normalize_sql_expression(predicate_match.group(1)) != "status='active'":
         raise RuntimeError(
-            "uq_active_assignment_context must uniquely constrain active assignments."
+            "uq_active_assignment_context must apply exactly to rows with status = 'active'."
         )
 
 
