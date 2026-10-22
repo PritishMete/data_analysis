@@ -236,6 +236,17 @@ class _ManagementShellState extends State<ManagementShell> {
         request('/overview'), request('/locations'), request('/sections'),
         request('/people'), request('/assignments'), request(''),
       ]);
+      // The server's UI policy is the single source of truth for the
+      // Management Cell navigation. Never infer permissions from a role when
+      // this contract is missing, malformed, or contains unknown sections.
+      final policySections = _parseAllowedSections(r[0]['ui_policy']);
+      final actor = r[0]['actor'];
+      final roleId = actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
+      if (roleId.isEmpty || policySections == null) {
+        throw StateError(
+          'Management permissions could not be verified. Please refresh or contact your administrator.',
+        );
+      }
       if (!mounted) return;
       setState(() {
         overview = r[0];
@@ -288,63 +299,37 @@ class _ManagementShellState extends State<ManagementShell> {
     return value.isNotEmpty ? value : 'Assigned workspace';
   }
 
-  List<ManagementSection> _allowedSections() {
-    final policy = overview['ui_policy'];
-    if (policy is Map && policy['sections'] is List) {
-      final sections = <ManagementSection>[];
-      for (final raw in policy['sections'] as List) {
-        switch (raw.toString()) {
-          case 'overview':
-            sections.add(ManagementSection.overview);
-            break;
-          case 'organization':
-            sections.add(ManagementSection.organization);
-            break;
-          case 'people':
-            sections.add(ManagementSection.people);
-            break;
-          case 'dataAccess':
-            sections.add(ManagementSection.dataAccess);
-            break;
-          case 'invitations':
-            sections.add(ManagementSection.invitations);
-            break;
-          case 'audit':
-            sections.add(ManagementSection.audit);
-            break;
-        }
-      }
-      if (sections.isNotEmpty) return sections;
+  List<ManagementSection>? _parseAllowedSections(dynamic rawPolicy) {
+    if (rawPolicy is! Map) return null;
+    final rawSections = rawPolicy['sections'];
+    if (rawSections is! List || rawSections.isEmpty) return null;
+
+    const sectionByPolicyKey = <String, ManagementSection>{
+      'overview': ManagementSection.overview,
+      'organization': ManagementSection.organization,
+      'people': ManagementSection.people,
+      'dataAccess': ManagementSection.dataAccess,
+      'invitations': ManagementSection.invitations,
+      'audit': ManagementSection.audit,
+    };
+    final parsed = <ManagementSection>[];
+    for (final raw in rawSections) {
+      if (raw is! String) return null;
+      final section = sectionByPolicyKey[raw];
+      // Unknown or malformed values invalidate the whole policy. Silently
+      // dropping values can make a partially understood policy look valid.
+      if (section == null || parsed.contains(section)) return null;
+      parsed.add(section);
     }
 
-    switch (_managementRole()) {
-      case 'organization_owner':
-      case 'branch_head':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.organization,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-          ManagementSection.invitations,
-          ManagementSection.audit,
-        ];
-      case 'manager':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-          ManagementSection.invitations,
-        ];
-      case 'team_lead':
-        return const [
-          ManagementSection.overview,
-          ManagementSection.people,
-          ManagementSection.dataAccess,
-        ];
-      default:
-        return const [ManagementSection.overview];
-    }
+    // Overview is the safe landing page for every authorized management role.
+    // If the server omits it, do not render any Management Cell navigation.
+    if (!parsed.contains(ManagementSection.overview)) return null;
+    return List<ManagementSection>.unmodifiable(parsed);
   }
+
+  List<ManagementSection> _allowedSections() =>
+      _parseAllowedSections(overview['ui_policy']) ?? const [];
 
   bool _sectionAllowed(ManagementSection value) =>
       _allowedSections().contains(value);
