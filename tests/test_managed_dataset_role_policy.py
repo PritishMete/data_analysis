@@ -48,9 +48,15 @@ class _Db:
             return _Result(scalar=self.grant)
         if "FROM member_roles" in sql:
             return _Result(scalars=self.roles)
-        if "role_id='branch_head'" in sql:
+        if "role_id='branch_head'" in sql or (
+            "FROM organizational_assignments oa" in sql
+            and (params or {}).get("role") == "branch_head"
+        ):
             return _Result(scalars=self.branch_locations)
-        if "role_id='manager'" in sql:
+        if "role_id='manager'" in sql or (
+            "FROM organizational_assignments oa" in sql
+            and (params or {}).get("role") == "manager"
+        ):
             return _Result(scalars=self.manager_locations)
         raise AssertionError(f"Unexpected authorization query: {sql}")
 
