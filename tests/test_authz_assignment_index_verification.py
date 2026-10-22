@@ -1,64 +1,81 @@
-"""Regression tests for organizational assignment schema verification."""
+"""Regression tests for the exact PostgreSQL assignment-context index contract."""
 
 import unittest
 
 from tools.run_authz_migrations import verify_assignment_indexes
 
 
+VALID_INDEX = (
+    "CREATE UNIQUE INDEX uq_active_assignment_context "
+    "ON public.organizational_assignments USING btree "
+    "(organization_id, principal_id, COALESCE(location_id, ''::text), "
+    "COALESCE(section_id, ''::text), role_id) WHERE (status = 'active'::text)"
+)
+
+
 class AssignmentIndexVerificationTests(unittest.TestCase):
-    def test_schema_after_migration_0033_is_valid(self):
-        # Migration 0033 removes the manager-only index; the active assignment
-        # context index remains the integrity constraint.
-        verify_assignment_indexes({
-            "uq_active_assignment_context": (
-                "CREATE UNIQUE INDEX uq_active_assignment_context "
-                "ON public.organizational_assignments "
-                "(organization_id, principal_id, location_id, section_id, role_id) "
-                "WHERE (status = 'active'::text)"
-            )
-        })
+    def test_expected_complete_index_passes(self):
+        verify_assignment_indexes({"uq_active_assignment_context": VALID_INDEX})
 
-    def test_multiple_managers_are_not_rejected_by_schema_verifier(self):
-        # The schema no longer has a location-wide uniqueness constraint on
-        # Manager. Different principals can therefore be active Managers at
-        # the same location while per-person assignment context stays unique.
-        verify_assignment_indexes({
-            "uq_active_assignment_context": (
-                "CREATE UNIQUE INDEX uq_active_assignment_context "
-                "ON public.organizational_assignments "
-                "(organization_id, principal_id, location_id, section_id, role_id) "
-                "WHERE (status = 'active'::text)"
-            )
-        })
-
-    def test_missing_or_incomplete_integrity_index_fails(self):
-        with self.assertRaisesRegex(RuntimeError, "Missing uq_active_assignment_context"):
-            verify_assignment_indexes({})
-
-        with self.assertRaisesRegex(RuntimeError, "missing required assignment keys"):
-            verify_assignment_indexes({
-                "uq_active_assignment_context": (
+    def test_each_required_assignment_key_is_enforced(self):
+        invalid_keys = {
+            "organization_id": "principal_id, COALESCE(location_id, ''::text), COALESCE(section_id, ''::text), role_id",
+            "principal_id": "organization_id, COALESCE(location_id, ''::text), COALESCE(section_id, ''::text), role_id",
+            "location_id": "organization_id, principal_id, COALESCE(section_id, ''::text), role_id",
+            "section_id": "organization_id, principal_id, COALESCE(location_id, ''::text), role_id",
+            "role_id": "organization_id, principal_id, COALESCE(location_id, ''::text), COALESCE(section_id, ''::text)",
+        }
+        for missing_key, keys in invalid_keys.items():
+            with self.subTest(missing_key=missing_key):
+                definition = (
                     "CREATE UNIQUE INDEX uq_active_assignment_context "
-                    "ON organizational_assignments (principal_id) "
-                    "WHERE (status = 'active'::text)"
+                    "ON public.organizational_assignments USING btree ("
+                    + keys
+                    + ") WHERE (status = 'active'::text)"
                 )
-            })
+                with self.assertRaisesRegex(RuntimeError, "incorrect assignment keys"):
+                    verify_assignment_indexes({"uq_active_assignment_context": definition})
 
-    def test_obsolete_manager_only_index_fails_as_stale_schema(self):
+    def test_identifier_substrings_do_not_satisfy_required_keys(self):
+        definition = VALID_INDEX.replace("organization_id", "not_organization_id")
+        with self.assertRaisesRegex(RuntimeError, "incorrect assignment keys"):
+            verify_assignment_indexes({"uq_active_assignment_context": definition})
+
+    def test_non_unique_index_fails(self):
+        definition = VALID_INDEX.replace("CREATE UNIQUE INDEX", "CREATE INDEX", 1)
+        with self.assertRaisesRegex(RuntimeError, "must be a unique index"):
+            verify_assignment_indexes({"uq_active_assignment_context": definition})
+
+    def test_incorrect_active_predicate_fails(self):
+        for predicate in (
+            "status = 'inactive'::text",
+            "status = 'active'::text OR status = 'inactive'::text",
+            "role_id = 'manager' AND status = 'active'::text",
+        ):
+            with self.subTest(predicate=predicate):
+                definition = VALID_INDEX.rsplit(" WHERE ", 1)[0] + " WHERE (" + predicate + ")"
+                with self.assertRaisesRegex(RuntimeError, "must apply exactly"):
+                    verify_assignment_indexes({"uq_active_assignment_context": definition})
+
+    def test_retired_manager_only_index_is_rejected_as_stale_schema(self):
         with self.assertRaisesRegex(RuntimeError, "Obsolete uq_active_manager_per_location"):
             verify_assignment_indexes({
                 "uq_active_manager_per_location": (
                     "CREATE UNIQUE INDEX uq_active_manager_per_location "
-                    "ON organizational_assignments (location_id) "
-                    "WHERE (role_id = 'manager' AND status = 'active')"
+                    "ON organizational_assignments USING btree (organization_id, location_id) "
+                    "WHERE (status = 'active'::text AND role_id = 'manager'::text)"
                 ),
-                "uq_active_assignment_context": (
-                    "CREATE UNIQUE INDEX uq_active_assignment_context "
-                    "ON organizational_assignments "
-                    "(organization_id, principal_id, location_id, section_id, role_id) "
-                    "WHERE (status = 'active'::text)"
-                ),
+                "uq_active_assignment_context": VALID_INDEX,
             })
+
+    def test_multiple_managers_are_allowed_by_schema_contract(self):
+        # The context index is per principal/branch/section/role; there is no
+        # longer a location-wide unique Manager index.
+        verify_assignment_indexes({"uq_active_assignment_context": VALID_INDEX})
+
+    def test_missing_index_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "Missing uq_active_assignment_context"):
+            verify_assignment_indexes({})
 
 
 if __name__ == "__main__":
