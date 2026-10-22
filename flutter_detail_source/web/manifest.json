@@ -1,11 +1,11 @@
 {
-    "name": "data_analyst",
-    "short_name": "data_analyst",
+    "name": "InsightFlow",
+    "short_name": "InsightFlow",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "InsightFlow management and data analysis workspace.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
