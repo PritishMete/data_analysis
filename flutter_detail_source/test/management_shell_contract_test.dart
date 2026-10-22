@@ -257,6 +257,12 @@ void main() {
     ]) {
       expect(source, contains(label));
     }
+    // Personalize the welcome greeting without exposing role/email as a name,
+    // and keep the user's name plus server-assigned role visible on compact UI.
+    expect(source, contains("rawActorName.isEmpty ? 'there' : rawActorName"));
+    expect(source, contains('height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76'));
+    expect(source, contains('Text(_uiRoleLabel(),'));
+    expect(source, contains('actorName,'));
     expect(source, contains('audit.take(5)'));
     expect(source, contains('section == ManagementSection.audit'));
     expect(source, contains('ManagementSection.organization'));
