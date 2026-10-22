@@ -3444,7 +3444,7 @@ class _ManagementShellState extends State<ManagementShell> {
                     child: Text(
                       actorName.trim().isEmpty
                           ? 'IF'
-                          : actorName.trim().split(RegExp(r'\\s+')).take(2)
+                          : actorName.trim().split(RegExp(r'\s+')).take(2)
                               .map((part) => part.isEmpty ? '' : part[0])
                               .join()
                               .toUpperCase(),
