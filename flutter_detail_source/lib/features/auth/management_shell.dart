@@ -229,7 +229,14 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> _loadAll() async {
     if (mounted) {
-      setState(() { loading = true; error = null; });
+      setState(() {
+        loading = true;
+        error = null;
+        // Clear the last known policy while refreshing. If the new response
+        // is invalid or the request fails, stale permissions must not keep
+        // the previous menu visible.
+        overview = const {};
+      });
     }
     try {
       final r = await Future.wait([
