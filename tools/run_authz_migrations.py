@@ -184,8 +184,8 @@ def _normalize_sql_expression(value: str) -> str:
     import re
 
     value = value.strip().lower().replace('"', "")
-    value = re.sub(r"::(?:pg_catalog\\.)?(?:text|varchar|character varying)\\b", "", value)
-    value = re.sub(r"\\s+", "", value)
+    value = re.sub(r"::(?:pg_catalog\.)?(?:text|varchar|character varying)\b", "", value)
+    value = re.sub(r"\s+", "", value)
     while value.startswith("(") and value.endswith(")"):
         depth = 0
         encloses_all = True
@@ -207,7 +207,7 @@ def _index_key_expressions(definition: str) -> list[str]:
     """Extract top-level index key expressions, respecting nested COALESCE parentheses."""
     import re
 
-    match = re.search(r"\\bon\\s+.+?\\s+using\\s+\\w+\\s*\\(", definition, re.IGNORECASE)
+    match = re.search(r"\bon\s+.+?\s+using\s+\w+\s*\(", definition, re.IGNORECASE)
     if not match:
         raise RuntimeError("uq_active_assignment_context has an unreadable index definition.")
     start = match.end()
@@ -252,7 +252,7 @@ def verify_assignment_indexes(indexes: dict[str, str]) -> None:
         raise RuntimeError("Missing uq_active_assignment_context.")
     import re
 
-    if not re.search(r"^\\s*create\\s+unique\\s+index\\b", definition, re.IGNORECASE):
+    if not re.search(r"^\s*create\s+unique\s+index\b", definition, re.IGNORECASE):
         raise RuntimeError("uq_active_assignment_context must be a unique index.")
 
     expected_keys = [
@@ -272,13 +272,11 @@ def verify_assignment_indexes(indexes: dict[str, str]) -> None:
             + (("; missing " + ",".join(missing)) if missing else "")
         )
 
-    predicate_match = re.search(r"\\bwhere\\b(.+)$", definition, re.IGNORECASE | re.DOTALL)
+    predicate_match = re.search(r"\bwhere\b(.+)$", definition, re.IGNORECASE | re.DOTALL)
     if not predicate_match or _normalize_sql_expression(predicate_match.group(1)) != "status='active'":
         raise RuntimeError(
             "uq_active_assignment_context must apply exactly to rows with status = 'active'."
         )
-
-
 
 
 def verify_managed_dataset_security(engine) -> None:
