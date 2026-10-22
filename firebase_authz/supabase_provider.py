@@ -1826,9 +1826,10 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         raise AuthzError("Workspace authorization denied.")
     organization_id = str(context["organization_id"])
     resolved_workspace_id = str(context["workspace_id"])
+    context_roles = set(context.get("role_ids", []))
     if (
         action == "dataset.upload"
-        and "organization_owner" not in set(context.get("role_ids", []))
+        and context_roles.intersection({"manager", "branch_head"})
         and "dataset.upload" not in set(context.get("permissions", []))
     ):
         raise AuthzError("The required dataset.upload permission is missing.")
