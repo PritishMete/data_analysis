@@ -18,8 +18,12 @@ class _Result:
 
 
 class _AssignmentDb:
-    def __init__(self, assignments):
+    def __init__(self, assignments, upload_permission_roles=None):
         self.assignments = assignments
+        self.upload_permission_roles = (
+            set(assignments) if upload_permission_roles is None
+            else set(upload_permission_roles)
+        )
 
     def __enter__(self):
         return self
@@ -32,12 +36,17 @@ class _AssignmentDb:
         assert "FROM organizational_assignments oa" in sql
         assert "JOIN locations l" in sql
         assert "JOIN organization_members m" in sql
-        return _Result(self.assignments.get((params or {}).get("role"), []))
+        assert "JOIN member_roles mr" in sql
+        assert "JOIN role_permissions rp" in sql
+        role = (params or {}).get("role")
+        if role not in self.upload_permission_roles:
+            return _Result([])
+        return _Result(self.assignments.get(role, []))
 
 
 class _SessionFactory:
-    def __init__(self, assignments):
-        self.db = _AssignmentDb(assignments)
+    def __init__(self, assignments, upload_permission_roles=None):
+        self.db = _AssignmentDb(assignments, upload_permission_roles)
 
     def __call__(self):
         return self.db
@@ -55,7 +64,8 @@ def _context(role="manager", *, permission=True, authorized=True):
 
 
 def _install_scope(
-    monkeypatch, role="manager", *, permission=True, authorized=True, assignments=None
+    monkeypatch, role="manager", *, permission=True, authorized=True, assignments=None,
+    upload_permission_roles=None,
 ):
     context = _context(role, permission=permission, authorized=authorized)
     monkeypatch.setattr(
@@ -64,7 +74,7 @@ def _install_scope(
     )
     monkeypatch.setattr(
         supabase_provider, "SessionLocal",
-        _SessionFactory(assignments or {}),
+        _SessionFactory(assignments or {}, upload_permission_roles),
     )
 
 
@@ -120,6 +130,22 @@ def test_manager_without_upload_permission_is_denied(monkeypatch):
     _install_scope(monkeypatch, permission=False, assignments={"manager": ["branch-a"]})
 
     with pytest.raises(supabase_provider.AuthzError, match="dataset.upload permission"):
+        supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
+
+
+def test_stale_other_role_cannot_supply_manager_upload_permission(monkeypatch):
+    # authorization_context aggregates capabilities across historical roles.
+    # The active Manager assignment must separately possess dataset.upload.
+    _install_scope(
+        monkeypatch,
+        assignments={"manager": ["branch-a"]},
+        upload_permission_roles=[],
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="active branch assignment",
+    ):
         supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
 
 

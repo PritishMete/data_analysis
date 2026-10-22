@@ -1777,6 +1777,13 @@ def authorize_dataset_upload_scope(
                     JOIN organization_members m
                       ON m.organization_id=oa.organization_id
                      AND m.principal_id=oa.principal_id
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id
+                     AND mr.principal_id=oa.principal_id
+                     AND mr.role_id=oa.role_id
+                    JOIN role_permissions rp
+                      ON rp.role_id=oa.role_id
+                     AND rp.permission_id='dataset.upload'
                     WHERE oa.organization_id=:org
                       AND oa.principal_id=:principal
                       AND oa.role_id=:role
