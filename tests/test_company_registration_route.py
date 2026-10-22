@@ -10,25 +10,54 @@ def test_company_registration_uses_authoritative_bootstrap_route():
     assert ("/v1/authz/organizations/register", "POST") in routes
 
 
-def test_founder_registration_requires_bearer_and_registration_fields(monkeypatch):
+def test_founder_registration_requires_supabase_auth_and_registration_fields(monkeypatch):
     from firebase_authz import routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(
-        routes,
-        "bootstrap_owner",
-        lambda token, organization_name, allow_any_authenticated=False: {
+        "firebase_authz.supabase_auth.verify_supabase_access_token",
+        lambda token, require_email_verified=True: {
+            "uid": "verified-user",
+            "sub": "verified-user",
+            "email": "owner@example.com",
+            "email_verified": True,
+            "email_confirmed_at": "2026-10-01T00:00:00Z",
+        },
+    )
+    monkeypatch.setattr(
+        "firebase_authz.supabase_provider.register_organization",
+        lambda *args, **kwargs: {
             "organization_id": "org_opaque",
             "workspace_id": "org_opaque",
             "owner_uid": "verified-user",
         },
     )
+
     from main import app
     from fastapi.testclient import TestClient
 
     client = TestClient(app)
     response = client.post(
         "/v1/authz/organizations/register",
-        json={"organization_name": "ABC", "branch_name": "Main", "branch_identifier": "main"},
-        headers={"Authorization": "Bearer verified-firebase-token"},
+        json={
+            "organization_name": "ABC",
+            "branch_name": "Main",
+            "branch_identifier": "main",
+            "full_name": "Owner Example",
+            "phone": "+919876543210",
+            "phone_country_calling_code": "+91",
+            "phone_national_number": "9876543210",
+            "address_line1": "1 Main Road",
+            "state": "West Bengal",
+            "state_code": "IN-WB",
+            "postal_code": "700001",
+            "country": "India",
+            "country_code": "IN",
+            "id_proof_type": "passport",
+            "id_proof_number": "TEST-OWNER-001",
+        },
+        headers={"Authorization": "Bearer valid-supabase-token"},
     )
     assert response.status_code == 200
     assert response.json()["workspace_id"] == "org_opaque"
@@ -38,6 +67,8 @@ def test_founder_registration_rejects_missing_bearer(monkeypatch):
     from main import app
     from fastapi.testclient import TestClient
 
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     response = TestClient(app).post(
         "/v1/authz/organizations/register",
         json={"organization_name": "ABC"},
@@ -58,7 +89,7 @@ def test_founder_registration_cannot_accept_privileged_client_fields():
             "bootstrap_secret": "attacker-secret",
             "role": "organization_owner",
         },
-        headers={"Authorization": "Bearer verified-firebase-token"},
+        headers={"Authorization": "Bearer verified-supabase-token"},
     )
     assert response.status_code == 422
 
