@@ -272,9 +272,25 @@ class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
       final sections = policy is Map && policy['sections'] is List
           ? (policy['sections'] as List).map((value) => value.toString()).toList()
           : const <String>[];
+      final actor = data['actor'];
+      final roleId =
+          actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
+      // Management shell selection must not depend on a possibly stale or
+      // incomplete UI section list alone. Keep known management roles in the
+      // management shell; the backend policy still controls the sections and
+      // every management API independently enforces authorization.
+      const managementRoles = <String>{
+        'organization_owner',
+        'branch_head',
+        'manager',
+        'team_lead',
+      };
+      final managementRole = managementRoles.contains(roleId);
       if (!mounted) return;
       setState(() {
-        employeeCell = sections.length == 1 && sections.first == 'overview';
+        employeeCell = !managementRole &&
+            sections.length == 1 &&
+            sections.first == 'overview';
         loading = false;
       });
     } catch (e) {
@@ -307,9 +323,11 @@ class _EmployeeManagementEntryState extends State<_EmployeeManagementEntry> {
         ],
       );
     }
+    final userId = InsightFlowSupabaseAuthService.currentUser?.uid ?? 'unknown';
+    final shellKey = ValueKey('$userId:${widget.workspaceId}');
     return employeeCell
-        ? const EmployeeManagementShell()
-        : const ManagementShell();
+        ? EmployeeManagementShell(key: shellKey)
+        : ManagementShell(key: shellKey);
   }
 }
 

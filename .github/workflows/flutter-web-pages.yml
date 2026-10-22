@@ -3,10 +3,10 @@ name: Build and publish InsightFlow Flutter web
 on:
   push:
     branches:
-      - feature/employee-management-cell
+      - feature/role-based-management-shell-20261016
   workflow_dispatch:
 
-# Pages deployment trigger for feature/employee-management-cell
+# Pages deployment trigger for feature/role-based-management-shell-20261016
 # Workflow trigger marker: 2026-10-06
 # Explicit publish trigger: 2026-10-06T21:08+05:30
 # Production verification trigger: 2026-10-07T05:30+05:30
