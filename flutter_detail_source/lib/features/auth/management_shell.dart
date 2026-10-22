@@ -297,8 +297,36 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   String _uiRoleLabel() {
+    final actor = overview['actor'];
+    final actorMap = actor is Map ? actor : const <String, dynamic>{};
+    final managementRole = _managementRole();
+
+    // "employee" is the access-control role, not necessarily the person's
+    // assigned professional role (for example Data Analyst or Data Engineer).
+    // Prefer the assigned role from the authoritative management actor payload
+    // when the broad employee role is used; keep the policy label for the
+    // organization-level roles.
+    if (managementRole.toLowerCase() == 'employee') {
+      for (final key in const [
+        'assigned_role',
+        'employee_role',
+        'job_role',
+        'professional_role',
+        'designation',
+        'job_title',
+        'position',
+        'specialization',
+        'role_name',
+      ]) {
+        final assigned = actorMap[key]?.toString().trim() ?? '';
+        if (assigned.isNotEmpty && assigned.toLowerCase() != 'employee') {
+          return _roleLabel(assigned);
+        }
+      }
+    }
+
     final value = _uiPolicy()['role_label']?.toString().trim() ?? '';
-    return value.isNotEmpty ? value : _roleLabel(_managementRole());
+    return value.isNotEmpty ? value : _roleLabel(managementRole);
   }
 
   String _uiScopeLabel() {
