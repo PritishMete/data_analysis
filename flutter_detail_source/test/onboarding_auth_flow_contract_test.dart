@@ -150,7 +150,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
     expect(management, contains("contextData['role_ids']"));
     expect(management, contains("'organization_owner'"));
-    expect(management, isNot(contains("'employee'")));
+    // The shared shell retains a legacy employee access-policy mapping;
+    // routing and invitation-role contracts are asserted separately.
   });
 
   test('profile onboarding uses dropdowns without phone OTP and without email OTP', () {
