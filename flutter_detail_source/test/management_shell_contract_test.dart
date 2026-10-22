@@ -534,6 +534,13 @@ void main() {
     expect(allowedPolicy, contains("_parseAllowedSections(overview['ui_policy'])"));
     expect(allowedPolicy, isNot(contains('switch (_managementRole())')));
     expect(allowedPolicy, isNot(contains("case 'manager':")));
+    final loadStart = source.indexOf('Future<void> _loadAll() async');
+    final loadEnd = source.indexOf('String _managementRole()', loadStart);
+    expect(loadStart, greaterThanOrEqualTo(0));
+    expect(loadEnd, greaterThan(loadStart));
+    final loadFlow = source.substring(loadStart, loadEnd);
+    expect(loadFlow, contains('overview = const {};'));
+    expect(loadFlow, contains('final policySections = _parseAllowedSections(r[0][\'ui_policy\']);'));
 
   });
 }
