@@ -40,6 +40,8 @@ def test_invalid_token_is_rejected(monkeypatch):
 
 def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
         auth_middleware,
@@ -61,6 +63,8 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
 
 def test_authorized_user_reaches_protected_api(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
         auth_middleware,
@@ -88,6 +92,8 @@ def test_authorized_user_reaches_protected_api(monkeypatch):
 
 def test_missing_workspace_or_resource_context_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice"})
     from main import app
     no_workspace = TestClient(app).get(
@@ -104,6 +110,8 @@ def test_missing_workspace_or_resource_context_is_rejected(monkeypatch):
 
 def test_unverified_token_is_rejected_before_protected_api(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
     monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": False})
     from main import app
     response = TestClient(app).get(
@@ -242,3 +250,27 @@ def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monke
     )
     assert response.status_code == 200
     assert response.json()["workspace_authorized"] is False
+
+
+def test_protected_middleware_rejects_non_supabase_persistence_without_firebase_fallback(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase")
+    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
+
+    def firebase_authorization_must_not_run(*args, **kwargs):
+        raise AssertionError("Firebase authorization must never be used")
+
+    monkeypatch.setattr(auth_middleware, "authorization", firebase_authorization_must_not_run)
+    from main import app
+
+    response = TestClient(app).get(
+        "/transform/history/test",
+        headers={
+            "Authorization": "Bearer valid-supabase-token",
+            "X-InsightFlow-Workspace-ID": "workspace",
+            "X-InsightFlow-Resource-ID": "sheet",
+        },
+    )
+    assert response.status_code == 403
+    assert "Supabase authorization is required" not in response.text
