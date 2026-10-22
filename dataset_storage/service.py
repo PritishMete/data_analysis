@@ -9,13 +9,14 @@ import uuid
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
     audit_dataset_event,
     authorization_context,
     authorize,
+    authorize_dataset_upload_scope,
     authorize_dataset,
     create_working_copy,
     delete_dataset_authorization,
@@ -69,12 +70,21 @@ def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[st
     return context
 
 
-def _authorize_upload(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+def _authorize_upload(
+    claims: dict[str, Any],
+    workspace_id: str,
+    *,
+    location_id: str | None = None,
+) -> dict[str, Any]:
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
     if not roles.intersection({"branch_head", "manager"}):
         raise PermissionDenied("Only a Branch Head or Manager can upload datasets.")
-    return {**context, "authorized": True, "permission": "dataset.upload"}
+    # Member roles alone are historical labels, not current authority. Resolve
+    # the active assignment, upload permission, and branch scope server-side.
+    return authorize_dataset_upload_scope(
+        claims, workspace_id, location_id=location_id
+    )
 
 
 def _authorize_delete(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
@@ -422,13 +432,19 @@ def stream_managed_dataset_csv(
     }
 
 
-def _register_authorization(claims: dict[str, Any], workspace_id: str, dataset_id: str) -> None:
+def _register_authorization(
+    claims: dict[str, Any],
+    workspace_id: str,
+    dataset_id: str,
+    location_id: str | None = None,
+) -> None:
     register_dataset(
         claims,
         workspace_id,
         dataset_id,
         str(claims["uid"]),
         True,
+        location_id=location_id,
     )
 
 
@@ -478,6 +494,76 @@ def _mark_failed_sql_version(
         repo.db.flush()
 
 
+def _discard_sql_registration(
+    repo: DatasetRepository,
+    dataset_id: str,
+    version_id: str,
+    was_new_dataset: bool,
+) -> None:
+    """Remove unfinalized SQL data when the upload's final auth check fails."""
+    with repo.db.begin():
+        if was_new_dataset:
+            repo.delete_dataset(dataset_id, commit=False)
+            return
+
+        version = repo.get_version(dataset_id, version_id)
+        if version is None:
+            return
+        if version.data_table_name:
+            from datasets.physical_table import drop_physical_table
+
+            drop_physical_table(repo.db.connection(), version.data_table_name)
+            version.data_table_name = None
+        repo.db.execute(
+            delete(DatasetRow).where(DatasetRow.version_pk == version.version_pk)
+        )
+        repo.db.execute(
+            delete(DatasetColumn).where(DatasetColumn.version_pk == version.version_pk)
+        )
+        repo.db.delete(version)
+        repo.db.flush()
+
+
+def _lock_active_upload_assignment(
+    repo: DatasetRepository,
+    context: dict[str, Any],
+) -> None:
+    """Revalidate and lock membership/branch assignment through version commit."""
+    assignment = repo.db.execute(
+        text("""SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN locations l
+              ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id
+             AND mr.principal_id=oa.principal_id
+             AND mr.role_id=oa.role_id
+            JOIN role_permissions rp
+              ON rp.role_id=mr.role_id AND rp.permission_id='dataset.upload'
+            WHERE oa.organization_id=:org
+              AND oa.principal_id=:principal
+              AND oa.location_id=:location
+              AND oa.role_id=:role
+              AND oa.status='active'
+              AND l.status='active'
+              AND m.status='active'
+              AND m.workspace_id=:workspace
+            ORDER BY oa.assignment_id
+            LIMIT 1 FOR SHARE OF oa, l, m"""),
+        {
+            "org": context["organization_id"],
+            "principal": context["principal_id"],
+            "location": context["location_id"],
+            "role": context["upload_role_id"],
+            "workspace": context["workspace_id"],
+        },
+    ).scalar_one_or_none()
+    if assignment is None:
+        raise AuthzError("The upload branch assignment or permission is no longer active.")
+
+
 def upload_managed_dataset_stream(
     *,
     workspace_id: str,
@@ -489,11 +575,22 @@ def upload_managed_dataset_stream(
     dataset_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
-    _authorize_upload(claims, workspace_id)
     if dataset_id is not None:
-        _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.view_original')
+        # Existing datasets supply the target branch only after resolving its
+        # server-side authorization record; never infer scope from request data.
+        dataset_scope = _authorize_dataset(
+            claims, workspace_id, dataset_id, "dataset.view_original"
+        )
+        context = _authorize_upload(
+            claims,
+            workspace_id,
+            location_id=str(dataset_scope.get("location_id") or ""),
+        )
+    else:
+        # A new dataset has no trusted location yet, so require exactly one
+        # active assigned branch before reading or persisting the upload.
+        context = _authorize_upload(claims, workspace_id)
     safe_name = _safe_filename(filename)
-    context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
 
     from core.db import SessionLocal
@@ -531,7 +628,10 @@ def upload_managed_dataset_stream(
 
         if new_dataset:
             _register_authorization(
-                claims, workspace_id, registration.registration.dataset.dataset_id
+                claims,
+                workspace_id,
+                registration.registration.dataset.dataset_id,
+                str(context["location_id"]),
             )
 
         if not registration.sample.empty:
@@ -544,6 +644,10 @@ def upload_managed_dataset_stream(
                 version_pk=registration.version.version_pk,
             )
 
+        # Lock the verified assignment in the ingestion session through the
+        # final version commit. Manager replacement/suspension must serialize
+        # with this final authorization boundary.
+        _lock_active_upload_assignment(repo, context)
         if archive_original_enabled():
             stream.seek(0)
             stored = provider.upload_stream(
@@ -576,6 +680,7 @@ def upload_managed_dataset_stream(
         )
         return _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
     except Exception as exc:
+        repo.db.rollback()
         if stored is not None:
             try:
                 provider.delete(
@@ -587,13 +692,21 @@ def upload_managed_dataset_stream(
                 pass
         if registration is not None:
             try:
-                _mark_failed_sql_version(
-                    repo,
-                    registration.registration.dataset.dataset_id,
-                    registration.version.version_id,
-                    new_dataset,
-                    str(exc),
-                )
+                if isinstance(exc, AuthzError):
+                    _discard_sql_registration(
+                        repo,
+                        registration.registration.dataset.dataset_id,
+                        registration.version.version_id,
+                        new_dataset,
+                    )
+                else:
+                    _mark_failed_sql_version(
+                        repo,
+                        registration.registration.dataset.dataset_id,
+                        registration.version.version_id,
+                        new_dataset,
+                        str(exc),
+                    )
             except Exception:
                 pass
             if new_dataset:
