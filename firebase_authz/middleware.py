@@ -189,15 +189,18 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             # dataset.upload capability may submit file content.
             is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
 
-            if os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
-                from .supabase_provider import authorize as provider_authorize
-                decision = provider_authorize(claims, workspace_id, action, resource_id or None)
-                if is_multipart_upload:
-                    provider_authorize(claims, workspace_id, "dataset.upload", None)
-            else:
-                decision = authorization(uid, workspace_id, action, resource_id or None)
-                if is_multipart_upload:
-                    authorization(uid, workspace_id, "dataset.upload", None)
+            persistence_provider = os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
+            if persistence_provider != "supabase":
+                # Never route a Supabase-authenticated request into legacy
+                # Firebase authorization when configuration is absent or invalid.
+                raise AuthenticationRequired(
+                    "Supabase authorization is required; "
+                    "AUTHZ_PERSISTENCE_PROVIDER must be 'supabase'."
+                )
+            from .supabase_provider import authorize as provider_authorize
+            decision = provider_authorize(claims, workspace_id, action, resource_id or None)
+            if is_multipart_upload:
+                provider_authorize(claims, workspace_id, "dataset.upload", None)
             request.state.firebase_uid = uid
             request.state.workspace_id = workspace_id
             request.state.resource_id = resource_id or None
