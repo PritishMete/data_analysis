@@ -211,6 +211,44 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
     runner.verify_employee_id_allocator(postgres_engine)
     runner.verify_managed_dataset_security(postgres_engine)
 
+    # Assert supporting authorization objects created outside the runner's
+    # compact EXPECTED_TABLES set, along with the external schemas/triggers.
+    from sqlalchemy import inspect
+
+    public_tables = set(inspect(postgres_engine).get_table_names())
+    assert {
+        "authorization_requests",
+        "working_copy_assignments",
+        "management_assignment_requests",
+        "organization_employee_id_counters",
+        "datasets",
+        "dataset_versions",
+        "dataset_columns",
+        "dataset_rows",
+    } <= public_tables
+    with postgres_engine.connect() as conn:
+        schemas = {
+            row[0] for row in conn.execute(text("""
+                SELECT schema_name FROM information_schema.schemata
+                WHERE schema_name IN ('auth', 'storage', 'private', 'managed_data')
+            """))
+        }
+        assert schemas == {"auth", "storage", "private", "managed_data"}
+        trigger_names = {
+            row[0] for row in conn.execute(text("""
+                SELECT t.tgname
+                FROM pg_trigger t
+                JOIN pg_class c ON c.oid = t.tgrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE NOT t.tgisinternal
+            """))
+        }
+        assert {
+            "insightflow_cleanup_deleted_auth_user",
+            "organizational_assignments_single_active_branch",
+            "insightflow_cleanup_orphaned_branch_organization",
+        } <= trigger_names
+
     # Verify the history-aware apply path reports every version as completed.
     applied_again, already_applied = runner.apply_pending(postgres_engine)
     assert applied_again == []
