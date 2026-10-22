@@ -3322,7 +3322,6 @@ class _ManagementShellState extends State<ManagementShell> {
     final actorName = actor is Map
         ? (actor['full_name'] ?? actor['name'] ?? actor['email'] ?? 'Account').toString()
         : 'Account';
-    final email = actor is Map ? (actor['email']?.toString() ?? '') : '';
     return Container(
       height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
