@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import main
+from fastapi.testclient import TestClient
 
 
 class AuthorizationStartupReadinessTests(unittest.TestCase):
@@ -22,6 +23,18 @@ class AuthorizationStartupReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "migration failed"):
                 main._initialize_production_database()
             init_db.assert_not_called()
+
+    def test_health_is_not_served_when_required_startup_migration_fails(self):
+        # FastAPI lifespan/startup must abort before an HTTP client can call
+        # /health, rather than reporting healthy with an unverified schema.
+        with patch.object(
+            main,
+            "_run_production_authz_migrations",
+            side_effect=RuntimeError("migration failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "migration failed"):
+                with TestClient(main.app) as client:
+                    client.get("/health")
 
     def test_successful_migration_precedes_database_initialization(self):
         calls = []
