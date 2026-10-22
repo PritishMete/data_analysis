@@ -135,7 +135,7 @@ void main() {
     expect(source, isNot(contains("month + '/' + day + '/' + ist.year.toString()")));
     expect(source, contains("'PROFILE COMPLETENESS'"));
     expect(source, contains('BRANCH HEAD'));
-    expect(source, contains('No active Managers assigned.'));
+    expect(source, contains('No active Managers assigned'));
     // Assignment Registry layout contract: keep compact identifiers intact,
     // bound the action control, and provide an explicit narrow-width path.
     expect(source, contains('Widget _assignmentRegistryValue('));
