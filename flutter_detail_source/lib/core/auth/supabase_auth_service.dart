@@ -20,16 +20,30 @@ class InsightFlowSupabaseAuthService {
   static SupabaseClient get client => Supabase.instance.client;
   static bool get isInitialized => Supabase.instance.isInitialized;
 
+  /// Persists and refreshes this device's session independently.
+  ///
+  /// Concurrent logins on other devices are controlled by the Supabase Auth
+  /// project setting "Single session per user", which must remain disabled
+  /// for multi-device use.
+  static FlutterAuthClientOptions get authOptions =>
+      FlutterAuthClientOptions(
+        authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
+        detectSessionInUri: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      );
+
+  /// Use local scope so signing out on this installation does not revoke
+  /// sessions on the user's other devices.
+  static const SignOutScope localSignOutScope = SignOutScope.local;
+
   static Future<bool> initialize() async {
     if (!InsightFlowSupabaseConfig.isConfigured) return false;
     if (!isInitialized) {
       await Supabase.initialize(
         url: InsightFlowSupabaseConfig.url,
         publishableKey: InsightFlowSupabaseConfig.publishableKey,
-        authOptions: FlutterAuthClientOptions(
-          authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
-          detectSessionInUri: true,
-        ),
+        authOptions: authOptions,
         debug: false,
       );
     }
@@ -225,7 +239,8 @@ class InsightFlowSupabaseAuthService {
     );
   }
 
-  static Future<void> signOut() => client.auth.signOut();
+  static Future<void> signOut() =>
+      client.auth.signOut(scope: localSignOutScope);
 
   static Future<Session?>? _ensureSessionFuture;
 
