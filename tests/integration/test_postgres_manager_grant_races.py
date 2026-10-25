@@ -73,6 +73,7 @@ def pg_schema():
 def _connection(engine, schema):
     conn = engine.connect()
     conn.execute(text(f'SET search_path TO "{schema}"'))
+    conn.commit()
     return conn
 
 
