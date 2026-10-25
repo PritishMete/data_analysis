@@ -5,6 +5,12 @@ name: InsightFlow Production Authz Migrations
 # only after an operator explicitly dispatches it from the configured release branch.
 on:
   workflow_dispatch:
+    inputs:
+      confirm_production_migration:
+        description: "Confirm the production migration has been reviewed and is intended."
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,7 +21,7 @@ concurrency:
 
 jobs:
   migrate:
-    if: github.ref == 'refs/heads/feature/employee-management-cell'
+    if: github.ref == 'refs/heads/feature/employee-management-cell' && inputs.confirm_production_migration == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
