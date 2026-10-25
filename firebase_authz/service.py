@@ -923,6 +923,9 @@ def set_dataset_grant(
     target_member_uid = _member_key_for_workspace(workspace, target_uid)
     if not target_member_uid:
         raise PermissionDenied("Grant target is not an organization member.")
+    target_member = (workspace.get("members") or {}).get(target_member_uid)
+    if not isinstance(target_member, dict):
+        raise PermissionDenied("Grant target is not an organization member.")
     try:
         authorization(actor, workspace_id, "dataset.manage_acl")
     except PermissionDenied:
