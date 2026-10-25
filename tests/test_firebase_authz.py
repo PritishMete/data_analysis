@@ -1112,3 +1112,136 @@ def test_backend_lookup_failure_is_not_classified_as_new_company(monkeypatch):
             email_verified=True,
             email="employee@example.com",
         )
+
+
+def test_manager_can_use_explicit_protected_original_upload_grant(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {"manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {
+                    "manager": {"permissions": ["dataset.upload_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+
+    result = service.authorize_dataset(
+        "manager", "org", "ds_protected", "dataset.upload_original"
+    )
+
+    assert result["allowed"] is True
+    assert result["protected_original"] is True
+
+
+def test_manager_cannot_use_view_grant_as_protected_original_upload_grant(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {"manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {
+                    "manager": {"permissions": ["dataset.view_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+
+    with pytest.raises(service.PermissionDenied, match="Permission denied for this dataset"):
+        service.authorize_dataset(
+            "manager", "org", "ds_protected", "dataset.upload_original"
+        )
+
+
+def test_manager_cannot_use_protected_original_grant_for_another_branch(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-b",
+            },
+        },
+        "roles": {"manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-a",
+                "grants": {
+                    "manager": {"permissions": ["dataset.upload_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+
+    with pytest.raises(service.PermissionDenied, match="outside your Manager scope"):
+        service.authorize_dataset(
+            "manager", "org", "ds_protected", "dataset.upload_original"
+        )
+
+
+def test_team_lead_cannot_grant_protected_original_replacement(monkeypatch):
+    workspace = {
+        "members": {
+            "lead": {
+                "status": "active",
+                "roles": {"team_lead": True},
+                "location_id": "branch-1",
+            },
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {
+            "team_lead": {"permissions": sorted(service.DEFAULT_ROLES["team_lead"])},
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+        },
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {"lead": {"permissions": ["dataset.manage_acl"]}},
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "lead", "email_verified": True, "auth_time": 9999999999,
+    })
+    monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
+
+    with pytest.raises(service.PermissionDenied, match="Only a Branch Head or Organization Owner"):
+        service.set_dataset_grant(
+            "org", "ds_protected", "manager",
+            ["dataset.upload_original"], "token",
+        )
