@@ -149,12 +149,6 @@ def revoke_manager_upload_grant(
                 WHERE grant_id=:grant AND revoked_at IS NULL
             """), {"actor": actor, "reason": note or None, "grant": grant_id})
             db.execute(text("""
-                UPDATE dataset_change_proposals
-                SET status='stale', reviewed_at=now(),
-                    decision_note='Manager upload grant was revoked before review.'
-                WHERE upload_grant_id=:grant AND status='pending'
-            """), {"grant": grant_id})
-            db.execute(text("""
                 INSERT INTO audit_events
                   (event_id, organization_id, actor_principal_id, action, outcome, metadata)
                 VALUES (:event, :org, :actor, 'dataset.upload_grant.revoke', 'succeeded',
@@ -164,5 +158,15 @@ def revoke_manager_upload_grant(
                         "grant_id": grant_id, "location_id": grant["location_id"],
                         "reason": note or None,
                     })})
+    # Run proposal invalidation after releasing the grant lock. Approval locks a
+    # proposal and then the grant; this two-transaction sequence avoids a
+    # grant->proposal / proposal->grant deadlock while still blocking approvals.
+    with SessionLocal.begin() as db:
+        db.execute(text("""
+            UPDATE dataset_change_proposals
+            SET status='stale', reviewed_at=now(),
+                decision_note='Manager upload grant was revoked before review.'
+            WHERE upload_grant_id=:grant AND status='pending'
+        """), {"grant": grant_id})
     return {"grant_id": grant_id, "status": "revoked",
             "location_id": str(grant["location_id"])}
