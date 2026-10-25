@@ -386,3 +386,36 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
                     (assignment_id, organization_id, principal_id, location_id, role_id, status)
                 VALUES ('assignment-a-duplicate', 'org-a', 'person-a', 'branch-a', 'manager', 'active')
             """))
+
+
+@pytest.mark.parametrize(
+    ("index_change", "expected_error"),
+    [
+        (
+            "DROP INDEX public.uq_active_assignment_context",
+            "Missing uq_active_assignment_context",
+        ),
+        (
+            "DROP INDEX public.uq_active_assignment_context; "
+            "CREATE UNIQUE INDEX uq_active_manager_per_location "
+            "ON public.organizational_assignments (organization_id, location_id) "
+            "WHERE status = 'active' AND role_id = 'manager'",
+            "Obsolete uq_active_manager_per_location",
+        ),
+    ],
+)
+def test_production_migration_runner_rejects_invalid_assignment_index(
+    postgres_engine, monkeypatch, index_change, expected_error
+):
+    """The actual startup runner must fail closed on stale/missing live indexes."""
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    runner.run_migrations()
+
+    with postgres_engine.begin() as conn:
+        # Only mutate this disposable PostgreSQL fixture after a valid migration
+        # chain has been installed; never point this fixture at production.
+        for statement in index_change.split("; "):
+            conn.exec_driver_sql(statement)
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        runner.run_migrations()
