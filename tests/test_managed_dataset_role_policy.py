@@ -299,7 +299,7 @@ class _GrantDb:
             return _Result(row={"location_id": "branch-1", "protected_original": True})
         if "FROM identity_bindings b" in sql and "JOIN organization_members m" in sql:
             return _Result(scalar=self.target_principal)
-        if "SELECT 1 FROM organizational_assignments oa" in sql:
+        if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql:
             return _Result(scalar=1 if self.target_manager_active else None)
         if "SELECT 1 FROM authorization_resources" in sql:
             return _Result(scalar=1)
@@ -336,7 +336,7 @@ def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monk
     )
 
     assert result is True
-    target_check = next(params for sql, params in db.calls if "SELECT 1 FROM organizational_assignments oa" in sql)
+    target_check = next(params for sql, params in db.calls if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql)
     assert target_check["location"] == "branch-1"
 
 
