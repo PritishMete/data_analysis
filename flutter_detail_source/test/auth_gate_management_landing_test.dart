@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/core/auth/authenticated_http.dart';
+
 void main() {
   test('active-member routing uses authoritative role resolution', () {
     final source =
@@ -26,7 +28,25 @@ void main() {
     expect(activeMemberBlock, contains('NO UNAMBIGUOUS ACTIVE ROLE'));
   });
 
+  test('each supported role resolves to its intended landing experience', () {
+    expect(resolveInsightFlowLandingRole(['branch_head']), 'branch_head');
+    expect(resolveInsightFlowLandingRole(['manager']), 'manager');
+    expect(resolveInsightFlowLandingRole(['team_lead']), 'team_lead');
+    expect(resolveInsightFlowLandingRole(['employee']), 'employee');
+    expect(
+      resolveInsightFlowLandingRole(['external_viewer']),
+      'external_viewer',
+    );
+    expect(
+      resolveInsightFlowLandingRole(['organization_owner', 'branch_head']),
+      'organization_owner',
+    );
+  });
+
   test('role resolver fails closed for missing, unknown, or conflicting roles', () {
+    expect(resolveInsightFlowLandingRole([]), isNull);
+    expect(resolveInsightFlowLandingRole(['manager', 'employee']), isNull);
+    expect(resolveInsightFlowLandingRole(['superuser']), isNull);
     final source =
         File('lib/core/auth/authenticated_http.dart').readAsStringSync();
     expect(source, contains('String? resolveInsightFlowLandingRole'));
