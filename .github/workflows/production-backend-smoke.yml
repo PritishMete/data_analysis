@@ -1,13 +1,8 @@
 name: InsightFlow Production Backend Smoke
 
 on:
-  push:
-    branches: [feature/data-workspace]
-    paths:
-      - 'main.py'
-      - 'firebase_authz/**'
-      - 'render.yaml'
-      - '.github/workflows/production-backend-smoke.yml'
+  # Render auto-deploy is disabled. Run this only after manually deploying
+  # the selected release-branch commit, so the SHA check validates reality.
   workflow_dispatch:
 
 jobs:
@@ -15,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Require authoritative release branch
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/feature/employee-management-cell" ]]; then
+            echo "::error::Production smoke must be dispatched from feature/employee-management-cell after deployment."
+            exit 1
+          fi
+
       - name: Verify production health
         run: |
           set -euo pipefail
