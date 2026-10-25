@@ -1,0 +1,39 @@
+name: Temporary protected-original authorization regression tests
+
+on:
+  push:
+    branches:
+      - fix/protected-original-upload-grant-20261025
+
+permissions:
+  contents: read
+
+jobs:
+  authorization-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+      - name: Run protected-original authorization regression suite
+        run: |
+          python -m pytest \
+            tests/test_managed_dataset_role_policy.py \
+            tests/test_managed_dataset_authorization.py \
+            tests/test_dataset_upload_scope_authorization.py \
+            tests/test_firebase_authz.py -q
