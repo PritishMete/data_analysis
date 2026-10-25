@@ -101,7 +101,7 @@ def test_manager_cannot_replace_protected_original_without_explicit_grant(monkey
         lambda claims, workspace_id: _context(["manager"]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="dataset.upload_original"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1",
@@ -110,48 +110,25 @@ def test_manager_cannot_replace_protected_original_without_explicit_grant(monkey
         )
 
 
-def test_manager_can_replace_protected_original_with_explicit_grant(monkeypatch):
-    db = _Db(
-        ["manager"],
-        grant=["dataset.upload_original"],
-        manager_locations=["branch-1"],
-    )
+def test_manager_cannot_replace_protected_original_even_with_explicit_grant(monkeypatch):
+    db = _Db(["manager"], grant=["dataset.upload_original"], manager_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
-    monkeypatch.setattr(
-        supabase_provider,
-        "authorization_context",
-        lambda claims, workspace_id: _context(["manager"]),
-    )
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.upload",
+        )
 
-    result = supabase_provider.authorize_dataset(
-        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-        "workspace-1",
-        "dataset-1",
-        "dataset.upload",
-    )
-
-    assert result["authorized"] is True
-    assert result["location_id"] == "branch-1"
-
-
-def test_manager_can_upload_ordinary_dataset_without_replacement_grant(monkeypatch):
+def test_manager_cannot_upload_ordinary_dataset_without_replacement_grant(monkeypatch):
     db = _Db(["manager"], manager_locations=["branch-1"], protected=False)
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
-    monkeypatch.setattr(
-        supabase_provider,
-        "authorization_context",
-        lambda claims, workspace_id: _context(["manager"]),
-    )
-
-    result = supabase_provider.authorize_dataset(
-        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-        "workspace-1",
-        "dataset-ordinary",
-        "dataset.upload",
-    )
-
-    assert result["authorized"] is True
-
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1", "dataset-ordinary", "dataset.upload",
+        )
 
 def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypatch):
     db = _Db(
@@ -167,7 +144,7 @@ def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypa
         lambda claims, workspace_id: _context(["manager"]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="outside your Manager scope"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1",
@@ -176,27 +153,21 @@ def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypa
         )
 
 
-def test_organization_owner_keeps_scoped_upload_authority_without_manager_grant(monkeypatch):
+def test_organization_owner_cannot_write_original_dataset(monkeypatch):
     db = _Db(["organization_owner"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
-        supabase_provider,
-        "authorization_context",
+        supabase_provider, "authorization_context",
         lambda claims, workspace_id: {
             **_context(["organization_owner"]),
             "permissions": ["dataset.upload", "dataset.manage_acl"],
         },
     )
-
-    result = supabase_provider.authorize_dataset(
-        {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
-        "workspace-1",
-        "dataset-1",
-        "dataset.upload",
-    )
-
-    assert result["authorized"] is True
-
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.upload",
+        )
 
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
     db = _Db(["branch_head"], branch_locations=["branch-1"])
@@ -231,7 +202,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only a Manager, Branch Head, or Organization Owner"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",
@@ -324,72 +295,49 @@ def _grantor_context(role="branch_head"):
     }
 
 
-def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monkeypatch):
+def test_branch_head_cannot_delegate_original_write_authority(monkeypatch):
     db = _GrantDb()
     context = _grantor_context()
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
+    with pytest.raises(ValueError, match="Only dataset.create_working_copy"):
+        supabase_provider.set_dataset_grant(
+            {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
+            "workspace-1", "dataset-1", "manager-uid", ["dataset.upload_original"],
+        )
 
-    result = supabase_provider.set_dataset_grant(
-        {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
-        "workspace-1",
-        "dataset-1",
-        "manager-uid",
-        ["dataset.upload_original"],
-    )
-
-    assert result is True
-    target_check = next(params for sql, params in db.calls if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql)
-    assert target_check["location"] == "branch-1"
-
-
-def test_branch_head_cannot_grant_protected_replacement_to_other_branch_manager(monkeypatch):
+def test_branch_head_cannot_delegate_original_write_to_other_branch_manager(monkeypatch):
     db = _GrantDb(target_manager_active=False)
     context = _grantor_context()
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
-
-    with pytest.raises(supabase_provider.AuthzError, match="same branch"):
+    with pytest.raises(ValueError, match="Only dataset.create_working_copy"):
         supabase_provider.set_dataset_grant(
             {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
-            "workspace-1",
-            "dataset-1",
-            "manager-uid",
-            ["dataset.upload_original"],
+            "workspace-1", "dataset-1", "manager-uid", ["dataset.upload_original"],
         )
-
 
 def test_manager_cannot_issue_protected_replacement_grants(monkeypatch):
     db = _GrantDb(target_principal="manager-principal")
     context = _grantor_context("manager")
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
-
-    with pytest.raises(supabase_provider.AuthzError, match="Only a Branch Head or Organization Owner"):
+    with pytest.raises(ValueError, match="Only dataset.create_working_copy"):
         supabase_provider.set_dataset_grant(
             {"uid": "manager-uid", "sub": "manager-uid", "provider": "supabase"},
-            "workspace-1",
-            "dataset-1",
-            "manager-uid",
-            ["dataset.upload_original"],
+            "workspace-1", "dataset-1", "manager-uid", ["dataset.upload_original"],
         )
-
 
 def test_branch_head_cannot_grant_protected_replacement_to_self(monkeypatch):
     db = _GrantDb(target_principal="head-principal")
     context = _grantor_context()
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
-
-    with pytest.raises(supabase_provider.AuthzError, match="another active Manager"):
+    with pytest.raises(ValueError, match="Only dataset.create_working_copy"):
         supabase_provider.set_dataset_grant(
             {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
-            "workspace-1",
-            "dataset-1",
-            "head-uid",
-            ["dataset.upload_original"],
+            "workspace-1", "dataset-1", "head-uid", ["dataset.upload_original"],
         )
-
 
 def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
     db = _GrantDb()

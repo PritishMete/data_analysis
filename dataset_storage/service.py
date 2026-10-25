@@ -78,8 +78,11 @@ def _authorize_upload(
 ) -> dict[str, Any]:
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"branch_head", "manager"}):
-        raise PermissionDenied("Only a Branch Head or Manager can upload datasets.")
+    if "branch_head" not in roles:
+        raise PermissionDenied(
+            "Direct original-dataset imports are Branch Head only. "
+            "Managers must submit changes for Branch Head review."
+        )
     # Member roles alone are historical labels, not current authority. Resolve
     # the active assignment, upload permission, and branch scope server-side.
     return authorize_dataset_upload_scope(

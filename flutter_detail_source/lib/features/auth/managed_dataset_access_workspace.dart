@@ -220,8 +220,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
   // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.
   // Professional roles such as Data Analyst must never receive the import control.
-  bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));
-  bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');
+  bool get canUpload => roles.contains('branch_head');
+  bool get canDelete => roles.contains('branch_head');
   bool get canCopy => !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));

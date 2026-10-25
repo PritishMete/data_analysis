@@ -1869,38 +1869,16 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not resource or resource["resource_type"] != "dataset" or not row:
         raise AuthzError("Dataset is not accessible.")
     grant_permissions = set(grant or [])
-    # Original/master operations are role-scoped. Managers may upload into
-    # their own branch, but replacing a protected original requires a distinct
-    # per-dataset grant. Branch Heads and Organization Owners retain scoped authority.
+    # Official originals are mutable only by the active Branch Head assigned
+    # to their branch. Per-resource grants cannot elevate Managers or Owners.
     if action in {"dataset.upload", "dataset.upload_original"}:
-        if "organization_owner" in actor_roles:
-            if action == "dataset.upload_original":
-                raise AuthzError("This explicit capability is reserved for Manager grants.")
-        elif "branch_head" in actor_roles:
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-            if action == "dataset.upload_original":
-                raise AuthzError("This explicit capability is reserved for Manager grants.")
-        elif "manager" in actor_roles:
-            manager_locations = set(db.execute(text("""SELECT oa.location_id FROM organizational_assignments oa
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
-                      AND oa.role_id='manager' AND oa.status='active'
-                      AND oa.location_id IS NOT NULL AND l.status='active'
-                      AND m.status='active' AND m.workspace_id=:workspace"""),
-                {"org": organization_id, "principal": context["principal_id"],
-                 "workspace": resolved_workspace_id}).scalars().all())
-            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
-                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
-            if action == "dataset.upload_original" and not row["protected_original"]:
-                raise AuthzError("The explicit upload grant applies only to protected original datasets.")
-            if row["protected_original"] and "dataset.upload_original" not in grant_permissions:
-                raise AuthzError("An explicit dataset.upload_original grant is required to replace this protected original.")
-        else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can upload datasets.")
+        if "branch_head" not in actor_roles:
+            raise AuthzError(
+                "Only the active Branch Head assigned to this branch may modify an original dataset; "
+                "Managers must submit changes for Branch Head review."
+            )
+        if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
+            raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
     elif action == "dataset.view_original":
         if "organization_owner" in actor_roles:
             pass
@@ -1926,9 +1904,9 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if "dataset.view_original" not in grant_permissions:
             raise AuthzError("Permission denied for this resource.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles:
-            raise AuthzError("Only a Branch Head or Organization Owner can manage the original dataset.")
-        if "organization_owner" not in actor_roles and (not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}):
+        if "branch_head" not in actor_roles:
+            raise AuthzError("Only the active Branch Head assigned to this branch can modify original-dataset access or delete an original.")
+        if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
             raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
     elif action == "dataset.create_working_copy":
         # Branch Heads and Managers can copy datasets inside their branch scope.
@@ -1966,7 +1944,7 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
     # Dataset copy access and protected-original replacement are explicit,
     # per-dataset grants. Replacement authority is restricted to active Managers
     # assigned to the same branch as the source dataset.
-    allowed = {"dataset.create_working_copy", "dataset.upload_original"}
+    allowed = {"dataset.create_working_copy"}
     if any(p not in allowed for p in permissions):
         raise ValueError("Only dataset.create_working_copy and dataset.upload_original can be delegated.")
     context = authorization_context(claims, workspace_id)
