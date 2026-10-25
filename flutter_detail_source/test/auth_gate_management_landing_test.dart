@@ -60,6 +60,22 @@ void main() {
     expect(render, contains('autoDeployTrigger: off'));
   });
 
+  test('migration workflow watches the configured backend branch without running on config-only edits', () {
+    final workflow =
+        File('../.github/workflows/production-authz-migrations.yml').readAsStringSync();
+    expect(
+      workflow,
+      contains('branches: [feature/data-workspace, feature/employee-management-cell]'),
+    );
+    expect(workflow, contains("'migrations/**'"));
+    expect(workflow, contains("'tools/run_authz_migrations.py'"));
+    expect(workflow, isNot(contains("'render.yaml'")));
+    expect(
+      workflow,
+      isNot(contains("'.github/workflows/production-authz-migrations.yml'")),
+    );
+  });
+
   test('external viewer workspace hides mutation controls', () {
     final source = File(
       'lib/features/auth/managed_dataset_access_workspace.dart',
