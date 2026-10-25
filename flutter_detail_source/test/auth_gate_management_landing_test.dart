@@ -60,20 +60,19 @@ void main() {
     expect(render, contains('autoDeployTrigger: off'));
   });
 
-  test('migration workflow watches the configured backend branch without running on config-only edits', () {
+  test('production migrations require explicit confirmation on the release branch', () {
     final workflow =
         File('../.github/workflows/production-authz-migrations.yml').readAsStringSync();
+    expect(workflow, contains('workflow_dispatch:'));
+    expect(workflow, contains('confirm_production_migration:'));
+    expect(workflow, contains('default: false'));
     expect(
       workflow,
-      contains('branches: [feature/data-workspace, feature/employee-management-cell]'),
+      contains("github.ref == 'refs/heads/feature/employee-management-cell' && inputs.confirm_production_migration == true"),
     );
-    expect(workflow, contains("'migrations/**'"));
-    expect(workflow, contains("'tools/run_authz_migrations.py'"));
-    expect(workflow, isNot(contains("'render.yaml'")));
-    expect(
-      workflow,
-      isNot(contains("'.github/workflows/production-authz-migrations.yml'")),
-    );
+    expect(workflow, contains('environment: production'));
+    expect(workflow, contains('concurrency:'));
+    expect(workflow, isNot(contains('  push:')));
   });
 
   test('external viewer workspace hides mutation controls', () {
