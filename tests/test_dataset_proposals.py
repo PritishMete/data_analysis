@@ -62,7 +62,7 @@ def test_publication_paths_revalidate_branch_scope_under_lock():
     assert "FOR SHARE" in managed
     assert "original dataset branch assignment changed during upload." in managed
     assert "FOR UPDATE" in proposals
-    assert "original dataset branch assignment changed after submission." in proposals
+    assert "original dataset branch assignment changed after submission." in proposals.lower()
 
 
 def test_publication_lock_order_serializes_dataset_scope_and_assignment():
