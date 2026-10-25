@@ -32,7 +32,8 @@ historical merge.
    dataset. Do not grant Managers direct write access to the original dataset.
 5. Keep production database migrations manual. The
    **InsightFlow Production Authz Migrations** workflow is dispatched explicitly
-   from `feature/employee-management-cell`; it is not triggered by every push.
+   from `feature/employee-management-cell`; it is not triggered by every push. The
+   operator must also set `confirm_production_migration` to true for the job to run.
    Configure required reviewers on the GitHub `production` environment before
    using the workflow if approval gates are required by the release policy.
 6. Review the target commit and deployment plan before manually deploying to
