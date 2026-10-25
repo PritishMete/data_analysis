@@ -141,6 +141,7 @@ jobs:
           lib/firebase_options.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
+          lib/core/auth/supabase_auth_service.dart
 
       - name: Check auth UI Dart formatting
         run: >-
@@ -159,8 +160,10 @@ jobs:
           lib/features/auth/managed_dataset_access_workspace.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
+          lib/core/auth/supabase_auth_service.dart
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
+          test/supabase_multi_device_session_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -185,6 +188,7 @@ jobs:
           test/firebase_auth_service_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
+          test/supabase_multi_device_session_test.dart
 
       - name: Build Flutter web
         run: >-
