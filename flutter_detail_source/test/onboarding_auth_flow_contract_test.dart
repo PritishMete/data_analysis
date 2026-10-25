@@ -133,7 +133,7 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     );
   });
 
-  test('completed employees and both management roles route to ManagementShell, never DataScreen', () {
+  test('active members route according to authoritative role, with employee analysis access', () {
     final gate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
     final activeStart = gate.indexOf('case InsightFlowOnboardingState.activeMember:');
     final pendingStart = gate.indexOf(
@@ -144,8 +144,13 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(activeStart, greaterThanOrEqualTo(0));
     expect(pendingStart, greaterThan(activeStart));
     final activeBlock = gate.substring(activeStart, pendingStart);
-    expect(activeBlock, contains('const ManagementShell()'));
-    expect(activeBlock, isNot(contains('DataScreen')));
+    expect(activeBlock, contains('resolveInsightFlowLandingRole'));
+    expect(activeBlock, contains("case 'branch_head':"));
+    expect(activeBlock, contains("case 'manager':"));
+    expect(activeBlock, contains("case 'employee':"));
+    expect(activeBlock, contains('const DataScreen()'));
+    expect(activeBlock, contains("case 'external_viewer':"));
+    expect(activeBlock, contains('ManagedDatasetAccessWorkspace(readOnly: true)'));
 
     final management = File('lib/features/auth/management_shell.dart').readAsStringSync();
     expect(management, contains("contextData['role_ids']"));

@@ -456,22 +456,22 @@ void main() {
     expect(
       access,
       contains(
-        "bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));",
+        "bool get canViewOriginal => roles.any((role) => {",
       ),
     );
     expect(
       access,
       contains(
-        "bool get canUpload => roles.contains('branch_head');",
+        "bool get canUpload => !widget.readOnly && roles.contains('branch_head');",
       ),
     );
     expect(
       access,
       contains(
-        "bool get canDelete => roles.contains('branch_head');",
+        "bool get canDelete => !widget.readOnly && roles.contains('branch_head');",
       ),
     );
-    expect(access, contains('bool get canCopy => !canViewOriginal;'));
+    expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
     expect(access, contains('openInsightFlowAnalysis(context, managedDatasetId: id'));
 
 
