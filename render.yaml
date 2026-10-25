@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: data-analysis-api
+    name: data_analysis
     runtime: python
     branch: feature/employee-management-cell
     autoDeployTrigger: off
