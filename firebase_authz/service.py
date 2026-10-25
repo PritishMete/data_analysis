@@ -976,11 +976,12 @@ def set_dataset_grant(
     delegated_share = _delegated_permission(
         workspace, actor_member_uid, target_member_uid, dataset_id, "dataset.share"
     )
+    replacement_only = manages_replacement and set(permissions).issubset({"dataset.upload_original"})
     if (
         actor_can_manage is False
         and actor_member_uid != dataset.get("owner_uid")
         and not delegated_share
-        and not manages_replacement
+        and not replacement_only
     ):
         raise PermissionDenied("Dataset ACL management is not delegated to this user.")
     initialize_firebase()
