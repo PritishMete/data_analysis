@@ -402,6 +402,11 @@ def test_production_release_branch_and_render_service_are_aligned():
     assert "branches: [feature/employee-management-cell]" in workflow
     assert "feature/data-workspace" not in workflow
     assert '"${GITHUB_REF}" != "refs/heads/feature/employee-management-cell"' in workflow
+    smoke = Path(".github/workflows/production-backend-smoke.yml").read_text(encoding="utf-8")
+    smoke_triggers = smoke.split("jobs:", 1)[0]
+    assert "workflow_dispatch:" in smoke_triggers
+    assert "push:" not in smoke_triggers
+    assert "refs/heads/feature/employee-management-cell" in smoke
 
 
 def test_health_readiness_is_gated_by_successful_database_initialization():
