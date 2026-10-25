@@ -241,6 +241,7 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         "dataset_columns",
         "dataset_rows",
         "dataset_change_proposals",
+        "manager_dataset_upload_grants",
     } <= public_tables
 
     with postgres_engine.connect() as conn:
@@ -284,6 +285,7 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
             "location_id", "candidate_version_pk", "submitted_by_principal_id",
             "base_version_id", "status", "submitted_at", "reviewed_by_principal_id",
             "reviewed_at", "decision_note", "file_hash", "file_size",
+            "dataset_kind", "upload_grant_id",
         } <= proposal_columns
         pending_index = conn.execute(text("""
             SELECT indexdef FROM pg_indexes
@@ -296,6 +298,37 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
             WHERE conname='fk_dataset_change_proposal_branch' AND contype='f'
         """)).scalar_one_or_none()
         assert branch_fk == 1
+
+        grant_security = conn.execute(text("""
+            SELECT c.relrowsecurity,
+                   EXISTS (
+                     SELECT 1 FROM pg_policies p
+                     WHERE p.schemaname='public'
+                       AND p.tablename='manager_dataset_upload_grants'
+                   ) AS has_client_policy
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname='public' AND c.relname='manager_dataset_upload_grants'
+        """)).one()
+        assert grant_security.relrowsecurity is True
+        assert grant_security.has_client_policy is False
+        assert conn.execute(text(
+            "SELECT has_table_privilege('anon', 'public.manager_dataset_upload_grants', 'SELECT')"
+        )).scalar_one() is False
+        assert conn.execute(text(
+            "SELECT has_table_privilege('authenticated', 'public.manager_dataset_upload_grants', 'INSERT')"
+        )).scalar_one() is False
+        assert conn.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM role_permissions
+                WHERE role_id='manager' AND permission_id='dataset.propose'
+            )
+        """)).scalar_one() is False
+        grant_index = conn.execute(text("""
+            SELECT indexdef FROM pg_indexes
+            WHERE schemaname='public' AND indexname='uq_manager_upload_grant_active'
+        """)).scalar_one_or_none()
+        assert grant_index is not None and "revoked_at IS NULL" in grant_index
     with postgres_engine.connect() as conn:
         schemas = {
             row[0] for row in conn.execute(text("""
