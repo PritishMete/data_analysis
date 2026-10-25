@@ -331,7 +331,7 @@ def _run_production_authz_migrations() -> None:
     The runner is idempotent and uses a PostgreSQL advisory lock, so this does
     not create a second migration system or alter migration files.
     """
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
     if provider != "supabase":
         return
     if not os.environ.get("DATABASE_URL", "").strip():
