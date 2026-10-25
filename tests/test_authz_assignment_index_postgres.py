@@ -256,6 +256,8 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         """)).one()
         assert proposal_security.relrowsecurity is True
         assert proposal_security.has_client_policy is False
+        assert conn.execute(text("SELECT has_schema_privilege('anon', 'managed_data', 'USAGE')")).scalar_one() is False
+        assert conn.execute(text("SELECT has_schema_privilege('authenticated', 'managed_data', 'USAGE')")).scalar_one() is False
         proposal_columns = {
             row[0] for row in conn.execute(text("""
                 SELECT column_name FROM information_schema.columns

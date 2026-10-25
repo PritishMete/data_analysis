@@ -45,3 +45,10 @@ ALTER TABLE dataset_change_proposals ENABLE ROW LEVEL SECURITY;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_dataset_change_pending_content
     ON dataset_change_proposals (dataset_id, base_version_id, file_hash)
     WHERE status = 'pending';
+
+-- Keep both staged candidates and all other physical dataset versions outside
+-- the Supabase Data API. The backend database owner remains able to query them.
+REVOKE ALL ON SCHEMA managed_data FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ALL TABLES IN SCHEMA managed_data FROM PUBLIC, anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA managed_data
+    REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
