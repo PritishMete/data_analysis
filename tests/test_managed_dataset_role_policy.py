@@ -80,8 +80,34 @@ def _context(roles):
     }
 
 
-def test_manager_can_upload_within_assigned_branch(monkeypatch):
-    db = _Db(["manager"], manager_locations=["branch-1"])
+@pytest.mark.parametrize(
+    "grant",
+    [None, [], ["dataset.view_original"], ["dataset.upload"]],
+)
+def test_manager_cannot_replace_protected_original_without_explicit_grant(monkeypatch, grant):
+    db = _Db(["manager"], grant=grant, manager_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["manager"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="dataset.upload_original"):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.upload",
+        )
+
+
+def test_manager_can_replace_protected_original_with_explicit_grant(monkeypatch):
+    db = _Db(
+        ["manager"],
+        grant=["dataset.upload_original"],
+        manager_locations=["branch-1"],
+    )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider,
@@ -91,6 +117,29 @@ def test_manager_can_upload_within_assigned_branch(monkeypatch):
 
     result = supabase_provider.authorize_dataset(
         {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+        "workspace-1",
+        "dataset-1",
+        "dataset.upload",
+    )
+
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"
+
+
+def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
+    db = _Db(["branch_head"], branch_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(["branch_head"]),
+            "permissions": ["dataset.upload"],
+        },
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
         "workspace-1",
         "dataset-1",
         "dataset.upload",
