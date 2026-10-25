@@ -1353,29 +1353,44 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             str(profile_row["id_proof_number"] or "").strip(),
         ])
         # member_roles is a role catalogue, not proof of current authority.
-        # Operational roles require a live assignment to an active location and
-        # membership. The organization-wide Owner role is not branch-scoped.
+        # Every role, including Organization Owner, must have a live assignment.
+        # Owner assignments are organization-wide and may have no location;
+        # branch/section roles additionally require their active scope.
         roles = db.execute(text("""SELECT DISTINCT mr.role_id FROM member_roles mr
+            JOIN organization_members current_m
+              ON current_m.organization_id=mr.organization_id
+             AND current_m.principal_id=mr.principal_id
+             AND current_m.status='active'
+             AND current_m.workspace_id=:workspace
             WHERE mr.organization_id=:organization AND mr.principal_id=:principal
-              AND (
-                mr.role_id='organization_owner'
-                OR EXISTS (
-                    SELECT 1
-                    FROM organizational_assignments oa
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id
-                     AND l.location_id=oa.location_id
-                    JOIN organization_members active_m
-                      ON active_m.organization_id=oa.organization_id
-                     AND active_m.principal_id=oa.principal_id
-                    WHERE oa.organization_id=mr.organization_id
-                      AND oa.principal_id=mr.principal_id
-                      AND oa.role_id=mr.role_id
-                      AND oa.status='active'
-                      AND l.status='active'
-                      AND active_m.status='active'
-                      AND active_m.workspace_id=:workspace
-                )
+              AND EXISTS (
+                SELECT 1
+                FROM organizational_assignments oa
+                WHERE oa.organization_id=mr.organization_id
+                  AND oa.principal_id=mr.principal_id
+                  AND oa.role_id=mr.role_id
+                  AND oa.status='active'
+                  AND (
+                    mr.role_id='organization_owner'
+                    OR (
+                      oa.location_id IS NOT NULL
+                      AND EXISTS (
+                        SELECT 1 FROM locations l
+                        WHERE l.organization_id=oa.organization_id
+                          AND l.location_id=oa.location_id
+                          AND l.status='active'
+                      )
+                      AND (
+                        oa.section_id IS NULL
+                        OR EXISTS (
+                          SELECT 1 FROM sections s
+                          WHERE s.organization_id=oa.organization_id
+                            AND s.section_id=oa.section_id
+                            AND s.status='active'
+                        )
+                      )
+                    )
+                  )
               )
             ORDER BY mr.role_id"""),
                            {"organization": selected["organization_id"],
