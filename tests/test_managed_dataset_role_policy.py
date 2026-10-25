@@ -386,3 +386,22 @@ def test_branch_head_cannot_grant_protected_replacement_to_self(monkeypatch):
             "head-uid",
             ["dataset.upload_original"],
         )
+
+
+def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
+    db = _GrantDb()
+    context = _grantor_context()
+    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
+
+    result = supabase_provider.set_dataset_grant(
+        {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
+        "workspace-1",
+        "dataset-1",
+        "manager-uid",
+        [],
+    )
+
+    assert result is True
+    grant_write = next(params for sql, params in db.calls if "INSERT INTO resource_grants" in sql)
+    assert grant_write["permissions"] == "[]"
