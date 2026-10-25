@@ -10,7 +10,10 @@ import '../../core/auth/supabase_auth_service.dart';
 import 'management_navigation.dart';
 
 class ManagedDatasetAccessWorkspace extends StatefulWidget {
-  const ManagedDatasetAccessWorkspace({super.key});
+  const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false});
+
+  /// External viewers can inspect explicitly authorized resources only.
+  final bool readOnly;
   @override
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
 }
@@ -272,12 +275,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canViewOriginal => roles.any((role) => {'organization_owner', 'branch_head', 'manager'}.contains(role));
+  bool get canViewOriginal => roles.any((role) => {
+    'organization_owner', 'branch_head', 'manager', 'external_viewer'
+  }.contains(role));
   // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.
   // Professional roles such as Data Analyst must never receive the import control.
-  bool get canUpload => roles.contains('branch_head');
-  bool get canDelete => roles.contains('branch_head');
-  bool get canCopy => !canViewOriginal;
+  bool get canUpload => !widget.readOnly && roles.contains('branch_head');
+  bool get canDelete => !widget.readOnly && roles.contains('branch_head');
+  bool get canCopy => !widget.readOnly && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -340,7 +345,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
         ]),
       ])),
-      if (roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
+      if (!widget.readOnly &&
+          roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
         const SizedBox(height: 12),
         _proposalPanel(),
       ],
@@ -376,10 +382,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
         if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
-          _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+          if (!widget.readOnly)
+            _action('START WORKING', Icons.edit_note, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (roles.contains('manager')) _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
+          if (!widget.readOnly && roles.contains('manager')) _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
       ])),
@@ -405,7 +412,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      const SizedBox(height: 12), _accessPanel(), const SizedBox(height: 12),
+      if (!widget.readOnly) ...[
+        const SizedBox(height: 12),
+        _accessPanel(),
+        const SizedBox(height: 12),
+      ],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
         _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
         _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),

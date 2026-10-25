@@ -124,6 +124,30 @@ class _AuthoritativeAuthorizationFailure implements Exception {}
 
 class _TransientAuthorizationFailure implements Exception {}
 
+/// Resolve a landing destination only from backend active-role information.
+/// Conflicting operational roles fail closed; Owner may also retain the
+/// Branch Head role created during organization registration.
+String? resolveInsightFlowLandingRole(Iterable<String> roleIds) {
+  const supported = <String>{
+    'organization_owner', 'branch_head', 'manager', 'team_lead',
+    'employee', 'external_viewer',
+  };
+  final roles = roleIds
+      .map((role) => role.trim().toLowerCase())
+      .where((role) => role.isNotEmpty)
+      .toSet();
+  if (roles.isEmpty || roles.any((role) => !supported.contains(role))) {
+    return null;
+  }
+  if (roles.contains('organization_owner')) {
+    return roles.difference({'organization_owner', 'branch_head'}).isEmpty
+        ? 'organization_owner'
+        : null;
+  }
+  if (roles.length != 1) return null;
+  return roles.single;
+}
+
 List<String> _roleIdsFromAuthorization(Map<String, dynamic> decoded) {
   final raw = decoded['role_ids'];
   if (raw is! List) return const <String>[];

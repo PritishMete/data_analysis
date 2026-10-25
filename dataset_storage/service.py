@@ -184,7 +184,9 @@ def list_authorized_datasets(
             roles = set(context.get("role_ids", []))
             action = (
                 "dataset.view_original"
-                if roles.intersection({"branch_head", "manager"})
+                if roles.intersection(
+                    {"organization_owner", "branch_head", "manager", "external_viewer"}
+                )
                 else "dataset.create_working_copy"
             )
             try:

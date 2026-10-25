@@ -1352,9 +1352,35 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             str(profile_row["id_proof_type"] or "").strip(),
             str(profile_row["id_proof_number"] or "").strip(),
         ])
-        roles = db.execute(text("""SELECT mr.role_id FROM member_roles mr
-            WHERE mr.organization_id=:organization AND mr.principal_id=:principal"""),
-                           {"organization": selected["organization_id"], "principal": selected["principal_id"]}).scalars().all()
+        # member_roles is a role catalogue, not proof of current authority.
+        # Operational roles require a live assignment to an active location and
+        # membership. The organization-wide Owner role is not branch-scoped.
+        roles = db.execute(text("""SELECT DISTINCT mr.role_id FROM member_roles mr
+            WHERE mr.organization_id=:organization AND mr.principal_id=:principal
+              AND (
+                mr.role_id='organization_owner'
+                OR EXISTS (
+                    SELECT 1
+                    FROM organizational_assignments oa
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id
+                    JOIN organization_members active_m
+                      ON active_m.organization_id=oa.organization_id
+                     AND active_m.principal_id=oa.principal_id
+                    WHERE oa.organization_id=mr.organization_id
+                      AND oa.principal_id=mr.principal_id
+                      AND oa.role_id=mr.role_id
+                      AND oa.status='active'
+                      AND l.status='active'
+                      AND active_m.status='active'
+                      AND active_m.workspace_id=:workspace
+                )
+              )
+            ORDER BY mr.role_id"""),
+                           {"organization": selected["organization_id"],
+                            "principal": selected["principal_id"],
+                            "workspace": selected["workspace_id"]}).scalars().all()
         permissions = db.execute(text("""SELECT DISTINCT rp.permission_id FROM role_permissions rp
             WHERE rp.role_id = ANY(:roles)"""), {"roles": list(roles)}).scalars().all() if roles else []
 

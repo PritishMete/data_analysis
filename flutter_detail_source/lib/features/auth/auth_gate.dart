@@ -8,6 +8,8 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'management_shell.dart';
+import 'managed_dataset_access_workspace.dart';
+import '../dashboard/data_screen.dart';
 import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
@@ -229,6 +231,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
       InsightFlowOnboardingState.initializing;
   List<Map<String, dynamic>> _pendingInvitations = const [];
   String? _authoritativeWorkspaceId;
+  List<String> _authoritativeRoleIds = const [];
 
   @override
   void initState() {
@@ -322,6 +325,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         _onboardingState = resolved.state;
         _pendingInvitations = resolved.pendingInvitations;
         _authoritativeWorkspaceId = resolved.workspaceId;
+        _authoritativeRoleIds = List<String>.unmodifiable(resolved.roleIds);
       });
     } on AuthException catch (error) {
       final message = error.message.toLowerCase();
@@ -402,10 +406,50 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         );
         break;
       case InsightFlowOnboardingState.activeMember:
-        // Every authenticated employee enters the same authoritative
-        // Management Cell. The server-derived role/scope controls what the
-        // ManagementShell can show and what management APIs permit.
-        authenticatedChild = const ManagementShell();
+        // The backend /v1/authz/me response supplies role IDs. Never infer a
+        // role from a display name or cached preference.
+        final landingRole =
+            resolveInsightFlowLandingRole(_authoritativeRoleIds);
+        if (landingRole == null) {
+          authenticatedChild = AuthGlassScaffold(
+            title: 'AUTH / ROLE VERIFICATION',
+            subtitle: 'NO UNAMBIGUOUS ACTIVE ROLE',
+            children: [
+              const AuthGlassMessage(
+                text:
+                    'InsightFlow could not verify one authorized role for this active membership. Access is blocked until the organization administrator resolves the assignment.',
+                error: true,
+              ),
+              const SizedBox(height: 12),
+              GlassButton.custom(
+                onTap: _refresh,
+                width: double.infinity,
+                height: 44,
+                shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+                label: 'RETRY AUTHORIZATION',
+                child: const Text('RETRY AUTHORIZATION'),
+              ),
+            ],
+          );
+        } else {
+          switch (landingRole) {
+            case 'organization_owner':
+            case 'branch_head':
+            case 'manager':
+            case 'team_lead':
+              authenticatedChild = const ManagementShell();
+              break;
+            case 'employee':
+              authenticatedChild = const DataScreen();
+              break;
+            case 'external_viewer':
+              authenticatedChild =
+                  const ManagedDatasetAccessWorkspace(readOnly: true);
+              break;
+            default:
+              authenticatedChild = const _AuthError();
+          }
+        }
         break;
       case InsightFlowOnboardingState.pendingInvitation:
         final passwordInvitation = _pendingInvitations.firstWhere(
