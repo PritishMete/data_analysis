@@ -54,6 +54,12 @@ void main() {
     expect(source, contains('if (roles.length != 1) return null;'));
   });
 
+  test('Render blueprint follows the manually deployed backend branch', () {
+    final render = File('../render.yaml').readAsStringSync();
+    expect(render, contains('branch: feature/employee-management-cell'));
+    expect(render, contains('autoDeployTrigger: off'));
+  });
+
   test('external viewer workspace hides mutation controls', () {
     final source = File(
       'lib/features/auth/managed_dataset_access_workspace.dart',
