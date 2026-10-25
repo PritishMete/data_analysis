@@ -184,6 +184,39 @@ def test_branch_head_requires_current_assignment_and_upload_permission(monkeypat
 
 
 @pytest.mark.parametrize("dataset_id", [None, "existing-dataset"])
+def test_protected_original_upload_uses_upload_capability_before_registry(monkeypatch):
+    context = _context("manager")
+    seen = []
+
+    def deny_protected_replacement(claims, workspace_id, target_id, action):
+        seen.append(action)
+        raise supabase_provider.AuthzError(
+            "An explicit dataset.upload_original grant is required to replace this protected original."
+        )
+
+    monkeypatch.setattr(dataset_service, "_claims", lambda token: _claims())
+    monkeypatch.setattr(dataset_service, "_authorize_dataset", deny_protected_replacement)
+
+    def fail_if_registry_created(*args, **kwargs):
+        raise AssertionError("Dataset registry must not be initialized for a denied upload.")
+
+    monkeypatch.setattr(dataset_service, "DatasetRepository", fail_if_registry_created)
+    stream = io.BytesIO(b"id,value\\n1,private\\n")
+
+    with pytest.raises(supabase_provider.AuthzError, match="dataset.upload_original"):
+        dataset_service.upload_managed_dataset_stream(
+            workspace_id="workspace-1",
+            token="unused-by-test",
+            filename="data.csv",
+            stream=stream,
+            content_type="text/csv",
+            dataset_id="protected-dataset",
+        )
+
+    assert seen == ["dataset.upload"]
+    assert stream.tell() == 0
+
+
 def test_denied_upload_never_reads_stream_or_initializes_registry(monkeypatch, dataset_id):
     context = _context("manager")
     monkeypatch.setattr(dataset_service, "_claims", lambda token: _claims())
