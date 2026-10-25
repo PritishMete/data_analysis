@@ -472,6 +472,8 @@ void main() {
       ),
     );
     expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
+    expect(access, contains("'external_viewer'"));
+    expect(access, contains('if (!widget.readOnly) ...['));
     expect(access, contains('openInsightFlowAnalysis(context, managedDatasetId: id'));
 
 
