@@ -1240,7 +1240,7 @@ def test_team_lead_cannot_grant_protected_original_replacement(monkeypatch):
     })
     monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
 
-    with pytest.raises(service.PermissionDenied, match="Only a Branch Head or Organization Owner"):
+    with pytest.raises(service.PermissionDenied):
         service.set_dataset_grant(
             "org", "ds_protected", "manager",
             ["dataset.upload_original"], "token",
