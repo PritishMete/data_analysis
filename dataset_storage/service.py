@@ -579,7 +579,7 @@ def upload_managed_dataset_stream(
         # Existing datasets supply the target branch only after resolving its
         # server-side authorization record; never infer scope from request data.
         dataset_scope = _authorize_dataset(
-            claims, workspace_id, dataset_id, "dataset.view_original"
+            claims, workspace_id, dataset_id, "dataset.upload"
         )
         context = _authorize_upload(
             claims,
