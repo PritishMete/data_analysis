@@ -28,7 +28,7 @@ def test_manager_replacement_deactivates_assignment_and_sensitive_proposal_paths
     # A stale manager role cannot substitute for an active assignment at
     # submission time; Branch Head decisions revalidate their exact branch.
     assert 'role_id="manager"' in proposals
-    assert "require_proposal_permission=True" in proposals
+    assert "_active_manager_grant(" in proposals and "manager_dataset_upload_grants" in proposals
     assert 'role_id="branch_head"' in proposals
     assert "provider_subject=provider_subject" in proposals
     assert "A Branch Head cannot review their own proposal." in proposals
