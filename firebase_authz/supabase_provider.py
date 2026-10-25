@@ -1970,6 +1970,8 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if any(p not in allowed for p in permissions):
         raise ValueError("Only dataset.create_working_copy and dataset.upload_original can be delegated.")
     context = authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        raise AuthzError("Workspace authorization denied.")
     if "organization_owner" not in set(context.get("role_ids", [])) and "branch_head" not in set(context.get("role_ids", [])):
         raise AuthzError("Only a Branch Head or Organization Owner can authorize dataset copies.")
     organization_id = str(context["organization_id"])
