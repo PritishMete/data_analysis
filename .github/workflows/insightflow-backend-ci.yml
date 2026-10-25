@@ -2,7 +2,7 @@ name: InsightFlow Backend CI
 
 on:
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell]
+    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/protected-original-upload-grant-20261025]
   pull_request:
     branches: [main]
   workflow_dispatch:
