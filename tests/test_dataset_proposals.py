@@ -25,11 +25,15 @@ def test_proposal_approval_uses_transactional_finalization_and_base_guard():
     assert "A Branch Head cannot review their own proposal." in source
 
 
-def test_manager_submission_requires_current_branch_assignment_and_permission():
+def test_manager_submission_requires_persistent_branch_scoped_grant_not_role_permission():
     source = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
+    migration = Path("migrations/0035_branch_scoped_manager_upload_grants.sql").read_text(encoding="utf-8")
     assert 'role_id="manager"' in source
-    assert "require_proposal_permission=True" in source
-    assert '"dataset.propose" not in set(context.get("permissions", []))' in source
+    assert "_active_manager_grant(" in source
+    assert "manager_dataset_upload_grants" in source
+    assert "DELETE FROM role_permissions" in migration
+    assert "uq_manager_upload_grant_active" in migration
+    assert "revoked_at IS NULL" in migration
 
 
 def test_legacy_ingestion_cannot_publish_without_branch_head_authorization():
@@ -119,6 +123,8 @@ class _ProposalSession:
         params = params or {}
         if "SELECT * FROM dataset_change_proposals" in sql:
             return _Result(row=self.proposal)
+        if "FROM manager_dataset_upload_grants g" in sql:
+            return _Result(scalar="grant-1")
         if "SELECT location_id, status, protected_original" in sql:
             return _Result(row={"location_id": "branch-1", "status": "active", "protected_original": True})
         if "SELECT oa.assignment_id" in sql:
@@ -199,7 +205,8 @@ def _proposal_row():
         "workspace_id": "workspace-1", "dataset_id": "dataset-1",
         "location_id": "branch-1", "candidate_version_pk": "candidate-pk",
         "candidate_version_id": "p-candidate", "submitted_by_principal_id": "manager-1",
-        "base_version_id": "v1", "status": "pending", "original_filename": "proposed.csv",
+        "base_version_id": "v1", "dataset_kind": "existing", "upload_grant_id": "grant-1",
+        "status": "pending", "original_filename": "proposed.csv",
         "file_size": 30, "file_hash": "a" * 64, "decision_note": None,
     }
 
