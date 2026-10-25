@@ -1296,3 +1296,33 @@ def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monk
         "org", "ds_protected", "manager", ["dataset.upload_original"], "token"
     )
     assert captured["value"]["permissions"] == ["dataset.upload_original"]
+
+
+def test_firebase_dataset_upload_action_uses_replacement_grant_for_protected_original(monkeypatch):
+    workspace = {
+        "members": {
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {"manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {
+                    "manager": {"permissions": ["dataset.upload_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+
+    result = service.authorize_dataset("manager", "org", "ds_protected", "dataset.upload")
+
+    assert result["allowed"] is True
+    assert result["protected_original"] is True
