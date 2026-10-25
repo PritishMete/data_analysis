@@ -84,13 +84,28 @@ def create_manager_upload_grant(
         if existing:
             return {"grant_id": str(existing), "status": "active",
                     "manager_principal_id": manager, "location_id": location}
-        db.execute(text("""
+        inserted = db.execute(text("""
             INSERT INTO manager_dataset_upload_grants
               (grant_id, organization_id, workspace_id, manager_principal_id,
                location_id, granted_by_principal_id)
             VALUES (:grant, :org, :workspace, :manager, :location, :actor)
+            ON CONFLICT (organization_id, workspace_id, location_id, manager_principal_id)
+                WHERE revoked_at IS NULL
+            DO NOTHING
+            RETURNING grant_id
         """), {"grant": grant_id, "org": org, "workspace": workspace,
-                "manager": manager, "location": location, "actor": actor})
+                "manager": manager, "location": location, "actor": actor}).scalar_one_or_none()
+        if inserted is None:
+            existing = db.execute(text("""
+                SELECT grant_id FROM manager_dataset_upload_grants
+                WHERE organization_id=:org AND workspace_id=:workspace
+                  AND manager_principal_id=:manager AND location_id=:location
+                  AND revoked_at IS NULL
+                FOR SHARE
+            """), {"org": org, "workspace": workspace, "manager": manager,
+                    "location": location}).scalar_one()
+            return {"grant_id": str(existing), "status": "active",
+                    "manager_principal_id": manager, "location_id": location}
         db.execute(text("""
             INSERT INTO audit_events
               (event_id, organization_id, actor_principal_id, action, outcome, metadata)
