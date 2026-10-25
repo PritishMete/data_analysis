@@ -258,6 +258,21 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         assert proposal_security.has_client_policy is False
         assert conn.execute(text("SELECT has_schema_privilege('anon', 'managed_data', 'USAGE')")).scalar_one() is False
         assert conn.execute(text("SELECT has_schema_privilege('authenticated', 'managed_data', 'USAGE')")).scalar_one() is False
+        ready_policies = {
+            row[0]: row[1]
+            for row in conn.execute(text("""
+                SELECT tablename, qual FROM pg_policies
+                WHERE schemaname='public'
+                  AND tablename IN ('dataset_versions', 'dataset_columns', 'dataset_rows')
+                  AND policyname IN (
+                    'managed_dataset_versions_select',
+                    'managed_dataset_columns_select',
+                    'managed_dataset_rows_select'
+                  )
+            """))
+        }
+        assert set(ready_policies) == {'dataset_versions', 'dataset_columns', 'dataset_rows'}
+        assert all(qual and 'ready' in qual.lower() for qual in ready_policies.values())
         proposal_columns = {
             row[0] for row in conn.execute(text("""
                 SELECT column_name FROM information_schema.columns

@@ -52,3 +52,67 @@ REVOKE ALL ON SCHEMA managed_data FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL TABLES IN SCHEMA managed_data FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA managed_data
     REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
+
+-- A resource grant for the original dataset must not expose pending proposal
+-- versions or their schema through the Supabase Data API.
+DROP POLICY IF EXISTS managed_dataset_versions_select ON dataset_versions;
+CREATE POLICY managed_dataset_versions_select ON dataset_versions
+FOR SELECT TO authenticated
+USING (
+    status = 'ready'
+    AND EXISTS (
+        SELECT 1
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_versions.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+DROP POLICY IF EXISTS managed_dataset_columns_select ON dataset_columns;
+CREATE POLICY managed_dataset_columns_select ON dataset_columns
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_versions v
+        WHERE v.version_pk = dataset_columns.version_pk
+          AND v.dataset_id = dataset_columns.dataset_id
+          AND v.status = 'ready'
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_columns.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+DROP POLICY IF EXISTS managed_dataset_rows_select ON dataset_rows;
+CREATE POLICY managed_dataset_rows_select ON dataset_rows
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_versions v
+        JOIN public.dataset_authorization da
+          ON da.dataset_id = v.dataset_id
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE v.version_pk = dataset_rows.version_pk
+          AND v.status = 'ready'
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
