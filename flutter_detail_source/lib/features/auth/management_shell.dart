@@ -2359,6 +2359,12 @@ class _ManagementShellState extends State<ManagementShell> {
   };
 
   Widget body() {
+    // Navigation visibility is not an authorization boundary. Re-check the
+    // server-provided policy at render time so stale/deep-linked section state
+    // can never render a section that the current role is not allowed to use.
+    if (!_sectionAllowed(section)) {
+      return overviewView();
+    }
     switch (section) {
       case ManagementSection.overview: return overviewView();
       case ManagementSection.organization: return organizationView();
@@ -3381,6 +3387,11 @@ class _ManagementShellState extends State<ManagementShell> {
           child: TextField(
             textInputAction: TextInputAction.search,
             onSubmitted: (value) {
+              // Search must not bypass the role-aware navigation policy.
+              if (!_sectionAllowed(ManagementSection.people)) {
+                feedback('Your role does not have access to People.');
+                return;
+              }
               setState(() {
                 search = value.trim();
                 section = ManagementSection.people;
