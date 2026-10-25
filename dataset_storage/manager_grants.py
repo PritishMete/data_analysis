@@ -170,3 +170,57 @@ def revoke_manager_upload_grant(
         """), {"grant": grant_id})
     return {"grant_id": grant_id, "status": "revoked",
             "location_id": str(grant["location_id"])}
+
+
+
+def list_manager_upload_grants(
+    *, workspace_id: str, token: str, location_id: str | None = None
+) -> list[dict[str, Any]]:
+    context, provider, subject = _branch_head_context(token, workspace_id)
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    actor = str(context["principal_id"])
+    location = str(location_id or "").strip()
+    if not location:
+        raise ValueError("location_id is required to list branch-scoped grants.")
+    with SessionLocal.begin() as db:
+        active = db.execute(text("""
+            SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN organization_members m ON m.organization_id=oa.organization_id
+              AND m.principal_id=oa.principal_id
+            JOIN member_roles mr ON mr.organization_id=oa.organization_id
+              AND mr.principal_id=oa.principal_id AND mr.role_id='branch_head'
+            JOIN identity_bindings ib ON ib.principal_id=m.principal_id
+              AND ib.status='active' AND ib.provider=:provider
+              AND ib.provider_subject=:subject
+            JOIN locations l ON l.organization_id=oa.organization_id
+              AND l.location_id=oa.location_id AND l.status='active'
+            WHERE oa.organization_id=:org AND m.workspace_id=:workspace
+              AND oa.principal_id=:actor AND oa.location_id=:location
+              AND oa.role_id='branch_head' AND oa.status='active' AND m.status='active'
+            LIMIT 1 FOR SHARE OF oa, m, mr, ib, l
+        """), {"org": org, "workspace": workspace, "actor": actor,
+                "location": location, "provider": provider, "subject": subject}).scalar_one_or_none()
+        if active is None:
+            raise PermissionDenied("An active Branch Head assignment to this branch is required.")
+        rows = db.execute(text("""
+            SELECT g.grant_id, g.manager_principal_id, g.location_id,
+                   g.granted_by_principal_id, g.granted_at, g.revoked_by_principal_id,
+                   g.revoked_at, g.revoke_reason
+            FROM manager_dataset_upload_grants g
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.location_id=:location
+            ORDER BY g.granted_at DESC, g.grant_id
+        """), {"org": org, "workspace": workspace, "location": location}).mappings().all()
+        return [{
+            "grant_id": str(row["grant_id"]),
+            "manager_principal_id": str(row["manager_principal_id"]),
+            "location_id": str(row["location_id"]),
+            "granted_by_principal_id": str(row["granted_by_principal_id"]),
+            "granted_at": row["granted_at"].isoformat() if row["granted_at"] else None,
+            "revoked_by_principal_id": row["revoked_by_principal_id"],
+            "revoked_at": row["revoked_at"].isoformat() if row["revoked_at"] else None,
+            "revoke_reason": row["revoke_reason"],
+            "status": "revoked" if row["revoked_at"] else "active",
+        } for row in rows]
