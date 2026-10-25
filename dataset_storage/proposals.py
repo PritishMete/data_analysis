@@ -94,103 +94,184 @@ def _proposal_dict(row) -> dict[str, Any]:
     }
 
 
-def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
+def _active_manager_grant(db, *, organization_id: str, workspace_id: str,
+                          principal_id: str, location_id: str,
+                          provider: str, provider_subject: str,
+                          lock: bool = False) -> str:
+    lock_clause = " FOR SHARE OF g, oa, m, mr, l" if lock else ""
+    grant = db.execute(text(f"""
+        SELECT g.grant_id
+        FROM manager_dataset_upload_grants g
+        JOIN organizational_assignments oa
+          ON oa.organization_id=g.organization_id
+         AND oa.principal_id=g.manager_principal_id
+         AND oa.location_id=g.location_id AND oa.role_id='manager'
+         AND oa.status='active'
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+         AND m.workspace_id=g.workspace_id AND m.status='active'
+        JOIN member_roles mr
+          ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+         AND mr.role_id='manager'
+        JOIN identity_bindings ib
+          ON ib.principal_id=m.principal_id AND ib.status='active'
+         AND ib.provider=:provider AND ib.provider_subject=:subject
+        JOIN locations l
+          ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+         AND l.status='active'
+        WHERE g.organization_id=:org AND g.workspace_id=:workspace
+          AND g.manager_principal_id=:principal AND g.location_id=:location
+          AND g.revoked_at IS NULL
+        LIMIT 1{lock_clause}
+    """), {"org": organization_id, "workspace": workspace_id,
+            "principal": principal_id, "location": location_id,
+            "provider": provider, "subject": provider_subject}).scalar_one_or_none()
+    if grant is None:
+        raise PermissionDenied("An active, branch-specific Manager upload grant is required.")
+    return str(grant)
+
+
+def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | None,
                             filename: str, stream: BinaryIO,
-                            content_type: str | None) -> dict[str, Any]:
+                            content_type: str | None,
+                            location_id: str | None = None) -> dict[str, Any]:
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if "manager" not in roles or "dataset.propose" not in set(context.get("permissions", [])):
-        raise PermissionDenied("Only a Manager with explicit proposal-submit permission may submit changes.")
-    scope = authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
-    if not scope.get("protected_original") or not scope.get("location_id"):
-        raise AuthzError("Only an existing branch-scoped original dataset can receive a proposal.")
-    location_id = str(scope["location_id"])
+    if "manager" not in roles:
+        raise PermissionDenied("Only a Manager may submit a dataset for Branch Head review.")
     organization_id = str(context["organization_id"])
     principal_id = str(context["principal_id"])
     workspace_id = str(context["workspace_id"])
     provider, provider_subject = _identity(claims)
     safe_name = _safe_filename(filename)
 
+    # Existing originals derive branch scope exclusively from the authoritative
+    # dataset ACL. First-publication submissions require an explicit branch ID.
+    if dataset_id:
+        scope = authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+        if not scope.get("protected_original") or not scope.get("location_id"):
+            raise AuthzError("Only a branch-scoped original dataset can receive a proposal.")
+        location_id = str(scope["location_id"])
+    else:
+        location_id = str(location_id or "").strip()
+        if not location_id:
+            raise ValueError("location_id is required for a new-dataset proposal.")
+
     repo = DatasetRepository(SessionLocal())
     registration = None
     proposal_id = "dsp_" + uuid.uuid4().hex
     candidate_version_id = "p" + uuid.uuid4().hex
+    is_new = dataset_id is None
+    base_version_id: str | None = None
     try:
-        dataset = repo.get_by_id(dataset_id)
-        if dataset is None or dataset.organization_id != organization_id or dataset.status != "ready" or not dataset.current_version_id:
-            raise FileNotFoundError("Published original dataset not found.")
-        base_version_id = str(dataset.current_version_id)
+        # Fail before consuming/persisting a candidate unless the exact branch
+        # grant and active Manager assignment both exist.
+        grant_id = _active_manager_grant(
+            repo.db, organization_id=organization_id, workspace_id=workspace_id,
+            principal_id=principal_id, location_id=location_id,
+            provider=provider, provider_subject=provider_subject,
+        )
+        if not is_new:
+            dataset = repo.get_by_id(str(dataset_id))
+            if (dataset is None or dataset.organization_id != organization_id
+                    or dataset.status != "ready" or not dataset.current_version_id):
+                raise FileNotFoundError("Published original dataset not found.")
+            base_version_id = str(dataset.current_version_id)
+
         registration = DatasetRegistryService(repo).register_csv_stream(
-            file_obj=stream,
-            filename=safe_name,
-            organization_id=organization_id,
-            dataset_name=dataset.dataset_name,
-            uploaded_by=principal_id,
-            existing_dataset_id=dataset_id,
-            content_type=content_type or "text/csv",
-            max_bytes=MAX_DATASET_BYTES,
+            file_obj=stream, filename=safe_name, organization_id=organization_id,
+            dataset_name=safe_name, uploaded_by=principal_id,
+            existing_dataset_id=None if is_new else str(dataset_id),
+            content_type=content_type or "text/csv", max_bytes=MAX_DATASET_BYTES,
             candidate_version_id=candidate_version_id,
         )
         if registration.registration.was_duplicate:
             raise ValueError("A proposal must contain a distinct candidate file.")
-        candidate = registration.version
+
+        dataset = registration.registration.dataset
         with repo.db.begin():
             locked = repo.db.execute(
-                select(Dataset).where(Dataset.dataset_id == dataset_id).with_for_update()
+                select(Dataset).where(Dataset.dataset_id == dataset.dataset_id).with_for_update()
             ).scalar_one_or_none()
             if locked is None or locked.organization_id != organization_id:
-                raise FileNotFoundError("Published original dataset not found.")
-            if locked.status != "ready" or locked.current_version_id != base_version_id:
-                raise AuthzError("The official dataset changed while this proposal was being submitted.")
-            current_scope = repo.db.execute(text("""
-                SELECT location_id, status, protected_original
-                FROM dataset_authorization
-                WHERE organization_id=:org AND dataset_id=:dataset
-                FOR UPDATE
-            """), {"org": organization_id, "dataset": dataset_id}).mappings().first()
-            if (
-                current_scope is None
-                or current_scope["status"] != "active"
-                or not current_scope["protected_original"]
-                or str(current_scope["location_id"] or "") != location_id
-            ):
-                raise AuthzError("The original dataset branch assignment changed during submission.")
+                raise FileNotFoundError("Candidate dataset not found.")
+            if is_new:
+                if locked.status != "processing" or locked.current_version_id is not None:
+                    raise AuthzError("New dataset candidate is not isolated for first publication.")
+                # A staged dataset must have no authorization resource until approved.
+                existing_acl = repo.db.execute(text("""
+                    SELECT 1 FROM dataset_authorization
+                    WHERE organization_id=:org AND dataset_id=:dataset
+                    FOR UPDATE
+                """), {"org": organization_id, "dataset": locked.dataset_id}).scalar_one_or_none()
+                if existing_acl is not None:
+                    raise AuthzError("An unpublished candidate cannot already have an authorization record.")
+            else:
+                if locked.status != "ready" or locked.current_version_id != base_version_id:
+                    raise AuthzError("The official dataset changed while this proposal was being submitted.")
+                current_scope = repo.db.execute(text("""
+                    SELECT location_id, status, protected_original
+                    FROM dataset_authorization
+                    WHERE organization_id=:org AND dataset_id=:dataset
+                    FOR UPDATE
+                """), {"org": organization_id, "dataset": locked.dataset_id}).mappings().first()
+                if (current_scope is None or current_scope["status"] != "active"
+                        or not current_scope["protected_original"]
+                        or str(current_scope["location_id"] or "") != location_id):
+                    raise AuthzError("The original dataset branch assignment changed during submission.")
+
             _revalidate_assignment(
                 repo.db, organization_id=organization_id, workspace_id=workspace_id,
                 principal_id=principal_id, location_id=location_id, role_id="manager",
                 provider=provider, provider_subject=provider_subject,
-                require_proposal_permission=True,
+            )
+            # Recheck and lock the persistent grant in the same transaction that
+            # records the proposal; revocation cannot race through this boundary.
+            grant_id = _active_manager_grant(
+                repo.db, organization_id=organization_id, workspace_id=workspace_id,
+                principal_id=principal_id, location_id=location_id,
+                provider=provider, provider_subject=provider_subject, lock=True,
             )
             repo.db.execute(text("""
                 INSERT INTO dataset_change_proposals
                     (proposal_id, organization_id, workspace_id, dataset_id, location_id,
                      candidate_version_pk, candidate_version_id, submitted_by_principal_id,
-                     base_version_id, status, original_filename, file_size, file_hash)
+                     base_version_id, dataset_kind, upload_grant_id, status,
+                     original_filename, file_size, file_hash)
                 VALUES (:proposal, :org, :workspace, :dataset, :location,
-                        :candidate_pk, :candidate_id, :submitter, :base, 'pending',
-                        :filename, :size, :hash)
+                        :candidate_pk, :candidate_id, :submitter, :base, :kind, :grant,
+                        'pending', :filename, :size, :hash)
             """), {
                 "proposal": proposal_id, "org": organization_id, "workspace": workspace_id,
-                "dataset": dataset_id, "location": location_id,
-                "candidate_pk": candidate.version_pk, "candidate_id": candidate.version_id,
-                "submitter": principal_id, "base": base_version_id,
-                "filename": safe_name, "size": candidate.file_size, "hash": candidate.file_hash,
+                "dataset": locked.dataset_id, "location": location_id,
+                "candidate_pk": registration.version.version_pk,
+                "candidate_id": registration.version.version_id, "submitter": principal_id,
+                "base": base_version_id, "kind": "new" if is_new else "existing",
+                "grant": grant_id, "filename": safe_name,
+                "size": registration.version.file_size, "hash": registration.version.file_hash,
             })
             _audit(repo.db, organization_id=organization_id, principal_id=principal_id,
                    action="dataset.proposal.submit", outcome="succeeded", proposal_id=proposal_id,
-                   metadata={"dataset_id": dataset_id, "location_id": location_id,
+                   metadata={"dataset_id": locked.dataset_id, "location_id": location_id,
+                             "dataset_kind": "new" if is_new else "existing",
                              "base_version_id": base_version_id,
-                             "candidate_version_id": candidate.version_id})
-        return {"proposal_id": proposal_id, "dataset_id": dataset_id,
-                "candidate_version_id": candidate.version_id, "base_version_id": base_version_id,
-                "status": "pending", "submitted_at": candidate.created_at.isoformat()}
+                             "candidate_version_id": registration.version.version_id,
+                             "upload_grant_id": grant_id})
+        return {"proposal_id": proposal_id, "dataset_id": locked.dataset_id,
+                "dataset_kind": "new" if is_new else "existing",
+                "candidate_version_id": registration.version.version_id,
+                "base_version_id": base_version_id, "status": "pending",
+                "submitted_at": registration.version.created_at.isoformat()}
     except Exception as exc:
         repo.db.rollback()
         if registration is not None and not registration.registration.was_duplicate:
             try:
                 from .service import _discard_sql_registration
-                _discard_sql_registration(repo, dataset_id, candidate_version_id, False)
+                _discard_sql_registration(
+                    repo, registration.registration.dataset.dataset_id,
+                    candidate_version_id, is_new,
+                )
             except Exception:
                 pass
         if isinstance(exc, IntegrityError) and "uq_dataset_change_pending_content" in str(exc.orig):
