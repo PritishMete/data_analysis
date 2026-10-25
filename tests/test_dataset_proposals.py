@@ -17,6 +17,31 @@ def test_proposal_migration_keeps_candidate_private_until_review():
     assert "uq_dataset_change_pending_content" in migration
 
 
+def test_new_dataset_proposal_and_grant_revocation_are_server_enforced():
+    proposals = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
+    grants = Path("dataset_storage/manager_grants.py").read_text(encoding="utf-8")
+    routes = Path("dataset_storage/routes.py").read_text(encoding="utf-8")
+    migration = Path("migrations/0035_branch_scoped_manager_upload_grants.sql").read_text(encoding="utf-8")
+    assert 'dataset_id: str | None' in proposals
+    assert 'dataset_kind": "new" if is_new else "existing"' in proposals
+    assert 'expected_current_version_id=(None if is_new else str(proposal["base_version_id"]))' in proposals
+    assert "revoked_at IS NULL" in proposals
+    assert "create_manager_upload_grant" in routes
+    assert "revoke_manager_upload_grant" in routes
+    assert "FOR UPDATE" in grants
+    assert "DELETE FROM role_permissions" in migration
+    assert "ALTER COLUMN base_version_id DROP NOT NULL" in migration
+    assert "dataset_authorization" in proposals
+
+
+def test_postgres_integration_suite_covers_rollback_concurrency_and_revocation_race():
+    source = Path("tests/integration/test_postgres_manager_grant_races.py").read_text(encoding="utf-8")
+    assert "test_postgres_first_publication_and_audit_are_one_transaction" in source
+    assert "test_postgres_concurrent_approval_allows_only_one_decision" in source
+    assert "test_postgres_revocation_wins_before_approval_revalidates_grant" in source
+    assert "INSIGHTFLOW_TEST_POSTGRES_URL" in source
+
+
 def test_proposal_approval_uses_transactional_finalization_and_base_guard():
     source = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
     assert "expected_current_version_id=str(proposal[\"base_version_id\"])" in source
