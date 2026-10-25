@@ -1,17 +1,24 @@
 name: InsightFlow Production Authz Migrations
 
+# Production migrations are deliberately manual. CI applies the full migration
+# chain to a disposable PostgreSQL service; this workflow may touch production
+# only after an operator explicitly dispatches it from the configured release branch.
 on:
-  push:
-    branches: [feature/employee-management-cell]
-    paths:
-      - 'migrations/**'
-      - 'tools/run_authz_migrations.py'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: insightflow-production-authz-migrations
+  cancel-in-progress: false
 
 jobs:
   migrate:
+    if: github.ref == 'refs/heads/feature/employee-management-cell'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: production
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
@@ -28,13 +35,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install sqlalchemy 'psycopg[binary]'
 
-      - name: Require authoritative production release branch
+      - name: Verify authoritative production release branch
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" != "refs/heads/feature/employee-management-cell" ]]; then
-            echo "::error::Production authorization migrations may run only from feature/employee-management-cell."
-            exit 1
-          fi
+          test "${GITHUB_REF}" = "refs/heads/feature/employee-management-cell"
 
       - name: Require production PostgreSQL secret
         run: |
