@@ -280,6 +280,22 @@ def verify_assignment_indexes(indexes: dict[str, str]) -> None:
         )
 
 
+def verify_assignment_index_schema(engine) -> None:
+    """Read the live PostgreSQL index definitions and enforce the assignment contract."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND tablename = 'organizational_assignments'
+              AND indexname IN (
+                  'uq_active_manager_per_location',
+                  'uq_active_assignment_context'
+              )
+        """)).all()
+    verify_assignment_indexes({row[0]: row[1] for row in rows})
+
+
 def verify_managed_dataset_security(engine) -> None:
     inspector = inspect(engine)
     required = {"datasets", "dataset_versions", "dataset_columns", "dataset_rows"}
@@ -351,6 +367,7 @@ def run_migrations() -> None:
     if missing:
         raise RuntimeError("Required authorization tables are missing: " + ",".join(missing))
     verify_organizational_structure(engine)
+    verify_assignment_index_schema(engine)
     verify_profile_security(engine)
     verify_employee_id_allocator(engine)
     verify_managed_dataset_security(engine)
@@ -404,10 +421,12 @@ def main() -> int:
         print("REQUIRED_TABLES=FAIL")
     else:
         verify_organizational_structure(engine)
+        verify_assignment_index_schema(engine)
         verify_profile_security(engine)
         verify_employee_id_allocator(engine)
         verify_managed_dataset_security(engine)
         print("ORGANIZATIONAL_STRUCTURE=PASS")
+        print("ASSIGNMENT_INDEXES=PASS")
         print("REQUIRED_TABLES=PASS")
     if missing:
         print("MISSING_TABLE_COUNT=" + str(len(missing)))
