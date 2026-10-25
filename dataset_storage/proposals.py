@@ -143,6 +143,19 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
                 raise FileNotFoundError("Published original dataset not found.")
             if locked.status != "ready" or locked.current_version_id != base_version_id:
                 raise AuthzError("The official dataset changed while this proposal was being submitted.")
+            current_scope = repo.db.execute(text("""
+                SELECT location_id, status, protected_original
+                FROM dataset_authorization
+                WHERE organization_id=:org AND dataset_id=:dataset
+                FOR UPDATE
+            """), {"org": organization_id, "dataset": dataset_id}).mappings().first()
+            if (
+                current_scope is None
+                or current_scope["status"] != "active"
+                or not current_scope["protected_original"]
+                or str(current_scope["location_id"] or "") != location_id
+            ):
+                raise AuthzError("The original dataset branch assignment changed during submission.")
             _revalidate_assignment(
                 repo.db, organization_id=organization_id, workspace_id=workspace_id,
                 principal_id=principal_id, location_id=location_id, role_id="manager",
@@ -265,7 +278,29 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
             ).scalar_one_or_none()
             if dataset is None or dataset.organization_id != organization_id:
                 raise FileNotFoundError("Original dataset not found.")
-            if dataset.current_version_id != proposal["base_version_id"]:
+            current_scope = repo.db.execute(text("""
+                SELECT location_id, status, protected_original
+                FROM dataset_authorization
+                WHERE organization_id=:org AND dataset_id=:dataset
+                FOR UPDATE
+            """), {"org": organization_id, "dataset": dataset.dataset_id}).mappings().first()
+            if (
+                current_scope is None
+                or current_scope["status"] != "active"
+                or not current_scope["protected_original"]
+                or str(current_scope["location_id"] or "") != str(proposal["location_id"])
+            ):
+                repo.db.execute(text("""
+                    UPDATE dataset_change_proposals
+                    SET status='stale', reviewed_by_principal_id=:reviewer,
+                        reviewed_at=now(), decision_note='Original dataset branch assignment changed after submission.'
+                    WHERE proposal_id=:proposal AND status='pending'
+                """), {"reviewer": principal_id, "proposal": proposal_id})
+                _audit(repo.db, organization_id=organization_id, principal_id=principal_id,
+                       action="dataset.proposal.stale", outcome="stale", proposal_id=proposal_id,
+                       metadata={"dataset_id": dataset.dataset_id, "reason": "branch_assignment_changed"})
+                result = {"proposal_id": proposal_id, "status": "stale"}
+            elif dataset.current_version_id != proposal["base_version_id"]:
                 repo.db.execute(text("""
                     UPDATE dataset_change_proposals
                     SET status='stale', reviewed_by_principal_id=:reviewer,

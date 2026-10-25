@@ -48,3 +48,12 @@ def test_proposal_duplicate_does_not_touch_official_dataset_metadata():
     duplicate = source.split("if current is not None and current.file_hash == file_hash:", 1)[1].split("expected_columns =", 1)[0]
     assert "if candidate_version_id is None:" in duplicate
     assert "self.repository.touch_last_accessed(existing.dataset_id)" in duplicate
+
+
+def test_publication_paths_revalidate_branch_scope_under_lock():
+    managed = Path("dataset_storage/service.py").read_text(encoding="utf-8")
+    proposals = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
+    assert "FOR SHARE" in managed
+    assert "original dataset branch assignment changed during upload." in managed
+    assert "FOR UPDATE" in proposals
+    assert "original dataset branch assignment changed after submission." in proposals
