@@ -370,3 +370,25 @@ def test_stale_proposal_cannot_publish_candidate(monkeypatch):
     assert candidate.status == "processing"
     assert proposal["status"] == "stale"
     assert session.audit_count == 1
+
+
+def test_proposal_candidate_versions_use_nonpublished_identifiers():
+    source = Path("datasets/service.py").read_text(encoding="utf-8")
+    assert "candidate_version_id: str | None = None" in source
+    assert 'version_id=candidate_version_id or f"v{version_number}"' in source
+
+
+def test_legacy_ingestion_cannot_bypass_branch_head_upload_authorization():
+    source = Path("ingestion/routes.py").read_text(encoding="utf-8")
+    assert "_authorize_upload(claims, resolved_workspace)" in source
+    assert "require_email_verified(verify_id_token(token))" in source
+    assert "does not match the authenticated workspace" in source
+
+
+def test_manager_cannot_delete_original_dataset_directly():
+    source = Path("dataset_storage/service.py").read_text(encoding="utf-8")
+    start = source.index("def delete_managed_dataset(")
+    end = source.index("\ndef create_managed_working_copy(", start)
+    delete_service = source[start:end]
+    assert '"branch_head" not in set(context.get("role_ids", []))' in delete_service
+    assert "authorize_dataset_upload_scope" in delete_service

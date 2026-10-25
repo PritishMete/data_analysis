@@ -786,8 +786,18 @@ def delete_managed_dataset(
     provider: SupabaseDatasetStorageProvider | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
-    _authorize_dataset(claims, workspace_id, dataset_id, 'dataset.delete')
     context = _authorization_context(claims, workspace_id)
+    if "branch_head" not in set(context.get("role_ids", [])):
+        raise PermissionDenied(
+            "Only an active Branch Head may delete an original dataset; Managers must submit proposals."
+        )
+    dataset_scope = _authorize_dataset(claims, workspace_id, dataset_id, "dataset.delete")
+    # The role label alone is not sufficient: require the current Branch Head
+    # assignment for the dataset's exact branch before any irreversible deletion.
+    location_id = dataset_scope.get("location_id")
+    if not location_id:
+        raise PermissionDenied("Original dataset deletion requires an assigned branch.")
+    authorize_dataset_upload_scope(claims, workspace_id, location_id=str(location_id))
     organization_id = str(context["organization_id"])
     from core.db import SessionLocal
 
