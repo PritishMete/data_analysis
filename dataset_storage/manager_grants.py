@@ -63,12 +63,13 @@ def create_manager_upload_grant(
               AND m.principal_id=oa.principal_id
             JOIN member_roles mr ON mr.organization_id=oa.organization_id
               AND mr.principal_id=oa.principal_id AND mr.role_id='manager'
+            JOIN identity_bindings ib ON ib.principal_id=m.principal_id AND ib.status='active'
             JOIN locations l ON l.organization_id=oa.organization_id
               AND l.location_id=oa.location_id AND l.status='active'
             WHERE oa.organization_id=:org AND m.workspace_id=:workspace
               AND oa.principal_id=:manager AND oa.location_id=:location
               AND oa.role_id='manager' AND oa.status='active' AND m.status='active'
-            LIMIT 1 FOR SHARE OF oa, m, mr, l
+            LIMIT 1 FOR SHARE OF oa, m, mr, ib, l
         """), {"org": org, "workspace": workspace, "manager": manager,
                 "location": location}).scalar_one_or_none()
         if target is None:
