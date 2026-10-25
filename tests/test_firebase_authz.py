@@ -1326,3 +1326,78 @@ def test_firebase_dataset_upload_action_uses_replacement_grant_for_protected_ori
 
     assert result["allowed"] is True
     assert result["protected_original"] is True
+
+
+@pytest.mark.parametrize(
+    ("role", "location_id"),
+    [("branch_head", "branch-1"), ("organization_owner", None)],
+)
+def test_firebase_branch_head_and_owner_keep_protected_original_upload_authority(
+    monkeypatch, role, location_id
+):
+    member = {"status": "active", "roles": {role: True}}
+    if location_id is not None:
+        member["location_id"] = location_id
+    workspace = {
+        "members": {"actor": member},
+        "roles": {role: {"permissions": sorted(service.DEFAULT_ROLES[role])}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {},
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+
+    result = service.authorize_dataset("actor", "org", "ds_protected", "dataset.upload")
+
+    assert result["allowed"] is True
+    assert result["protected_original"] is True
+
+
+def test_team_lead_cannot_revoke_existing_protected_original_replacement_grant(monkeypatch):
+    workspace = {
+        "members": {
+            "lead": {
+                "status": "active",
+                "roles": {"team_lead": True},
+                "location_id": "branch-1",
+            },
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {
+            "team_lead": {
+                "permissions": sorted(set(service.DEFAULT_ROLES["team_lead"]) | {"dataset.manage_acl"})
+            },
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+        },
+        "approved_employees": {"manager": {"status": "active", "employee_id": "E1"}},
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {
+                    "lead": {"permissions": ["dataset.manage_acl"]},
+                    "manager": {"permissions": ["dataset.upload_original"]},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "lead", "email_verified": True, "auth_time": 9999999999,
+    })
+    monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
+
+    with pytest.raises(service.PermissionDenied, match="Only a Branch Head or Organization Owner can revoke"):
+        service.set_dataset_grant("org", "ds_protected", "manager", [], "token")
