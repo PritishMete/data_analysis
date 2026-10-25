@@ -434,6 +434,8 @@ def test_production_release_branch_and_render_service_are_aligned():
     assert "workflow_dispatch:" in workflow
     assert "  push:" not in workflow
     assert "environment: production" in workflow
+    assert "confirm_production_migration" in workflow
+    assert "inputs.confirm_production_migration == true" in workflow
     assert "concurrency:" in workflow
     assert "feature/data-workspace" not in workflow
     assert "github.ref == 'refs/heads/feature/employee-management-cell'" in workflow
