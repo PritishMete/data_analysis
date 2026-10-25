@@ -89,10 +89,23 @@ def _permissions(db, organization_id: str, principal_id: str) -> set[str]:
         LEFT JOIN sections s
           ON s.organization_id=oa.organization_id
          AND s.section_id=oa.section_id
+         AND s.location_id=oa.location_id
         WHERE mr.organization_id=:org
           AND mr.principal_id=:principal
-          AND (oa.location_id IS NULL OR l.status='active')
-          AND (oa.section_id IS NULL OR s.status='active')
+          -- Only the organization-wide Owner role may be locationless.
+          -- Operational roles require a non-null, active branch assignment.
+          AND (
+            oa.role_id='organization_owner'
+            OR (
+              oa.location_id IS NOT NULL
+              AND l.status='active'
+              AND (oa.section_id IS NULL OR s.status='active')
+              AND (
+                oa.role_id <> 'team_lead'
+                OR (oa.section_id IS NOT NULL AND s.status='active')
+              )
+            )
+          )
     """), {"org": organization_id, "principal": principal_id}).scalars().all())
 
 
