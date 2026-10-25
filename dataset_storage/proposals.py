@@ -383,6 +383,8 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 JOIN member_roles mr
                   ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
                  AND mr.role_id='manager'
+                JOIN identity_bindings ib
+                  ON ib.principal_id=m.principal_id AND ib.status='active'
                 JOIN locations l
                   ON l.organization_id=g.organization_id AND l.location_id=g.location_id
                  AND l.status='active'
