@@ -439,13 +439,13 @@ void main() {
     expect(
       access,
       contains(
-        "bool get canUpload => roles.any((role) => {'branch_head', 'manager'}.contains(role));",
+        "bool get canUpload => roles.contains('branch_head');",
       ),
     );
     expect(
       access,
       contains(
-        "bool get canDelete => roles.contains('organization_owner') || roles.contains('branch_head');",
+        "bool get canDelete => roles.contains('branch_head');",
       ),
     );
     expect(access, contains('bool get canCopy => !canViewOriginal;'));
