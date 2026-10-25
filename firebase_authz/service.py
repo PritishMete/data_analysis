@@ -938,6 +938,15 @@ def set_dataset_grant(
         if not _approved_employee(workspace, target_member_uid):
             raise PermissionDenied("Team Leads may grant dataset access only to approved employees.")
     dataset = _dataset(workspace, dataset_id)
+    existing_target_permissions = set(
+        (_dataset_grant(dataset, target_member_uid).get("permissions") or [])
+    )
+    if (
+        "dataset.upload_original" in existing_target_permissions
+        and "dataset.upload_original" not in permissions
+        and _effective_role_level(actor_member) < ROLE_LEVELS["branch_head"]
+    ):
+        raise PermissionDenied("Only a Branch Head or Organization Owner can revoke protected-original replacement.")
     if "dataset.upload_original" in permissions:
         if _effective_role_level(actor_member) < ROLE_LEVELS["branch_head"]:
             raise PermissionDenied("Only a Branch Head or Organization Owner can grant protected-original replacement.")
@@ -996,20 +1005,25 @@ def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str)
         permission for permission in (grants.get("permissions") or [])
         if permission in ACTIONS
     }
-    if action == "dataset.upload_original":
-        member_uid = _member_key_for_workspace(workspace, uid)
-        member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
-        if not isinstance(member, dict) or _membership_status(member) != "active":
-            raise PermissionDenied("User membership is not active.")
-        if _effective_role_level(member) != ROLE_LEVELS["manager"]:
-            raise PermissionDenied("Only a Manager can use a protected-original replacement grant.")
-        if dataset.get("protected_original") is not True:
+    required_grant = action
+    if action in {"dataset.upload", "dataset.upload_original"}:
+        if dataset.get("protected_original") is True:
+            member_uid = _member_key_for_workspace(workspace, uid)
+            member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
+            if not isinstance(member, dict) or _membership_status(member) != "active":
+                raise PermissionDenied("User membership is not active.")
+            if _effective_role_level(member) != ROLE_LEVELS["manager"]:
+                if action == "dataset.upload_original":
+                    raise PermissionDenied("Only a Manager can use a protected-original replacement grant.")
+            else:
+                dataset_branch = str(dataset.get("location_id") or dataset.get("branch_id") or "").strip()
+                member_branch = str(member.get("location_id") or member.get("branch_id") or "").strip()
+                if not dataset_branch or member_branch != dataset_branch:
+                    raise PermissionDenied("The dataset belongs to a branch outside your Manager scope.")
+                required_grant = "dataset.upload_original"
+        elif action == "dataset.upload_original":
             raise PermissionDenied("Protected-original replacement applies only to protected original datasets.")
-        dataset_branch = str(dataset.get("location_id") or dataset.get("branch_id") or "").strip()
-        member_branch = str(member.get("location_id") or member.get("branch_id") or "").strip()
-        if not dataset_branch or member_branch != dataset_branch:
-            raise PermissionDenied("The dataset belongs to a branch outside your Manager scope.")
-    if action not in grant_permissions:
+    if required_grant not in grant_permissions:
         raise PermissionDenied("Permission denied for this dataset.")
     return {
         **decision,
