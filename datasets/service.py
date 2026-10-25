@@ -241,7 +241,10 @@ class DatasetRegistryService:
                 raise ValueError("This dataset cannot receive a new version.")
             current = self.repository.get_version(existing.dataset_id)
             if current is not None and current.file_hash == file_hash:
-                self.repository.touch_last_accessed(existing.dataset_id)
+                # Proposal submissions must not mutate any official dataset metadata,
+                # even when the uploaded candidate matches the current file exactly.
+                if candidate_version_id is None:
+                    self.repository.touch_last_accessed(existing.dataset_id)
                 return StreamingDatasetRegistration(
                     DatasetRegistration(
                         existing,

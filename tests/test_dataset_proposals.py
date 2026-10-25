@@ -41,3 +41,10 @@ def test_duplicate_pending_proposal_content_is_constrained():
     assert "uq_dataset_change_pending_content" in migration
     assert "An identical proposal is already pending for this dataset version." in service
     assert "provider_subject=:provider_subject" in service
+
+
+def test_proposal_duplicate_does_not_touch_official_dataset_metadata():
+    source = Path("datasets/service.py").read_text(encoding="utf-8")
+    duplicate = source.split("if current is not None and current.file_hash == file_hash:", 1)[1].split("expected_columns =", 1)[0]
+    assert "if candidate_version_id is None:" in duplicate
+    assert "self.repository.touch_last_accessed(existing.dataset_id)" in duplicate

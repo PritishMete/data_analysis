@@ -604,7 +604,13 @@ def upload_managed_dataset_stream(
     stored = None
     new_dataset = dataset_id is None
     provider = provider or SupabaseDatasetStorageProvider()
+    base_version_id = None
     try:
+        if dataset_id is not None:
+            current_dataset = repo.get_by_id(dataset_id)
+            if current_dataset is None or current_dataset.organization_id != organization_id:
+                raise FileNotFoundError("Dataset not found.")
+            base_version_id = current_dataset.current_version_id
         registration = registry.register_csv_stream(
             file_obj=stream,
             filename=safe_name,
@@ -662,7 +668,6 @@ def upload_managed_dataset_stream(
                 content_type=content_type or "text/csv",
             )
 
-        base_version_id = registration.registration.dataset.current_version_id
         dataset = registry.finalize_version(
             registration.registration.dataset.dataset_id,
             registration.version.version_id,
