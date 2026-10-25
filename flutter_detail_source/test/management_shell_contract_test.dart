@@ -3,6 +3,29 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('management shell rechecks role policy before rendering a selected section', () {
+    final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final bodyStart = source.indexOf('Widget body() {');
+    final bodyEnd = source.indexOf('Widget actions() {', bodyStart);
+    expect(bodyStart, greaterThanOrEqualTo(0));
+    expect(bodyEnd, greaterThan(bodyStart));
+    final body = source.substring(bodyStart, bodyEnd);
+    expect(body, contains('if (!_sectionAllowed(section))'));
+    expect(body, contains('return overviewView();'));
+    expect(body.indexOf('if (!_sectionAllowed(section))'), lessThan(body.indexOf('switch (section)')));
+  });
+
+  test('People search cannot bypass role-aware section policy', () {
+    final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final searchStart = source.indexOf('onSubmitted: (value)');
+    final searchEnd = source.indexOf('style: const TextStyle(color: Color(0xFFD9ECFF)', searchStart);
+    expect(searchStart, greaterThanOrEqualTo(0));
+    expect(searchEnd, greaterThan(searchStart));
+    final handler = source.substring(searchStart, searchEnd);
+    expect(handler, contains('_sectionAllowed(ManagementSection.people)'));
+    expect(handler, contains('return;'));
+  });
+
   test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
     final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
     final accessSource = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
