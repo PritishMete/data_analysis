@@ -365,23 +365,58 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 principal_id=principal_id, location_id=str(proposal["location_id"]),
                 role_id="branch_head", provider=provider, provider_subject=provider_subject,
             )
-            if (
-                current_scope is None
-                or current_scope["status"] != "active"
-                or not current_scope["protected_original"]
-                or str(current_scope["location_id"] or "") != str(proposal["location_id"])
-            ):
+            # Serialize review against grant revocation and verify the submitter
+            # still has an active Manager assignment to this exact branch.
+            active_grant = repo.db.execute(text("""
+                SELECT g.grant_id
+                FROM manager_dataset_upload_grants g
+                JOIN organizational_assignments oa
+                  ON oa.organization_id=g.organization_id
+                 AND oa.principal_id=g.manager_principal_id
+                 AND oa.location_id=g.location_id AND oa.role_id='manager'
+                 AND oa.status='active'
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=g.workspace_id AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                 AND mr.role_id='manager'
+                JOIN locations l
+                  ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+                 AND l.status='active'
+                WHERE g.grant_id=:grant AND g.organization_id=:org
+                  AND g.workspace_id=:workspace
+                  AND g.manager_principal_id=:submitter
+                  AND g.location_id=:location AND g.revoked_at IS NULL
+                FOR SHARE OF g, oa, m, mr, l
+            """), {"grant": proposal["upload_grant_id"], "org": organization_id,
+                    "workspace": workspace_id, "submitter": proposal["submitted_by_principal_id"],
+                    "location": proposal["location_id"]}).scalar_one_or_none()
+            is_new = str(proposal.get("dataset_kind") or "existing") == "new"
+            scope_invalid = (
+                (is_new and (current_scope is not None or dataset.status != "processing"
+                             or dataset.current_version_id is not None))
+                or (not is_new and (
+                    current_scope is None or current_scope["status"] != "active"
+                    or not current_scope["protected_original"]
+                    or str(current_scope["location_id"] or "") != str(proposal["location_id"])
+                ))
+            )
+            if active_grant is None or scope_invalid:
+                reason = ("Manager upload grant was revoked or assignment changed after submission."
+                          if active_grant is None else
+                          "Original dataset branch assignment changed after submission.")
                 repo.db.execute(text("""
                     UPDATE dataset_change_proposals
                     SET status='stale', reviewed_by_principal_id=:reviewer,
-                        reviewed_at=now(), decision_note='Original dataset branch assignment changed after submission.'
+                        reviewed_at=now(), decision_note=:reason
                     WHERE proposal_id=:proposal AND status='pending'
-                """), {"reviewer": principal_id, "proposal": proposal_id})
+                """), {"reviewer": principal_id, "proposal": proposal_id, "reason": reason})
                 _audit(repo.db, organization_id=organization_id, principal_id=principal_id,
                        action="dataset.proposal.stale", outcome="stale", proposal_id=proposal_id,
-                       metadata={"dataset_id": dataset.dataset_id, "reason": "branch_assignment_changed"})
+                       metadata={"dataset_id": dataset.dataset_id, "reason": reason})
                 result = {"proposal_id": proposal_id, "status": "stale"}
-            elif dataset.current_version_id != proposal["base_version_id"]:
+            elif not is_new and dataset.current_version_id != proposal["base_version_id"]:
                 repo.db.execute(text("""
                     UPDATE dataset_change_proposals
                     SET status='stale', reviewed_by_principal_id=:reviewer,
@@ -410,9 +445,58 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 candidate = repo.db.get(DatasetVersion, str(proposal["candidate_version_pk"]))
                 if candidate is None or candidate.dataset_id != dataset.dataset_id or candidate.status != "processing":
                     raise AuthzError("The private candidate version is not available for publication.")
+                if is_new:
+                    # Publish ACL/resource records in the same transaction as the
+                    # READY transition and proposal decision. No client can observe
+                    # a READY dataset without its branch authorization.
+                    repo.db.execute(text("""
+                        INSERT INTO authorization_resources
+                          (organization_id, resource_id, resource_type, owner_principal_id)
+                        VALUES (:org, :dataset, 'dataset', :owner)
+                    """), {"org": organization_id, "dataset": dataset.dataset_id,
+                            "owner": principal_id})
+                    repo.db.execute(text("""
+                        INSERT INTO dataset_authorization
+                          (organization_id, dataset_id, owner_principal_id,
+                           protected_original, location_id, status)
+                        VALUES (:org, :dataset, :owner, TRUE, :location, 'active')
+                    """), {"org": organization_id, "dataset": dataset.dataset_id,
+                            "owner": principal_id, "location": proposal["location_id"]})
+                    # Branch Heads assigned to this branch can review and manage
+                    # the authoritative original; the submitting Manager receives
+                    # view-only access after approval.
+                    repo.db.execute(text("""
+                        INSERT INTO resource_grants
+                          (organization_id, resource_id, principal_id, permissions)
+                        SELECT :org, :dataset, oa.principal_id,
+                               CAST(:head_permissions AS jsonb)
+                        FROM organizational_assignments oa
+                        JOIN organization_members m
+                          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                         AND m.workspace_id=:workspace AND m.status='active'
+                        JOIN member_roles mr
+                          ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                         AND mr.role_id='branch_head'
+                        WHERE oa.organization_id=:org AND oa.location_id=:location
+                          AND oa.role_id='branch_head' AND oa.status='active'
+                        ON CONFLICT (organization_id, resource_id, principal_id)
+                        DO UPDATE SET permissions=EXCLUDED.permissions
+                    """), {"org": organization_id, "dataset": dataset.dataset_id,
+                            "workspace": workspace_id, "location": proposal["location_id"],
+                            "head_permissions": '["dataset.view_original","dataset.create_working_copy","dataset.manage_acl"]'})
+                    repo.db.execute(text("""
+                        INSERT INTO resource_grants
+                          (organization_id, resource_id, principal_id, permissions)
+                        VALUES (:org, :dataset, :manager, CAST(:permissions AS jsonb))
+                        ON CONFLICT (organization_id, resource_id, principal_id)
+                        DO UPDATE SET permissions=EXCLUDED.permissions
+                    """), {"org": organization_id, "dataset": dataset.dataset_id,
+                            "manager": proposal["submitted_by_principal_id"],
+                            "permissions": '["dataset.view_original"]'})
                 DatasetRegistryService(repo).finalize_version(
                     dataset.dataset_id, candidate.version_id,
-                    expected_current_version_id=str(proposal["base_version_id"]), commit=False,
+                    expected_current_version_id=(None if is_new else str(proposal["base_version_id"])),
+                    commit=False,
                 )
                 repo.db.execute(text("""
                     UPDATE dataset_change_proposals
