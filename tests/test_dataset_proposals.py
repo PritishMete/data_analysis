@@ -44,7 +44,7 @@ def test_postgres_integration_suite_covers_rollback_concurrency_and_revocation_r
 
 def test_proposal_approval_uses_transactional_finalization_and_base_guard():
     source = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
-    assert "expected_current_version_id=str(proposal[\"base_version_id\"])" in source
+    assert 'expected_current_version_id=(None if is_new else str(proposal["base_version_id"]))' in source
     assert "commit=False" in source
     assert "FOR UPDATE" in source
     assert "A Branch Head cannot review their own proposal." in source
