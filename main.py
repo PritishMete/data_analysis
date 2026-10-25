@@ -351,9 +351,16 @@ def _run_production_authz_migrations() -> None:
 # Complete required database initialization inside FastAPI startup. A background
 # daemon allowed /health to return success while authz migration verification
 # was still pending or had failed; startup now fails closed instead.
+_PRODUCTION_READY = False
+
+
 def _initialize_production_database() -> None:
+    """Fail closed until required schema verification and DB initialization finish."""
+    global _PRODUCTION_READY
+    _PRODUCTION_READY = False
     _run_production_authz_migrations()
     init_db()
+    _PRODUCTION_READY = True
 
 
 app.add_event_handler("startup", _initialize_production_database)
@@ -363,7 +370,14 @@ app.add_middleware(FirebaseAuthorizationMiddleware)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "data-analysis-api"}
+    # Render must not receive a healthy response until the required startup
+    # migration/schema verification and database initialization have succeeded.
+    if not _PRODUCTION_READY:
+        raise HTTPException(
+            status_code=503,
+            detail="Required database initialization is not ready.",
+        )
+    return {"status": "ok", "service": "data-analysis-api", "database_ready": True}
 
 
 @app.get("/v1/build-info")
