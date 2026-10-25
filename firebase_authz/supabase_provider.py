@@ -1974,7 +1974,7 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
         raise AuthzError("Only a Branch Head or Organization Owner can authorize dataset copies.")
     organization_id = str(context["organization_id"])
     with SessionLocal() as db:
-        row = db.execute(text("""SELECT location_id FROM dataset_authorization
+        row = db.execute(text("""SELECT location_id, protected_original FROM dataset_authorization
             WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"""),
             {"org": organization_id, "dataset": dataset_id}).mappings().first()
         if not row:
@@ -1992,6 +1992,8 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
         if "dataset.upload_original" in permissions:
+            if not row["protected_original"]:
+                raise AuthzError("Protected-original replacement grants apply only to protected original datasets.")
             if not row["location_id"]:
                 raise AuthzError("Protected-original upload grants require a branch-scoped dataset.")
             if str(target_uid) in {str(context.get("uid") or ""), str(context.get("principal_id") or "")}:
