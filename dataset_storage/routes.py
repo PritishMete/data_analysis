@@ -18,6 +18,7 @@ from .service import (
     upload_managed_dataset_stream,
 )
 from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
+from .manager_grants import create_manager_upload_grant, revoke_manager_upload_grant
 
 router = APIRouter(prefix="/v1/managed-datasets", tags=["managed-datasets"])
 logger = logging.getLogger(__name__)
@@ -95,6 +96,66 @@ def managed_dataset_list(
     try:
         return {"datasets": list_authorized_datasets(
             workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/proposals")
+async def managed_new_dataset_proposal_submit(
+    file: UploadFile = File(...),
+    location_id: str = Query(..., min_length=1),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    """Stage a brand-new dataset privately until a Branch Head approves it."""
+    try:
+        return {"success": True, "proposal": submit_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=None, location_id=location_id, filename=file.filename or "",
+            stream=file.file, content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/upload-grants")
+def managed_manager_upload_grant_create(
+    body: dict = Body(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        manager = body.get("manager_principal_id")
+        location = body.get("location_id")
+        if not isinstance(manager, str) or not isinstance(location, str):
+            raise ValueError("manager_principal_id and location_id are required.")
+        return {"success": True, "grant": create_manager_upload_grant(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            manager_principal_id=manager, location_id=location,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.delete("/upload-grants/{grant_id}")
+def managed_manager_upload_grant_revoke(
+    grant_id: str,
+    body: dict = Body(default={}),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        reason = body.get("reason")
+        if reason is not None and not isinstance(reason, str):
+            raise ValueError("reason must be text.")
+        return {"success": True, "grant": revoke_manager_upload_grant(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            grant_id=grant_id, reason=reason,
         )}
     except Exception as exc:
         raise _map_error(exc)
