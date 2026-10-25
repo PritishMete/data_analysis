@@ -3,7 +3,7 @@ services:
     name: data-analysis-api
     runtime: python
     branch: feature/employee-management-cell
-    autoDeployTrigger: commit
+    autoDeployTrigger: off
     buildCommand: pip install -r requirements.txt && python tools/run_authz_migrations.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
