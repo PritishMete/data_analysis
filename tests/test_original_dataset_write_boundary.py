@@ -20,3 +20,14 @@ def test_original_write_and_delete_require_branch_head_scope():
     auth_fn = source.split("def authorize_dataset(", 1)[1].split("\n\ndef set_dataset_grant", 1)[0]
     assert 'if "branch_head" not in actor_roles:' in auth_fn
     assert 'elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:' in auth_fn
+
+def test_copy_request_rejection_uses_only_bound_sql_parameters_and_pending_state():
+    source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    decision = source.split("def approve_copy_request(", 1)[1].split("\n\ndef assign_working_copy", 1)[0]
+    rejection = decision.split("if not approve:", 1)[1].split("return {\"request_id\": request_id, \"status\": \"rejected\"}", 1)[0]
+    assert "WHERE organization_id=:org AND request_id=:request AND status='pending'" in rejection
+    assert '"org": org' in rejection
+    assert '"reviewer": context["principal_id"]' in rejection
+    assert '"request": request_id' in rejection
+    assert '"requester": request_id' not in rejection
+
