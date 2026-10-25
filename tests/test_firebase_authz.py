@@ -1399,5 +1399,5 @@ def test_team_lead_cannot_revoke_existing_protected_original_replacement_grant(m
     })
     monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
 
-    with pytest.raises(service.PermissionDenied, match="Only a Branch Head or Organization Owner can revoke"):
+    with pytest.raises(service.PermissionDenied, match="Only a Branch Head or Organization Owner can grant or revoke"):
         service.set_dataset_grant("org", "ds_protected", "manager", [], "token")
