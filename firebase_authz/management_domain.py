@@ -63,11 +63,36 @@ def _actor(db, claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
 
 
 def _permissions(db, organization_id: str, principal_id: str) -> set[str]:
+    """Resolve permissions only through a currently active membership/assignment.
+
+    member_roles is a role catalogue/cache, not an independent grant of
+    authority. In particular, manager replacement can leave historical role
+    rows behind; requiring a matching active assignment makes those rows
+    inert immediately after the assignment is revoked or replaced.
+    """
     return set(db.execute(text("""
         SELECT DISTINCT rp.permission_id
         FROM member_roles mr
         JOIN role_permissions rp ON rp.role_id=mr.role_id
-        WHERE mr.organization_id=:org AND mr.principal_id=:principal
+        JOIN organization_members m
+          ON m.organization_id=mr.organization_id
+         AND m.principal_id=mr.principal_id
+         AND m.status='active'
+        JOIN organizational_assignments oa
+          ON oa.organization_id=mr.organization_id
+         AND oa.principal_id=mr.principal_id
+         AND oa.role_id=mr.role_id
+         AND oa.status='active'
+        LEFT JOIN locations l
+          ON l.organization_id=oa.organization_id
+         AND l.location_id=oa.location_id
+        LEFT JOIN sections s
+          ON s.organization_id=oa.organization_id
+         AND s.section_id=oa.section_id
+        WHERE mr.organization_id=:org
+          AND mr.principal_id=:principal
+          AND (oa.location_id IS NULL OR l.status='active')
+          AND (oa.section_id IS NULL OR s.status='active')
     """), {"org": organization_id, "principal": principal_id}).scalars().all())
 
 
