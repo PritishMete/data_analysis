@@ -431,9 +431,12 @@ def test_production_release_branch_and_render_service_are_aligned():
     workflow = Path(".github/workflows/production-authz-migrations.yml").read_text(encoding="utf-8")
     assert "name: data_analysis" in render
     assert "branch: feature/employee-management-cell" in render
-    assert "branches: [feature/employee-management-cell]" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "\\n  push:" not in workflow
+    assert "environment: production" in workflow
+    assert "concurrency:" in workflow
     assert "feature/data-workspace" not in workflow
-    assert '"${GITHUB_REF}" != "refs/heads/feature/employee-management-cell"' in workflow
+    assert "github.ref == 'refs/heads/feature/employee-management-cell'" in workflow
     smoke = Path(".github/workflows/production-backend-smoke.yml").read_text(encoding="utf-8")
     smoke_triggers = smoke.split("jobs:", 1)[0]
     assert "workflow_dispatch:" in smoke_triggers
@@ -456,3 +459,24 @@ def test_health_readiness_is_gated_by_successful_database_initialization():
     assert "if not _PRODUCTION_READY:" in health
     assert "status_code=503" in health
     assert '"database_ready": True' in health
+
+
+
+def test_release_ci_tracks_the_active_render_branch_and_not_historical_feature_branches():
+    workflow = Path(".github/workflows/insightflow-backend-ci.yml").read_text(encoding="utf-8")
+    triggers = workflow.split("jobs:", 1)[0]
+    assert "branches: [main, feature/employee-management-cell]" in triggers
+    assert "feature/data-workspace" not in triggers
+    assert "fix/protected-original-upload-grant-20261025" not in triggers
+
+
+def test_release_process_documents_manual_render_and_production_migration_controls():
+    guide = Path("RELEASE_PROCESS.md").read_text(encoding="utf-8")
+    assert "feature/employee-management-cell" in guide
+    assert "Auto-deploy is disabled" in guide
+    assert "main" in guide
+    assert "manual" in guide.lower()
+    workflow = Path(".github/workflows/production-authz-migrations.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow
+    assert "\\n  push:" not in workflow
+    assert "environment: production" in workflow
