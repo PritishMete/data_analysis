@@ -1244,14 +1244,17 @@ class _ManagementShellState extends State<ManagementShell> {
         if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('manager.assign') || _managementRole() == 'branch_head' || _managementRole() == 'organization_owner')
           _dashboardAction('Invite Team Member', Icons.person_add_alt_1_rounded, _inviteEmployee, primary: true),
         const SizedBox(height: 8),
-        _dashboardAction('Manage People', Icons.groups_outlined,
-          () => setState(() => section = ManagementSection.people)),
+        if (_sectionAllowed(ManagementSection.people))
+          _dashboardAction('Manage People', Icons.groups_outlined,
+            () => setState(() => section = ManagementSection.people)),
         const SizedBox(height: 8),
-        _dashboardAction('Manage Permissions', Icons.shield_outlined,
-          () => setState(() => section = ManagementSection.dataAccess)),
+        if (_sectionAllowed(ManagementSection.dataAccess))
+          _dashboardAction('Manage Permissions', Icons.shield_outlined,
+            () => setState(() => section = ManagementSection.dataAccess)),
         const SizedBox(height: 8),
-        _dashboardAction('Review Audit Activity', Icons.query_stats_rounded,
-          () => setState(() => section = ManagementSection.audit)),
+        if (_sectionAllowed(ManagementSection.audit))
+          _dashboardAction('Review Audit Activity', Icons.query_stats_rounded,
+            () => setState(() => section = ManagementSection.audit)),
       ]),
     );
 
