@@ -478,5 +478,5 @@ def test_release_process_documents_manual_render_and_production_migration_contro
     assert "manual" in guide.lower()
     workflow = Path(".github/workflows/production-authz-migrations.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch:" in workflow
-    assert "\\n  push:" not in workflow
+    assert "  push:" not in workflow
     assert "environment: production" in workflow
