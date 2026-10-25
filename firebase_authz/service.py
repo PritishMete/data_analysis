@@ -1012,18 +1012,27 @@ def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str)
             member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
             if not isinstance(member, dict) or _membership_status(member) != "active":
                 raise PermissionDenied("User membership is not active.")
-            if _effective_role_level(member) != ROLE_LEVELS["manager"]:
-                if action == "dataset.upload_original":
+            level = _effective_role_level(member)
+            if action == "dataset.upload_original":
+                if level != ROLE_LEVELS["manager"]:
                     raise PermissionDenied("Only a Manager can use a protected-original replacement grant.")
+                required_grant = "dataset.upload_original"
+            elif level == ROLE_LEVELS["manager"]:
+                required_grant = "dataset.upload_original"
+            elif level == ROLE_LEVELS["branch_head"]:
+                required_grant = None
+            elif level >= ROLE_LEVELS["organization_owner"]:
+                required_grant = None
             else:
+                raise PermissionDenied("Only a Manager, Branch Head, or Organization Owner can replace a protected original.")
+            if level in {ROLE_LEVELS["manager"], ROLE_LEVELS["branch_head"]}:
                 dataset_branch = str(dataset.get("location_id") or dataset.get("branch_id") or "").strip()
                 member_branch = str(member.get("location_id") or member.get("branch_id") or "").strip()
                 if not dataset_branch or member_branch != dataset_branch:
-                    raise PermissionDenied("The dataset belongs to a branch outside your Manager scope.")
-                required_grant = "dataset.upload_original"
+                    raise PermissionDenied("The dataset belongs to a branch outside your assigned branch scope.")
         elif action == "dataset.upload_original":
             raise PermissionDenied("Protected-original replacement applies only to protected original datasets.")
-    if required_grant not in grant_permissions:
+    if required_grant is not None and required_grant not in grant_permissions:
         raise PermissionDenied("Permission denied for this dataset.")
     return {
         **decision,
