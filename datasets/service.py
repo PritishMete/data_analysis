@@ -446,7 +446,18 @@ class DatasetRegistryService:
         *,
         storage_provider: str | None = None,
         storage_object_id: str | None = None,
+        expected_current_version_id: str | None = None,
+        commit: bool = True,
     ) -> Dataset:
+        """Make a processing version official.
+
+        commit=False lets an approval service compose pointer publication with
+        its submission-state transition and audit event in one caller-owned
+        transaction. The caller must lock the dataset and submission rows and
+        revalidate reviewer authorization before invoking this method. The
+        optional expected-current-version guard rejects stale proposals; it is
+        checked again after the caller has acquired the dataset row lock.
+        """
         try:
             dataset = self.repository.get_by_id(dataset_id)
             version = self.repository.get_version(dataset_id, version_id)
@@ -454,6 +465,11 @@ class DatasetRegistryService:
                 raise ValueError("Dataset version does not exist.")
             if version.status != "processing":
                 raise ValueError("Only a PROCESSING version can become READY.")
+            if (
+                expected_current_version_id is not None
+                and dataset.current_version_id != expected_current_version_id
+            ):
+                raise ValueError("The official dataset changed after this proposal was submitted.")
             version.status = "ready"
             version.storage_provider = storage_provider
             version.storage_object_id = storage_object_id
@@ -471,10 +487,15 @@ class DatasetRegistryService:
             dataset.storage_object_id = storage_object_id
             dataset.last_accessed = datetime.now(timezone.utc)
             self.repository.db.flush()
-            self.repository.db.commit()
+            if commit:
+                self.repository.db.commit()
             return dataset
         except Exception:
-            self.repository.db.rollback()
+            # In composed approval transactions the surrounding transaction
+            # owns rollback. Rolling back here would invalidate unrelated work
+            # and obscure the actual transaction boundary.
+            if commit:
+                self.repository.db.rollback()
             raise
 
     def mark_failed(self, dataset_id: str, version_id: str, reason: str) -> None:
