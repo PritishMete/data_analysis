@@ -8,7 +8,7 @@ ACTIONS = frozenset({
     "policies.manage",
     "organization.view", "organization.manage",
     "membership.view", "membership.manage",
-    "dataset.upload", "dataset.view_original", "dataset.create_working_copy",
+    "dataset.upload", "dataset.upload_original", "dataset.view_original", "dataset.create_working_copy",
     "dataset.edit_working_copy", "dataset.delete", "dataset.share",
     "dataset.manage_acl", "dataset.copy.request", "dataset.copy.approve", "working_copy.assign", "authorization.request.view",
     "working_copy.view", "working_copy.modify", "working_copy.delete",
