@@ -1200,7 +1200,7 @@ def test_manager_cannot_use_protected_original_grant_for_another_branch(monkeypa
     monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
     monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
 
-    with pytest.raises(service.PermissionDenied, match="outside your Manager scope"):
+    with pytest.raises(service.PermissionDenied, match="outside your assigned branch scope"):
         service.authorize_dataset(
             "manager", "org", "ds_protected", "dataset.upload_original"
         )
