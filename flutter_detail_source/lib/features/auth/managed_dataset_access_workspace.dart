@@ -57,11 +57,24 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _load() async {
     setState(() { loading = true; error = null; });
     try {
-      final values = await Future.wait([_get('/v1/managed-datasets'), _get('/v1/authz/management'), _get('/v1/authz/management/data-access/catalog'), _get('/v1/authz/management/data-access/requests')]);
+      // External Viewers do not call management-only endpoints. Their role
+      // and scope come from /authz/me, and dataset visibility from the
+      // resource-authorized managed-dataset endpoint.
+      final values = widget.readOnly
+          ? await Future.wait([
+              _get('/v1/managed-datasets'),
+              _get('/v1/authz/me'),
+            ])
+          : await Future.wait([
+              _get('/v1/managed-datasets'),
+              _get('/v1/authz/management'),
+              _get('/v1/authz/management/data-access/catalog'),
+              _get('/v1/authz/management/data-access/requests'),
+            ]);
       final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
       final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
-      final cat = values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
-      final rq = values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
+      final cat = !widget.readOnly && values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
+      final rq = !widget.readOnly && values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
