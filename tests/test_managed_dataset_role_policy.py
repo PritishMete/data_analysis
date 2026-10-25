@@ -26,11 +26,16 @@ class _Result:
 
 
 class _Db:
-    def __init__(self, roles, grant=None, manager_locations=None, branch_locations=None):
+    def __init__(
+        self, roles, grant=None, manager_locations=None, branch_locations=None,
+        protected=True, location_id="branch-1",
+    ):
         self.roles = roles
         self.grant = grant
         self.manager_locations = manager_locations or []
         self.branch_locations = branch_locations or []
+        self.protected = protected
+        self.location_id = location_id
 
     def __enter__(self):
         return self
@@ -43,7 +48,7 @@ class _Db:
         if "FROM authorization_resources" in sql:
             return _Result(row={"resource_type": "dataset", "owner_principal_id": "owner"})
         if "FROM dataset_authorization" in sql:
-            return _Result(row={"protected_original": True, "location_id": "branch-1"})
+            return _Result(row={"protected_original": self.protected, "location_id": self.location_id})
         if "FROM resource_grants" in sql:
             return _Result(scalar=self.grant)
         if "FROM member_roles" in sql:
@@ -124,6 +129,70 @@ def test_manager_can_replace_protected_original_with_explicit_grant(monkeypatch)
 
     assert result["authorized"] is True
     assert result["location_id"] == "branch-1"
+
+
+def test_manager_can_upload_ordinary_dataset_without_replacement_grant(monkeypatch):
+    db = _Db(["manager"], manager_locations=["branch-1"], protected=False)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["manager"]),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+        "workspace-1",
+        "dataset-ordinary",
+        "dataset.upload",
+    )
+
+    assert result["authorized"] is True
+
+
+def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypatch):
+    db = _Db(
+        ["manager"],
+        grant=["dataset.upload_original"],
+        manager_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["manager"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Manager scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.upload",
+        )
+
+
+def test_organization_owner_keeps_scoped_upload_authority_without_manager_grant(monkeypatch):
+    db = _Db(["organization_owner"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(["organization_owner"]),
+            "permissions": ["dataset.upload", "dataset.manage_acl"],
+        },
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+        "workspace-1",
+        "dataset-1",
+        "dataset.upload",
+    )
+
+    assert result["authorized"] is True
 
 
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
