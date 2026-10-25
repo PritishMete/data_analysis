@@ -73,6 +73,9 @@ class _SessionFactory:
     def __call__(self):
         return self.db
 
+    def begin(self):
+        return self.db
+
 
 def _context(roles):
     return {
@@ -324,7 +327,7 @@ def _grantor_context(role="branch_head"):
 def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monkeypatch):
     db = _GrantDb()
     context = _grantor_context()
-    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
 
     result = supabase_provider.set_dataset_grant(
@@ -343,7 +346,7 @@ def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monk
 def test_branch_head_cannot_grant_protected_replacement_to_other_branch_manager(monkeypatch):
     db = _GrantDb(target_manager_active=False)
     context = _grantor_context()
-    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
 
     with pytest.raises(supabase_provider.AuthzError, match="same branch"):
@@ -359,7 +362,7 @@ def test_branch_head_cannot_grant_protected_replacement_to_other_branch_manager(
 def test_manager_cannot_issue_protected_replacement_grants(monkeypatch):
     db = _GrantDb(target_principal="manager-principal")
     context = _grantor_context("manager")
-    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
 
     with pytest.raises(supabase_provider.AuthzError, match="Only a Branch Head or Organization Owner"):
@@ -375,7 +378,7 @@ def test_manager_cannot_issue_protected_replacement_grants(monkeypatch):
 def test_branch_head_cannot_grant_protected_replacement_to_self(monkeypatch):
     db = _GrantDb(target_principal="head-principal")
     context = _grantor_context()
-    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
 
     with pytest.raises(supabase_provider.AuthzError, match="another active Manager"):
@@ -391,7 +394,7 @@ def test_branch_head_cannot_grant_protected_replacement_to_self(monkeypatch):
 def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
     db = _GrantDb()
     context = _grantor_context()
-    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
 
     result = supabase_provider.set_dataset_grant(
