@@ -268,11 +268,6 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 raise AuthzError("This proposal has already been decided or is no longer pending.")
             if str(proposal["submitted_by_principal_id"]) == principal_id:
                 raise PermissionDenied("A Branch Head cannot review their own proposal.")
-            _revalidate_assignment(
-                repo.db, organization_id=organization_id, workspace_id=workspace_id,
-                principal_id=principal_id, location_id=str(proposal["location_id"]),
-                role_id="branch_head", provider=provider, provider_subject=provider_subject,
-            )
             dataset = repo.db.execute(
                 select(Dataset).where(Dataset.dataset_id == proposal["dataset_id"]).with_for_update()
             ).scalar_one_or_none()
@@ -284,6 +279,11 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 WHERE organization_id=:org AND dataset_id=:dataset
                 FOR UPDATE
             """), {"org": organization_id, "dataset": dataset.dataset_id}).mappings().first()
+            _revalidate_assignment(
+                repo.db, organization_id=organization_id, workspace_id=workspace_id,
+                principal_id=principal_id, location_id=str(proposal["location_id"]),
+                role_id="branch_head", provider=provider, provider_subject=provider_subject,
+            )
             if (
                 current_scope is None
                 or current_scope["status"] != "active"

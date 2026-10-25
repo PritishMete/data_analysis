@@ -57,3 +57,10 @@ def test_publication_paths_revalidate_branch_scope_under_lock():
     assert "original dataset branch assignment changed during upload." in managed
     assert "FOR UPDATE" in proposals
     assert "original dataset branch assignment changed after submission." in proposals
+
+
+def test_publication_lock_order_serializes_dataset_scope_and_assignment():
+    managed = Path("dataset_storage/service.py").read_text(encoding="utf-8")
+    proposals = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
+    assert managed.index("SELECT dataset_id FROM datasets") < managed.index("_lock_active_upload_assignment(repo, context)")
+    assert proposals.index('select(Dataset).where(Dataset.dataset_id == proposal["dataset_id"])') < proposals.index('principal_id=principal_id, location_id=str(proposal["location_id"])')

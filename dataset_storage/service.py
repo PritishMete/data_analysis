@@ -656,8 +656,12 @@ def upload_managed_dataset_stream(
         # Lock the verified assignment in the ingestion session through the
         # final version commit. Manager replacement/suspension must serialize
         # with this final authorization boundary.
-        _lock_active_upload_assignment(repo, context)
         if dataset_id is not None:
+            repo.db.execute(text("""
+                SELECT dataset_id FROM datasets
+                WHERE dataset_id=:dataset AND organization_id=:org
+                FOR UPDATE
+            """), {"dataset": dataset_id, "org": organization_id}).scalar_one_or_none()
             current_scope = repo.db.execute(text("""
                 SELECT location_id, status, protected_original
                 FROM dataset_authorization
@@ -674,6 +678,7 @@ def upload_managed_dataset_stream(
                 or str(current_scope["location_id"] or "") != str(context["location_id"])
             ):
                 raise AuthzError("The original dataset branch assignment changed during upload.")
+        _lock_active_upload_assignment(repo, context)
         if archive_original_enabled():
             stream.seek(0)
             stored = provider.upload_stream(
