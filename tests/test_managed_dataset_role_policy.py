@@ -356,7 +356,7 @@ def test_branch_head_cannot_grant_protected_replacement_to_other_branch_manager(
         )
 
 
-def test_manager_cannot_grant_protected_replacement_to_self(monkeypatch):
+def test_manager_cannot_issue_protected_replacement_grants(monkeypatch):
     db = _GrantDb(target_principal="manager-principal")
     context = _grantor_context("manager")
     monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
@@ -368,5 +368,21 @@ def test_manager_cannot_grant_protected_replacement_to_self(monkeypatch):
             "workspace-1",
             "dataset-1",
             "manager-uid",
+            ["dataset.upload_original"],
+        )
+
+
+def test_branch_head_cannot_grant_protected_replacement_to_self(monkeypatch):
+    db = _GrantDb(target_principal="head-principal")
+    context = _grantor_context()
+    monkeypatch.setattr(supabase_provider, "SessionLocal", lambda: db)
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
+
+    with pytest.raises(supabase_provider.AuthzError, match="another active Manager"):
+        supabase_provider.set_dataset_grant(
+            {"uid": "head-uid", "sub": "head-uid", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "head-uid",
             ["dataset.upload_original"],
         )
