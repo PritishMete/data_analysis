@@ -1,10 +1,13 @@
 name: InsightFlow Backend CI
 
 on:
+  # `feature/employee-management-cell` is the currently configured Render source.
+  # `main` remains the repository default branch but is not silently treated as
+  # the production implementation until a reviewed release synchronization occurs.
   push:
-    branches: [main, feature/data-workspace, feature/employee-management-cell, fix/protected-original-upload-grant-20261025]
+    branches: [main, feature/employee-management-cell]
   pull_request:
-    branches: [main]
+    branches: [main, feature/employee-management-cell]
   workflow_dispatch:
 
 jobs:
