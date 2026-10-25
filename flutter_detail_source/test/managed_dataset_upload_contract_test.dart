@@ -27,4 +27,17 @@ void main() {
     expect(source, contains("row_count"));
     expect(source, contains("column_count"));
   });
+
+  test('manager proposal and Branch Head review UI use authenticated proposal routes', () {
+    final source = File(
+      'lib/features/auth/managed_dataset_access_workspace.dart',
+    ).readAsStringSync();
+
+    expect(source, contains("SUBMIT PROPOSAL"));
+    expect(source, contains("/v1/managed-datasets/proposals"));
+    expect(source, contains("/decision"));
+    expect(source, contains("APPROVE"));
+    expect(source, contains("REJECT"));
+    expect(source, contains("decision_note"));
+  });
 }

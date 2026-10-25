@@ -662,11 +662,13 @@ def upload_managed_dataset_stream(
                 content_type=content_type or "text/csv",
             )
 
+        base_version_id = registration.registration.dataset.current_version_id
         dataset = registry.finalize_version(
             registration.registration.dataset.dataset_id,
             registration.version.version_id,
             storage_provider="supabase_storage" if stored else None,
             storage_object_id=stored.storage_object_id if stored else None,
+            expected_current_version_id=(base_version_id if not new_dataset else None),
         )
         _audit_safely(
             workspace_id,

@@ -20,6 +20,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String? error, rowsError, search;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
+  List<Map<String,dynamic>> proposals = [];
+  String? proposalsError;
   Map<String,dynamic>? selected, profile;
   int offset = 0;
   static const pageSize = 100;
@@ -66,9 +68,62 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
         loading = false;
       });
+      await _loadProposals();
     } catch (e) {
       if (mounted) setState(() { loading = false; error = e.toString().replaceFirst('Bad state: ', ''); });
     }
+  }
+
+  Future<void> _loadProposals() async {
+    if (!roles.any((role) => role == 'manager' || role == 'branch_head')) return;
+    try {
+      final result = await _get('/v1/managed-datasets/proposals');
+      final items = ((result as Map?)?['proposals'] as List? ?? const [])
+          .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      if (mounted) setState(() { proposals = items; proposalsError = null; });
+    } catch (e) {
+      if (mounted) setState(() { proposalsError = e.toString().replaceFirst('Bad state: ', ''); });
+    }
+  }
+
+  Future<void> _submitProposal(String datasetId) async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['csv'], withData: true);
+      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) return;
+      final file = picked.files.single;
+      final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + Uri.encodeComponent(datasetId) + '/proposals'));
+      request.headers.addAll(await _headers());
+      request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
+      final response = await request.send().timeout(const Duration(minutes: 5));
+      final body = await response.stream.bytesToString();
+      dynamic decoded; try { decoded = jsonDecode(body); } catch (_) {}
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Proposal submission was rejected.');
+      }
+      _snack('Dataset proposal submitted for Branch Head review.');
+      await _loadProposals();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _decideProposal(String proposalId, bool approve) async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF0B1725),
+      title: Text(approve ? 'Approve dataset proposal?' : 'Reject dataset proposal?', style: const TextStyle(color: Colors.white)),
+      content: TextField(controller: controller, maxLength: 1000, maxLines: 3,
+        style: const TextStyle(color: Colors.white),
+        decoration: const InputDecoration(labelText: 'Decision note (optional)', labelStyle: TextStyle(color: Color(0xFF9DBDDC)))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(approve ? 'APPROVE' : 'REJECT'))],
+    ));
+    controller.dispose();
+    if (note == null) return;
+    try {
+      await _post('/v1/managed-datasets/proposals/' + Uri.encodeComponent(proposalId) + '/decision', {'approve': approve, 'decision_note': note});
+      _snack(approve ? 'Proposal approved and published.' : 'Proposal rejected.');
+      await _loadProposals();
+      await _load();
+    } catch (e) { _snack(e); }
   }
 
   Future<void> _select(Map<String,dynamic> d) async {
@@ -285,6 +340,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
         ]),
       ])),
+      if (roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
+        const SizedBox(height: 12),
+        _proposalPanel(),
+      ],
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(filtered.length.toString() + (filtered.length == 1 ? ' managed resource' : ' managed resources'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 8),
@@ -320,6 +379,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('START WORKING', Icons.edit_note, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
+          if (roles.contains('manager')) _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
       ])),
@@ -352,6 +412,42 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       ])),
     ]);
   }
+
+  Widget _proposalPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    const Text('Original dataset proposals', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 4),
+    Text(roles.contains('branch_head') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
+    const SizedBox(height: 9),
+    if (proposalsError != null) Text(proposalsError!, style: const TextStyle(color: TechColors.statusRed, fontSize: 10)),
+    if (proposals.isEmpty && proposalsError == null) const Text('No proposals in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
+    ...proposals.map((p) {
+      final status = p['status']?.toString() ?? 'pending';
+      final pending = status == 'pending';
+      final canReview = roles.contains('branch_head') && pending;
+      final rejection = p['decision_note']?.toString();
+      return Padding(padding: const EdgeInsets.only(bottom: 7), child: GlassContainer(
+        useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
+        shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.all(10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const Icon(Icons.fact_check_outlined, color: Color(0xFF43C8F3), size: 17), const SizedBox(width: 8),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((p['original_filename'] ?? p['dataset_id'] ?? 'Dataset proposal').toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 3),
+              Text('STATUS: ' + status.toUpperCase() + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+            ])),
+            if (canReview) ...[
+              _action('APPROVE', Icons.check, () => _decideProposal(p['proposal_id'].toString(), true), active: true),
+              const SizedBox(width: 5),
+              _action('REJECT', Icons.close, () => _decideProposal(p['proposal_id'].toString(), false)),
+            ],
+          ]),
+          if (rejection != null && rejection.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Review note: ' + rejection, style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
+        ]),
+      ));
+    }),
+    Align(alignment: Alignment.centerRight, child: _action('REFRESH PROPOSALS', Icons.refresh, _loadProposals)),
+  ]));
 
   Widget _stat(String label, String value) => GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye(label), const SizedBox(height: 2), Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 

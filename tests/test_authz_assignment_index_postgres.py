@@ -240,7 +240,34 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         "dataset_versions",
         "dataset_columns",
         "dataset_rows",
+        "dataset_change_proposals",
     } <= public_tables
+
+    with postgres_engine.connect() as conn:
+        proposal_security = conn.execute(text("""
+            SELECT c.relrowsecurity,
+                   EXISTS (
+                     SELECT 1 FROM pg_policies p
+                     WHERE p.schemaname='public' AND p.tablename='dataset_change_proposals'
+                   ) AS has_client_policy
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname='public' AND c.relname='dataset_change_proposals'
+        """)).one()
+        assert proposal_security.relrowsecurity is True
+        assert proposal_security.has_client_policy is False
+        proposal_columns = {
+            row[0] for row in conn.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='dataset_change_proposals'
+            """))
+        }
+        assert {
+            "proposal_id", "organization_id", "workspace_id", "dataset_id",
+            "location_id", "candidate_version_pk", "submitted_by_principal_id",
+            "base_version_id", "status", "submitted_at", "reviewed_by_principal_id",
+            "reviewed_at", "decision_note", "file_hash", "file_size",
+        } <= proposal_columns
     with postgres_engine.connect() as conn:
         schemas = {
             row[0] for row in conn.execute(text("""

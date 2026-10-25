@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import BinaryIO
 
 import pandas as pd
+from sqlalchemy import select
 
 from .hashing import compute_file_hash, compute_schema_hash
 from .models import Dataset, DatasetColumn, DatasetVersion
@@ -459,7 +460,14 @@ class DatasetRegistryService:
         checked again after the caller has acquired the dataset row lock.
         """
         try:
-            dataset = self.repository.get_by_id(dataset_id)
+            # Serialize every official publication, including legacy direct Branch Head uploads,
+            # with proposal approvals. Refresh the identity-map object after acquiring the row lock.
+            dataset = self.repository.db.execute(
+                select(Dataset)
+                .where(Dataset.dataset_id == dataset_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalar_one_or_none()
             version = self.repository.get_version(dataset_id, version_id)
             if dataset is None or version is None:
                 raise ValueError("Dataset version does not exist.")

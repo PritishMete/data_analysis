@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
@@ -17,6 +17,7 @@ from .service import (
     list_authorized_datasets,
     upload_managed_dataset_stream,
 )
+from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
 
 router = APIRouter(prefix="/v1/managed-datasets", tags=["managed-datasets"])
 logger = logging.getLogger(__name__)
@@ -95,6 +96,55 @@ def managed_dataset_list(
         return {"datasets": list_authorized_datasets(
             workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
         )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/proposals")
+def managed_dataset_proposal_list(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"proposals": list_dataset_proposals(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/{dataset_id}/proposals")
+async def managed_dataset_proposal_submit(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"success": True, "proposal": submit_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=dataset_id, filename=file.filename or "", stream=file.file,
+            content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/proposals/{proposal_id}/decision")
+def managed_dataset_proposal_decision(
+    proposal_id: str,
+    body: dict = Body(default={}),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict) or not isinstance(body.get("approve"), bool):
+            raise ValueError("A boolean approve field is required.")
+        return decide_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            proposal_id=proposal_id, approve=body["approve"],
+            decision_note=body.get("decision_note"),
+        )
     except Exception as exc:
         raise _map_error(exc)
 
