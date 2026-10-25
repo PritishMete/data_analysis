@@ -183,7 +183,6 @@ def test_branch_head_requires_current_assignment_and_upload_permission(monkeypat
     assert result["location_id"] == "branch-a"
 
 
-@pytest.mark.parametrize("dataset_id", [None, "existing-dataset"])
 def test_protected_original_upload_uses_upload_capability_before_registry(monkeypatch):
     context = _context("manager")
     seen = []
@@ -217,6 +216,7 @@ def test_protected_original_upload_uses_upload_capability_before_registry(monkey
     assert stream.tell() == 0
 
 
+@pytest.mark.parametrize("dataset_id", [None, "existing-dataset"])
 def test_denied_upload_never_reads_stream_or_initializes_registry(monkeypatch, dataset_id):
     context = _context("manager")
     monkeypatch.setattr(dataset_service, "_claims", lambda token: _claims())
