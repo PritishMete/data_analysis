@@ -200,7 +200,7 @@ def test_protected_original_upload_uses_upload_capability_before_registry(monkey
         raise AssertionError("Dataset registry must not be initialized for a denied upload.")
 
     monkeypatch.setattr(dataset_service, "DatasetRepository", fail_if_registry_created)
-    stream = io.BytesIO(b"id,value\\n1,private\\n")
+    stream = io.BytesIO(b"id,value\n1,private\n")
 
     with pytest.raises(supabase_provider.AuthzError, match="dataset.upload_original"):
         dataset_service.upload_managed_dataset_stream(
