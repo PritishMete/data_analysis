@@ -1,7 +1,6 @@
 -- Branch-scoped, revocable Manager upload grants and first-publication proposals.
 -- Forward-only migration: historical proposals are preserved and made stale where
 -- they cannot satisfy the new grant invariant.
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS manager_dataset_upload_grants (
     grant_id TEXT PRIMARY KEY,
@@ -60,4 +59,3 @@ WHERE status = 'pending' AND upload_grant_id IS NULL;
 CREATE INDEX IF NOT EXISTS ix_dataset_change_proposals_grant
     ON dataset_change_proposals (upload_grant_id, status);
 
-COMMIT;
