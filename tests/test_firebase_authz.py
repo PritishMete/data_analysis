@@ -1245,3 +1245,54 @@ def test_team_lead_cannot_grant_protected_original_replacement(monkeypatch):
             "org", "ds_protected", "manager",
             ["dataset.upload_original"], "token",
         )
+
+
+def test_branch_head_can_grant_protected_replacement_to_same_branch_manager(monkeypatch):
+    workspace = {
+        "members": {
+            "head": {
+                "status": "active",
+                "roles": {"branch_head": True},
+                "location_id": "branch-1",
+            },
+            "manager": {
+                "status": "active",
+                "roles": {"manager": True},
+                "location_id": "branch-1",
+            },
+        },
+        "roles": {
+            "branch_head": {"permissions": sorted(service.DEFAULT_ROLES["branch_head"])},
+            "manager": {"permissions": sorted(service.DEFAULT_ROLES["manager"])},
+        },
+        "datasets": {
+            "ds_protected": {
+                "owner_uid": "owner",
+                "protected_original": True,
+                "location_id": "branch-1",
+                "grants": {
+                    "head": {"permissions": ["dataset.manage_acl"]},
+                    "manager": {"permissions": []},
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(service, "_workspace", lambda wid: workspace)
+    monkeypatch.setattr(service, "_user", lambda uid: {"status": "active"})
+    monkeypatch.setattr(service, "verify_id_token", lambda token: {
+        "uid": "head", "email_verified": True, "auth_time": 9999999999,
+    })
+    monkeypatch.setattr(service, "require_recent_auth", lambda claims: claims)
+    monkeypatch.setattr(service, "initialize_firebase", lambda: None)
+    captured = {}
+
+    class Ref:
+        def set(self, value):
+            captured["value"] = value
+
+    monkeypatch.setattr(service.db, "reference", lambda path: Ref())
+
+    assert service.set_dataset_grant(
+        "org", "ds_protected", "manager", ["dataset.upload_original"], "token"
+    )
+    assert captured["value"]["permissions"] == ["dataset.upload_original"]
