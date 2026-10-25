@@ -22,7 +22,8 @@ EXPECTED_TABLES = {
     "authorization_resources", "audit_events", "resource_grants",
     "dataset_authorization", "working_copy_authorization",
     "locations", "sections", "organizational_assignments",
-    "datasets", "dataset_versions", "dataset_columns", "dataset_rows", "dataset_change_proposals",\n    "manager_dataset_upload_grants",
+    "datasets", "dataset_versions", "dataset_columns", "dataset_rows", "dataset_change_proposals",
+    "manager_dataset_upload_grants",
     "organization_employee_id_counters",
 }
 
