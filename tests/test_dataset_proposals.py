@@ -432,7 +432,7 @@ def test_production_release_branch_and_render_service_are_aligned():
     assert "name: data_analysis" in render
     assert "branch: feature/employee-management-cell" in render
     assert "workflow_dispatch:" in workflow
-    assert "\\n  push:" not in workflow
+    assert "  push:" not in workflow
     assert "environment: production" in workflow
     assert "concurrency:" in workflow
     assert "feature/data-workspace" not in workflow
