@@ -205,6 +205,7 @@ class DatasetRegistryService:
         content_type: str | None = None,
         max_bytes: int,
         chunk_rows: int = DEFAULT_CHUNK_ROWS,
+        candidate_version_id: str | None = None,
     ) -> StreamingDatasetRegistration:
         safe_name = os.path.basename(str(filename or "").replace("\\", "/")).strip()
         if (
@@ -340,7 +341,7 @@ class DatasetRegistryService:
 
             version = DatasetVersion(
                 dataset_id=dataset.dataset_id,
-                version_id=f"v{version_number}",
+                version_id=candidate_version_id or f"v{version_number}",
                 version_number=version_number,
                 status="processing",
                 file_hash=file_hash,
