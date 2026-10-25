@@ -617,6 +617,7 @@ DELEGATED_DATASET_PERMISSIONS = {
     "dataset.view_original",
     "dataset.create_working_copy",
     "dataset.share",
+    "dataset.upload_original",
 }
 
 def _approved_employee(workspace: dict[str, Any], uid: str) -> bool:
@@ -912,6 +913,7 @@ def set_dataset_grant(
         "dataset.create_working_copy",
         "dataset.edit_working_copy",
         "dataset.share",
+        "dataset.upload_original",
     }
     if any(permission not in allowed for permission in permissions):
         raise ValueError("Invalid dataset permission.")
@@ -936,6 +938,25 @@ def set_dataset_grant(
         if not _approved_employee(workspace, target_member_uid):
             raise PermissionDenied("Team Leads may grant dataset access only to approved employees.")
     dataset = _dataset(workspace, dataset_id)
+    if "dataset.upload_original" in permissions:
+        if _effective_role_level(actor_member) < ROLE_LEVELS["branch_head"]:
+            raise PermissionDenied("Only a Branch Head or Organization Owner can grant protected-original replacement.")
+        if actor_member_uid == target_member_uid:
+            raise PermissionDenied("You cannot grant protected-original replacement to yourself.")
+        if _membership_status(target_member) != "active":
+            raise PermissionDenied("Protected-original replacement requires an active Manager.")
+        if _effective_role_level(target_member) != ROLE_LEVELS["manager"]:
+            raise PermissionDenied("Protected-original replacement can only be granted to a Manager.")
+        if dataset.get("protected_original") is not True:
+            raise PermissionDenied("Protected-original replacement grants apply only to protected original datasets.")
+        dataset_branch = str(dataset.get("location_id") or dataset.get("branch_id") or "").strip()
+        target_branch = str(target_member.get("location_id") or target_member.get("branch_id") or "").strip()
+        actor_branch = str(actor_member.get("location_id") or actor_member.get("branch_id") or "").strip()
+        if not dataset_branch or not target_branch or dataset_branch != target_branch:
+            raise PermissionDenied("The Manager must be assigned to the same branch as the dataset.")
+        if _effective_role_level(actor_member) < ROLE_LEVELS["organization_owner"]:
+            if not actor_branch or actor_branch != dataset_branch:
+                raise PermissionDenied("The dataset belongs to a branch outside your Branch Head scope.")
     actor_grant = _dataset_grant(dataset, actor)
     actor_can_manage = "dataset.manage_acl" in set(actor_grant.get("permissions") or [])
     delegated_share = _delegated_permission(
@@ -975,6 +996,19 @@ def authorize_dataset(uid: str, workspace_id: str, dataset_id: str, action: str)
         permission for permission in (grants.get("permissions") or [])
         if permission in ACTIONS
     }
+    if action == "dataset.upload_original":
+        member_uid = _member_key_for_workspace(workspace, uid)
+        member = (workspace.get("members") or {}).get(member_uid) if member_uid else None
+        if not isinstance(member, dict) or _membership_status(member) != "active":
+            raise PermissionDenied("User membership is not active.")
+        if _effective_role_level(member) != ROLE_LEVELS["manager"]:
+            raise PermissionDenied("Only a Manager can use a protected-original replacement grant.")
+        if dataset.get("protected_original") is not True:
+            raise PermissionDenied("Protected-original replacement applies only to protected original datasets.")
+        dataset_branch = str(dataset.get("location_id") or dataset.get("branch_id") or "").strip()
+        member_branch = str(member.get("location_id") or member.get("branch_id") or "").strip()
+        if not dataset_branch or member_branch != dataset_branch:
+            raise PermissionDenied("The dataset belongs to a branch outside your Manager scope.")
     if action not in grant_permissions:
         raise PermissionDenied("Permission denied for this dataset.")
     return {
