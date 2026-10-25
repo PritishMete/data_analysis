@@ -1597,7 +1597,8 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                 raise AuthzError("This request belongs to another branch.")
         if not approve:
             db.execute(text("""UPDATE authorization_requests SET status='rejected', reviewed_by_principal_id=:reviewer, reviewed_at=now(), updated_at=now()
-                WHERE request_id=:request"""), {"requester":request_id,"reviewer":context["principal_id"],"request":request_id})
+                WHERE organization_id=:org AND request_id=:request AND status='pending'"""),
+                {"org": org, "reviewer": context["principal_id"], "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
     copy = create_working_copy(claims, workspace_id, req["dataset_id"], None, None)
     with SessionLocal.begin() as db:
