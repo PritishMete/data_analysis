@@ -2,7 +2,7 @@ name: InsightFlow Production Authz Migrations
 
 on:
   push:
-    branches: [feature/data-workspace, feature/employee-management-cell]
+    branches: [feature/employee-management-cell]
     paths:
       - 'migrations/**'
       - 'tools/run_authz_migrations.py'
@@ -27,6 +27,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install sqlalchemy 'psycopg[binary]'
+
+      - name: Require authoritative production release branch
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/feature/employee-management-cell" ]]; then
+            echo "::error::Production authorization migrations may run only from feature/employee-management-cell."
+            exit 1
+          fi
 
       - name: Require production PostgreSQL secret
         run: |
