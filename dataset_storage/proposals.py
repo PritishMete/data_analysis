@@ -4,13 +4,14 @@ import uuid
 from typing import Any, BinaryIO
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from core.db import SessionLocal
 from datasets.models import Dataset, DatasetVersion
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from firebase_authz.service import AuthzError, PermissionDenied
-from firebase_authz.supabase_provider import authorization_context, authorize_dataset
+from firebase_authz.supabase_provider import _identity, authorize_dataset
 from .service import MAX_DATASET_BYTES, _claims, _safe_filename, _authorization_context
 
 
@@ -34,11 +35,13 @@ def _audit(db, *, organization_id: str, principal_id: str, action: str,
 
 def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
                            principal_id: str, location_id: str, role_id: str,
+                           provider: str, provider_subject: str,
                            require_proposal_permission: bool = False) -> None:
     permission_join = """
         JOIN role_permissions rp
           ON rp.role_id=oa.role_id AND rp.permission_id='dataset.propose'
     """ if require_proposal_permission else ""
+    lock_targets = "oa, l, m, mr, ib, o, w" + (", rp" if require_proposal_permission else "")
     row = db.execute(text(f"""
         SELECT oa.assignment_id
         FROM organizational_assignments oa
@@ -51,6 +54,7 @@ def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
          AND mr.principal_id=oa.principal_id AND mr.role_id=oa.role_id
         JOIN identity_bindings ib
           ON ib.principal_id=m.principal_id AND ib.status='active'
+         AND ib.provider=:provider AND ib.provider_subject=:provider_subject
         JOIN organizations o ON o.organization_id=m.organization_id AND o.status='active'
         JOIN workspaces w ON w.workspace_id=m.workspace_id AND w.status='active'
         {permission_join}
@@ -59,10 +63,11 @@ def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
           AND oa.role_id=:role AND oa.status='active'
           AND m.status='active' AND l.status='active'
         ORDER BY oa.assignment_id
-        LIMIT 1 FOR SHARE OF oa, l, m
+        LIMIT 1 FOR SHARE OF {lock_targets}
     """), {
         "org": organization_id, "workspace": workspace_id,
         "principal": principal_id, "location": location_id, "role": role_id,
+        "provider": provider, "provider_subject": provider_subject,
     }).scalar_one_or_none()
     if row is None:
         raise PermissionDenied("An active membership and assignment to this exact branch are required.")
@@ -104,6 +109,7 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
     organization_id = str(context["organization_id"])
     principal_id = str(context["principal_id"])
     workspace_id = str(context["workspace_id"])
+    provider, provider_subject = _identity(claims)
     safe_name = _safe_filename(filename)
 
     repo = DatasetRepository(SessionLocal())
@@ -140,6 +146,7 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
             _revalidate_assignment(
                 repo.db, organization_id=organization_id, workspace_id=workspace_id,
                 principal_id=principal_id, location_id=location_id, role_id="manager",
+                provider=provider, provider_subject=provider_subject,
                 require_proposal_permission=True,
             )
             repo.db.execute(text("""
@@ -165,7 +172,7 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
         return {"proposal_id": proposal_id, "dataset_id": dataset_id,
                 "candidate_version_id": candidate.version_id, "base_version_id": base_version_id,
                 "status": "pending", "submitted_at": candidate.created_at.isoformat()}
-    except Exception:
+    except Exception as exc:
         repo.db.rollback()
         if registration is not None and not registration.registration.was_duplicate:
             try:
@@ -173,6 +180,8 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str,
                 _discard_sql_registration(repo, dataset_id, candidate_version_id, False)
             except Exception:
                 pass
+        if isinstance(exc, IntegrityError) and "uq_dataset_change_pending_content" in str(exc.orig):
+            raise AuthzError("An identical proposal is already pending for this dataset version.") from exc
         raise
     finally:
         repo.db.close()
@@ -231,6 +240,7 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
     organization_id = str(context["organization_id"])
     workspace_id = str(context["workspace_id"])
     principal_id = str(context["principal_id"])
+    provider, provider_subject = _identity(claims)
     repo = DatasetRepository(SessionLocal())
     try:
         with repo.db.begin():
@@ -248,7 +258,7 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
             _revalidate_assignment(
                 repo.db, organization_id=organization_id, workspace_id=workspace_id,
                 principal_id=principal_id, location_id=str(proposal["location_id"]),
-                role_id="branch_head",
+                role_id="branch_head", provider=provider, provider_subject=provider_subject,
             )
             dataset = repo.db.execute(
                 select(Dataset).where(Dataset.dataset_id == proposal["dataset_id"]).with_for_update()

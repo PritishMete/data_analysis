@@ -8,7 +8,7 @@
 # registration on every upload rather than only via this dedicated route.
 # ─────────────────────────────────────────────────────────────────────────────
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,17 @@ from schema_intelligence.routes import get_column_detection_repository, get_dupl
 from schema_intelligence.service import SchemaIntelligenceService
 
 from .service import DatasetIngestionOrchestrator
+from dataset_storage.routes import _token, _workspace
+from dataset_storage.service import (
+    MAX_DATASET_BYTES,
+    _authorize_dataset,
+    _authorize_upload,
+    _register_authorization,
+    _audit_safely,
+    _safe_filename,
+)
+from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, require_email_verified, verify_id_token
+from firebase_authz.supabase_provider import authorization_context
 
 ingestion_router = APIRouter(prefix="/v2/ingest", tags=["ingestion"])
 
@@ -67,22 +78,70 @@ async def ingest_dataset(
     organization_id: str = Form(...),
     dataset_name: str | None = Form(None),
     uploaded_by: str | None = Form(None),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
     db: Session = Depends(get_db),
     orchestrator: DatasetIngestionOrchestrator = Depends(get_orchestrator),
 ):
-    raw_bytes = await file.read()
-    filename = file.filename or "upload.csv"
+    # This legacy ingestion endpoint also creates READY registry versions. Keep it
+    # behind the same server-side Branch Head gate as managed-dataset uploads.
+    try:
+        token = _token(authorization)
+        claims = require_email_verified(verify_id_token(token))
+        resolved_workspace = _workspace(workspace_id, authorization)
+        context = authorization_context(claims, resolved_workspace)
+        if not context.get("workspace_authorized"):
+            raise PermissionDenied("Workspace authorization denied.")
+        upload_scope = _authorize_upload(claims, resolved_workspace)
+    except AuthenticationRequired as exc:
+        raise HTTPException(401, str(exc)) from exc
+    except AuthzError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    if organization_id and str(organization_id) != str(context["organization_id"]):
+        raise HTTPException(403, "The supplied organization does not match the authenticated workspace.")
+    try:
+        filename = _safe_filename(file.filename or "upload.csv")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    raw_bytes = await file.read(MAX_DATASET_BYTES + 1)
+    if len(raw_bytes) > MAX_DATASET_BYTES:
+        raise HTTPException(413, "Dataset file exceeds the configured upload limit.")
     df = read_file_to_dataframe(filename, raw_bytes)
-
-    source_type = filename.lower().rsplit(".", 1)[-1] if "." in filename else "csv"
-
     result = orchestrator.ingest(
         df=df,
         raw_bytes=raw_bytes,
-        organization_id=organization_id,
+        organization_id=str(context["organization_id"]),
         dataset_name=dataset_name or filename,
-        uploaded_by=uploaded_by,
-        source_type=source_type,
+        uploaded_by=str(context["principal_id"]),
+        source_type="csv",
+    )
+    dataset_id = result.registration.dataset.dataset_id
+    if result.registration.was_duplicate:
+        try:
+            scope = _authorize_dataset(claims, resolved_workspace, dataset_id, "dataset.view_original")
+            if str(scope.get("location_id") or "") != str(upload_scope["location_id"]):
+                raise PermissionDenied("The existing dataset belongs to a different branch.")
+        except AuthzError as exc:
+            raise HTTPException(403, "An existing dataset cannot be re-registered into another branch.") from exc
+    else:
+        try:
+            _register_authorization(claims, resolved_workspace, dataset_id, str(upload_scope["location_id"]))
+        except Exception:
+            # Registry ingestion commits internally; remove a newly-created
+            # orphan if its authorization record cannot be committed.
+            try:
+                db.delete(result.registration.dataset)
+                db.commit()
+            except Exception:
+                db.rollback()
+            raise
+    _audit_safely(
+        resolved_workspace,
+        str(claims["uid"]),
+        "dataset.upload",
+        "duplicate" if result.registration.was_duplicate else "succeeded",
+        resource_id=dataset_id,
+        metadata={"source": "legacy_ingestion_route", "location_id": str(upload_scope["location_id"])},
     )
 
     columns_out = [

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS dataset_change_proposals (
     organization_id TEXT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
     workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
     dataset_id TEXT NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
-    location_id TEXT NOT NULL REFERENCES locations(location_id),
+    location_id TEXT NOT NULL,
     candidate_version_pk TEXT NOT NULL REFERENCES dataset_versions(version_pk) ON DELETE RESTRICT,
     candidate_version_id TEXT NOT NULL,
     submitted_by_principal_id TEXT NOT NULL REFERENCES principals(principal_id),
@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS dataset_change_proposals (
     reviewed_by_principal_id TEXT REFERENCES principals(principal_id),
     reviewed_at TIMESTAMPTZ,
     decision_note TEXT CHECK (decision_note IS NULL OR char_length(decision_note) <= 1000),
-    CONSTRAINT uq_dataset_change_proposal_candidate UNIQUE (candidate_version_pk)
+    CONSTRAINT uq_dataset_change_proposal_candidate UNIQUE (candidate_version_pk),
+    CONSTRAINT fk_dataset_change_proposal_branch
+        FOREIGN KEY (organization_id, location_id)
+        REFERENCES locations(organization_id, location_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS ix_dataset_change_proposals_submitter
@@ -37,3 +40,8 @@ CREATE INDEX IF NOT EXISTS ix_dataset_change_proposals_branch_status
 -- Supabase API roles receive no table policy. Backend access is through the
 -- authenticated server and its database connection; client-side table access is denied.
 ALTER TABLE dataset_change_proposals ENABLE ROW LEVEL SECURITY;
+
+-- Prevent duplicate pending submissions for the same candidate content and base version.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_dataset_change_pending_content
+    ON dataset_change_proposals (dataset_id, base_version_id, file_hash)
+    WHERE status = 'pending';

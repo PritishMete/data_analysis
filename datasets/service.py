@@ -462,12 +462,15 @@ class DatasetRegistryService:
         try:
             # Serialize every official publication, including legacy direct Branch Head uploads,
             # with proposal approvals. Refresh the identity-map object after acquiring the row lock.
-            dataset = self.repository.db.execute(
-                select(Dataset)
-                .where(Dataset.dataset_id == dataset_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            ).scalar_one_or_none()
+            if hasattr(self.repository.db, "execute"):
+                dataset = self.repository.db.execute(
+                    select(Dataset)
+                    .where(Dataset.dataset_id == dataset_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).scalar_one_or_none()
+            else:  # lightweight repository doubles used by isolated unit tests
+                dataset = self.repository.get_by_id(dataset_id)
             version = self.repository.get_version(dataset_id, version_id)
             if dataset is None or version is None:
                 raise ValueError("Dataset version does not exist.")

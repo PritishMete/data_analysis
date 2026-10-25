@@ -268,6 +268,17 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
             "base_version_id", "status", "submitted_at", "reviewed_by_principal_id",
             "reviewed_at", "decision_note", "file_hash", "file_size",
         } <= proposal_columns
+        pending_index = conn.execute(text("""
+            SELECT indexdef FROM pg_indexes
+            WHERE schemaname='public' AND indexname='uq_dataset_change_pending_content'
+        """)).scalar_one_or_none()
+        assert pending_index is not None
+        assert "WHERE (status = 'pending'::text)" in pending_index or "WHERE status = 'pending'::text" in pending_index
+        branch_fk = conn.execute(text("""
+            SELECT 1 FROM pg_constraint
+            WHERE conname='fk_dataset_change_proposal_branch' AND contype='f'
+        """)).scalar_one_or_none()
+        assert branch_fk == 1
     with postgres_engine.connect() as conn:
         schemas = {
             row[0] for row in conn.execute(text("""
