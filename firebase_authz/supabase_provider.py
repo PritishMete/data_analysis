@@ -1161,16 +1161,19 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             member_scope = "m.principal_id=:actor"
             member_params = {"org": org, "actor": actor}
 
-        members = db.execute(text(f"""SELECT b.firebase_uid AS uid, m.employee_id, m.status,
-            COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids
+        members = db.execute(text(f"""SELECT b.provider_subject AS uid, m.principal_id,
+            m.employee_id, m.status,
+            COALESCE(array_agg(DISTINCT mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), ARRAY[]::text[]) AS role_ids,
+            COALESCE(array_agg(DISTINCT oa.location_id) FILTER (WHERE oa.location_id IS NOT NULL), ARRAY[]::text[]) AS location_ids
             FROM organization_members m
-            JOIN identity_bindings b ON b.principal_id=m.principal_id
+            JOIN identity_bindings b
+              ON b.principal_id=m.principal_id AND b.provider='supabase' AND b.status='active'
             LEFT JOIN member_roles mr
               ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
             LEFT JOIN organizational_assignments oa
               ON oa.organization_id=m.organization_id AND oa.principal_id=m.principal_id AND oa.status='active'
             WHERE m.organization_id=:org AND {member_scope}
-            GROUP BY b.firebase_uid,m.employee_id,m.status"""), member_params).mappings().all()
+            GROUP BY b.provider_subject,m.principal_id,m.employee_id,m.status"""), member_params).mappings().all()
 
         if organization_wide:
             dataset_scope = "TRUE"
@@ -1186,7 +1189,7 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             # workflow. The original/master registry is not exposed by this
             # legacy management snapshot.
             dataset_scope = "FALSE"
-        datasets = db.execute(text(f"""SELECT da.dataset_id, da.protected_original,
+        datasets = db.execute(text(f"""SELECT da.dataset_id, da.location_id, da.protected_original,
             da.status AS authorization_status, r.owner_principal_id,
             ds.dataset_name, ds.original_filename, ds.row_count, ds.column_count,
             ds.current_version_id AS current_version, ds.version_number,
@@ -1214,15 +1217,34 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                   )
             )"""
         else:
-            working_copy_scope = """EXISTS (
-                SELECT 1 FROM working_copy_assignments wca
-                WHERE wca.organization_id=wc.organization_id
-                  AND wca.working_copy_id=wc.working_copy_id
-                  AND wca.principal_id=:actor
-                  AND wca.status='active'
+            working_copy_scope = """(
+                EXISTS (
+                    SELECT 1 FROM working_copy_assignments wca
+                    WHERE wca.organization_id=wc.organization_id
+                      AND wca.working_copy_id=wc.working_copy_id
+                      AND wca.principal_id=:actor AND wca.status='active'
+                )
+                OR EXISTS (
+                    SELECT 1 FROM resource_grants rg
+                    WHERE rg.organization_id=wc.organization_id
+                      AND rg.resource_id=wc.working_copy_id
+                      AND rg.principal_id=:actor
+                      AND rg.permissions @> CAST('["working_copy.view"]' AS jsonb)
+                )
             )"""
-        working_copies = db.execute(text(f"""SELECT wc.working_copy_id, wc.source_dataset_id,
-            wc.source_version, wc.version, wc.status, wc.created_by_principal_id
+        copy_source_fields = (
+            "wc.source_dataset_id, wc.source_version,"
+            if organization_wide or "branch_head" in actor_roles or "manager" in actor_roles
+            else ""
+        )
+        copy_creator_field = (
+            "wc.created_by_principal_id,"
+            if organization_wide or "branch_head" in actor_roles or "manager" in actor_roles
+            else ""
+        )
+        working_copies = db.execute(text(f"""SELECT wc.working_copy_id,
+            {copy_source_fields} wc.version, wc.status, {copy_creator_field}
+            wc.created_at
             FROM working_copy_authorization wc
             WHERE wc.organization_id=:org AND wc.status='active' AND {working_copy_scope}"""),
             {"org": org, "actor": actor}).mappings().all()
@@ -1240,8 +1262,9 @@ def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, 
             )"""
         else:
             approved_scope = "a.principal_id=:actor"
-        approved = db.execute(text(f"""SELECT b.firebase_uid AS uid, a.employee_id, a.status
-            FROM approved_employees a JOIN identity_bindings b ON b.principal_id=a.principal_id
+        approved = db.execute(text(f"""SELECT b.provider_subject AS uid, a.principal_id, a.employee_id, a.status
+            FROM approved_employees a JOIN identity_bindings b
+              ON b.principal_id=a.principal_id AND b.provider='supabase' AND b.status='active'
             WHERE a.organization_id=:org AND a.status='active' AND {approved_scope}"""),
             {"org": org, "actor": actor}).mappings().all()
 
