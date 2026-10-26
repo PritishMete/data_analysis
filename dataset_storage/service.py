@@ -78,21 +78,18 @@ def _authorize_upload(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Restrict permanent original writes to Owner, Branch Head, or granted Manager.
+    """Restrict direct original writes to Owner or Branch Head.
 
-    Owners can write organization-wide; Branch Heads are restricted to their
-    active branch; Managers must hold an active, revocable upload grant for the
-    exact branch. Lower roles can only work on separately authorized copies.
+    Managers must submit a private proposal for Branch Head review; an upload
+    grant never lets a Manager publish or replace an original directly.
     """
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
+    if not roles.intersection({"organization_owner", "branch_head"}):
         raise AuthzError(
-            "Only an Organization Owner, Branch Head, or explicitly authorized Manager "
-            "may write an original dataset."
+            "Only an Organization Owner or Branch Head may write an original dataset. "
+            "Managers must submit a proposal for Branch Head review."
         )
-    # authorize_dataset_upload_scope is the enforcement point for a Manager's
-    # exact-branch, revocable grant. Merely holding the Manager role is not enough.
     return authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
     )
