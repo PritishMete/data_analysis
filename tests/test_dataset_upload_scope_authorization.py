@@ -148,6 +148,20 @@ def test_branch_head_requires_current_assignment_and_upload_permission(monkeypat
     assert result["location_id"] == "branch-a"
 
 
+def test_branch_head_without_dataset_upload_capability_is_denied(monkeypatch):
+    _install_scope(
+        monkeypatch, role="branch_head", permission=False,
+        assignments={"branch_head": ["branch-a"]},
+        upload_permission_roles=[],
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="active role lacks the dataset.upload permission",
+    ):
+        supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
+
+
 def test_protected_original_upload_uses_upload_capability_before_registry(monkeypatch):
     context = _context("manager")
     seen = []
