@@ -3402,7 +3402,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           .join('\n');
 
       final Map<String, dynamic> decoded;
-      if (secureLocalOnly && isSentimentQuery) {
+      if (secureLocalOnly && isSentimentQuery && !managedRemoteSession) {
         final reviewIndex = rows.first.indexWhere((cell) {
           final header = cell?.toString().toLowerCase() ?? '';
           return header.contains('review') &&
