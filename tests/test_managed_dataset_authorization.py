@@ -52,6 +52,10 @@ class _AuthzSession:
             return _Result(scalar=self.grant)
         if "FROM member_roles" in sql:
             return _Result(scalars=["organization_owner"])
+        if "FROM locations" in sql:
+            if (params or {}).get("location"):
+                return _Result(scalar="branch-1")
+            return _Result(scalars=["branch-1"])
         if "FROM identity_bindings" in sql and "JOIN organization_members" in sql:
             return _Result(scalar=self.owner)
         return _Result()
@@ -147,11 +151,18 @@ def test_revoked_dataset_grant_is_rejected(monkeypatch):
         grant=[],
     )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
-    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context())
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(),
+            "role_ids": ["external_viewer"],
+            "permissions": ["data.view"],
+        },
+    )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Permission denied for this resource"):
+    with pytest.raises(supabase_provider.AuthzError, match="explicit read-only dataset grant"):
         supabase_provider.authorize_dataset(
-            {"uid": "owner", "sub": "owner", "provider": "supabase"},
+            {"uid": "viewer", "sub": "viewer", "provider": "supabase"},
             "workspace-owner",
             "dataset-owner",
             "dataset.view_original",
