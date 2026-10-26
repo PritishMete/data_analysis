@@ -2176,16 +2176,18 @@ def authorize_dataset_upload_scope(
         raise AuthzError("Workspace authorization denied.")
 
     roles = set(context.get("role_ids", []))
-    if "dataset.upload" not in set(context.get("permissions", [])):
-        raise AuthzError("The active role lacks the dataset.upload permission.")
     if "organization_owner" in roles:
         upload_role = "organization_owner"
     elif "branch_head" in roles:
         upload_role = "branch_head"
     elif "manager" in roles:
+        # A Manager's base role is not sufficient. The exact-branch grant below
+        # is the authority to upload or publish a new original version.
         upload_role = "manager"
     else:
-        raise AuthzError("Only the active Branch Head or Organization Owner can directly modify an original dataset; Managers must submit changes for Branch Head review.")
+        raise AuthzError("Only an Organization Owner, Branch Head, or explicitly authorized Manager can modify an original dataset.")
+    if upload_role != "manager" and "dataset.upload" not in set(context.get("permissions", [])):
+        raise AuthzError("The active role lacks the dataset.upload permission.")
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -2199,8 +2201,12 @@ def authorize_dataset_upload_scope(
                 """), {"org": org}).scalars().all()
             }
         else:
+            permission_join = (
+                "" if upload_role == "manager" else
+                "JOIN role_permissions rp ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'"
+            )
             allowed_locations = {
-                str(value) for value in db.execute(text("""
+                str(value) for value in db.execute(text(f"""
                     SELECT DISTINCT oa.location_id
                     FROM organizational_assignments oa
                     JOIN organization_members m
@@ -2208,8 +2214,7 @@ def authorize_dataset_upload_scope(
                     JOIN member_roles mr
                       ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
                      AND mr.role_id=oa.role_id
-                    JOIN role_permissions rp
-                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+                    {permission_join}
                     JOIN locations l
                       ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
                     WHERE oa.organization_id=:org AND oa.principal_id=:principal
@@ -2374,8 +2379,8 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
     grant_permissions = set(grants or [])
     if action in {"dataset.upload", "dataset.upload_original"}:
-        if not ({"organization_owner", "branch_head"} & roles):
-            raise AuthzError("Only the active Branch Head or Organization Owner can directly modify an original dataset; Managers must submit changes for Branch Head review.")
+        if not ({"organization_owner", "branch_head", "manager"} & roles):
+            raise AuthzError("Only an Organization Owner, Branch Head, or explicitly authorized Manager can modify an original dataset.")
         if not row["protected_original"] or not dataset_location:
             raise AuthzError("Only a published, branch-scoped original dataset can be modified.")
         upload_context = authorize_dataset_upload_scope(
