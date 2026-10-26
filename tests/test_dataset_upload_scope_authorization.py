@@ -33,6 +33,8 @@ class _AssignmentDb:
 
     def execute(self, statement, params=None):
         sql = str(statement)
+        if "FROM manager_dataset_upload_grants g" in sql:
+            return _Result(self.assignments.get("manager", []))
         assert "FROM organizational_assignments oa" in sql
         assert "JOIN locations l" in sql
         assert "JOIN organization_members m" in sql
