@@ -2323,6 +2323,8 @@ def authorize_dataset_upload_scope(
 
     if location_id is None:
         if not allowed_locations:
+            if upload_role == "manager":
+                raise AuthzError("An active Manager assignment and explicit upload grant for the branch are required.")
             raise AuthzError("An active branch assignment with dataset.upload permission is required.")
         if len(allowed_locations) != 1:
             raise AuthzError("An unambiguous active branch assignment is required.")
@@ -2330,7 +2332,9 @@ def authorize_dataset_upload_scope(
     else:
         target_location = str(location_id).strip()
         if not target_location or target_location not in allowed_locations:
-            raise AuthzError("You are without your active branch assignment or required grant for the selected branch.")
+            if upload_role == "manager":
+                raise AuthzError("The Manager has no active upload grant for the selected branch.")
+            raise AuthzError("You are without an active branch assignment or required upload permission for the selected branch.")
 
     return {
         **context,
@@ -2693,9 +2697,21 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
         """), {"org": org, "copy": copy_id, "principal": principal,
                 "permissions": json.dumps(sorted(copy_permissions))})
-    return {"working_copy_id": copy_id, "organization_id": org,
-            "workspace_id": workspace, "source_dataset_id": dataset_id,
-            "source_version": version_id}
+    result = {
+        "working_copy_id": copy_id,
+        "organization_id": org,
+        "workspace_id": workspace,
+        "access_mode": "working_copy",
+    }
+    # Privileged supervisors may see the source pointer. Copy-only users receive
+    # only the opaque capability ID; they cannot pivot their client back to the
+    # original dataset or version.
+    if roles.intersection({"organization_owner", "branch_head", "manager"}):
+        result.update({
+            "source_dataset_id": dataset_id,
+            "source_version": version_id,
+        })
+    return result
 
 
 def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, action: str) -> dict[str, Any]:
