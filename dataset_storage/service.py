@@ -18,6 +18,7 @@ from firebase_authz.supabase_provider import (
     authorize,
     authorize_dataset_upload_scope,
     authorize_dataset,
+    authorize_working_copy,
     create_working_copy,
     delete_dataset_authorization,
     register_dataset,
@@ -341,12 +342,125 @@ def get_managed_dataset_rows(
         repo.db.close()
 
 
+def get_working_copy_profile(
+    *,
+    workspace_id: str,
+    token: str,
+    working_copy_id: str,
+    preview_limit: int = 5,
+) -> dict[str, Any]:
+    """Read a pinned snapshot through a working-copy grant, not by source ID."""
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    copy_context = authorize_working_copy(
+        claims, workspace_id, working_copy_id, "working_copy.view"
+    )
+    source_dataset_id = str(copy_context["source_dataset_id"])
+    source_version_id = str(copy_context["source_version"])
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        dataset = repo.get_by_id(source_dataset_id)
+        organization_id = str(context["organization_id"])
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("The working-copy source is no longer available.")
+        version = repo.get_version(source_dataset_id, source_version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("The authorized working-copy version is no longer available.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        names = [column.column_name for column in columns]
+        column_stats = [
+            {
+                "column_name": column.column_name,
+                "detected_type": column.detected_type,
+                "nullable": column.nullable,
+                "unique_count": column.unique_count,
+                "missing_count": column.missing_count,
+                "missing_percentage": column.missing_percentage,
+                "inferred_role": column.inferred_role,
+                "inferred_role_confidence": column.inferred_role_confidence,
+            }
+            for column in columns
+        ]
+        rows = repo.get_rows(
+            version.version_pk,
+            limit=min(max(1, preview_limit), 20),
+            offset=0,
+        )
+        return {
+            "working_copy_id": working_copy_id,
+            "access_mode": "working_copy",
+            "dataset_name": dataset.dataset_name or dataset.original_filename or "Authorized copy",
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "version_status": version.status,
+            "schema": column_stats,
+            "column_names": names,
+            "missing_values": {
+                item["column_name"]: item["missing_count"] for item in column_stats
+            },
+            "unique_values": {
+                item["column_name"]: item["unique_count"] for item in column_stats
+            },
+            "preview": [
+                [
+                    (row["row_data"] if isinstance(row, dict) else row.row_data).get(name)
+                    for name in names
+                ]
+                for row in rows
+            ],
+        }
+    finally:
+        repo.db.close()
+
+
+def get_working_copy_rows(
+    *,
+    workspace_id: str,
+    token: str,
+    working_copy_id: str,
+    limit: int = 1000,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Read rows from the immutable version pinned to an authorized working copy."""
+    claims = _claims(token)
+    copy_context = authorize_working_copy(
+        claims, workspace_id, working_copy_id, "working_copy.view"
+    )
+    source_dataset_id = str(copy_context["source_dataset_id"])
+    source_version_id = str(copy_context["source_version"])
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        dataset = repo.get_by_id(source_dataset_id)
+        if dataset is None or dataset.organization_id != str(copy_context["organization_id"]):
+            raise FileNotFoundError("The working-copy source is no longer available.")
+        version = repo.get_version(source_dataset_id, source_version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("The authorized working-copy version is no longer available.")
+        rows = repo.get_rows(version.version_pk, limit=min(max(1, limit), 10000), offset=max(0, offset))
+        return {
+            "working_copy_id": working_copy_id,
+            "access_mode": "working_copy",
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "offset": max(0, offset),
+            "limit": min(max(1, limit), 10000),
+            "rows": rows,
+        }
+    finally:
+        repo.db.close()
+
+
 def load_managed_dataset_dataframe(
     *,
     workspace_id: str,
     token: str,
-    dataset_id: str,
+    dataset_id: str | None = None,
     version_id: str | None = None,
+    working_copy_id: str | None = None,
 ) -> pd.DataFrame:
     """Materialize one authorized managed version for an analysis request.
 
@@ -356,7 +470,19 @@ def load_managed_dataset_dataframe(
     """
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
-    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    if working_copy_id:
+        # Resolve source and pinned version exclusively server-side. The client
+        # cannot convert a copy request into a direct original read by choosing
+        # an original dataset ID or newer version.
+        copy_context = authorize_working_copy(
+            claims, workspace_id, working_copy_id, "working_copy.view"
+        )
+        dataset_id = str(copy_context["source_dataset_id"])
+        version_id = str(copy_context["source_version"])
+    else:
+        if not dataset_id:
+            raise ValueError("A managed dataset or authorized working copy is required.")
+        _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
