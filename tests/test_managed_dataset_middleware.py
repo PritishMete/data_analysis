@@ -1,4 +1,7 @@
-from firebase_authz.middleware import managed_dataset_route_policy
+from firebase_authz.middleware import (
+    MANAGED_DATASET_SERVICE_AUTH_POLICY,
+    managed_dataset_route_policy,
+)
 
 
 def test_managed_dataset_list_remains_workspace_scoped():
@@ -24,3 +27,21 @@ def test_managed_dataset_mutations_keep_existing_resource_policy():
         "dataset.delete",
         True,
     )
+
+def test_proposal_and_manager_grant_routes_use_their_service_authorization():
+    # These handlers validate Supabase identity, active membership, role and
+    # exact branch scope themselves. The generic middleware must not treat
+    # fixed route names as dataset IDs or require a generic resource header.
+    service_authorized = MANAGED_DATASET_SERVICE_AUTH_POLICY
+    routes = [
+        ("GET", "/v1/managed-datasets/proposals"),
+        ("POST", "/v1/managed-datasets/proposals"),
+        ("POST", "/v1/managed-datasets/ds_123/proposals"),
+        ("POST", "/v1/managed-datasets/proposals/dsp_123/decision"),
+        ("GET", "/v1/managed-datasets/upload-grants"),
+        ("POST", "/v1/managed-datasets/upload-grants"),
+        ("DELETE", "/v1/managed-datasets/upload-grants/mug_123"),
+    ]
+    for method, path in routes:
+        assert managed_dataset_route_policy(method, path) == service_authorized
+
