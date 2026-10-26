@@ -87,7 +87,7 @@ def _authorize_upload(
     roles = set(context.get("role_ids", []))
     if "organization_owner" not in roles and "branch_head" not in roles:
         raise AuthzError(
-            "Only the active Branch Head or Organization Owner can directly write "
+            "Branch Head only (or the Organization Owner) may directly write "
             "an original dataset. Managers must submit changes for Branch Head review."
         )
     return authorize_dataset_upload_scope(
@@ -805,7 +805,7 @@ def delete_managed_dataset(
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head"}):
+    if "branch_head" not in set(context.get("role_ids", [])) and "organization_owner" not in set(context.get("role_ids", [])):
         raise PermissionDenied("Only an Organization Owner or Branch Head may delete an original dataset.")
     dataset_scope = _authorize_dataset(claims, workspace_id, dataset_id, "dataset.delete")
     location_id = str(dataset_scope.get("location_id") or "")
