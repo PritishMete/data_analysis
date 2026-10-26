@@ -2235,13 +2235,15 @@ def authorize_dataset_upload_scope(
                 allowed_locations &= manager_grants
 
     if location_id is None:
+        if not allowed_locations:
+            raise AuthzError("An active branch assignment with dataset.upload permission is required.")
         if len(allowed_locations) != 1:
-            raise AuthzError("Select one branch where you have active upload authority.")
+            raise AuthzError("An unambiguous active branch assignment is required.")
         target_location = next(iter(allowed_locations))
     else:
         target_location = str(location_id).strip()
         if not target_location or target_location not in allowed_locations:
-            raise AuthzError("You do not have upload authority for the selected branch.")
+            raise AuthzError("You are without your active branch assignment or required grant for the selected branch.")
 
     return {
         **context,
