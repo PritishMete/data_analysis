@@ -1038,8 +1038,8 @@ def set_delegation(claims: dict[str, Any], workspace_id: str, team_lead_uid: str
         lead_id = str(lead["principal_id"])
         actor_assignments = _active_assigned_role_rows(db, workspace_id, actor_id)
         roles = {str(row["role_id"]) for row in actor_assignments}
-        if not roles.intersection({"organization_owner", "branch_head", "manager"}):
-            raise AuthzError("Only an Owner, Branch Head, or Manager can authorize dataset copies.")
+        if not roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an active Organization Owner or Branch Head can manage delegations.")
         lead_assignments = _active_assigned_role_rows(db, workspace_id, lead_id)
         if not any(row["role_id"] == "team_lead" for row in lead_assignments):
             raise AuthzError("Delegation target must be an active Team Lead.")
@@ -2312,6 +2312,7 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
     workspace = str(context["workspace_id"])
     principal = str(context["principal_id"])
     roles = set(context.get("role_ids", []))
+    actor_roles = roles
     with SessionLocal() as db:
         resource = db.execute(text("""
             SELECT resource_type, owner_principal_id
@@ -2380,11 +2381,11 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         elif "manager" in roles:
             if not dataset_location or dataset_location not in scoped_locations:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
-        elif "external_viewer" in roles:
+        elif "external_viewer" in actor_roles:
             if "dataset.view_original" not in grant_permissions:
                 raise AuthzError("An explicit read-only dataset grant is required.")
         else:
-            raise AuthzError("Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view an original dataset.")
+            raise AuthzError("This role cannot access an original dataset; Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view it.")
 
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
         actor_roles = roles
