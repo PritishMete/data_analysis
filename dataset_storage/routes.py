@@ -24,6 +24,7 @@ from .manager_grants import (
     create_manager_upload_grant,
     list_manager_upload_grants,
     list_my_manager_upload_grants,
+    list_uploadable_locations,
     revoke_manager_upload_grant,
 )
 
@@ -121,6 +122,20 @@ async def managed_new_dataset_proposal_submit(
             workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
             dataset_id=None, location_id=location_id, filename=file.filename or "",
             stream=file.file, content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/upload-scope")
+def managed_upload_scope(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"locations": list_uploadable_locations(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
         )}
     except Exception as exc:
         raise _map_error(exc)
