@@ -751,70 +751,113 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
         )
     return {"password_setup": True, "organization_id": str(invitation["organization_id"])}
 
+def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list[dict[str, Any]]:
+    """Return only role assignments backed by an active membership and active scope."""
+    rows = db.execute(text("""
+        SELECT oa.assignment_id, oa.location_id, oa.section_id, oa.role_id
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        JOIN member_roles mr
+          ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+         AND mr.role_id=oa.role_id
+        LEFT JOIN locations l
+          ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+        LEFT JOIN sections s
+          ON s.organization_id=oa.organization_id AND s.section_id=oa.section_id
+         AND s.location_id=oa.location_id
+        WHERE oa.organization_id=:org AND m.workspace_id=:workspace
+          AND oa.principal_id=:principal AND m.status='active' AND oa.status='active'
+          AND oa.role_id <> 'organization_owner'
+          AND oa.location_id IS NOT NULL AND l.status='active'
+          AND (oa.section_id IS NULL OR s.status='active')
+          AND (oa.role_id <> 'team_lead' OR oa.section_id IS NOT NULL)
+        UNION ALL
+        SELECT NULL::text AS assignment_id, NULL::text AS location_id,
+               NULL::text AS section_id, mr.role_id
+        FROM organization_members owner_member
+        JOIN member_roles mr
+          ON mr.organization_id=owner_member.organization_id
+         AND mr.principal_id=owner_member.principal_id
+        WHERE owner_member.organization_id=:org AND owner_member.workspace_id=:workspace
+          AND owner_member.principal_id=:principal AND owner_member.status='active'
+          AND mr.role_id='organization_owner'
+        ORDER BY role_id, location_id, section_id, assignment_id
+    """), {"org": workspace_id, "workspace": workspace_id,
+           "principal": principal_id}).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
         raise ValueError("Invalid membership status.")
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         target = _principal_for_uid(db, target_uid, workspace_id)
-        if not actor or not target or not _permission_for_principal(db, workspace_id, actor["principal_id"], "membership.manage"):
+        if not actor or actor["status"] != "active" or not target:
             raise AuthzError("Workspace authorization denied.")
+
+        actor_assignments = _active_assigned_role_rows(db, workspace_id, str(actor["principal_id"]))
+        actor_roles = {str(row["role_id"]) for row in actor_assignments}
+        # A Manager's historical membership.manage bit is not authority to
+        # suspend, remove, or reactivate people.
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an active Organization Owner or Branch Head can change membership status.")
+
+        target_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": target["principal_id"]}).scalars().all())
         if status in {"suspended", "removed"}:
             _guard_last_owner(db, workspace_id, target["principal_id"])
-        actor_roles = set(db.execute(text("""SELECT role_id FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal"""),
-            {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
-        target_roles = set(db.execute(text("""SELECT role_id FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal"""),
-            {"org": workspace_id, "principal": target["principal_id"]}).scalars().all())
+
         if "organization_owner" not in actor_roles:
             actor_level = max((ROLE_LEVELS.get(role, 0) for role in actor_roles), default=0)
             target_level = max((ROLE_LEVELS.get(role, 0) for role in target_roles), default=0)
             if target_level >= actor_level:
                 raise AuthzError("You cannot change membership status for an equal or higher role.")
-            if "branch_head" in actor_roles:
-                same_branch = db.execute(text("""SELECT 1
-                    FROM organizational_assignments actor_oa
-                    JOIN organizational_assignments target_oa
-                      ON target_oa.organization_id=actor_oa.organization_id
-                     AND target_oa.location_id=actor_oa.location_id
-                    WHERE actor_oa.organization_id=:org
-                      AND actor_oa.principal_id=:actor
-                      AND actor_oa.role_id='branch_head'
-                      AND actor_oa.status='active'
-                      AND target_oa.principal_id=:target
-                      AND target_oa.status='active'
-                    LIMIT 1"""),
-                    {"org":workspace_id,"actor":actor["principal_id"],"target":target["principal_id"]}).scalar_one_or_none()
-                if not same_branch:
-                    raise AuthzError("The target member is outside your branch.")
-            elif "manager" in actor_roles or "team_lead" in actor_roles:
-                same_branch = db.execute(text("""SELECT 1
-                    FROM organizational_assignments actor_oa
-                    JOIN organizational_assignments target_oa
-                      ON target_oa.organization_id=actor_oa.organization_id
-                     AND target_oa.location_id=actor_oa.location_id
-                    WHERE actor_oa.organization_id=:org
-                      AND actor_oa.principal_id=:actor
-                      AND actor_oa.status='active'
-                      AND actor_oa.role_id IN ('manager','team_lead')
-                      AND target_oa.principal_id=:target
-                      AND target_oa.status='active'
-                    LIMIT 1"""),
-                    {"org":workspace_id,"actor":actor["principal_id"],"target":target["principal_id"]}).scalar_one_or_none()
-                if not same_branch:
-                    raise AuthzError("The target member is outside your team branch.")
-        db.execute(text("UPDATE organization_members SET status=:status WHERE organization_id=:org AND principal_id=:principal"),
-                   {"status": status, "org": workspace_id, "principal": target["principal_id"]})
+            branch_ids = {
+                str(row["location_id"]) for row in actor_assignments
+                if row["role_id"] == "branch_head" and row["location_id"] is not None
+            }
+            if len(branch_ids) != 1:
+                raise AuthzError("An unambiguous active Branch Head branch assignment is required.")
+            branch_id = next(iter(branch_ids))
+            target_scope = db.execute(text("""
+                SELECT 1
+                FROM organizational_assignments target_oa
+                JOIN organization_members target_member
+                  ON target_member.organization_id=target_oa.organization_id
+                 AND target_member.principal_id=target_oa.principal_id
+                JOIN locations l
+                  ON l.organization_id=target_oa.organization_id
+                 AND l.location_id=target_oa.location_id
+                WHERE target_oa.organization_id=:org AND target_member.workspace_id=:workspace
+                  AND target_oa.principal_id=:target AND target_oa.location_id=:location
+                  AND target_oa.status='active' AND l.status='active'
+                LIMIT 1
+            """), {"org": workspace_id, "workspace": workspace_id,
+                    "target": target["principal_id"], "location": branch_id}).scalar_one_or_none()
+            if target_scope is None:
+                raise AuthzError("The target member is outside your branch.")
+
+        db.execute(text("""
+            UPDATE organization_members SET status=:status
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"status": status, "org": workspace_id, "principal": target["principal_id"]})
     return True
 
-
 def _principal_for_uid(db, uid: str, organization_id: str):
-    return db.execute(text("""SELECT b.principal_id, m.status FROM identity_bindings b
+    return db.execute(text("""SELECT b.principal_id, m.employee_id, m.status
+        FROM identity_bindings b
         JOIN organization_members m ON m.principal_id=b.principal_id
-        WHERE b.firebase_uid=:uid AND m.organization_id=:org"""),
-                      {"uid": uid, "org": organization_id}).mappings().first()
-
+        WHERE (
+            (b.provider='supabase' AND b.provider_subject=:uid)
+            OR (b.provider='firebase' AND b.firebase_uid=:uid)
+        )
+          AND m.organization_id=:org AND b.status='active'
+        ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END
+        LIMIT 1"""), {"uid": uid, "org": organization_id}).mappings().first()
 
 def _guard_last_owner(db, organization_id: str, principal_id: str):
     count = db.execute(text("""SELECT count(*) FROM organization_members m
@@ -833,47 +876,66 @@ def mutate_role(claims: dict[str, Any], workspace_id: str, target_uid: str,
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         target = _principal_for_uid(db, target_uid, workspace_id)
-        if not actor or not target:
+        if not actor or actor["status"] != "active" or not target or target["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
-        actor_roles = set(db.execute(text("""
-            SELECT role_id FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal
-        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        actor_assignments = _active_assigned_role_rows(db, workspace_id, str(actor["principal_id"]))
+        actor_roles = {str(row["role_id"]) for row in actor_assignments}
         if not actor_roles.intersection({"organization_owner", "branch_head"}):
-            raise AuthzError("Only an Organization Owner or Branch Head can change role assignments.")
+            raise AuthzError("Only an active Organization Owner or Branch Head can change role assignments.")
         if canonical == "organization_owner" and "organization_owner" not in actor_roles:
             raise AuthzError("Only an Organization Owner can assign the Organization Owner role.")
+        if canonical == "branch_head" and "organization_owner" not in actor_roles:
+            raise AuthzError("Only an Organization Owner can appoint a Branch Head.")
+
+        target_roles = set(db.execute(text("""
+            SELECT role_id FROM member_roles
+            WHERE organization_id=:org AND principal_id=:principal
+        """), {"org": workspace_id, "principal": target["principal_id"]}).scalars().all())
         if "organization_owner" not in actor_roles:
-            same_branch = db.execute(text("""
+            actor_level = max((ROLE_LEVELS.get(role, 0) for role in actor_roles), default=0)
+            target_level = max((ROLE_LEVELS.get(role, 0) for role in target_roles), default=0)
+            if target_level >= actor_level:
+                raise AuthzError("You cannot change roles for an equal or higher role.")
+            branch_ids = {
+                str(row["location_id"]) for row in actor_assignments
+                if row["role_id"] == "branch_head" and row["location_id"] is not None
+            }
+            if len(branch_ids) != 1:
+                raise AuthzError("An unambiguous active Branch Head branch assignment is required.")
+            target_scope = db.execute(text("""
                 SELECT 1
-                FROM organizational_assignments actor_oa
-                JOIN organizational_assignments target_oa
-                  ON target_oa.organization_id=actor_oa.organization_id
-                 AND target_oa.location_id=actor_oa.location_id
-                WHERE actor_oa.organization_id=:org
-                  AND actor_oa.principal_id=:actor
-                  AND actor_oa.role_id='branch_head'
-                  AND actor_oa.status='active'
-                  AND target_oa.principal_id=:target
-                  AND target_oa.status='active'
+                FROM organizational_assignments target_oa
+                JOIN organization_members target_member
+                  ON target_member.organization_id=target_oa.organization_id
+                 AND target_member.principal_id=target_oa.principal_id
+                JOIN locations l
+                  ON l.organization_id=target_oa.organization_id AND l.location_id=target_oa.location_id
+                WHERE target_oa.organization_id=:org AND target_member.workspace_id=:workspace
+                  AND target_oa.principal_id=:target AND target_oa.location_id=:location
+                  AND target_oa.status='active' AND l.status='active'
                 LIMIT 1
-            """), {"org": workspace_id, "actor": actor["principal_id"], "target": target["principal_id"]}).scalar_one_or_none()
-            if not same_branch:
+            """), {"org": workspace_id, "workspace": workspace_id,
+                    "target": target["principal_id"], "location": next(iter(branch_ids))}).scalar_one_or_none()
+            if target_scope is None:
                 raise AuthzError("The target member is outside your branch.")
-        role_exists = db.execute(text("SELECT 1 FROM roles WHERE role_id=:role"), {"role": canonical}).scalar_one_or_none()
+
+        role_exists = db.execute(text("SELECT 1 FROM roles WHERE role_id=:role"),
+                                 {"role": canonical}).scalar_one_or_none()
         if not role_exists:
             raise AuthzError("Role is not part of the organization RBAC model.")
         if canonical == "organization_owner" and not enabled:
             _guard_last_owner(db, workspace_id, target["principal_id"])
         if enabled:
-            db.execute(text("""INSERT INTO member_roles(organization_id, principal_id, role_id)
-                VALUES (:org,:principal,:role) ON CONFLICT DO NOTHING"""),
-                       {"org": workspace_id, "principal": target["principal_id"], "role": canonical})
+            db.execute(text("""
+                INSERT INTO member_roles(organization_id, principal_id, role_id)
+                VALUES (:org,:principal,:role) ON CONFLICT DO NOTHING
+            """), {"org": workspace_id, "principal": target["principal_id"], "role": canonical})
         else:
-            db.execute(text("DELETE FROM member_roles WHERE organization_id=:org AND principal_id=:principal AND role_id=:role"),
-                       {"org": workspace_id, "principal": target["principal_id"], "role": canonical})
+            db.execute(text("""
+                DELETE FROM member_roles
+                WHERE organization_id=:org AND principal_id=:principal AND role_id=:role
+            """), {"org": workspace_id, "principal": target["principal_id"], "role": canonical})
     return True
-
 
 def upsert_role(claims: dict[str, Any], workspace_id: str, role_id: str,
                 name: str, permissions: list[str]) -> bool:
@@ -883,26 +945,29 @@ def upsert_role(claims: dict[str, Any], workspace_id: str, role_id: str,
     permissions = clean_permissions(permissions)
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
-        if not actor:
+        if not actor or actor["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
-        actor_roles = set(db.execute(text("""
-            SELECT role_id FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal
-        """), {"org": workspace_id, "principal": actor["principal_id"]}).scalars().all())
+        actor_roles = {
+            str(row["role_id"])
+            for row in _active_assigned_role_rows(db, workspace_id, str(actor["principal_id"]))
+        }
         if "organization_owner" not in actor_roles:
-            raise AuthzError("Only an Organization Owner can manage RBAC role definitions.")
-        role = db.execute(text("SELECT system FROM roles WHERE role_id=:role"), {"role": role_id}).scalar_one_or_none()
+            raise AuthzError("Only an active Organization Owner can manage RBAC role definitions.")
+        role = db.execute(text("SELECT system FROM roles WHERE role_id=:role"),
+                          {"role": role_id}).scalar_one_or_none()
         if role is True:
             raise AuthzError("System roles cannot be overwritten.")
-        db.execute(text("""INSERT INTO roles(role_id,name,system) VALUES (:role,:name,FALSE)
-            ON CONFLICT (role_id) DO UPDATE SET name=EXCLUDED.name"""),
-                   {"role": role_id, "name": name.strip()})
+        db.execute(text("""
+            INSERT INTO roles(role_id,name,system) VALUES (:role,:name,FALSE)
+            ON CONFLICT (role_id) DO UPDATE SET name=EXCLUDED.name
+        """), {"role": role_id, "name": name.strip()})
         db.execute(text("DELETE FROM role_permissions WHERE role_id=:role"), {"role": role_id})
         for permission in permissions:
-            db.execute(text("INSERT INTO role_permissions(role_id,permission_id) VALUES (:role,:permission)"),
-                       {"role": role_id, "permission": permission})
+            db.execute(text("""
+                INSERT INTO role_permissions(role_id,permission_id)
+                VALUES (:role,:permission)
+            """), {"role": role_id, "permission": permission})
     return True
-
 
 def _principal_for_uid_required(db, uid: str, organization_id: str):
     row = _principal_for_uid(db, uid, organization_id)
@@ -916,68 +981,137 @@ def set_approved_employee(claims: dict[str, Any], workspace_id: str,
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         target = _principal_for_uid(db, target_uid, workspace_id)
-        if not actor or not target or actor["status"] != "active":
+        if not actor or actor["status"] != "active" or not target or target["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
-        if not _permission_for_principal(db, workspace_id, actor["principal_id"], "membership.manage"):
-            raise AuthzError("Workspace authorization denied.")
-        db.execute(text("""INSERT INTO approved_employees
-            (organization_id, workspace_id, employee_id, principal_id, status,
-             approved_by_principal_id, approved_at)
+        if str(target.get("employee_id") or "") != str(employee_id or ""):
+            raise AuthzError("Employee ID does not match the authenticated organization's member record.")
+
+        actor_assignments = _active_assigned_role_rows(db, workspace_id, str(actor["principal_id"]))
+        actor_roles = {str(row["role_id"]) for row in actor_assignments}
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an active Organization Owner or Branch Head can approve an employee.")
+
+        target_assignments = _active_assigned_role_rows(db, workspace_id, str(target["principal_id"]))
+        if not target_assignments:
+            raise AuthzError("The target must have an active organizational assignment.")
+        target_roles = {str(row["role_id"]) for row in target_assignments}
+        if target_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Organization Owner and Branch Head accounts are not employee approval targets.")
+        if "organization_owner" not in actor_roles:
+            branch_ids = {
+                str(row["location_id"]) for row in actor_assignments
+                if row["role_id"] == "branch_head" and row["location_id"] is not None
+            }
+            if len(branch_ids) != 1:
+                raise AuthzError("An unambiguous active Branch Head branch assignment is required.")
+            branch_id = next(iter(branch_ids))
+            if not any(str(row["location_id"] or "") == branch_id for row in target_assignments):
+                raise AuthzError("The target member is outside your branch.")
+
+        db.execute(text("""
+            INSERT INTO approved_employees
+                (organization_id, workspace_id, employee_id, principal_id, status,
+                 approved_by_principal_id, approved_at)
             VALUES (:org,:workspace,:employee,:principal,'active',:actor,now())
             ON CONFLICT (organization_id, employee_id) DO UPDATE SET
               workspace_id=EXCLUDED.workspace_id, principal_id=EXCLUDED.principal_id,
               status='active', approved_by_principal_id=EXCLUDED.approved_by_principal_id,
-              approved_at=now()"""),
-                   {"org": workspace_id, "workspace": workspace_id, "employee": employee_id,
-                    "principal": target["principal_id"], "actor": actor["principal_id"]})
+              approved_at=now()
+        """), {"org": workspace_id, "workspace": workspace_id,
+                "employee": employee_id, "principal": target["principal_id"],
+                "actor": actor["principal_id"]})
     return True
-
 
 def set_delegation(claims: dict[str, Any], workspace_id: str, team_lead_uid: str,
                    member_ids: list[str], dataset_ids: list[str], permissions: list[str],
                    expires_at: int | None) -> dict[str, Any]:
-    allowed = {"dataset.view_original", "dataset.create_working_copy", "dataset.share"}
+    # Delegation grants copy access only, never original-dataset read or sharing.
+    allowed = {"dataset.create_working_copy"}
     if any(permission not in allowed for permission in permissions):
-        raise ValueError("Delegation contains an unsupported capability.")
+        raise ValueError("Delegation may grant only dataset.create_working_copy.")
     expiry = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc) if expires_at is not None else None
     if expiry is not None and expiry <= datetime.now(timezone.utc):
         raise ValueError("Delegation expiry must be in the future.")
+
     delegation_id = _id("dlg")
     with SessionLocal.begin() as db:
         actor = _principal_for_claims(db, claims, workspace_id)
         lead = _principal_for_uid(db, team_lead_uid, workspace_id)
-        if not actor or not lead or not _permission_for_principal(db, workspace_id, actor["principal_id"], "delegation.manage"):
+        if not actor or actor["status"] != "active" or not lead or lead["status"] != "active":
             raise AuthzError("Workspace authorization denied.")
-        if not db.execute(text("""SELECT 1 FROM member_roles
-            WHERE organization_id=:org AND principal_id=:principal AND role_id='team_lead'"""),
-                          {"org": workspace_id, "principal": lead["principal_id"]}).scalar_one_or_none():
-            raise AuthzError("Delegation target must have the Team Lead role.")
+
+        actor_assignments = _active_assigned_role_rows(db, workspace_id, str(actor["principal_id"]))
+        actor_roles = {str(row["role_id"]) for row in actor_assignments}
+        if not actor_roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only an active Organization Owner or Branch Head can manage delegations.")
+
+        lead_assignments = _active_assigned_role_rows(db, workspace_id, str(lead["principal_id"]))
+        if not any(row["role_id"] == "team_lead" for row in lead_assignments):
+            raise AuthzError("Delegation target must have an active Team Lead assignment.")
+
+        branch_ids = {
+            str(row["location_id"]) for row in actor_assignments
+            if row["role_id"] == "branch_head" and row["location_id"] is not None
+        }
+        if "organization_owner" not in actor_roles:
+            if len(branch_ids) != 1:
+                raise AuthzError("An unambiguous active Branch Head branch assignment is required.")
+            branch_id = next(iter(branch_ids))
+            if not any(str(row["location_id"] or "") == branch_id for row in lead_assignments):
+                raise AuthzError("The Team Lead is outside your branch.")
+        else:
+            branch_id = None
+
         member_principals = []
         for uid in sorted(set(member_ids)):
-            principal = _principal_for_uid_required(db, uid, workspace_id)
-            approved = db.execute(text("""SELECT 1 FROM approved_employees
-                WHERE workspace_id=:workspace AND principal_id=:principal AND status='active'"""),
-                                  {"workspace": workspace_id, "principal": principal}).scalar_one_or_none()
-            if not approved:
+            member = _principal_for_uid(db, uid, workspace_id)
+            if not member or member["status"] != "active":
+                raise AuthzError("Delegation scope can contain only active organization members.")
+            member_id = str(member["principal_id"])
+            assigned = _active_assigned_role_rows(db, workspace_id, member_id)
+            if not assigned:
+                raise AuthzError("Delegation members must have an active organizational assignment.")
+            roles = {str(row["role_id"]) for row in assigned}
+            if roles.intersection({"organization_owner", "branch_head", "manager", "team_lead"}):
+                raise AuthzError("Delegation members must be ordinary assigned team members.")
+            if branch_id is not None and not any(str(row["location_id"] or "") == branch_id for row in assigned):
+                raise AuthzError("A delegation member is outside your branch.")
+            approved_row = db.execute(text("""
+                SELECT 1 FROM approved_employees
+                WHERE workspace_id=:workspace AND principal_id=:principal AND status='active'
+            """), {"workspace": workspace_id, "principal": member_id}).scalar_one_or_none()
+            if not approved_row:
                 raise AuthzError("Delegation scope can contain only approved employees.")
-            member_principals.append(principal)
-        for dataset_id in sorted(set(dataset_ids)):
-            exists = db.execute(text("""SELECT 1 FROM dataset_authorization
-                WHERE organization_id=:org AND dataset_id=:dataset AND status='active'"""),
-                                {"org": workspace_id, "dataset": dataset_id}).scalar_one_or_none()
-            if not exists:
-                raise AuthzError("Dataset is not accessible.")
-        db.execute(text("""INSERT INTO delegations
-            (delegation_id, organization_id, workspace_id, team_lead_principal_id,
-             member_principal_ids, dataset_ids, permissions, expires_at, status)
-            VALUES (:id,:org,:workspace,:lead,CAST(:members AS jsonb),CAST(:datasets AS jsonb),
-                    CAST(:permissions AS jsonb),:expires,'active')"""),
-                   {"id": delegation_id, "org": workspace_id, "workspace": workspace_id,
-                    "lead": lead["principal_id"], "members": json.dumps(member_principals),
-                    "datasets": json.dumps(sorted(set(dataset_ids))),
-                    "permissions": json.dumps(sorted(set(permissions))), "expires": expiry})
-    return {"delegation_id": delegation_id}
+            member_principals.append(member_id)
 
+        for dataset_id in sorted(set(dataset_ids)):
+            dataset = db.execute(text("""
+                SELECT location_id, status
+                FROM dataset_authorization
+                WHERE organization_id=:org AND dataset_id=:dataset
+            """), {"org": workspace_id, "dataset": dataset_id}).mappings().first()
+            if not dataset or dataset["status"] != "active" or not dataset["location_id"]:
+                raise AuthzError("Dataset is not an active branch-scoped resource.")
+            if branch_id is not None and str(dataset["location_id"]) != branch_id:
+                raise AuthzError("A delegated dataset is outside your branch.")
+            resource = db.execute(text("""
+                SELECT 1 FROM authorization_resources
+                WHERE organization_id=:org AND resource_id=:dataset AND resource_type='dataset'
+            """), {"org": workspace_id, "dataset": dataset_id}).scalar_one_or_none()
+            if resource is None:
+                raise AuthzError("Dataset is not accessible.")
+
+        db.execute(text("""
+            INSERT INTO delegations
+                (delegation_id, organization_id, workspace_id, team_lead_principal_id,
+                 member_principal_ids, dataset_ids, permissions, expires_at, status)
+            VALUES (:id,:org,:workspace,:lead,CAST(:members AS jsonb),CAST(:datasets AS jsonb),
+                    CAST(:permissions AS jsonb),:expires,'active')
+        """), {"id": delegation_id, "org": workspace_id, "workspace": workspace_id,
+                "lead": lead["principal_id"], "members": json.dumps(member_principals),
+                "datasets": json.dumps(sorted(set(dataset_ids))),
+                "permissions": json.dumps(sorted(set(permissions))), "expires": expiry})
+    return {"delegation_id": delegation_id}
 
 def management_snapshot(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
@@ -1951,17 +2085,21 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
             raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
     elif action == "dataset.create_working_copy":
-        # Branch Heads and Managers can copy datasets inside their branch scope.
-        # All lower roles require an explicit per-dataset working-copy grant.
-        if "organization_owner" not in actor_roles and "branch_head" not in actor_roles and "manager" not in actor_roles:
-            if "dataset.create_working_copy" not in grant_permissions:
-                raise AuthzError("This dataset has not been authorized for copying by this user.")
-        if "manager" in actor_roles and "branch_head" not in actor_roles and "organization_owner" not in actor_roles:
+        # Owners are organization-wide. Branch Heads and Managers stay in scope.
+        if "organization_owner" in actor_roles:
+            pass
+        elif "branch_head" in actor_roles:
+            if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in branch_locations}:
+                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+        elif "manager" in actor_roles:
             manager_locations = set(db.execute(text("""SELECT oa.location_id FROM organizational_assignments oa
                     JOIN locations l
                       ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
                     JOIN organization_members m
                       ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+                     AND mr.role_id='manager'
                     WHERE oa.organization_id=:org AND oa.principal_id=:principal
                       AND oa.role_id='manager' AND oa.status='active'
                       AND oa.location_id IS NOT NULL AND l.status='active'
@@ -1970,6 +2108,11 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                  "workspace": resolved_workspace_id}).scalars().all())
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+        elif "external_viewer" in actor_roles:
+            raise AuthzError("External Viewers are read-only and cannot create working copies.")
+        elif "dataset.create_working_copy" not in grant_permissions:
+            raise AuthzError("This dataset has not been authorized for copying by this user.")
+
     elif action not in grant_permissions:
         raise AuthzError("Permission denied for this resource.")
     return {**context, "authorized": True, "workspace_id": resolved_workspace_id,

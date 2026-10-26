@@ -356,3 +356,44 @@ def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
     assert result is True
     grant_write = next(params for sql, params in db.calls if "INSERT INTO resource_grants" in sql)
     assert grant_write["permissions"] == "[]"
+
+
+def test_branch_head_cannot_create_working_copy_from_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"],
+        grant=None,
+        branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Branch Head scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-from-branch-a",
+            "dataset.create_working_copy",
+        )
+
+
+def test_external_viewer_cannot_create_working_copy_even_with_resource_grant(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.create_working_copy"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["external_viewer"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="read-only"):
+        supabase_provider.authorize_dataset(
+            {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.create_working_copy",
+        )
