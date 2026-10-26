@@ -270,15 +270,32 @@ class _GrantDb:
         params = params or {}
         self.calls.append((sql, params))
         if "FROM dataset_authorization" in sql:
-            return _Result(row={"location_id": "branch-1", "protected_original": True})
+            return _Result(row={
+                "location_id": "branch-1",
+                "protected_original": True,
+                "status": "active",
+            })
         if "FROM identity_bindings b" in sql and "JOIN organization_members m" in sql:
-            return _Result(scalar=self.target_principal)
+            return _Result(row={
+                "principal_id": self.target_principal,
+                "employee_id": "EMP001",
+            })
+        if "SELECT resource_type FROM authorization_resources" in sql:
+            return _Result(row={"resource_type": "dataset"})
         if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql:
             return _Result(scalar=1 if self.target_manager_active else None)
-        if "SELECT 1 FROM authorization_resources" in sql:
-            return _Result(scalar=1)
         if "FROM organizational_assignments oa" in sql and "role_id='branch_head'" in sql:
             return _Result(scalars=[self.actor_location] if self.actor_location else [])
+        if "FROM organizational_assignments oa" in sql and "mr.role_id=oa.role_id" in sql:
+            principal = str(params.get("principal") or "")
+            if principal == self.target_principal and self.target_manager_active:
+                return _Result(scalars=[{
+                    "assignment_id": "assignment-manager",
+                    "location_id": "branch-1",
+                    "section_id": None,
+                    "role_id": "manager",
+                }])
+            return _Result(scalars=[])
         if "INSERT INTO resource_grants" in sql:
             return _Result()
         raise AssertionError(f"Unexpected grant query: {sql}")
@@ -356,3 +373,64 @@ def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
     assert result is True
     grant_write = next(params for sql, params in db.calls if "INSERT INTO resource_grants" in sql)
     assert grant_write["permissions"] == "[]"
+
+
+def test_branch_head_cannot_create_working_copy_from_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"],
+        grant=None,
+        branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Branch Head scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-from-branch-a",
+            "dataset.create_working_copy",
+        )
+
+
+def test_external_viewer_cannot_create_working_copy_even_with_resource_grant(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.create_working_copy"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["external_viewer"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="read-only"):
+        supabase_provider.authorize_dataset(
+            {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.create_working_copy",
+        )
+
+
+def test_external_viewer_can_read_only_an_explicitly_shared_original(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.view_original"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["external_viewer"]),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+        "workspace-1",
+        "dataset-shared",
+        "dataset.view_original",
+    )
+
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"

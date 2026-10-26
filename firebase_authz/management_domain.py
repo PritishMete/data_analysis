@@ -197,7 +197,7 @@ def _management_scope(db, actor: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _require_location_manage(db, actor: dict[str, Any], location_id: str) -> None:
+def _require_location_manage(db, actor: dict[str, Any], location_id: str, *, manager_capability: str | None = None) -> None:
     permissions = _permissions(db, actor["organization_id"], actor["principal_id"])
     scope = _management_scope(db, actor)
     if scope["organization_wide"] and "organization.manage" in permissions:
@@ -205,7 +205,7 @@ def _require_location_manage(db, actor: dict[str, Any], location_id: str) -> Non
     if scope["role_id"] == "branch_head" and "organization.manage" in permissions:
         if scope["location_id"] and str(scope["location_id"]) == str(location_id):
             return
-    if scope["role_id"] == "manager" and "users.manage" in permissions:
+    if scope["role_id"] == "manager" and manager_capability and manager_capability in permissions:
         if (
             scope["location_id"]
             and str(scope["location_id"]) == str(location_id)
@@ -725,7 +725,7 @@ def create_section(claims: dict[str, Any], workspace_id: str, location_id: str,
     with SessionLocal.begin() as db:
         actor = _actor(db, claims, workspace_id)
         org = actor["organization_id"]
-        _require_location_manage(db, actor, location_id)
+        _require_location_manage(db, actor, location_id, manager_capability="organization.section.create")
         _location(db, org, location_id)
         duplicate = db.execute(text("""
             SELECT 1 FROM sections
@@ -1079,7 +1079,7 @@ def request_team_lead_assignment(claims: dict[str, Any], workspace_id: str, loca
         actor = _actor(db, claims, workspace_id)
         if _management_scope(db, actor)["role_id"] != "manager":
             raise AuthzError("Only a Manager can request a Team Lead assignment.")
-        _require_location_manage(db, actor, location_id)
+        _require_location_manage(db, actor, location_id, manager_capability="team_lead.request")
         section = _section(db, actor["organization_id"], section_id)
         if section["location_id"] != location_id or section["status"] != "active":
             raise AuthzError("Section does not belong to the requested active branch.")
