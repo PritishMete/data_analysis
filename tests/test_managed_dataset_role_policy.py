@@ -29,10 +29,14 @@ class _Db:
     def __init__(
         self, roles, grant=None, manager_locations=None, branch_locations=None,
         protected=True, location_id="branch-1", owner_locations=None,
+        manager_upload_grants=None,
     ):
         self.roles = roles
         self.grant = grant
         self.manager_locations = manager_locations or []
+        self.manager_upload_grants = (
+            self.manager_locations if manager_upload_grants is None else manager_upload_grants
+        )
         self.branch_locations = branch_locations or []
         self.owner_locations = ["branch-1"] if owner_locations is None else owner_locations
         self.protected = protected
@@ -48,7 +52,7 @@ class _Db:
         sql = str(statement)
         params = params or {}
         if "FROM manager_dataset_upload_grants g" in sql:
-            return _Result(scalars=self.manager_locations)
+            return _Result(scalars=self.manager_upload_grants)
         if "FROM organizational_assignments oa" in sql and "oa.location_id=:location" in sql:
             return _Result(scalar=1 if params.get("location") == self.location_id else None)
         if "FROM delegations d" in sql:
@@ -94,16 +98,21 @@ def _context(roles):
         "organization_id": "org-1",
         "principal_id": "principal-1",
         "role_ids": roles,
-        "permissions": ["dataset.upload"] if "manager" in roles else [],
+        "permissions": ["dataset.upload"] if "branch_head" in roles or "organization_owner" in roles else [],
     }
 
 
 @pytest.mark.parametrize(
-    "grant",
-    [None, [], ["dataset.view_original"], ["dataset.upload"]],
+    "resource_grant",
+    [None, [], ["dataset.view_original"], ["dataset.upload"], ["dataset.upload_original"]],
 )
-def test_manager_cannot_replace_protected_original_without_explicit_grant(monkeypatch, grant):
-    db = _Db(["manager"], grant=grant, manager_locations=["branch-1"])
+def test_manager_cannot_replace_original_without_branch_upload_grant(monkeypatch, resource_grant):
+    # Per-dataset read/copy/resource grants are not a substitute for the
+    # Owner/Branch-Head-issued branch upload grant.
+    db = _Db(
+        ["manager"], grant=resource_grant, manager_locations=["branch-1"],
+        manager_upload_grants=[],
+    )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider,
@@ -111,20 +120,42 @@ def test_manager_cannot_replace_protected_original_without_explicit_grant(monkey
         lambda claims, workspace_id: _context(["manager"]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+    with pytest.raises(supabase_provider.AuthzError, match="explicit upload grant"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-            "workspace-1",
-            "dataset-1",
-            "dataset.upload",
+            "workspace-1", "dataset-1", "dataset.upload",
         )
 
 
-def test_manager_cannot_replace_protected_original_even_with_explicit_grant(monkeypatch):
-    db = _Db(["manager"], grant=["dataset.upload_original"], manager_locations=["branch-1"])
+def test_manager_with_explicit_branch_upload_grant_can_replace_original(monkeypatch):
+    db = _Db(
+        ["manager"], manager_locations=["branch-1"],
+        manager_upload_grants=["branch-1"],
+    )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
-    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
-    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["manager"]),
+    )
+    result = supabase_provider.authorize_dataset(
+        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+        "workspace-1", "dataset-1", "dataset.upload",
+    )
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"
+
+
+def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
+    db = _Db(
+        ["manager"], manager_locations=["branch-a"],
+        location_id="branch-b", manager_upload_grants=["branch-a"],
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["manager"]),
+    )
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-1", "dataset.upload",
