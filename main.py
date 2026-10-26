@@ -1840,6 +1840,7 @@ async def sentiment_analysis(
     include_details: bool = Form(False),
     managed_dataset_id: str | None = Form(None),
     managed_version_id: str | None = Form(None),
+    managed_working_copy_id: str | None = Form(None),
     authorization: str | None = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
@@ -1850,7 +1851,7 @@ async def sentiment_analysis(
     sentiment request into a generic network-looking failure in the client.
     """
     try:
-        if managed_dataset_id:
+        if managed_working_copy_id or managed_dataset_id:
             if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
                 raise HTTPException(status_code=401, detail="Authentication and workspace authorization are required.")
             df = load_managed_dataset_dataframe(
@@ -1858,6 +1859,7 @@ async def sentiment_analysis(
                 token=authorization[7:].strip(),
                 dataset_id=managed_dataset_id,
                 version_id=managed_version_id,
+                working_copy_id=managed_working_copy_id,
             )
         else:
             if file is None:
@@ -1908,6 +1910,7 @@ async def smart_query(
     dataset_range: str | None = Form(None),
     managed_dataset_id: str | None = Form(None),
     managed_version_id: str | None = Form(None),
+    managed_working_copy_id: str | None = Form(None),
     authorization: str | None = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
@@ -1944,7 +1947,7 @@ async def smart_query(
     # means that failure mode is now caught here instead of surfacing as an
     # unexplained dropped connection.
     try:
-        if managed_dataset_id:
+        if managed_working_copy_id or managed_dataset_id:
             if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
                 return JSONResponse(status_code=401, content={"success": False, "error": "Authentication and workspace authorization are required."})
             df = load_managed_dataset_dataframe(
@@ -1952,6 +1955,7 @@ async def smart_query(
                 token=authorization[7:].strip(),
                 dataset_id=managed_dataset_id,
                 version_id=managed_version_id,
+                working_copy_id=managed_working_copy_id,
             )
             excel_context = None
         else:
