@@ -713,34 +713,11 @@ def _lock_active_upload_assignment(
             ORDER BY oa.assignment_id LIMIT 1
             FOR SHARE OF oa, m, mr, rp, l
         """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
-    elif role == "manager":
-        assignment = repo.db.execute(text("""
-            SELECT g.grant_id
-            FROM manager_dataset_upload_grants g
-            JOIN organizational_assignments oa
-              ON oa.organization_id=g.organization_id
-             AND oa.principal_id=g.manager_principal_id
-             AND oa.location_id=g.location_id AND oa.role_id='manager'
-             AND oa.status='active'
-            JOIN organization_members m
-              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-             AND m.workspace_id=g.workspace_id AND m.status='active'
-            JOIN member_roles mr
-              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-             AND mr.role_id='manager'
-            JOIN locations l
-              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
-             AND l.status='active'
-            WHERE g.organization_id=:org AND g.workspace_id=:workspace
-              AND g.manager_principal_id=:principal AND g.location_id=:location
-              AND g.revoked_at IS NULL
-            ORDER BY g.granted_at DESC LIMIT 1
-            FOR SHARE OF g, oa, m, mr, l
-        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
     else:
-        raise AuthzError("Unknown dataset upload authority.")
+        raise AuthzError("Only an Organization Owner or Branch Head may write an original dataset.")
+
     if assignment is None:
-        raise AuthzError("The upload role, branch assignment, or Manager grant is no longer active.")
+        raise AuthzError("The upload role or active branch assignment is no longer valid.")
 
 
 
