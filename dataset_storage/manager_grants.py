@@ -286,3 +286,86 @@ def list_my_manager_upload_grants(*, workspace_id: str, token: str) -> list[dict
         }
         for row in rows
     ]
+
+
+def list_uploadable_locations(*, workspace_id: str, token: str) -> list[dict[str, Any]]:
+    """Return upload locations available under the caller's current role and grants."""
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        raise PermissionDenied("Workspace authorization denied.")
+    roles = set(context.get("role_ids", []))
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
+
+    if "organization_owner" in roles:
+        sql = """
+            SELECT l.location_id, l.name AS location_name
+            FROM locations l
+            JOIN organizational_assignments oa
+              ON oa.organization_id=l.organization_id
+             AND oa.principal_id=:principal
+             AND oa.role_id='organization_owner' AND oa.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='organization_owner'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=:workspace AND m.status='active'
+            WHERE l.organization_id=:org AND l.status='active'
+            ORDER BY lower(l.name), l.location_id
+        """
+    elif "branch_head" in roles:
+        sql = """
+            SELECT DISTINCT l.location_id, l.name AS location_name
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=:workspace AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='branch_head'
+            JOIN role_permissions rp
+              ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+            JOIN locations l
+              ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+             AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.role_id='branch_head' AND oa.status='active'
+              AND oa.location_id IS NOT NULL
+            ORDER BY lower(l.name), l.location_id
+        """
+    elif "manager" in roles:
+        sql = """
+            SELECT DISTINCT l.location_id, l.name AS location_name
+            FROM manager_dataset_upload_grants g
+            JOIN organizational_assignments oa
+              ON oa.organization_id=g.organization_id
+             AND oa.principal_id=g.manager_principal_id
+             AND oa.location_id=g.location_id
+             AND oa.role_id='manager' AND oa.status='active'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=g.workspace_id AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='manager'
+            JOIN locations l
+              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+             AND l.status='active'
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.manager_principal_id=:principal AND g.revoked_at IS NULL
+            ORDER BY lower(l.name), l.location_id
+        """
+    else:
+        raise PermissionDenied("This role has no authority to upload original datasets.")
+
+    with SessionLocal() as db:
+        rows = db.execute(text(sql), {
+            "org": org, "workspace": workspace, "principal": principal,
+        }).mappings().all()
+    return [{
+        "location_id": str(row["location_id"]),
+        "location_name": str(row["location_name"]),
+    } for row in rows]
