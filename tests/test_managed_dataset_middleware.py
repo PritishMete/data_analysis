@@ -16,9 +16,14 @@ def test_managed_dataset_reads_use_dataset_resource_authorization():
     assert managed_dataset_route_policy("GET", "/v1/managed-datasets/ds_123/download") == expected
 
 
-def test_managed_dataset_mutations_keep_existing_resource_policy():
-    assert managed_dataset_route_policy("POST", "/v1/managed-datasets") == ("dataset.upload", False)
-    assert managed_dataset_route_policy("POST", "/v1/managed-datasets/ds_123/versions") == ("dataset.upload", False)
+def test_managed_dataset_uploads_use_grant_aware_service_authorization():
+    # Upload handlers verify the bearer identity, active role, branch assignment,
+    # and (for Managers) a live exact-branch upload grant in the service layer.
+    assert managed_dataset_route_policy("POST", "/v1/managed-datasets") == MANAGED_DATASET_SERVICE_AUTH_POLICY
+    assert managed_dataset_route_policy("POST", "/v1/managed-datasets/ds_123/versions") == MANAGED_DATASET_SERVICE_AUTH_POLICY
+
+
+def test_managed_dataset_delete_keeps_resource_authorization():
     assert managed_dataset_route_policy("POST", "/v1/managed-datasets/ds_123/working-copies") == (
         "dataset.create_working_copy",
         True,
