@@ -2096,9 +2096,9 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         grant = db.execute(text("""SELECT permissions FROM resource_grants
                 WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:principal"""),
             {"org": organization_id, "dataset": dataset_id, "principal": context["principal_id"]}).scalar_one_or_none()
-        actor_roles = set(db.execute(text("""SELECT role_id FROM member_roles
-                WHERE organization_id=:org AND principal_id=:principal"""),
-            {"org": organization_id, "principal": context["principal_id"]}).scalars().all())
+        # authorization_context has already filtered roles through active membership,
+        # identity binding, organizational assignment and active branch/section scope.
+        actor_roles = context_roles
         branch_locations = set(db.execute(text("""SELECT oa.location_id FROM organizational_assignments oa
                 JOIN locations l
                   ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id

@@ -40,4 +40,20 @@ void main() {
     expect(source, contains("REJECT"));
     expect(source, contains("decision_note"));
   });
+
+  test('Team Lead delegation sends only the supported copy capability', () {
+    final source = File(
+      'lib/features/auth/authorization_management_screen.dart',
+    ).readAsStringSync();
+    final start = source.indexOf("await _post('delegations'");
+    expect(start, greaterThanOrEqualTo(0));
+    final end = source.indexOf('});', start);
+    expect(end, greaterThan(start));
+    final payload = source.substring(start, end);
+
+    expect(payload, contains("'dataset.create_working_copy'"));
+    expect(payload, isNot(contains("'dataset.view_original'")));
+    expect(payload, isNot(contains("'dataset.share'")));
+  });
+
 }

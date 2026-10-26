@@ -434,3 +434,26 @@ def test_external_viewer_can_read_only_an_explicitly_shared_original(monkeypatch
 
     assert result["authorized"] is True
     assert result["location_id"] == "branch-1"
+
+
+def test_inactive_external_viewer_cannot_use_stale_member_role_grant(monkeypatch):
+    # The database test double still reports an old role row, but authorization_context
+    # no longer includes External Viewer because its assignment is inactive or out of scope.
+    db = _Db(["external_viewer"], grant=["dataset.view_original"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context([]),
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only a Manager, Branch Head, Organization Owner",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "stale-viewer-1", "sub": "stale-viewer-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-stale-viewer",
+            "dataset.view_original",
+        )
