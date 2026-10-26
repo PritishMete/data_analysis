@@ -167,6 +167,8 @@ def list_authorized_datasets(
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
     roles = set(context.get("role_ids", []))
+    privileged = bool(roles.intersection({"organization_owner", "branch_head", "manager", "external_viewer"}))
+    action = "dataset.view_original" if privileged else "dataset.create_working_copy"
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
@@ -175,19 +177,23 @@ def list_authorized_datasets(
         for dataset in repo.list_by_organization(organization_id, limit=100):
             if dataset.status == "deleted":
                 continue
-            roles = set(context.get("role_ids", []))
-            action = (
-                "dataset.view_original"
-                if roles.intersection(
-                    {"organization_owner", "branch_head", "manager", "external_viewer"}
-                )
-                else "dataset.create_working_copy"
-            )
             try:
-                _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
+                scope = _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
             except AuthzError:
                 continue
-            result.append(_structured_summary(dataset, len(repo.list_versions(dataset.dataset_id))))
+            if privileged:
+                result.append(_structured_summary(dataset, len(repo.list_versions(dataset.dataset_id))))
+            else:
+                # Lower roles see only enough metadata to select a specific
+                # authorized copy source. Never expose original version IDs,
+                # row previews, schema, or version counts in their source list.
+                result.append({
+                    "dataset_id": dataset.dataset_id,
+                    "display_name": dataset.dataset_name or dataset.original_filename or dataset.dataset_id,
+                    "dataset_name": dataset.dataset_name or dataset.original_filename or dataset.dataset_id,
+                    "location_id": str(scope.get("location_id")) if scope.get("location_id") is not None else None,
+                    "access_mode": "copy_only",
+                })
         return result
     finally:
         repo.db.close()
