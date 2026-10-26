@@ -1598,6 +1598,26 @@ def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_i
         if "organization_owner" in roles:
             if "dataset.upload" not in set(context.get("permissions", [])):
                 raise AuthzError("The active role lacks the dataset.upload permission.")
+            with SessionLocal() as db:
+                active_owner = db.execute(text("""
+                    SELECT oa.assignment_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                    JOIN member_roles mr
+                      ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                     AND mr.role_id='organization_owner'
+                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
+                      AND oa.role_id='organization_owner' AND oa.status='active'
+                      AND m.workspace_id=:workspace AND m.status='active'
+                    LIMIT 1
+                """), {
+                    "org": context["organization_id"],
+                    "principal": context["principal_id"],
+                    "workspace": context["workspace_id"],
+                }).scalar_one_or_none()
+            if active_owner is None:
+                raise AuthzError("An active Organization Owner assignment is required.")
             return {
                 **context, "authorized": True, "action": action,
                 "permission": "dataset.upload",
@@ -2284,9 +2304,20 @@ def authorize_dataset_upload_scope(
         if upload_role == "organization_owner":
             allowed_locations = {
                 str(value) for value in db.execute(text("""
-                    SELECT location_id FROM locations
-                    WHERE organization_id=:org AND status='active'
-                """), {"org": org}).scalars().all()
+                    SELECT DISTINCT l.location_id
+                    FROM locations l
+                    JOIN organizational_assignments oa
+                      ON oa.organization_id=l.organization_id
+                     AND oa.principal_id=:principal
+                     AND oa.role_id='organization_owner' AND oa.status='active'
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                     AND m.workspace_id=:workspace AND m.status='active'
+                    JOIN member_roles mr
+                      ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                     AND mr.role_id='organization_owner'
+                    WHERE l.organization_id=:org AND l.status='active'
+                """), {"org": org, "principal": principal, "workspace": workspace}).scalars().all()
             }
         else:
             allowed_locations = {
