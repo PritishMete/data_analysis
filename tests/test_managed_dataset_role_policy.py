@@ -107,8 +107,8 @@ def _context(roles):
     [None, [], ["dataset.view_original"], ["dataset.upload"], ["dataset.upload_original"]],
 )
 def test_manager_cannot_replace_original_even_with_resource_grant(monkeypatch, resource_grant):
-    # Per-dataset read/copy/resource grants are not a substitute for the
-    # Owner/Branch-Head-issued branch upload grant.
+    # Neither per-dataset grants nor an upload grant may publish an original
+    # directly; Managers must submit a private proposal for Branch Head review.
     db = _Db(
         ["manager"], grant=resource_grant, manager_locations=["branch-1"],
         manager_upload_grants=[],
@@ -166,7 +166,7 @@ def test_manager_with_stale_upload_permission_cannot_use_legacy_upload_policy(mo
         )
 
 
-def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
+def test_manager_upload_grant_cannot_authorize_direct_original_write(monkeypatch):
     db = _Db(
         ["manager"], manager_locations=["branch-a"],
         location_id="branch-b", manager_upload_grants=["branch-a"],
@@ -182,7 +182,7 @@ def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
-def test_manager_cannot_upload_ordinary_dataset_without_replacement_grant(monkeypatch):
+def test_manager_cannot_directly_upload_an_ordinary_dataset(monkeypatch):
     db = _Db(["manager"], manager_locations=["branch-1"], protected=False)
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
