@@ -106,29 +106,25 @@ def _context(roles):
     "resource_grant",
     [None, [], ["dataset.view_original"], ["dataset.upload"], ["dataset.upload_original"]],
 )
-def test_manager_cannot_replace_original_even_with_resource_grant(monkeypatch, resource_grant):
-    # Neither per-dataset grants nor an upload grant may publish an original
-    # directly; Managers must submit a private proposal for Branch Head review.
+def test_manager_cannot_write_original_without_explicit_branch_upload_grant(monkeypatch, resource_grant):
+    # Per-dataset resource permissions never replace the branch-level grant.
     db = _Db(
         ["manager"], grant=resource_grant, manager_locations=["branch-1"],
         manager_upload_grants=[],
     )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
-        supabase_provider,
-        "authorization_context",
+        supabase_provider, "authorization_context",
         lambda claims, workspace_id: _context(["manager"]),
     )
-
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
 
-
-def test_manager_with_explicit_branch_upload_grant_still_cannot_replace_original(monkeypatch):
+def test_manager_with_explicit_branch_upload_grant_can_publish_original(monkeypatch):
     db = _Db(
         ["manager"], manager_locations=["branch-1"],
         manager_upload_grants=["branch-1"],
@@ -138,80 +134,62 @@ def test_manager_with_explicit_branch_upload_grant_still_cannot_replace_original
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: _context(["manager"]),
     )
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
-        supabase_provider.authorize_dataset(
-            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-            "workspace-1", "dataset-1", "dataset.upload",
-        )
+    result = supabase_provider.authorize_dataset(
+        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+        "workspace-1", "dataset-1", "dataset.upload",
+    )
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"
+    assert result["upload_role_id"] == "manager"
 
 
-def test_manager_with_stale_upload_permission_cannot_use_legacy_upload_policy(monkeypatch):
+def test_manager_with_stale_upload_permission_cannot_bypass_missing_branch_grant(monkeypatch):
     context = _context(["manager"])
-    # Simulate a stale/aggregated capability from an old role assignment.
     context["permissions"] = ["dataset.upload"]
+    db = _Db(
+        ["manager"], manager_locations=["branch-1"],
+        manager_upload_grants=[],
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: context,
     )
-
-    with pytest.raises(
-        supabase_provider.AuthzError,
-        match="Managers must submit a proposal for review",
-    ):
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         supabase_provider.authorize(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-            "workspace-1",
-            "dataset.upload",
-            None,
+            "workspace-1", "dataset.upload", None,
         )
 
 
-def test_manager_upload_grant_cannot_authorize_direct_original_write(monkeypatch):
+def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
     db = _Db(
-        ["manager"], manager_locations=["branch-a"],
-        location_id="branch-b", manager_upload_grants=["branch-a"],
+        ["manager"], manager_locations=["branch-b"],
+        location_id="branch-a", manager_upload_grants=["branch-b"],
     )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: _context(["manager"]),
     )
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
-def test_manager_cannot_directly_upload_an_ordinary_dataset(monkeypatch):
-    db = _Db(["manager"], manager_locations=["branch-1"], protected=False)
+
+def test_manager_cannot_upload_into_an_unprotected_dataset_record(monkeypatch):
+    db = _Db(
+        ["manager"], manager_locations=["branch-1"],
+        manager_upload_grants=["branch-1"], protected=False,
+    )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
+    with pytest.raises(supabase_provider.AuthzError, match="published, branch-scoped original"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-ordinary", "dataset.upload",
-        )
-
-def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypatch):
-    db = _Db(
-        ["manager"],
-        grant=["dataset.upload_original"],
-        manager_locations=["branch-b"],
-        location_id="branch-a",
-    )
-    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
-    monkeypatch.setattr(
-        supabase_provider,
-        "authorization_context",
-        lambda claims, workspace_id: _context(["manager"]),
-    )
-
-    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
-        supabase_provider.authorize_dataset(
-            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-            "workspace-1",
-            "dataset-1",
-            "dataset.upload",
         )
 
 
