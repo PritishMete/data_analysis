@@ -1565,7 +1565,7 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
     # Dataset operations have stricter resource/branch policy than workspace
-    # permission bits; use the same decision point as the managed-dataset APIs.
+    # permission bits; use the same decision point as managed-dataset APIs.
     if action.startswith("dataset.") and resource_id:
         return authorize_dataset(claims, workspace_id, resource_id, action)
     context = authorization_context(claims, workspace_id)
@@ -1581,6 +1581,24 @@ def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_i
                         WHERE organization_id=:org AND resource_id=:resource"""),
                 {"org": organization_id, "resource": resource_id},
             ).mappings().first()
+        if not resource:
+            raise AuthzError("Resource is not accessible.")
+
+        # Analysis against persisted data must inherit the authoritative
+        # dataset/working-copy boundary. A generic resource grant alone must
+        # never let a copy-only role analyze an original dataset.
+        if action == "analysis.run" and resource["resource_type"] == "dataset":
+            return {
+                **authorize_dataset(claims, workspace_id, resource_id, "dataset.view_original"),
+                "action": action,
+            }
+        if action == "analysis.run" and resource["resource_type"] == "working_copy":
+            return {
+                **authorize_working_copy(claims, workspace_id, resource_id, "working_copy.view"),
+                "action": action,
+            }
+
+        with SessionLocal() as db:
             grant = db.execute(
                 text("""SELECT permissions
                         FROM resource_grants
@@ -1590,8 +1608,6 @@ def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_i
                 {"org": organization_id, "resource": resource_id,
                  "principal": context["principal_id"]},
             ).scalar_one_or_none()
-        if not resource:
-            raise AuthzError("Resource is not accessible.")
         if action not in set(grant or []):
             raise AuthzError("Permission denied for this resource.")
     return {"authorized": True, "workspace_id": resolved_workspace_id, "organization_id": organization_id,
@@ -2601,8 +2617,6 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
         copy_permissions = {
             "working_copy.view", "working_copy.modify", "working_copy.delete"
         }
-        if "analysis.run" in set(context.get("permissions", [])):
-            copy_permissions.add("analysis.run")
         db.execute(text("""
             INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
