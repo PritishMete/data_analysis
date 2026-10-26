@@ -70,21 +70,15 @@ def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[st
     return context
 
 
+
 def _authorize_upload(
     claims: dict[str, Any],
     workspace_id: str,
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
+    """Require Owner, Branch Head, or Manager with a live branch upload grant."""
     context = _authorization_context(claims, workspace_id)
-    roles = set(context.get("role_ids", []))
-    if "branch_head" not in roles:
-        raise PermissionDenied(
-            "Direct original-dataset imports are Branch Head only. "
-            "Managers must submit changes for Branch Head review."
-        )
-    # Member roles alone are historical labels, not current authority. Resolve
-    # the active assignment, upload permission, and branch scope server-side.
     return authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
     )
@@ -529,44 +523,83 @@ def _discard_sql_registration(
         repo.db.flush()
 
 
+
 def _lock_active_upload_assignment(
     repo: DatasetRepository,
     context: dict[str, Any],
 ) -> None:
-    """Revalidate and lock membership/branch assignment through version commit."""
-    assignment = repo.db.execute(
-        text("""SELECT oa.assignment_id
+    """Lock the exact upload authority through the version commit."""
+    role = str(context.get("upload_role_id") or "")
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
+    location = str(context["location_id"])
+
+    if role == "organization_owner":
+        assignment = repo.db.execute(text("""
+            SELECT oa.assignment_id
             FROM organizational_assignments oa
-            JOIN locations l
-              ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
             JOIN organization_members m
               ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
             JOIN member_roles mr
-              ON mr.organization_id=oa.organization_id
-             AND mr.principal_id=oa.principal_id
-             AND mr.role_id=oa.role_id
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='organization_owner'
+            JOIN locations l ON l.organization_id=oa.organization_id
+              AND l.location_id=:location AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.role_id='organization_owner' AND oa.status='active'
+              AND m.workspace_id=:workspace AND m.status='active'
+            ORDER BY oa.assignment_id LIMIT 1
+            FOR SHARE OF oa, m, mr, l
+        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    elif role == "branch_head":
+        assignment = repo.db.execute(text("""
+            SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='branch_head'
             JOIN role_permissions rp
-              ON rp.role_id=mr.role_id AND rp.permission_id='dataset.upload'
-            WHERE oa.organization_id=:org
-              AND oa.principal_id=:principal
-              AND oa.location_id=:location
-              AND oa.role_id=:role
-              AND oa.status='active'
-              AND l.status='active'
-              AND m.status='active'
-              AND m.workspace_id=:workspace
-            ORDER BY oa.assignment_id
-            LIMIT 1 FOR SHARE OF oa, l, m"""),
-        {
-            "org": context["organization_id"],
-            "principal": context["principal_id"],
-            "location": context["location_id"],
-            "role": context["upload_role_id"],
-            "workspace": context["workspace_id"],
-        },
-    ).scalar_one_or_none()
+              ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+            JOIN locations l ON l.organization_id=oa.organization_id
+              AND l.location_id=oa.location_id AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.location_id=:location AND oa.role_id='branch_head'
+              AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
+            ORDER BY oa.assignment_id LIMIT 1
+            FOR SHARE OF oa, m, mr, rp, l
+        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    elif role == "manager":
+        assignment = repo.db.execute(text("""
+            SELECT g.grant_id
+            FROM manager_dataset_upload_grants g
+            JOIN organizational_assignments oa
+              ON oa.organization_id=g.organization_id
+             AND oa.principal_id=g.manager_principal_id
+             AND oa.location_id=g.location_id AND oa.role_id='manager'
+             AND oa.status='active'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=g.workspace_id AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='manager'
+            JOIN locations l
+              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+             AND l.status='active'
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.manager_principal_id=:principal AND g.location_id=:location
+              AND g.revoked_at IS NULL
+            ORDER BY g.granted_at DESC LIMIT 1
+            FOR SHARE OF g, oa, m, mr, l
+        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    else:
+        raise AuthzError("Unknown dataset upload authority.")
     if assignment is None:
-        raise AuthzError("The upload branch assignment or permission is no longer active.")
+        raise AuthzError("The upload role, branch assignment, or Manager grant is no longer active.")
+
 
 
 def upload_managed_dataset_stream(
@@ -578,28 +611,23 @@ def upload_managed_dataset_stream(
     content_type: str | None,
     provider: SupabaseDatasetStorageProvider | None = None,
     dataset_id: str | None = None,
+    location_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
     if dataset_id is not None:
-        # Existing datasets supply the target branch only after resolving its
-        # server-side authorization record; never infer scope from request data.
+        # Resolve branch scope from the authoritative source ACL, not request body.
         dataset_scope = _authorize_dataset(
             claims, workspace_id, dataset_id, "dataset.upload"
         )
         context = _authorize_upload(
-            claims,
-            workspace_id,
-            location_id=str(dataset_scope.get("location_id") or ""),
+            claims, workspace_id, location_id=str(dataset_scope.get("location_id") or "")
         )
     else:
-        # A new dataset has no trusted location yet, so require exactly one
-        # active assigned branch before reading or persisting the upload.
-        context = _authorize_upload(claims, workspace_id)
+        context = _authorize_upload(claims, workspace_id, location_id=location_id)
+
     safe_name = _safe_filename(filename)
     organization_id = str(context["organization_id"])
-
     from core.db import SessionLocal
-
     repo = DatasetRepository(SessionLocal())
     registry = DatasetRegistryService(repo)
     registration = None
@@ -625,10 +653,7 @@ def upload_managed_dataset_stream(
         )
         if registration.registration.was_duplicate:
             _audit_safely(
-                workspace_id,
-                str(claims["uid"]),
-                "dataset.upload",
-                "duplicate",
+                workspace_id, str(claims["uid"]), "dataset.upload", "duplicate",
                 resource_id=registration.registration.dataset.dataset_id,
                 metadata={"version_id": registration.version.version_id},
             )
@@ -639,25 +664,17 @@ def upload_managed_dataset_stream(
 
         if new_dataset:
             _register_authorization(
-                claims,
-                workspace_id,
-                registration.registration.dataset.dataset_id,
+                claims, workspace_id, registration.registration.dataset.dataset_id,
                 str(context["location_id"]),
             )
-
         if not registration.sample.empty:
-            intelligence = SchemaIntelligenceService(
-                repo, RelationshipRepository(repo.db)
-            )
+            intelligence = SchemaIntelligenceService(repo, RelationshipRepository(repo.db))
             intelligence.analyze_dataset(
                 registration.registration.dataset.dataset_id,
                 registration.sample,
                 version_pk=registration.version.version_pk,
             )
 
-        # Lock the verified assignment in the ingestion session through the
-        # final version commit. Manager replacement/suspension must serialize
-        # with this final authorization boundary.
         if dataset_id is not None:
             repo.db.execute(text("""
                 SELECT dataset_id FROM datasets
@@ -669,17 +686,12 @@ def upload_managed_dataset_stream(
                 FROM dataset_authorization
                 WHERE organization_id=:org AND dataset_id=:dataset
                 FOR SHARE
-            """), {
-                "org": organization_id,
-                "dataset": dataset_id,
-            }).mappings().first()
-            if (
-                current_scope is None
-                or current_scope["status"] != "active"
-                or not current_scope["protected_original"]
-                or str(current_scope["location_id"] or "") != str(context["location_id"])
-            ):
+            """), {"org": organization_id, "dataset": dataset_id}).mappings().first()
+            if (current_scope is None or current_scope["status"] != "active"
+                    or not current_scope["protected_original"]
+                    or str(current_scope["location_id"] or "") != str(context["location_id"])):
                 raise AuthzError("The original dataset branch assignment changed during upload.")
+
         _lock_active_upload_assignment(repo, context)
         if archive_original_enabled():
             stream.seek(0)
@@ -691,7 +703,6 @@ def upload_managed_dataset_stream(
                 original_filename=safe_name,
                 content_type=content_type or "text/csv",
             )
-
         dataset = registry.finalize_version(
             registration.registration.dataset.dataset_id,
             registration.version.version_id,
@@ -700,17 +711,12 @@ def upload_managed_dataset_stream(
             expected_current_version_id=(base_version_id if not new_dataset else None),
         )
         _audit_safely(
-            workspace_id,
-            str(claims["uid"]),
+            workspace_id, str(claims["uid"]),
             "dataset.upload" if new_dataset else "dataset.version_upload",
-            "succeeded",
-            resource_id=dataset.dataset_id,
-            metadata={
-                "version_id": registration.version.version_id,
-                "row_count": dataset.row_count,
-                "column_count": dataset.column_count,
-                "storage_mode": "sql_structured",
-            },
+            "succeeded", resource_id=dataset.dataset_id,
+            metadata={"version_id": registration.version.version_id,
+                      "row_count": dataset.row_count, "column_count": dataset.column_count,
+                      "storage_mode": "sql_structured"},
         )
         return _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
     except Exception as exc:
@@ -726,33 +732,24 @@ def upload_managed_dataset_stream(
                 pass
         if registration is not None:
             try:
-                if isinstance(exc, AuthzError):
+                if isinstance(exc, (AuthzError, PermissionDenied)):
                     _discard_sql_registration(
-                        repo,
-                        registration.registration.dataset.dataset_id,
-                        registration.version.version_id,
-                        new_dataset,
+                        repo, registration.registration.dataset.dataset_id,
+                        registration.version.version_id, new_dataset,
                     )
                 else:
                     _mark_failed_sql_version(
-                        repo,
-                        registration.registration.dataset.dataset_id,
-                        registration.version.version_id,
-                        new_dataset,
-                        str(exc),
+                        repo, registration.registration.dataset.dataset_id,
+                        registration.version.version_id, new_dataset, str(exc),
                     )
             except Exception:
                 pass
             if new_dataset:
-                _unregister_authorization(
-                    workspace_id, registration.registration.dataset.dataset_id
-                )
+                _unregister_authorization(workspace_id, registration.registration.dataset.dataset_id)
         _audit_safely(
-            workspace_id,
-            str(claims["uid"]),
+            workspace_id, str(claims["uid"]),
             "dataset.upload" if new_dataset else "dataset.version_upload",
-            "failed",
-            resource_id=dataset_id,
+            "failed", resource_id=dataset_id,
         )
         raise
     finally:
@@ -780,6 +777,7 @@ def upload_managed_dataset(
     )
 
 
+
 def delete_managed_dataset(
     *,
     workspace_id: str,
@@ -789,20 +787,17 @@ def delete_managed_dataset(
 ) -> dict[str, Any]:
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
-    if "branch_head" not in set(context.get("role_ids", [])):
-        raise PermissionDenied(
-            "Only an active Branch Head may delete an original dataset; Managers must submit proposals."
-        )
+    roles = set(context.get("role_ids", []))
+    if not roles.intersection({"organization_owner", "branch_head"}):
+        raise PermissionDenied("Only an Organization Owner or Branch Head may delete an original dataset.")
     dataset_scope = _authorize_dataset(claims, workspace_id, dataset_id, "dataset.delete")
-    # The role label alone is not sufficient: require the current Branch Head
-    # assignment for the dataset's exact branch before any irreversible deletion.
-    location_id = dataset_scope.get("location_id")
+    location_id = str(dataset_scope.get("location_id") or "")
     if not location_id:
-        raise PermissionDenied("Original dataset deletion requires an assigned branch.")
-    authorize_dataset_upload_scope(claims, workspace_id, location_id=str(location_id))
+        raise PermissionDenied("Original dataset deletion requires an active branch assignment.")
+    # Owner is organization-wide; Branch Head remains constrained to the branch.
+    authorize_dataset_upload_scope(claims, workspace_id, location_id=location_id)
     organization_id = str(context["organization_id"])
     from core.db import SessionLocal
-
     repo = DatasetRepository(SessionLocal())
     provider = provider or SupabaseDatasetStorageProvider()
     try:
@@ -812,21 +807,11 @@ def delete_managed_dataset(
         versions = repo.list_versions(dataset_id)
         for version in versions:
             if version.storage_provider == "supabase_storage":
-                provider.delete(
-                    organization_id=organization_id,
-                    dataset_id=dataset_id,
-                    version_id=version.version_id,
-                )
-        revoke_dataset_working_copies(organization_id, dataset_id)
+                provider.delete(organization_id=organization_id, dataset_id=dataset_id, version_id=version.version_id)
+        revoke_dataset_working_copies(workspace_id, dataset_id)
         repo.delete_dataset(dataset_id)
         _unregister_authorization(workspace_id, dataset_id)
-        _audit_safely(
-            workspace_id,
-            str(claims["uid"]),
-            "dataset.delete",
-            "succeeded",
-            resource_id=dataset_id,
-        )
+        _audit_safely(workspace_id, str(claims["uid"]), "dataset.delete", "succeeded", resource_id=dataset_id)
         return {"dataset_id": dataset_id, "status": "deleted"}
     finally:
         repo.db.close()
