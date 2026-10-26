@@ -686,13 +686,15 @@ def _lock_active_upload_assignment(
             JOIN member_roles mr
               ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
              AND mr.role_id='organization_owner'
+            JOIN role_permissions rp
+              ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
             JOIN locations l ON l.organization_id=oa.organization_id
               AND l.location_id=:location AND l.status='active'
             WHERE oa.organization_id=:org AND oa.principal_id=:principal
               AND oa.role_id='organization_owner' AND oa.status='active'
               AND m.workspace_id=:workspace AND m.status='active'
             ORDER BY oa.assignment_id LIMIT 1
-            FOR SHARE OF oa, m, mr, l
+            FOR SHARE OF oa, m, mr, rp, l
         """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
     elif role == "branch_head":
         assignment = repo.db.execute(text("""
