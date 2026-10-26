@@ -744,3 +744,46 @@ def test_manager_original_version_write_passes_through_branch_grant_check(monkey
     assert result["authorized"] is True
     assert result["upload_role_id"] == "manager"
     assert checked["location_id"] == "branch-1"
+
+
+
+def test_dataset_registration_cannot_overwrite_existing_original_acl(monkeypatch):
+    session = _AuthzSession(
+        resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
+        protected=True,
+        grant=["dataset.view_original"],
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="cannot overwrite"):
+        supabase_provider.register_dataset(
+            {"uid": "owner", "sub": "owner", "provider": "supabase"},
+            "workspace-owner",
+            "dataset-owner",
+            "owner",
+            True,
+            location_id="branch-1",
+        )
+
+
+def test_dataset_registration_cannot_register_for_another_member(monkeypatch):
+    session = _AuthzSession(owner="principal-someone-else")
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="authenticated uploader"):
+        supabase_provider.register_dataset(
+            {"uid": "owner", "sub": "owner", "provider": "supabase"},
+            "workspace-owner",
+            "dataset-owner",
+            "someone-else",
+            True,
+            location_id="branch-1",
+        )
