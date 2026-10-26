@@ -787,3 +787,41 @@ def test_dataset_registration_cannot_register_for_another_member(monkeypatch):
             True,
             location_id="branch-1",
         )
+
+
+
+def test_only_owner_branch_head_or_manager_can_reach_original_upload_policy(monkeypatch):
+    context = {
+        **_context(),
+        "role_ids": ["team_lead"],
+    }
+    monkeypatch.setattr(
+        dataset_service, "_authorization_context",
+        lambda claims, workspace_id: context,
+    )
+    monkeypatch.setattr(
+        dataset_service, "authorize_dataset_upload_scope",
+        lambda *args, **kwargs: pytest.fail("copy-only role must be rejected before upload grant lookup"),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="explicitly authorized Manager"):
+        dataset_service._authorize_upload(
+            {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+            "workspace-owner",
+            location_id="branch-1",
+        )
+
+    context["role_ids"] = ["manager"]
+    monkeypatch.setattr(
+        dataset_service, "authorize_dataset_upload_scope",
+        lambda claims, workspace_id, *, location_id=None: {
+            "upload_role_id": "manager", "location_id": location_id,
+        },
+    )
+    result = dataset_service._authorize_upload(
+        {"uid": "manager", "sub": "manager", "provider": "supabase"},
+        "workspace-owner",
+        location_id="branch-1",
+    )
+    assert result["upload_role_id"] == "manager"
+    assert result["location_id"] == "branch-1"
