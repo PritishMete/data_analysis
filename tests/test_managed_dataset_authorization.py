@@ -42,6 +42,10 @@ class _AuthzSession:
             return _Result(row=self.resource)
         if "FROM authorization_resources" in sql and "SELECT 1" in sql:
             return _Result(scalar=1 if self.resource else None)
+        if "FROM datasets" in sql and "SELECT dataset_id" in sql:
+            return _Result(scalar="dataset-owner")
+        if "FROM organizational_assignments oa" in sql and "SELECT oa.assignment_id" in sql:
+            return _Result(scalar="assignment-1")
         if "FROM dataset_authorization" in sql:
             row = (
                 {"protected_original": self.protected, "location_id": "branch-1"}
@@ -95,6 +99,7 @@ def _context():
             "dataset.view_original",
             "dataset.create_working_copy",
             "dataset.manage_acl",
+            "dataset.upload",
         ],
     }
 
