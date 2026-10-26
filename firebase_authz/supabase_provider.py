@@ -1802,10 +1802,15 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
         persisted = db.execute(text("""
             SELECT dataset_id FROM datasets
             WHERE organization_id=:org AND dataset_id=:dataset
-            FOR SHARE
-        """), {"org": organization_id, "dataset": dataset_id}).scalar_one_or_none()
+              AND uploaded_by=:actor AND status='processing'
+              AND current_version_id IS NULL
+            FOR UPDATE
+        """), {"org": organization_id, "dataset": dataset_id,
+                "actor": actor}).scalar_one_or_none()
         if persisted is None:
-            raise AuthzError("The dataset must already exist in this organization before registration.")
+            raise AuthzError(
+                "Only the authenticated uploader may register their own unpublished dataset before first publication."
+            )
 
         existing_resource = db.execute(text("""
             SELECT 1 FROM authorization_resources
