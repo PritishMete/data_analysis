@@ -2365,6 +2365,7 @@ def authorize_dataset_upload_scope(
         "permission": "dataset.upload",
         "location_id": target_location,
         "upload_role_id": upload_role,
+        "_identity_subject": subject,
     }
 
 
