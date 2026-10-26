@@ -863,10 +863,19 @@ def create_managed_working_copy(
                 "source_version": version.version_id,
             },
         )
-        return {
-            **metadata,
-            "structured_dataset_id": dataset_id,
-            "structured_version_id": version.version_id,
+        # Copy-only roles must not receive original dataset/version identifiers.
+        roles = set(context.get("role_ids", []))
+        result = {
+            key: value for key, value in metadata.items()
+            if key not in {"source_dataset_id", "source_version",
+                           "structured_dataset_id", "structured_version_id"}
         }
+        result["access_mode"] = "working_copy"
+        if roles.intersection({"organization_owner", "branch_head", "manager"}):
+            result.update({
+                "structured_dataset_id": dataset_id,
+                "structured_version_id": version.version_id,
+            })
+        return result
     finally:
         repo.db.close()
