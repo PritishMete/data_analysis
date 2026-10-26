@@ -12,6 +12,8 @@ def test_manager_original_writes_are_proposal_only():
     assert "manager_dataset_upload_grants" not in upload_scope
     assert "def submit_dataset_proposal(" in proposals
     assert "def decide_dataset_proposal(" in proposals
+    decision = proposals.split("def decide_dataset_proposal(", 1)[1]
+    assert 'required_permission="dataset.upload"' in decision
     assert 'if "branch_head" not in set(context.get("role_ids", []))' in proposals
 
 
