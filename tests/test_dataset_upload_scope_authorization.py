@@ -87,26 +87,31 @@ def _claims():
 
 
 
-def test_active_manager_with_explicit_branch_upload_grant_is_denied_for_direct_original_write(monkeypatch):
+def test_active_manager_with_explicit_branch_upload_grant_is_allowed(monkeypatch):
     _install_scope(
         monkeypatch, permission=False,
         assignments={"manager": ["branch-a"]},
         manager_upload_grants=["branch-a"],
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
-        supabase_provider.authorize_dataset_upload_scope(
-            _claims(), "workspace-1", location_id="branch-a"
-        )
+    result = supabase_provider.authorize_dataset_upload_scope(
+        _claims(), "workspace-1", location_id="branch-a"
+    )
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-a"
+    assert result["upload_role_id"] == "manager"
 
 
-def test_manager_without_grant_is_also_denied_from_direct_original_write(monkeypatch):
+def test_manager_without_grant_is_denied_from_direct_original_write(monkeypatch):
     _install_scope(
         monkeypatch, permission=False, assignments={"manager": ["branch-a"]},
         manager_upload_grants=[],
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="active Manager assignment and explicit upload grant",
+    ):
         supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
 
 
