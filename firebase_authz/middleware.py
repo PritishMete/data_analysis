@@ -79,15 +79,15 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
     if path == base and method == "GET":
         return None
     if path == base and method == "POST":
-        # Upload handlers re-verify the Supabase identity and enforce Owner/
-        # Branch Head-only publication inside the dataset service. Managers
-        # must use the private proposal workflow and await Branch Head review.
+        # Upload handlers re-verify Supabase identity and enforce Owner/
+        # Branch Head scope or an explicit, active Manager grant for the branch.
         return MANAGED_DATASET_SERVICE_AUTH_POLICY
     if path.startswith(base + "/"):
         suffix = path[len(base) + 1:]
         parts = suffix.split("/")
         if (
             (suffix in {"proposals", "upload-grants"} and method in {"GET", "POST"})
+            or (suffix == "upload-grants/me" and method == "GET")
             or (
                 len(parts) == 3
                 and parts[0] == "working-copies"
