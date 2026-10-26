@@ -40,10 +40,11 @@ class _AssignmentDb:
         assert "JOIN locations l" in sql
         assert "JOIN organization_members m" in sql
         assert "JOIN member_roles mr" in sql
-        assert "JOIN role_permissions rp" in sql
         role = (params or {}).get("role")
-        if role not in self.upload_permission_roles:
-            return _Result([])
+        if role != "manager":
+            assert "JOIN role_permissions rp" in sql
+            if role not in self.upload_permission_roles:
+                return _Result([])
         return _Result(self.assignments.get(role, []))
 
 
