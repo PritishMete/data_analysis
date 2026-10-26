@@ -41,6 +41,8 @@ def test_proposal_and_manager_grant_routes_use_their_service_authorization():
         ("GET", "/v1/managed-datasets/upload-grants"),
         ("POST", "/v1/managed-datasets/upload-grants"),
         ("DELETE", "/v1/managed-datasets/upload-grants/mug_123"),
+        ("GET", "/v1/managed-datasets/working-copies/wc_123/profile"),
+        ("GET", "/v1/managed-datasets/working-copies/wc_123/rows"),
     ]
     for method, path in routes:
         assert managed_dataset_route_policy(method, path) == service_authorized
