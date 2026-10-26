@@ -1020,7 +1020,8 @@ def set_delegation(claims: dict[str, Any], workspace_id: str, team_lead_uid: str
                    member_ids: list[str], dataset_ids: list[str], permissions: list[str],
                    expires_at: int | None) -> dict[str, Any]:
     """Authorize one Team Lead to create copies of a selected dataset set."""
-    if set(permissions or []) != {"dataset.create_working_copy"}:
+    allowed = {"dataset.create_working_copy"}
+    if set(permissions or []) != allowed:
         raise ValueError("Delegation must grant dataset.create_working_copy only.")
     expiry = datetime.fromtimestamp(expires_at / 1000, tz=timezone.utc) if expires_at is not None else None
     if expiry is not None and expiry <= datetime.now(timezone.utc):
@@ -1700,6 +1701,12 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
         elif "organization_owner" not in actor_roles:
             raise AuthzError("Branch Heads may grant access only to branch-scoped datasets and working copies.")
 
+        if "external_viewer" in target_roles and (
+            resource["resource_type"] != "dataset"
+            or any(permission != "dataset.view_original" for permission in permissions)
+        ):
+            raise AuthzError("External Viewers may receive read-only grants for explicitly shared datasets only.")
+
         # Branch Heads can only grant resources inside their own active branch.
         if "organization_owner" not in actor_roles:
             branch_locations = {
@@ -1946,7 +1953,7 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                 SET status='rejected', reviewed_by_principal_id=:reviewer,
                     reviewed_at=now(), updated_at=now()
                 WHERE organization_id=:org AND request_id=:request AND status='pending'
-            """), {"org": org, "reviewer": actor, "request": request_id})
+            """), {"org": org, "reviewer": context["principal_id"], "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
 
     copy = create_working_copy(claims, workspace, str(req["dataset_id"]), None, None)
@@ -1974,8 +1981,8 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
-        raise AuthzError("Only an Organization Owner, Branch Head, or Manager can assign working copies.")
+    if not roles.intersection({"organization_owner", "branch_head"}):
+        raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -2153,6 +2160,8 @@ def authorize_dataset_upload_scope(
         raise AuthzError("Workspace authorization denied.")
 
     roles = set(context.get("role_ids", []))
+    if "dataset.upload" not in set(context.get("permissions", [])):
+        raise AuthzError("The active role lacks the dataset.upload permission.")
     if "organization_owner" in roles:
         upload_role = "organization_owner"
     elif "branch_head" in roles:
@@ -2160,7 +2169,7 @@ def authorize_dataset_upload_scope(
     elif "manager" in roles:
         upload_role = "manager"
     else:
-        raise AuthzError("Only an Organization Owner, Branch Head, or explicitly authorized Manager can upload originals.")
+        raise AuthzError("Only the active Branch Head or Organization Owner can directly modify an original dataset; Managers must submit changes for Branch Head review.")
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -2183,19 +2192,14 @@ def authorize_dataset_upload_scope(
                     JOIN member_roles mr
                       ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
                      AND mr.role_id=oa.role_id
+                    JOIN role_permissions rp
+                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
                     JOIN locations l
                       ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
                     WHERE oa.organization_id=:org AND oa.principal_id=:principal
                       AND oa.role_id=:role AND oa.status='active'
                       AND oa.location_id IS NOT NULL AND l.status='active'
                       AND m.status='active' AND m.workspace_id=:workspace
-                      AND (
-                        :role = 'manager'
-                        OR EXISTS (
-                          SELECT 1 FROM role_permissions rp
-                          WHERE rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                        )
-                      )
                 """), {
                     "org": org, "principal": principal,
                     "role": upload_role, "workspace": workspace,
@@ -2351,6 +2355,8 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
     grant_permissions = set(grants or [])
     if action in {"dataset.upload", "dataset.upload_original"}:
+        if not ({"organization_owner", "branch_head"} & roles):
+            raise AuthzError("Only the active Branch Head or Organization Owner can directly modify an original dataset; Managers must submit changes for Branch Head review.")
         if not row["protected_original"] or not dataset_location:
             raise AuthzError("Only a published, branch-scoped original dataset can be modified.")
         upload_context = authorize_dataset_upload_scope(
@@ -2376,23 +2382,25 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
             if "dataset.view_original" not in grant_permissions:
                 raise AuthzError("An explicit read-only dataset grant is required.")
         else:
-            raise AuthzError("This role cannot access an original dataset; request an authorized copy.")
+            raise AuthzError("Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view an original dataset.")
 
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
-        if "organization_owner" in roles:
+        actor_roles = roles
+        if "organization_owner" in actor_roles:
             pass
-        elif "branch_head" in roles:
-            if not dataset_location or dataset_location not in scoped_locations:
-                raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
-        else:
+        elif "branch_head" not in actor_roles:
             raise AuthzError("Only an Organization Owner or the active Branch Head for this branch can manage an original dataset.")
+        elif not dataset_location or dataset_location not in scoped_locations:
+            raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
 
     elif action == "dataset.create_working_copy":
         if "organization_owner" in roles:
             pass
         elif "branch_head" in roles or "manager" in roles:
             if not dataset_location or dataset_location not in scoped_locations:
-                raise AuthzError("The dataset belongs to a branch outside your assigned scope.")
+                if "branch_head" in roles:
+                    raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
+                raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
         elif "external_viewer" in roles:
             raise AuthzError("External Viewers are read-only and cannot create working copies.")
         else:
@@ -2435,8 +2443,9 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str,
                       target_uid: str, permissions: list[str]) -> bool:
     """Grant a person copy-only access to one protected original dataset."""
-    if not permissions or set(permissions) != {"dataset.create_working_copy"}:
-        raise ValueError("Dataset grants may only authorize dataset.create_working_copy.")
+    allowed = {"dataset.create_working_copy"}
+    if any(permission not in allowed for permission in (permissions or [])):
+        raise ValueError("Only dataset.create_working_copy grants can be issued; original-write delegation is forbidden.")
     context = authorization_context(claims, workspace_id)
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
@@ -2635,8 +2644,8 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     source_location = str(row["location_id"] or "")
 
     if action == "working_copy.assign":
-        if not roles.intersection({"organization_owner", "branch_head", "manager"}):
-            raise AuthzError("Only an Organization Owner, Branch Head, or Manager can assign working copies.")
+        if not roles.intersection({"organization_owner", "branch_head"}):
+            raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
         if "organization_owner" not in roles:
             issuer_role = "branch_head" if "branch_head" in roles else "manager"
             if not _has_active_branch_assignment(
