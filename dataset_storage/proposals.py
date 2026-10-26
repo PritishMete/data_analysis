@@ -41,7 +41,7 @@ def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
         JOIN role_permissions rp
           ON rp.role_id=oa.role_id AND rp.permission_id=:required_permission
     """ if required_permission else ""
-    lock_targets = "oa, l, m, mr, ib, o, w" + (", rp" if require_proposal_permission else "")
+    lock_targets = "oa, l, m, mr, ib, o, w" + (", rp" if required_permission else "")
     row = db.execute(text(f"""
         SELECT oa.assignment_id
         FROM organizational_assignments oa
@@ -67,7 +67,8 @@ def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
     """), {
         "org": organization_id, "workspace": workspace_id,
         "principal": principal_id, "location": location_id, "role": role_id,
-        "provider": provider, "provider_subject": provider_subject,\n        "required_permission": required_permission,
+        "provider": provider, "provider_subject": provider_subject,
+        "required_permission": required_permission,
     }).scalar_one_or_none()
     if row is None:
         raise PermissionDenied("An active membership and assignment to this exact branch are required.")
