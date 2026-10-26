@@ -86,11 +86,13 @@ def _authorize_upload(
     """
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if "organization_owner" not in roles and "branch_head" not in roles:
+    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
         raise AuthzError(
-            "Branch Head only (or the Organization Owner) may directly write "
-            "an original dataset. Managers must submit changes for Branch Head review."
+            "Only an Organization Owner, Branch Head, or explicitly authorized Manager "
+            "may write an original dataset."
         )
+    # authorize_dataset_upload_scope is the enforcement point for a Manager's
+    # exact-branch, revocable grant. Merely holding the Manager role is not enough.
     return authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
     )
