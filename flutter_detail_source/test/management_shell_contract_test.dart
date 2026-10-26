@@ -459,22 +459,14 @@ void main() {
         "bool get canViewOriginal => roles.any((role) => {",
       ),
     );
-    expect(
-      access,
-      contains(
-        "bool get canUpload => !widget.readOnly && roles.contains('branch_head');",
-      ),
-    );
-    expect(
-      access,
-      contains(
-        "bool get canDelete => !widget.readOnly && roles.contains('branch_head');",
-      ),
-    );
+    expect(access, contains("bool get canUpload => !widget.readOnly &&"));
+    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
+    expect(access, contains("bool get canDelete => !widget.readOnly &&"));
+    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
     expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
     expect(access, contains("'external_viewer'"));
     expect(access, contains('if (!widget.readOnly) ...['));
-    expect(access, contains('openInsightFlowAnalysis(context, managedDatasetId: id'));
+    expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
 
 
     final headerStart = source.indexOf('Widget _buildManagementHeader()');
