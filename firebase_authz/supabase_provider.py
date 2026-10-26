@@ -2333,7 +2333,7 @@ def authorize_dataset_upload_scope(
         target_location = str(location_id).strip()
         if not target_location or target_location not in allowed_locations:
             if upload_role == "manager":
-                raise AuthzError("The Manager has no active upload grant for the selected branch.")
+                raise AuthzError("The Manager has no active upload grant for this branch; an explicit upload grant is required.")
             raise AuthzError("You are without an active branch assignment or required upload permission for the selected branch.")
 
     return {
