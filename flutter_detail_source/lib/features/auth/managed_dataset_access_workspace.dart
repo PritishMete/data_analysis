@@ -277,7 +277,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
       final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
       if (!mounted) return;
-      openInsightFlowAnalysis(context, managedDatasetId: id, managedVersionId: w['structured_version_id']?.toString() ?? w['source_version']?.toString(), managedWorkingCopyId: w['working_copy_id']?.toString());
+      final workingCopyId = w['working_copy_id']?.toString();
+      if (workingCopyId == null || workingCopyId.isEmpty) {
+        throw StateError('The backend did not return an authorized working-copy ID.');
+      }
+      // Never pass the original dataset ID into the analysis screen. The
+      // backend resolves the pinned source version using this copy capability.
+      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId);
     } catch (e) { _snack(e); }
   }
 
@@ -291,10 +297,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canViewOriginal => roles.any((role) => {
     'organization_owner', 'branch_head', 'manager', 'external_viewer'
   }.contains(role));
-  // Dataset import is an organizational capability reserved strictly for Branch Head and Manager.
-  // Professional roles such as Data Analyst must never receive the import control.
-  bool get canUpload => !widget.readOnly && roles.contains('branch_head');
-  bool get canDelete => !widget.readOnly && roles.contains('branch_head');
+  // Permanent original changes are restricted to the Organization Owner and Branch Head.
+  // Manager upload grants use the proposal/review flow; copy-only roles never import originals.
+  bool get canUpload => !widget.readOnly &&
+      (roles.contains('organization_owner') || roles.contains('branch_head'));
+  bool get canDelete => !widget.readOnly &&
+      (roles.contains('organization_owner') || roles.contains('branch_head'));
   bool get canCopy => !widget.readOnly && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
@@ -478,7 +486,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 5),
-    const Text('Original datasets remain Branch Head / Organization Owner only. Managers and Team Leads request a working copy; approval creates and assigns a private copy.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const Text('Only the Organization Owner and assigned Branch Head can directly publish permanent original changes. Managers need an explicit branch upload grant and must submit proposals for Branch Head review. Team Leads and employees can analyze only individually authorized copies within their branch.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
     if (roles.contains('manager') || roles.contains('team_lead')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
