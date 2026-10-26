@@ -240,3 +240,49 @@ def list_manager_upload_grants(
             "revoke_reason": row["revoke_reason"],
             "status": "revoked" if row["revoked_at"] else "active",
         } for row in rows]
+
+
+def list_my_manager_upload_grants(*, workspace_id: str, token: str) -> list[dict[str, Any]]:
+    """List the authenticated Manager's own active branch upload grants."""
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        raise PermissionDenied("Workspace authorization denied.")
+    if "manager" not in set(context.get("role_ids", [])):
+        raise PermissionDenied("Only Managers can inspect their own upload grants.")
+
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            SELECT g.grant_id, g.location_id, l.name AS location_name, g.granted_at
+            FROM manager_dataset_upload_grants g
+            JOIN organizational_assignments oa
+              ON oa.organization_id=g.organization_id
+             AND oa.principal_id=g.manager_principal_id
+             AND oa.location_id=g.location_id
+             AND oa.role_id='manager' AND oa.status='active'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=g.workspace_id AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='manager'
+            JOIN locations l
+              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+             AND l.status='active'
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.manager_principal_id=:principal AND g.revoked_at IS NULL
+            ORDER BY l.name, g.granted_at, g.grant_id
+        """), {"org": org, "workspace": workspace, "principal": principal}).mappings().all()
+    return [
+        {
+            "grant_id": str(row["grant_id"]),
+            "location_id": str(row["location_id"]),
+            "location_name": str(row["location_name"]),
+            "granted_at": row["granted_at"].isoformat() if row["granted_at"] else None,
+            "status": "active",
+        }
+        for row in rows
+    ]
