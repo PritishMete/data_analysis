@@ -215,7 +215,6 @@ def list_manager_upload_grants(
     context, provider, subject = _manager_grant_context(token, workspace_id)
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
-    actor = str(context["principal_id"])
     location = str(location_id or "").strip()
     if not location:
         raise ValueError("location_id is required to list branch-scoped grants.")
