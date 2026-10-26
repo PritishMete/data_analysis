@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_up_screen.dart';
@@ -69,7 +68,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _messageIsError = !unverified;
         _error = unverified
             ? 'Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.'
-            : InsightFlowAuthService.userFacingAuthError(error);
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
     }
@@ -94,7 +93,7 @@ class _SignInScreenState extends State<SignInScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(
-        () => _error = InsightFlowAuthService.userFacingAuthError(error),
+        () => _error = InsightFlowSupabaseAuthService.userFacingAuthError(error),
       );
     }
   }
@@ -117,7 +116,7 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = InsightFlowAuthService.userFacingAuthError(error);
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     }
   }
@@ -210,71 +209,6 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         ],
         const SizedBox(height: 14),
-        GlassButton.custom(
-          onTap: _loading ? () {} : _signIn,
-          enabled: !_loading,
-          width: double.infinity,
-          height: 46,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: _loading ? 'Please wait…' : 'Sign In',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_loading)
-                const CupertinoActivityIndicator()
-              else
-                const Icon(CupertinoIcons.arrow_right, size: 17),
-              const SizedBox(width: 8),
-              Text(
-                _loading ? 'Please wait…' : 'Sign In',
-                style: TextStyle(
-                  color: CupertinoColors.label.resolveFrom(context),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        GlassButton.custom(
-          onTap: _loading
-              ? () {}
-              : () async {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  try {
-                    await InsightFlowSupabaseAuthService.setRememberDevice(
-                      _emailController.text.trim(),
-                      _rememberDevice,
-                    );
-                    final result =
-                        await InsightFlowAuthService.signInWithMicrosoft();
-                    if (result == null && mounted) {
-                      setState(() => _loading = false);
-                    }
-                  } catch (error) {
-                    if (!mounted) return;
-                    setState(() {
-                      _loading = false;
-                      _error = InsightFlowAuthService.userFacingAuthError(
-                        error,
-                      );
-                    });
-                  }
-                },
-          enabled: !_loading,
-          width: double.infinity,
-          height: 42,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
-          label: 'Continue with Microsoft',
-          child: const Text(
-            'Continue with Microsoft',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ),
         const SizedBox(height: 14),
         const Divider(height: 1),
         const SizedBox(height: 10),

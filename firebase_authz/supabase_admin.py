@@ -291,3 +291,13 @@ def find_user_by_email(email: str) -> dict[str, Any] | None:
         if next_page is None:
             return None
         page = next_page
+
+def delete_user(user_id: str) -> None:
+    """Delete an Auth user through the trusted server-side Admin API."""
+    normalized_id = str(user_id or "").strip()
+    if not normalized_id:
+        raise ValueError("Supabase user ID is required.")
+    _run_admin_operation(
+        "delete_user",
+        lambda client: client.auth.admin.delete_user(normalized_id),
+    )

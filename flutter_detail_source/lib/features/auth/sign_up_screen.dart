@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
@@ -68,7 +67,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = InsightFlowAuthService.userFacingAuthError(error);
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
     }

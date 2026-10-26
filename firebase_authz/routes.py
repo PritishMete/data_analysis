@@ -695,8 +695,14 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
     try:
         if os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower() == "supabase":
             from .supabase_provider import cleanup_account as provider_cleanup_account
+            from .supabase_admin import delete_user
             claims = require_email_verified(verify_id_token(_token(authorization)))
-            return provider_cleanup_account(claims, req.uid)
+            # Revoke organization memberships and grants before deleting the
+            # Supabase Auth identity. The provider cleanup validates that the
+            # requested UID is exactly the authenticated subject.
+            result = provider_cleanup_account(claims, req.uid)
+            delete_user(req.uid)
+            return {"deleted": True, **result}
         return cleanup_account(req.uid, _token(authorization))
     except AuthenticationRequired as exc:
         raise HTTPException(401, str(exc))
