@@ -1866,35 +1866,9 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
             """), {"org": organization_id, "actor": actor,
                     "workspace": resolved_workspace_id, "location": owner_location}).scalar_one_or_none()
         else:
-            active_authority = db.execute(text("""
-                SELECT g.grant_id
-                FROM manager_dataset_upload_grants g
-                JOIN organizational_assignments oa
-                  ON oa.organization_id=g.organization_id
-                 AND oa.principal_id=g.manager_principal_id
-                 AND oa.location_id=g.location_id AND oa.role_id='manager'
-                 AND oa.status='active'
-                JOIN organization_members m
-                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                 AND m.workspace_id=g.workspace_id AND m.status='active'
-                JOIN member_roles mr
-                  ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-                 AND mr.role_id='manager'
-                JOIN identity_bindings ib
-                  ON ib.principal_id=m.principal_id AND ib.status='active'
-                 AND ib.provider=:provider AND ib.provider_subject=:subject
-                JOIN locations l
-                  ON l.organization_id=g.organization_id AND l.location_id=g.location_id
-                 AND l.status='active'
-                WHERE g.organization_id=:org AND g.workspace_id=:workspace
-                  AND g.manager_principal_id=:actor AND g.location_id=:location
-                  AND g.revoked_at IS NULL
-                LIMIT 1 FOR SHARE OF g, oa, m, mr, ib, l
-            """), {"org": organization_id, "workspace": resolved_workspace_id,
-                    "actor": actor, "location": owner_location,
-                    "provider": provider, "subject": subject}).scalar_one_or_none()
+            raise AuthzError("Only an Organization Owner or Branch Head may register an original dataset.")
         if active_authority is None:
-            raise AuthzError("The active upload authority or exact-branch Manager grant is no longer valid.")
+            raise AuthzError("The active Owner or Branch Head upload authority is no longer valid.")
 
         db.execute(text("""INSERT INTO authorization_resources
             (organization_id, resource_id, resource_type, owner_principal_id)
