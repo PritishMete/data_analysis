@@ -2446,7 +2446,8 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
                       target_uid: str, permissions: list[str]) -> bool:
     """Grant a person copy-only access to one protected original dataset."""
     allowed = {"dataset.create_working_copy"}
-    if any(permission not in allowed for permission in (permissions or [])):
+    grant_permissions = sorted(set(permissions or []))
+    if any(permission not in allowed for permission in grant_permissions):
         raise ValueError("Only dataset.create_working_copy grants can be issued; original-write delegation is forbidden.")
     context = authorization_context(claims, workspace_id)
     if not context.get("workspace_authorized"):
@@ -2494,9 +2495,9 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
         assigned = _active_assigned_role_rows(db, workspace, str(target))
         target_roles = {str(item["role_id"]) for item in assigned}
-        if not assigned:
+        if not assigned and grant_permissions:
             raise AuthzError("The copy recipient must have an active organizational assignment.")
-        if target_roles.intersection({"organization_owner", "branch_head", "manager", "external_viewer"}):
+        if grant_permissions and target_roles.intersection({"organization_owner", "branch_head", "manager", "external_viewer"}):
             raise AuthzError("Copy-only grants can be issued only to Team Leads and ordinary employees.")
 
         location = str(dataset["location_id"])
@@ -2508,7 +2509,7 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
             }
             if location not in actor_locations:
                 raise AuthzError("The dataset is outside your branch scope.")
-        if not any(str(item.get("location_id") or "") == location for item in assigned):
+        if grant_permissions and not any(str(item.get("location_id") or "") == location for item in assigned):
             raise AuthzError("The copy recipient must be assigned to the dataset's branch.")
 
         db.execute(text("""
@@ -2517,7 +2518,7 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
             ON CONFLICT (organization_id, resource_id, principal_id)
             DO UPDATE SET permissions=EXCLUDED.permissions
         """), {"org": org, "dataset": dataset_id, "target": str(target),
-                "permissions": json.dumps(["dataset.create_working_copy"])})
+                "permissions": json.dumps(grant_permissions)})
         db.execute(text("""
             INSERT INTO audit_events
               (event_id, organization_id, actor_principal_id, action, outcome, metadata)
@@ -2527,7 +2528,8 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 "metadata": json.dumps({
                     "dataset_id": dataset_id, "target_principal_id": str(target),
                     "location_id": location,
-                    "permissions": ["dataset.create_working_copy"],
+                    "permissions": grant_permissions,
+                    "operation": "grant" if grant_permissions else "revoke",
                 })})
     return True
 
