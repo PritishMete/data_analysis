@@ -86,85 +86,27 @@ def _claims():
     return {"uid": "principal-1", "sub": "principal-1", "provider": "supabase"}
 
 
-def test_active_manager_with_explicit_branch_upload_grant_is_allowed(monkeypatch):
+
+def test_active_manager_with_explicit_branch_upload_grant_is_denied_for_direct_original_write(monkeypatch):
     _install_scope(
         monkeypatch, permission=False,
         assignments={"manager": ["branch-a"]},
         manager_upload_grants=["branch-a"],
     )
 
-    result = supabase_provider.authorize_dataset_upload_scope(
-        _claims(), "workspace-1"
-    )
-
-    assert result["authorized"] is True
-    assert result["location_id"] == "branch-a"
-    assert result["upload_role_id"] == "manager"
-
-
-def test_replaced_manager_with_stale_member_role_is_denied(monkeypatch):
-    # The historical member_roles row still resolves to Manager, but replacement
-    # has removed the active organizational assignment.
-    _install_scope(monkeypatch, assignments={"manager": []})
-
-    with pytest.raises(supabase_provider.AuthzError, match="active Manager assignment"):
-        supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
-
-
-def test_replacement_manager_with_active_assignment_and_grant_is_allowed(monkeypatch):
-    _install_scope(
-        monkeypatch, permission=False,
-        assignments={"manager": ["branch-a"]},
-        manager_upload_grants=["branch-a"],
-    )
-
-    result = supabase_provider.authorize_dataset_upload_scope(
-        _claims(), "workspace-1", location_id="branch-a"
-    )
-
-    assert result["authorized"] is True
-    assert result["location_id"] == "branch-a"
-
-
-def test_manager_cannot_upload_to_another_branch(monkeypatch):
-    _install_scope(
-        monkeypatch, assignments={"manager": ["branch-a"]},
-        manager_upload_grants=["branch-a"],
-    )
-
-    with pytest.raises(
-        supabase_provider.AuthzError,
-        match="no active upload grant",
-    ):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
         supabase_provider.authorize_dataset_upload_scope(
-            _claims(), "workspace-1", location_id="branch-b"
+            _claims(), "workspace-1", location_id="branch-a"
         )
 
 
-def test_manager_without_explicit_branch_upload_grant_is_denied(monkeypatch):
+def test_manager_without_grant_is_also_denied_from_direct_original_write(monkeypatch):
     _install_scope(
         monkeypatch, permission=False, assignments={"manager": ["branch-a"]},
         manager_upload_grants=[],
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="explicit upload grant"):
-        supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
-
-
-def test_stale_other_role_cannot_supply_manager_upload_permission(monkeypatch):
-    # authorization_context aggregates capabilities across historical roles.
-    # The active Manager assignment must separately possess dataset.upload.
-    _install_scope(
-        monkeypatch, permission=False,
-        assignments={"manager": ["branch-a"]},
-        upload_permission_roles=[],
-        manager_upload_grants=[],
-    )
-
-    with pytest.raises(
-        supabase_provider.AuthzError,
-        match="explicit upload grant",
-    ):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
         supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
 
 
@@ -178,11 +120,11 @@ def test_inactive_membership_is_denied_before_assignment_lookup(monkeypatch):
         supabase_provider.authorize_dataset_upload_scope(_claims(), "workspace-1")
 
 
-def test_missing_or_ambiguous_branch_assignment_fails_closed(monkeypatch):
+
+def test_branch_head_with_ambiguous_assignment_fails_closed(monkeypatch):
     _install_scope(
-        monkeypatch, permission=False,
-        assignments={"manager": ["branch-a", "branch-b"]},
-        manager_upload_grants=["branch-a", "branch-b"],
+        monkeypatch, role="branch_head",
+        assignments={"branch_head": ["branch-a", "branch-b"]},
     )
 
     with pytest.raises(
@@ -268,7 +210,7 @@ def test_denied_upload_never_reads_stream_or_initializes_registry(monkeypatch, d
     monkeypatch.setattr(dataset_service, "DatasetRepository", fail_if_registry_created)
     stream = io.BytesIO(b"id,value\n1,private\n")
 
-    with pytest.raises(supabase_provider.AuthzError, match="Branch Head only"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner or Branch Head"):
         dataset_service.upload_managed_dataset_stream(
             workspace_id="workspace-1",
             token="unused-by-test",
