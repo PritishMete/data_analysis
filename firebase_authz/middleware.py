@@ -79,7 +79,9 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
     if path == base and method == "GET":
         return None
     if path == base and method == "POST":
-        return "dataset.upload", False
+        # Upload handlers re-verify the Supabase identity and enforce the
+        # owner/branch-head/manager-grant policy inside the dataset service.
+        return MANAGED_DATASET_SERVICE_AUTH_POLICY
     if path.startswith(base + "/"):
         suffix = path[len(base) + 1:]
         parts = suffix.split("/")
@@ -93,6 +95,7 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
             )
             or (len(parts) == 2 and parts[0] == "upload-grants" and method == "DELETE")
             or (len(parts) == 2 and parts[1] == "proposals" and method == "POST")
+            or (len(parts) == 2 and parts[1] == "versions" and method == "POST")
             or (
                 len(parts) == 3
                 and parts[0] == "proposals"
