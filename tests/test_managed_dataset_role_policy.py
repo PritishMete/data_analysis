@@ -106,7 +106,7 @@ def _context(roles):
     "resource_grant",
     [None, [], ["dataset.view_original"], ["dataset.upload"], ["dataset.upload_original"]],
 )
-def test_manager_cannot_replace_original_without_branch_upload_grant(monkeypatch, resource_grant):
+def test_manager_cannot_replace_original_even_with_resource_grant(monkeypatch, resource_grant):
     # Per-dataset read/copy/resource grants are not a substitute for the
     # Owner/Branch-Head-issued branch upload grant.
     db = _Db(
@@ -120,14 +120,15 @@ def test_manager_cannot_replace_original_without_branch_upload_grant(monkeypatch
         lambda claims, workspace_id: _context(["manager"]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="explicit upload grant"):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
 
-def test_manager_with_explicit_branch_upload_grant_can_replace_original(monkeypatch):
+
+def test_manager_with_explicit_branch_upload_grant_still_cannot_replace_original(monkeypatch):
     db = _Db(
         ["manager"], manager_locations=["branch-1"],
         manager_upload_grants=["branch-1"],
@@ -137,12 +138,11 @@ def test_manager_with_explicit_branch_upload_grant_can_replace_original(monkeypa
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: _context(["manager"]),
     )
-    result = supabase_provider.authorize_dataset(
-        {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
-        "workspace-1", "dataset-1", "dataset.upload",
-    )
-    assert result["authorized"] is True
-    assert result["location_id"] == "branch-1"
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.upload",
+        )
 
 
 def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
@@ -155,7 +155,7 @@ def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: _context(["manager"]),
     )
-    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-1", "dataset.upload",
@@ -165,7 +165,7 @@ def test_manager_cannot_upload_ordinary_dataset_without_replacement_grant(monkey
     db = _Db(["manager"], manager_locations=["branch-1"], protected=False)
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context(["manager"]))
-    with pytest.raises(supabase_provider.AuthzError, match="published, branch-scoped original"):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal for review"):
         supabase_provider.authorize_dataset(
             {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
             "workspace-1", "dataset-ordinary", "dataset.upload",
@@ -244,7 +244,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="explicitly authorized Manager"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner or Branch Head"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",
