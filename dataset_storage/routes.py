@@ -282,6 +282,7 @@ async def managed_dataset_upload(
     file: UploadFile = File(...),
     authorization: str = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
 ):
     try:
         result = upload_managed_dataset_stream(
@@ -290,6 +291,7 @@ async def managed_dataset_upload(
             filename=file.filename or "",
             stream=file.file,
             content_type=file.content_type,
+            location_id=location_id,
         )
         return {"success": True, "dataset": result}
     except Exception as exc:
