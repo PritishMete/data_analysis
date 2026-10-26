@@ -112,8 +112,6 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
             return "dataset.view_original", True
         if len(parts) == 2 and parts[1] in {"profile", "rows", "download"} and method == "GET":
             return "dataset.view_original", True
-        if len(parts) == 2 and parts[1] == "versions" and method == "POST":
-            return "dataset.upload", False
         if len(parts) == 2 and parts[1] == "working-copies" and method == "POST":
             return "dataset.create_working_copy", True
         if len(parts) == 1 and method == "DELETE":
