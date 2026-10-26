@@ -270,15 +270,32 @@ class _GrantDb:
         params = params or {}
         self.calls.append((sql, params))
         if "FROM dataset_authorization" in sql:
-            return _Result(row={"location_id": "branch-1", "protected_original": True})
+            return _Result(row={
+                "location_id": "branch-1",
+                "protected_original": True,
+                "status": "active",
+            })
         if "FROM identity_bindings b" in sql and "JOIN organization_members m" in sql:
-            return _Result(scalar=self.target_principal)
+            return _Result(row={
+                "principal_id": self.target_principal,
+                "employee_id": "EMP001",
+            })
+        if "SELECT resource_type FROM authorization_resources" in sql:
+            return _Result(row={"resource_type": "dataset"})
         if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql:
             return _Result(scalar=1 if self.target_manager_active else None)
-        if "SELECT 1 FROM authorization_resources" in sql:
-            return _Result(scalar=1)
         if "FROM organizational_assignments oa" in sql and "role_id='branch_head'" in sql:
             return _Result(scalars=[self.actor_location] if self.actor_location else [])
+        if "FROM organizational_assignments oa" in sql and "mr.role_id=oa.role_id" in sql:
+            principal = str(params.get("principal") or "")
+            if principal == self.target_principal and self.target_manager_active:
+                return _Result(scalars=[{
+                    "assignment_id": "assignment-manager",
+                    "location_id": "branch-1",
+                    "section_id": None,
+                    "role_id": "manager",
+                }])
+            return _Result(scalars=[])
         if "INSERT INTO resource_grants" in sql:
             return _Result()
         raise AssertionError(f"Unexpected grant query: {sql}")
