@@ -22,6 +22,32 @@ void main() {
     expect(source, isNot(contains('Continue with Microsoft')));
   });
 
+  test('protected Excel mutations use Supabase access tokens only', () {
+    final source = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+
+    expect(source, contains('_requireSupabaseAccessToken'));
+    expect(source, contains('InsightFlowSupabaseAuthService.currentSupabaseUser?.id'));
+    expect(source, isNot(contains('InsightFlowAuthService')));
+    expect(source, isNot(contains('getIdToken(')));
+  });
+
+  test('authorization management uses Supabase for identity and sign-out', () {
+    final source =
+        File('lib/features/auth/authorization_management_screen.dart')
+            .readAsStringSync();
+
+    expect(source, contains('InsightFlowSupabaseAuthService.signOut()'));
+    expect(source, contains('InsightFlowSupabaseAuthService.currentSupabaseUser?.id'));
+    expect(source, isNot(contains('InsightFlowAuthService')));
+  });
+
+  test('signup error messages are mapped by Supabase Auth', () {
+    final source = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
+
+    expect(source, contains('InsightFlowSupabaseAuthService.userFacingAuthError'));
+    expect(source, isNot(contains('InsightFlowAuthService')));
+  });
+
   test('account management reads and mutates the Supabase identity', () {
     final source =
         File('lib/features/auth/account_management_screen.dart').readAsStringSync();
