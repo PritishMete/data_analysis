@@ -87,7 +87,7 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
         parts = suffix.split("/")
         if (
             (suffix in {"proposals", "upload-grants"} and method in {"GET", "POST"})
-            or (suffix == "upload-grants/me" and method == "GET")
+            or (suffix in {"upload-grants/me", "upload-scope"} and method == "GET")
             or (
                 len(parts) == 3
                 and parts[0] == "working-copies"
