@@ -104,6 +104,34 @@ class InsightFlowSupabaseAuthService {
     return response.user;
   }
 
+  static String userFacingAuthError(Object error) {
+    if (error is AuthException) {
+      final code = error.code?.toLowerCase().trim() ?? '';
+      switch (code) {
+        case 'invalid_credentials':
+        case 'invalid_grant':
+          return 'Email or password is incorrect.';
+        case 'email_not_confirmed':
+          return 'Please verify your email before signing in.';
+        case 'user_already_exists':
+          return 'An account already exists for this email.';
+        case 'weak_password':
+          return 'Choose a stronger password and try again.';
+        case 'over_request_rate_limit':
+        case 'too_many_requests':
+          return 'Too many attempts. Please try again later.';
+        case 'email_address_invalid':
+          return 'Enter a valid email address.';
+      }
+      final message = error.message.toLowerCase();
+      if (message.contains('network') || message.contains('failed to fetch')) {
+        return 'Network connection failed. Check your connection and try again.';
+      }
+    }
+    if (error is StateError) return error.message.toString();
+    return 'Authentication could not be completed. Please try again.';
+  }
+
   static bool isEmailVerificationError(Object error) {
     // Supabase documents email_not_confirmed as the server error returned
     // when Confirm Email is enabled and an unverified user attempts password
