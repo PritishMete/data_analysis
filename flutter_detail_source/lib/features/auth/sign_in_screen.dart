@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
-import '../../core/auth/insightflow_auth_service.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_up_screen.dart';
@@ -69,7 +68,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _messageIsError = !unverified;
         _error = unverified
             ? 'Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.'
-            : InsightFlowAuthService.userFacingAuthError(error);
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
     }
@@ -94,7 +93,7 @@ class _SignInScreenState extends State<SignInScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(
-        () => _error = InsightFlowAuthService.userFacingAuthError(error),
+        () => _error = InsightFlowSupabaseAuthService.userFacingAuthError(error),
       );
     }
   }
@@ -117,7 +116,7 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = InsightFlowAuthService.userFacingAuthError(error);
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     }
   }
