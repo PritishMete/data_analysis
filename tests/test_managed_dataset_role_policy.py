@@ -145,6 +145,27 @@ def test_manager_with_explicit_branch_upload_grant_still_cannot_replace_original
         )
 
 
+def test_manager_with_stale_upload_permission_cannot_use_legacy_upload_policy(monkeypatch):
+    context = _context(["manager"])
+    # Simulate a stale/aggregated capability from an old role assignment.
+    context["permissions"] = ["dataset.upload"]
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Managers must submit a proposal for review",
+    ):
+        supabase_provider.authorize(
+            {"uid": "manager-1", "sub": "manager-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset.upload",
+            None,
+        )
+
+
 def test_manager_upload_grant_cannot_authorize_another_branch(monkeypatch):
     db = _Db(
         ["manager"], manager_locations=["branch-a"],
