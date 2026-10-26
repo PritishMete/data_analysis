@@ -14,6 +14,8 @@ from .service import (
     get_managed_dataset,
     get_managed_dataset_rows,
     get_managed_dataset_profile,
+    get_working_copy_rows,
+    get_working_copy_profile,
     list_authorized_datasets,
     upload_managed_dataset_stream,
 )
@@ -220,6 +222,44 @@ def managed_dataset_proposal_decision(
             workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
             proposal_id=proposal_id, approve=body["approve"],
             decision_note=body.get("decision_note"),
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/working-copies/{working_copy_id}/profile")
+def managed_working_copy_profile(
+    working_copy_id: str,
+    preview_limit: int = Query(default=5, ge=1, le=20),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_working_copy_profile(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            working_copy_id=working_copy_id,
+            preview_limit=preview_limit,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/working-copies/{working_copy_id}/rows")
+def managed_working_copy_rows(
+    working_copy_id: str,
+    limit: int = Query(default=1000, ge=1, le=10000),
+    offset: int = Query(default=0, ge=0),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_working_copy_rows(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            working_copy_id=working_copy_id,
+            limit=limit,
+            offset=offset,
         )
     except Exception as exc:
         raise _map_error(exc)
