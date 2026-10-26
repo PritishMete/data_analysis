@@ -644,3 +644,98 @@ def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatc
         "structured_dataset_id", "structured_version_id",
     ):
         assert forbidden not in result
+
+
+
+def test_manager_original_write_requires_exact_active_branch_grant(monkeypatch):
+    class GrantSession:
+        def __init__(self, *, granted):
+            self.granted = granted
+
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            if "SELECT DISTINCT oa.location_id" in sql:
+                return _Result(scalars=["branch-1"])
+            if "SELECT DISTINCT g.location_id" in sql and "manager_dataset_upload_grants" in sql:
+                return _Result(scalars=["branch-1"] if self.granted else [])
+            return _Result()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    context = {
+        **_context(),
+        "role_ids": ["manager"],
+        # A Manager's role permissions alone are not the grant.
+        "permissions": ["data.view"],
+    }
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    monkeypatch.setattr(
+        supabase_provider, "SessionLocal",
+        _SessionFactory(GrantSession(granted=True)),
+    )
+    allowed = supabase_provider.authorize_dataset_upload_scope(
+        {"uid": "manager", "sub": "manager", "provider": "supabase"},
+        "workspace-owner",
+        location_id="branch-1",
+    )
+    assert allowed["upload_role_id"] == "manager"
+    assert allowed["location_id"] == "branch-1"
+
+    monkeypatch.setattr(
+        supabase_provider, "SessionLocal",
+        _SessionFactory(GrantSession(granted=False)),
+    )
+    with pytest.raises(supabase_provider.AuthzError, match="required grant"):
+        supabase_provider.authorize_dataset_upload_scope(
+            {"uid": "manager", "sub": "manager", "provider": "supabase"},
+            "workspace-owner",
+            location_id="branch-1",
+        )
+
+
+def test_manager_original_version_write_passes_through_branch_grant_check(monkeypatch):
+    session = _AuthzSession(
+        resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
+        protected=True,
+        grant=[],
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(),
+            "role_ids": ["manager"],
+            "permissions": ["data.view"],
+        },
+    )
+    checked = {}
+
+    def check_grant(claims, workspace_id, *, location_id=None):
+        checked["location_id"] = location_id
+        return {
+            "authorized": True,
+            "organization_id": "org-owner",
+            "workspace_id": "workspace-owner",
+            "principal_id": "principal-owner",
+            "location_id": location_id,
+            "upload_role_id": "manager",
+        }
+
+    monkeypatch.setattr(supabase_provider, "authorize_dataset_upload_scope", check_grant)
+    result = supabase_provider.authorize_dataset(
+        {"uid": "manager", "sub": "manager", "provider": "supabase"},
+        "workspace-owner",
+        "dataset-owner",
+        "dataset.upload",
+    )
+    assert result["authorized"] is True
+    assert result["upload_role_id"] == "manager"
+    assert checked["location_id"] == "branch-1"
