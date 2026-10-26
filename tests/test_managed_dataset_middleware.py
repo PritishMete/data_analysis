@@ -23,7 +23,7 @@ def test_managed_dataset_uploads_use_grant_aware_service_authorization():
     assert managed_dataset_route_policy("POST", "/v1/managed-datasets/ds_123/versions") == MANAGED_DATASET_SERVICE_AUTH_POLICY
 
 
-def test_managed_dataset_delete_keeps_resource_authorization():
+def test_working_copy_creation_and_dataset_delete_keep_resource_authorization():
     assert managed_dataset_route_policy("POST", "/v1/managed-datasets/ds_123/working-copies") == (
         "dataset.create_working_copy",
         True,
