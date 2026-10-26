@@ -1,6 +1,7 @@
 import pytest
 
 from dataset_storage import service as dataset_service
+from core import db as core_db
 from firebase_authz import supabase_provider
 
 
@@ -622,7 +623,7 @@ def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatc
             pass
 
     monkeypatch.setattr(dataset_service, "DatasetRepository", Repo)
-    monkeypatch.setattr(dataset_service, "SessionLocal", Db)
+    monkeypatch.setattr(core_db, "SessionLocal", Db)
     monkeypatch.setattr(dataset_service, "create_working_copy", lambda *args: {
         "working_copy_id": "wc-new",
         "organization_id": "org-owner",
