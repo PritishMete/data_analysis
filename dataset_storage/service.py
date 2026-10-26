@@ -78,11 +78,11 @@ def _authorize_upload(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Restrict permanent original writes to Owner/Branch Head.
+    """Restrict permanent original writes to Owner, Branch Head, or granted Manager.
 
-    A Manager's delegated upload permission authorizes proposal submission, not
-    direct publication of an original version. The Branch Head must approve the
-    proposal before it becomes permanent.
+    Owners can write organization-wide; Branch Heads are restricted to their
+    active branch; Managers must hold an active, revocable upload grant for the
+    exact branch. Lower roles can only work on separately authorized copies.
     """
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
