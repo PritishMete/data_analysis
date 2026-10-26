@@ -2124,6 +2124,14 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
             UPDATE working_copy_assignments SET status='revoked', updated_at=now()
             WHERE organization_id=:org AND working_copy_id=:copy AND status='active'
         """), {"org": org, "copy": working_copy_id})
+        # A working copy is a single-principal capability. On reassignment,
+        # revoke the prior creator and any previous recipient's resource grant;
+        # assignment of a copy must not leave another Team Lead/employee with
+        # continuing access to the same snapshot.
+        db.execute(text("""
+            DELETE FROM resource_grants
+            WHERE organization_id=:org AND resource_id=:copy AND principal_id<>:target
+        """), {"org": org, "copy": working_copy_id, "target": target_id})
         db.execute(text("""
             INSERT INTO working_copy_assignments
                 (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
