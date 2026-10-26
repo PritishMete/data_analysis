@@ -652,53 +652,21 @@ def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatc
 
 
 
-def test_manager_original_write_requires_exact_active_branch_grant(monkeypatch):
-    class GrantSession:
-        def __init__(self, *, granted):
-            self.granted = granted
 
-        def execute(self, statement, params=None):
-            sql = str(statement)
-            if "SELECT DISTINCT oa.location_id" in sql:
-                return _Result(scalars=["branch-1"])
-            if "SELECT DISTINCT g.location_id" in sql and "manager_dataset_upload_grants" in sql:
-                return _Result(scalars=["branch-1"] if self.granted else [])
-            return _Result()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
+def test_manager_grant_does_not_authorize_direct_original_upload(monkeypatch):
     context = {
         **_context(),
         "role_ids": ["manager"],
-        # A Manager's role permissions alone are not the grant.
         "permissions": ["data.view"],
     }
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: context,
     )
-
-    monkeypatch.setattr(
-        supabase_provider, "SessionLocal",
-        _SessionFactory(GrantSession(granted=True)),
-    )
-    allowed = supabase_provider.authorize_dataset_upload_scope(
-        {"uid": "manager", "sub": "manager", "provider": "supabase"},
-        "workspace-owner",
-        location_id="branch-1",
-    )
-    assert allowed["upload_role_id"] == "manager"
-    assert allowed["location_id"] == "branch-1"
-
-    monkeypatch.setattr(
-        supabase_provider, "SessionLocal",
-        _SessionFactory(GrantSession(granted=False)),
-    )
-    with pytest.raises(supabase_provider.AuthzError, match="required grant"):
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Managers must submit a proposal for review",
+    ):
         supabase_provider.authorize_dataset_upload_scope(
             {"uid": "manager", "sub": "manager", "provider": "supabase"},
             "workspace-owner",
@@ -706,7 +674,7 @@ def test_manager_original_write_requires_exact_active_branch_grant(monkeypatch):
         )
 
 
-def test_manager_original_version_write_passes_through_branch_grant_check(monkeypatch):
+def test_manager_cannot_authorize_original_version_write_even_with_grant(monkeypatch):
     session = _AuthzSession(
         resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
         protected=True,
@@ -721,31 +689,20 @@ def test_manager_original_version_write_passes_through_branch_grant_check(monkey
             "permissions": ["data.view"],
         },
     )
-    checked = {}
-
-    def check_grant(claims, workspace_id, *, location_id=None):
-        checked["location_id"] = location_id
-        return {
-            "authorized": True,
-            "organization_id": "org-owner",
-            "workspace_id": "workspace-owner",
-            "principal_id": "principal-owner",
-            "location_id": location_id,
-            "upload_role_id": "manager",
-        }
-
-    monkeypatch.setattr(supabase_provider, "authorize_dataset_upload_scope", check_grant)
-    result = supabase_provider.authorize_dataset(
-        {"uid": "manager", "sub": "manager", "provider": "supabase"},
-        "workspace-owner",
-        "dataset-owner",
-        "dataset.upload",
+    monkeypatch.setattr(
+        supabase_provider, "authorize_dataset_upload_scope",
+        lambda *args, **kwargs: pytest.fail("manager must not reach original-write grant validation"),
     )
-    assert result["authorized"] is True
-    assert result["upload_role_id"] == "manager"
-    assert checked["location_id"] == "branch-1"
-
-
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Managers must submit a proposal for review",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "manager", "sub": "manager", "provider": "supabase"},
+            "workspace-owner",
+            "dataset-owner",
+            "dataset.upload",
+        )
 
 def test_dataset_registration_cannot_overwrite_existing_original_acl(monkeypatch):
     session = _AuthzSession(
@@ -790,10 +747,11 @@ def test_dataset_registration_cannot_register_for_another_member(monkeypatch):
 
 
 
-def test_only_owner_branch_head_or_manager_can_reach_original_upload_policy(monkeypatch):
+
+def test_only_owner_or_branch_head_can_reach_original_upload_policy(monkeypatch):
     context = {
         **_context(),
-        "role_ids": ["team_lead"],
+        "role_ids": ["manager"],
     }
     monkeypatch.setattr(
         dataset_service, "_authorization_context",
@@ -801,27 +759,12 @@ def test_only_owner_branch_head_or_manager_can_reach_original_upload_policy(monk
     )
     monkeypatch.setattr(
         dataset_service, "authorize_dataset_upload_scope",
-        lambda *args, **kwargs: pytest.fail("copy-only role must be rejected before upload grant lookup"),
+        lambda *args, **kwargs: pytest.fail("manager must be rejected before original upload scope lookup"),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="explicitly authorized Manager"):
+    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal"):
         dataset_service._authorize_upload(
-            {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+            {"uid": "manager", "sub": "manager", "provider": "supabase"},
             "workspace-owner",
             location_id="branch-1",
         )
-
-    context["role_ids"] = ["manager"]
-    monkeypatch.setattr(
-        dataset_service, "authorize_dataset_upload_scope",
-        lambda claims, workspace_id, *, location_id=None: {
-            "upload_role_id": "manager", "location_id": location_id,
-        },
-    )
-    result = dataset_service._authorize_upload(
-        {"uid": "manager", "sub": "manager", "provider": "supabase"},
-        "workspace-owner",
-        location_id="branch-1",
-    )
-    assert result["upload_role_id"] == "manager"
-    assert result["location_id"] == "branch-1"
