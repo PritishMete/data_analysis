@@ -11,19 +11,76 @@ from firebase_authz.supabase_provider import _identity
 from .service import _authorization_context, _claims
 
 
-def _branch_head_context(token: str, workspace_id: str) -> tuple[dict[str, Any], str, str]:
+def _manager_grant_context(token: str, workspace_id: str) -> tuple[dict[str, Any], str, str]:
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
-    if "branch_head" not in set(context.get("role_ids", [])):
-        raise PermissionDenied("Only a Branch Head can manage Manager upload grants.")
+    roles = set(context.get("role_ids", []))
+    if not roles.intersection({"organization_owner", "branch_head"}):
+        raise PermissionDenied("Only an Organization Owner or Branch Head can manage Manager upload grants.")
     provider, subject = _identity(claims)
     return context, provider, subject
+
+
+def _require_manager_grant_admin(
+    db, context: dict[str, Any], provider: str, subject: str, location_id: str
+) -> None:
+    """Revalidate the current Owner or exact-branch Branch Head inside the transaction."""
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    actor = str(context["principal_id"])
+    roles = set(context.get("role_ids", []))
+
+    if "organization_owner" in roles:
+        active = db.execute(text("""
+            SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='organization_owner'
+            JOIN identity_bindings ib
+              ON ib.principal_id=m.principal_id AND ib.status='active'
+             AND ib.provider=:provider AND ib.provider_subject=:subject
+            WHERE oa.organization_id=:org AND oa.principal_id=:actor
+              AND oa.role_id='organization_owner' AND oa.status='active'
+              AND m.workspace_id=:workspace AND m.status='active'
+            LIMIT 1 FOR SHARE OF oa, m, mr, ib
+        """), {"org": org, "workspace": workspace, "actor": actor,
+                "provider": provider, "subject": subject}).scalar_one_or_none()
+        if active is None:
+            raise PermissionDenied("An active Organization Owner assignment is required.")
+        return
+
+    active = db.execute(text("""
+        SELECT oa.assignment_id
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        JOIN member_roles mr
+          ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+         AND mr.role_id='branch_head'
+        JOIN identity_bindings ib
+          ON ib.principal_id=m.principal_id AND ib.status='active'
+         AND ib.provider=:provider AND ib.provider_subject=:subject
+        JOIN locations l
+          ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+         AND l.status='active'
+        WHERE oa.organization_id=:org AND oa.principal_id=:actor
+          AND oa.location_id=:location AND oa.role_id='branch_head'
+          AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
+        LIMIT 1 FOR SHARE OF oa, m, mr, ib, l
+    """), {"org": org, "workspace": workspace, "actor": actor,
+            "location": str(location_id), "provider": provider,
+            "subject": subject}).scalar_one_or_none()
+    if active is None:
+        raise PermissionDenied("An active Branch Head assignment to this branch is required.")
 
 
 def create_manager_upload_grant(
     *, workspace_id: str, token: str, manager_principal_id: str, location_id: str
 ) -> dict[str, Any]:
-    context, provider, subject = _branch_head_context(token, workspace_id)
+    context, provider, subject = _manager_grant_context(token, workspace_id)
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
     actor = str(context["principal_id"])
@@ -33,29 +90,8 @@ def create_manager_upload_grant(
         raise ValueError("manager_principal_id and location_id are required.")
     grant_id = "mug_" + uuid.uuid4().hex
     with SessionLocal.begin() as db:
-        # Lock the issuer's exact branch assignment, the target manager's branch
-        # assignment, and both memberships so revocation/suspension serializes
-        # with grant issuance.
-        issuer = db.execute(text("""
-            SELECT oa.assignment_id
-            FROM organizational_assignments oa
-            JOIN organization_members m ON m.organization_id=oa.organization_id
-              AND m.principal_id=oa.principal_id
-            JOIN member_roles mr ON mr.organization_id=oa.organization_id
-              AND mr.principal_id=oa.principal_id AND mr.role_id='branch_head'
-            JOIN identity_bindings ib ON ib.principal_id=m.principal_id
-              AND ib.status='active' AND ib.provider=:provider
-              AND ib.provider_subject=:subject
-            JOIN locations l ON l.organization_id=oa.organization_id
-              AND l.location_id=oa.location_id AND l.status='active'
-            WHERE oa.organization_id=:org AND oa.principal_id=:actor
-              AND oa.location_id=:location AND oa.role_id='branch_head'
-              AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
-            LIMIT 1 FOR SHARE OF oa, m, mr, ib, l
-        """), {"org": org, "workspace": workspace, "actor": actor,
-                "location": location, "provider": provider, "subject": subject}).scalar_one_or_none()
-        if issuer is None:
-            raise PermissionDenied("An active Branch Head assignment to this branch is required.")
+        # Owner is organization-wide; Branch Head is restricted to this exact branch.
+        _require_manager_grant_admin(db, context, provider, subject, location)
         target = db.execute(text("""
             SELECT oa.assignment_id
             FROM organizational_assignments oa
@@ -124,7 +160,7 @@ def create_manager_upload_grant(
 def revoke_manager_upload_grant(
     *, workspace_id: str, token: str, grant_id: str, reason: str | None = None
 ) -> dict[str, Any]:
-    context, provider, subject = _branch_head_context(token, workspace_id)
+    context, provider, subject = _manager_grant_context(token, workspace_id)
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
     actor = str(context["principal_id"])
@@ -139,25 +175,9 @@ def revoke_manager_upload_grant(
         """), {"grant": grant_id, "org": org, "workspace": workspace}).mappings().first()
         if grant is None:
             raise FileNotFoundError("Manager upload grant not found.")
-        issuer = db.execute(text("""
-            SELECT oa.assignment_id
-            FROM organizational_assignments oa
-            JOIN organization_members m ON m.organization_id=oa.organization_id
-              AND m.principal_id=oa.principal_id
-            JOIN member_roles mr ON mr.organization_id=oa.organization_id
-              AND mr.principal_id=oa.principal_id AND mr.role_id='branch_head'
-            JOIN identity_bindings ib ON ib.principal_id=m.principal_id
-              AND ib.status='active' AND ib.provider=:provider
-              AND ib.provider_subject=:subject
-            WHERE oa.organization_id=:org AND m.workspace_id=:workspace
-              AND oa.principal_id=:actor AND oa.location_id=:location
-              AND oa.role_id='branch_head' AND oa.status='active' AND m.status='active'
-            LIMIT 1 FOR SHARE OF oa, m, mr, ib
-        """), {"org": org, "workspace": workspace, "actor": actor,
-                "location": grant["location_id"], "provider": provider,
-                "subject": subject}).scalar_one_or_none()
-        if issuer is None:
-            raise PermissionDenied("An active Branch Head assignment to the grant's branch is required.")
+        _require_manager_grant_admin(
+            db, context, provider, subject, str(grant["location_id"])
+        )
         if grant["revoked_at"] is None:
             db.execute(text("""
                 UPDATE manager_dataset_upload_grants
@@ -192,7 +212,7 @@ def revoke_manager_upload_grant(
 def list_manager_upload_grants(
     *, workspace_id: str, token: str, location_id: str | None = None
 ) -> list[dict[str, Any]]:
-    context, provider, subject = _branch_head_context(token, workspace_id)
+    context, provider, subject = _manager_grant_context(token, workspace_id)
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
     actor = str(context["principal_id"])
@@ -200,26 +220,7 @@ def list_manager_upload_grants(
     if not location:
         raise ValueError("location_id is required to list branch-scoped grants.")
     with SessionLocal.begin() as db:
-        active = db.execute(text("""
-            SELECT oa.assignment_id
-            FROM organizational_assignments oa
-            JOIN organization_members m ON m.organization_id=oa.organization_id
-              AND m.principal_id=oa.principal_id
-            JOIN member_roles mr ON mr.organization_id=oa.organization_id
-              AND mr.principal_id=oa.principal_id AND mr.role_id='branch_head'
-            JOIN identity_bindings ib ON ib.principal_id=m.principal_id
-              AND ib.status='active' AND ib.provider=:provider
-              AND ib.provider_subject=:subject
-            JOIN locations l ON l.organization_id=oa.organization_id
-              AND l.location_id=oa.location_id AND l.status='active'
-            WHERE oa.organization_id=:org AND m.workspace_id=:workspace
-              AND oa.principal_id=:actor AND oa.location_id=:location
-              AND oa.role_id='branch_head' AND oa.status='active' AND m.status='active'
-            LIMIT 1 FOR SHARE OF oa, m, mr, ib, l
-        """), {"org": org, "workspace": workspace, "actor": actor,
-                "location": location, "provider": provider, "subject": subject}).scalar_one_or_none()
-        if active is None:
-            raise PermissionDenied("An active Branch Head assignment to this branch is required.")
+        _require_manager_grant_admin(db, context, provider, subject, location)
         rows = db.execute(text("""
             SELECT g.grant_id, g.manager_principal_id, g.location_id,
                    g.granted_by_principal_id, g.granted_at, g.revoked_by_principal_id,
