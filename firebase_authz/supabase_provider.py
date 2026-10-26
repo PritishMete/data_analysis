@@ -1587,46 +1587,10 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
 
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
-    # A legacy multipart endpoint can call this with dataset.upload but without
-    # a dataset resource ID. Do not let stale/aggregated permissions turn a
-    # Manager into a direct-upload actor; Managers must use the proposal API.
+    # A request without a dataset ID is a new original upload. Apply the same
+    # role, active-branch and explicit Manager-grant policy as version writes.
     if action in {"dataset.upload", "dataset.upload_original"} and not resource_id:
-        context = authorization_context(claims, workspace_id)
-        if not context.get("workspace_authorized"):
-            raise AuthzError("Workspace authorization denied.")
-        roles = set(context.get("role_ids", []))
-        if "organization_owner" in roles:
-            if "dataset.upload" not in set(context.get("permissions", [])):
-                raise AuthzError("The active role lacks the dataset.upload permission.")
-            with SessionLocal() as db:
-                active_owner = db.execute(text("""
-                    SELECT oa.assignment_id
-                    FROM organizational_assignments oa
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                    JOIN member_roles mr
-                      ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
-                     AND mr.role_id='organization_owner'
-                    JOIN role_permissions rp
-                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
-                      AND oa.role_id='organization_owner' AND oa.status='active'
-                      AND m.workspace_id=:workspace AND m.status='active'
-                    LIMIT 1 FOR SHARE OF oa, m, mr, rp
-                """), {
-                    "org": context["organization_id"],
-                    "principal": context["principal_id"],
-                    "workspace": context["workspace_id"],
-                }).scalar_one_or_none()
-            if active_owner is None:
-                raise AuthzError("An active Organization Owner assignment is required.")
-            return {
-                **context, "authorized": True, "action": action,
-                "permission": "dataset.upload",
-            }
-        if "branch_head" in roles:
-            return authorize_dataset_upload_scope(claims, workspace_id)
-        raise AuthzError("Only an Organization Owner or Branch Head may upload directly; Managers must submit a proposal for review.")
+        return authorize_dataset_upload_scope(claims, workspace_id)
 
     # Dataset operations have stricter resource/branch policy than workspace
     # permission bits; use the same decision point as managed-dataset APIs.
