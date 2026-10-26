@@ -287,10 +287,7 @@ class _GrantDb:
                 "status": "active",
             })
         if "FROM identity_bindings b" in sql and "JOIN organization_members m" in sql:
-            return _Result(row={
-                "principal_id": self.target_principal,
-                "employee_id": "EMP001",
-            })
+            return _Result(scalar=self.target_principal)
         if "SELECT resource_type FROM authorization_resources" in sql:
             return _Result(row={"resource_type": "dataset"})
         if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql:
