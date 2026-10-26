@@ -1758,96 +1758,157 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
 def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str | None,
                      owner_uid: str, protected: bool = True,
                      location_id: str | None = None) -> dict[str, Any]:
+    """Register authorization for a newly persisted original dataset only.
+
+    This endpoint is not an ACL-reassignment mechanism. The authenticated actor
+    must be the original uploader, the dataset must already exist in this
+    organization, and the active upload authority must cover the exact branch.
+    Existing authorization records cannot be overwritten through registration.
+    """
     context = authorization_context(claims, workspace_id)
-    if "dataset.manage_acl" not in context["permissions"] and "dataset.upload" not in context["permissions"]:
+    if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
+    if not protected:
+        raise AuthzError("Managed original datasets must be registered as protected originals.")
+
+    actor = str(context["principal_id"])
     organization_id = str(context["organization_id"])
     resolved_workspace_id = str(context["workspace_id"])
-    dataset_id = str(dataset_id or _id("ds"))
+    dataset_id = str(dataset_id or "").strip()
+    if not dataset_id:
+        raise ValueError("A persisted dataset ID is required.")
     provider, subject = _identity(claims)
+
+    # The shared upload policy enforces Owner/Branch Head scope and a live,
+    # exact-branch Manager grant. Do not derive authority from owner_uid.
+    upload_context = authorize_dataset_upload_scope(
+        claims, workspace_id, location_id=location_id
+    )
+    owner_location = str(upload_context["location_id"])
+    upload_role = str(upload_context["upload_role_id"])
+
     with SessionLocal.begin() as db:
         owner = db.execute(text("""SELECT b.principal_id
             FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
-            WHERE ((b.provider=:provider AND b.provider_subject=:owner_uid)
-                OR (b.provider='firebase' AND b.firebase_uid=:owner_uid))
+            WHERE b.provider=:provider AND b.provider_subject=:owner_uid
               AND m.organization_id=:org AND m.workspace_id=:workspace
               AND m.status='active' AND b.status='active'"""),
-                           {"provider": provider, "owner_uid": str(owner_uid),
-                            "org": organization_id, "workspace": resolved_workspace_id}).scalar_one_or_none()
-        if not owner:
-            raise AuthzError("Dataset owner must be an active organization member.")
-        actor_roles = set(context.get("role_ids", []))
-        if location_id is not None:
-            if "organization_owner" in actor_roles:
-                active_location = db.execute(text("""
-                    SELECT location_id FROM locations
-                    WHERE organization_id=:org AND location_id=:location AND status='active'
-                """), {"org": organization_id, "location": str(location_id)}).scalar_one_or_none()
-                if active_location is None:
-                    raise AuthzError("The selected upload branch is not active.")
-                owner_location = str(active_location)
-            else:
-                active_assignment = db.execute(text("""
-                    SELECT oa.location_id
-                    FROM organizational_assignments oa
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                    WHERE oa.organization_id=:org AND oa.principal_id=:owner
-                      AND oa.location_id=:location
-                      AND oa.role_id IN ('branch_head','manager')
-                      AND oa.status='active' AND l.status='active'
-                      AND m.status='active' AND m.workspace_id=:workspace
-                    LIMIT 1
-                """), {
-                    "org": organization_id,
-                    "owner": owner,
-                    "location": str(location_id),
-                    "workspace": resolved_workspace_id,
-                }).scalar_one_or_none()
-                if active_assignment is None:
-                    raise AuthzError("The upload branch assignment is no longer active.")
-                owner_location = str(active_assignment)
-        elif "organization_owner" in actor_roles:
-            active_locations = db.execute(text("""
-                SELECT location_id FROM locations
-                WHERE organization_id=:org AND status='active'
-                ORDER BY location_id
-            """), {"org": organization_id}).scalars().all()
-            if len(active_locations) != 1:
-                raise AuthzError("An Organization Owner must select one active branch for a new dataset.")
-            owner_location = str(active_locations[0])
+            {"provider": provider, "owner_uid": str(owner_uid),
+             "org": organization_id, "workspace": resolved_workspace_id}).scalar_one_or_none()
+        if not owner or str(owner) != actor:
+            raise AuthzError("Only the authenticated uploader can register an original dataset.")
+
+        persisted = db.execute(text("""
+            SELECT dataset_id FROM datasets
+            WHERE organization_id=:org AND dataset_id=:dataset
+            FOR SHARE
+        """), {"org": organization_id, "dataset": dataset_id}).scalar_one_or_none()
+        if persisted is None:
+            raise AuthzError("The dataset must already exist in this organization before registration.")
+
+        existing_resource = db.execute(text("""
+            SELECT 1 FROM authorization_resources
+            WHERE organization_id=:org AND resource_id=:dataset
+            FOR UPDATE
+        """), {"org": organization_id, "dataset": dataset_id}).scalar_one_or_none()
+        existing_dataset_acl = db.execute(text("""
+            SELECT 1 FROM dataset_authorization
+            WHERE organization_id=:org AND dataset_id=:dataset
+            FOR UPDATE
+        """), {"org": organization_id, "dataset": dataset_id}).scalar_one_or_none()
+        if existing_resource is not None or existing_dataset_acl is not None:
+            raise AuthzError("This dataset already has an authorization record; registration cannot overwrite it.")
+
+        # Revalidate the upload authority while holding transaction locks so a
+        # branch reassignment or grant revocation cannot race registration.
+        if upload_role == "organization_owner":
+            active_authority = db.execute(text("""
+                SELECT oa.assignment_id
+                FROM organizational_assignments oa
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                JOIN member_roles mr
+                  ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+                 AND mr.role_id='organization_owner'
+                JOIN locations l
+                  ON l.organization_id=oa.organization_id AND l.location_id=:location
+                 AND l.status='active'
+                WHERE oa.organization_id=:org AND oa.principal_id=:actor
+                  AND oa.role_id='organization_owner' AND oa.status='active'
+                  AND m.workspace_id=:workspace AND m.status='active'
+                LIMIT 1 FOR SHARE OF oa, m, mr, l
+            """), {"org": organization_id, "actor": actor,
+                    "workspace": resolved_workspace_id, "location": owner_location}).scalar_one_or_none()
+        elif upload_role == "branch_head":
+            active_authority = db.execute(text("""
+                SELECT oa.assignment_id
+                FROM organizational_assignments oa
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                JOIN member_roles mr
+                  ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+                 AND mr.role_id='branch_head'
+                JOIN role_permissions rp
+                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+                JOIN locations l
+                  ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+                 AND l.status='active'
+                WHERE oa.organization_id=:org AND oa.principal_id=:actor
+                  AND oa.location_id=:location AND oa.role_id='branch_head'
+                  AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
+                LIMIT 1 FOR SHARE OF oa, m, mr, rp, l
+            """), {"org": organization_id, "actor": actor,
+                    "workspace": resolved_workspace_id, "location": owner_location}).scalar_one_or_none()
         else:
-            owner_location = db.execute(text("""SELECT location_id FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:owner
-                  AND role_id IN ('branch_head','manager') AND status='active' AND location_id IS NOT NULL
-                ORDER BY CASE WHEN role_id='branch_head' THEN 0 ELSE 1 END, assignment_id LIMIT 1"""),
-                {"org": organization_id, "owner": owner}).scalar_one_or_none()
-        db.execute(text("""INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
-            VALUES (:org, :dataset, 'dataset', :owner)
-            ON CONFLICT (organization_id, resource_id)
-            DO UPDATE SET resource_type=EXCLUDED.resource_type, owner_principal_id=EXCLUDED.owner_principal_id"""),
-                   {"org": organization_id, "dataset": dataset_id, "owner": owner})
+            active_authority = db.execute(text("""
+                SELECT g.grant_id
+                FROM manager_dataset_upload_grants g
+                JOIN organizational_assignments oa
+                  ON oa.organization_id=g.organization_id
+                 AND oa.principal_id=g.manager_principal_id
+                 AND oa.location_id=g.location_id AND oa.role_id='manager'
+                 AND oa.status='active'
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=g.workspace_id AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                 AND mr.role_id='manager'
+                JOIN identity_bindings ib
+                  ON ib.principal_id=m.principal_id AND ib.status='active'
+                 AND ib.provider=:provider AND ib.provider_subject=:subject
+                JOIN locations l
+                  ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+                 AND l.status='active'
+                WHERE g.organization_id=:org AND g.workspace_id=:workspace
+                  AND g.manager_principal_id=:actor AND g.location_id=:location
+                  AND g.revoked_at IS NULL
+                LIMIT 1 FOR SHARE OF g, oa, m, mr, ib, l
+            """), {"org": organization_id, "workspace": resolved_workspace_id,
+                    "actor": actor, "location": owner_location,
+                    "provider": provider, "subject": subject}).scalar_one_or_none()
+        if active_authority is None:
+            raise AuthzError("The active upload authority or exact-branch Manager grant is no longer valid.")
+
+        db.execute(text("""INSERT INTO authorization_resources
+            (organization_id, resource_id, resource_type, owner_principal_id)
+            VALUES (:org, :dataset, 'dataset', :owner)"""),
+            {"org": organization_id, "dataset": dataset_id, "owner": actor})
         db.execute(text("""INSERT INTO dataset_authorization
             (organization_id, dataset_id, owner_principal_id, protected_original, location_id)
-            VALUES (:org, :dataset, :owner, :protected, :location)
-            ON CONFLICT (organization_id, dataset_id)
-            DO UPDATE SET owner_principal_id=EXCLUDED.owner_principal_id,
-                          protected_original=EXCLUDED.protected_original,
-                          location_id=COALESCE(EXCLUDED.location_id, dataset_authorization.location_id),
-                          status='active'"""),
-            {"org": organization_id, "dataset": dataset_id, "owner": owner,
-             "protected": protected, "location": owner_location})
-        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
-            VALUES (:org, :dataset, :owner, CAST(:permissions AS jsonb))
-            ON CONFLICT (organization_id, resource_id, principal_id)
-            DO UPDATE SET permissions=EXCLUDED.permissions"""),
-                   {"org": organization_id, "dataset": dataset_id, "owner": owner,
-                    "permissions": '["dataset.view_original","dataset.create_working_copy","dataset.manage_acl"]'})
-    return {"dataset_id": dataset_id, "organization_id": organization_id, "workspace_id": resolved_workspace_id}
+            VALUES (:org, :dataset, :owner, TRUE, :location)"""),
+            {"org": organization_id, "dataset": dataset_id,
+             "owner": actor, "location": owner_location})
+        db.execute(text("""INSERT INTO resource_grants
+            (organization_id, resource_id, principal_id, permissions)
+            VALUES (:org, :dataset, :owner,
+                    CAST(:permissions AS jsonb))"""),
+            {"org": organization_id, "dataset": dataset_id, "owner": actor,
+             "permissions": '["dataset.view_original","dataset.create_working_copy","dataset.manage_acl"]'})
 
+    return {"dataset_id": dataset_id, "organization_id": organization_id,
+            "workspace_id": resolved_workspace_id}
 
 
 def request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str, note: str | None = None) -> dict[str, Any]:
