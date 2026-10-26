@@ -20,7 +20,12 @@ from .service import (
     upload_managed_dataset_stream,
 )
 from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
-from .manager_grants import create_manager_upload_grant, list_manager_upload_grants, revoke_manager_upload_grant
+from .manager_grants import (
+    create_manager_upload_grant,
+    list_manager_upload_grants,
+    list_my_manager_upload_grants,
+    revoke_manager_upload_grant,
+)
 
 router = APIRouter(prefix="/v1/managed-datasets", tags=["managed-datasets"])
 logger = logging.getLogger(__name__)
@@ -116,6 +121,20 @@ async def managed_new_dataset_proposal_submit(
             workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
             dataset_id=None, location_id=location_id, filename=file.filename or "",
             stream=file.file, content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/upload-grants/me")
+def managed_my_manager_upload_grants(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"grants": list_my_manager_upload_grants(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
         )}
     except Exception as exc:
         raise _map_error(exc)
