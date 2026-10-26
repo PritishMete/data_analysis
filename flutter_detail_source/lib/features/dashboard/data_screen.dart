@@ -175,7 +175,8 @@ class DataScreen extends StatefulWidget {
 
 class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   bool get isManagedDatasetSession =>
-      widget.managedDatasetId?.trim().isNotEmpty == true;
+      widget.managedDatasetId?.trim().isNotEmpty == true ||
+      widget.managedWorkingCopyId?.trim().isNotEmpty == true;
 
   // ── Analysis ──────────────────────────────────────────────────────────────
   Map<String, dynamic>? analysisData;
@@ -3438,30 +3439,61 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           'sentiment': sentiment,
         };
       } else {
-        final request = http.MultipartRequest(
-          'POST',
-          Uri.parse(isSentimentQuery ? _sentimentUrl : _smartQueryUrl),
-        );
+        final uri = Uri.parse(isSentimentQuery ? _sentimentUrl : _smartQueryUrl);
+        final fields = <String, String>{};
         if (isSentimentQuery) {
-          // Dedicated sentiment endpoint: bypasses the general-purpose router.
-          request.fields['batch_size'] = '150';
-          request.fields['include_details'] = 'false';
-          if (managedRemoteSession) {
-            request.fields['managed_dataset_id'] = widget.managedDatasetId!;
-            if (widget.managedVersionId?.trim().isNotEmpty == true) {
-              request.fields['managed_version_id'] = widget.managedVersionId!;
+          fields['batch_size'] = '150';
+          fields['include_details'] = 'false';
+        } else {
+          fields['text'] = userText;
+          fields['available_sheets'] = json.encode(availableSheets);
+        }
+
+        final workingCopyId = widget.managedWorkingCopyId?.trim();
+        if (managedRemoteSession) {
+          if (workingCopyId != null && workingCopyId.isNotEmpty) {
+            fields['managed_working_copy_id'] = workingCopyId;
+          } else {
+            final datasetId = widget.managedDatasetId?.trim();
+            if (datasetId == null || datasetId.isEmpty) {
+              throw "Managed dataset or working-copy identity is missing.";
+            }
+            fields['managed_dataset_id'] = datasetId;
+            final versionId = widget.managedVersionId?.trim();
+            if (versionId != null && versionId.isNotEmpty) {
+              fields['managed_version_id'] = versionId;
             }
           }
-        } else {
-          request.fields['text'] = userText;
-          request.fields['available_sheets'] = json.encode(availableSheets);
-        }
-        if (managedRemoteSession) {
-          request.fields['managed_dataset_id'] = widget.managedDatasetId!;
-          if (widget.managedVersionId?.trim().isNotEmpty == true) {
-            request.fields['managed_version_id'] = widget.managedVersionId!;
+
+          // Managed analysis is form-encoded, not treated as a file upload.
+          // The only identity sent by copy-only users is the working-copy ID.
+          final request = http.Request('POST', uri);
+          request.headers.addAll(await supabaseAuthHeaders());
+          if (insightFlowWorkspaceId.isNotEmpty) {
+            request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
           }
+          request.headers['X-InsightFlow-Resource-ID'] =
+              (workingCopyId != null && workingCopyId.isNotEmpty)
+                  ? workingCopyId
+                  : widget.managedDatasetId!.trim();
+          request.bodyFields = fields;
+          final streamedResponse = await request.send().timeout(
+            isSentimentQuery
+                ? _sentimentRequestTimeout
+                : const Duration(seconds: 60),
+          );
+          final body = await streamedResponse.stream.bytesToString();
+          decoded = decodeBackendResponse(
+            body,
+            statusCode: streamedResponse.statusCode,
+          );
         } else {
+          final request = http.MultipartRequest('POST', uri);
+          request.headers.addAll(await supabaseAuthHeaders());
+          if (insightFlowWorkspaceId.isNotEmpty) {
+            request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+          }
+          request.fields.addAll(fields);
           request.files.add(
             http.MultipartFile.fromString(
               'file',
@@ -3469,18 +3501,17 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               filename: 'data_source.csv',
             ),
           );
+          final streamedResponse = await request.send().timeout(
+            isSentimentQuery
+                ? _sentimentRequestTimeout
+                : const Duration(seconds: 60),
+          );
+          final body = await streamedResponse.stream.bytesToString();
+          decoded = decodeBackendResponse(
+            body,
+            statusCode: streamedResponse.statusCode,
+          );
         }
-
-        final streamedResponse = await request.send().timeout(
-          isSentimentQuery
-              ? _sentimentRequestTimeout
-              : const Duration(seconds: 60),
-        );
-        final body = await streamedResponse.stream.bytesToString();
-        decoded = decodeBackendResponse(
-          body,
-          statusCode: streamedResponse.statusCode,
-        );
       }
 
       if (decoded.containsKey('error')) {
@@ -5686,22 +5717,35 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   }
 
   Future<Map<String, dynamic>> _loadManagedDatasetProfile() async {
+    final workingCopyId = widget.managedWorkingCopyId?.trim();
     final datasetId = widget.managedDatasetId?.trim();
-    if (datasetId == null || datasetId.isEmpty) {
-      throw "Managed dataset identity is missing.";
+    if ((workingCopyId == null || workingCopyId.isEmpty) &&
+        (datasetId == null || datasetId.isEmpty)) {
+      throw "Managed dataset or working-copy identity is missing.";
     }
     final headers = await supabaseAuthHeaders();
     if (insightFlowWorkspaceId.isNotEmpty) {
       headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
     }
     final query = <String, String>{'preview_limit': '5'};
-    final versionId = widget.managedVersionId?.trim();
-    if (versionId != null && versionId.isNotEmpty) {
-      query['version_id'] = versionId;
+    late final Uri uri;
+    if (workingCopyId != null && workingCopyId.isNotEmpty) {
+      // A copy-only user navigates by opaque copy ID; the source dataset and
+      // pinned version are resolved and authorized by the backend.
+      headers['X-InsightFlow-Resource-ID'] = workingCopyId;
+      uri = Uri.parse(
+        '$insightFlowBackendBaseUrl/v1/managed-datasets/working-copies/$workingCopyId/profile',
+      ).replace(queryParameters: query);
+    } else {
+      headers['X-InsightFlow-Resource-ID'] = datasetId!;
+      final versionId = widget.managedVersionId?.trim();
+      if (versionId != null && versionId.isNotEmpty) {
+        query['version_id'] = versionId;
+      }
+      uri = Uri.parse(
+        '$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/profile',
+      ).replace(queryParameters: query);
     }
-    final uri = Uri.parse(
-      '$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/profile',
-    ).replace(queryParameters: query);
     final response = await http.get(uri, headers: headers).timeout(
       const Duration(seconds: 30),
     );
