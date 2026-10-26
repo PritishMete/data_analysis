@@ -485,3 +485,146 @@ def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch)
     assert context["workspace_id"] == "org_869423bba8814fa0a2ddf6ebb546194e"
     assert context["membership_status"] == "active"
     assert "dataset.view_original" in context["permissions"]
+
+
+def _copy_only_context(role_id="team_lead"):
+    return {
+        "membership_status": "active",
+        "workspace_authorized": True,
+        "authorization_state": "active_identity",
+        "principal_id": "principal-copy-user",
+        "organization_id": "org-owner",
+        "workspace_id": "workspace-owner",
+        "role_ids": [role_id],
+        "permissions": [
+            "dataset.create_working_copy",
+            "working_copy.view",
+            "working_copy.modify",
+        ],
+    }
+
+
+class _CopyPolicySession:
+    def __init__(self, *, branch_assignment=True):
+        self.branch_assignment = branch_assignment
+        self.calls = []
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        self.calls.append((sql, params or {}))
+        if "SELECT resource_type, owner_principal_id" in sql:
+            return _Result(row={"resource_type": "dataset", "owner_principal_id": "principal-owner"})
+        if "SELECT protected_original, location_id" in sql:
+            return _Result(row={"protected_original": True, "location_id": "branch-1"})
+        if "FROM resource_grants" in sql and "SELECT permissions" in sql:
+            return _Result(scalar=["dataset.create_working_copy"])
+        if "FROM organizational_assignments oa" in sql:
+            return _Result(scalar=1 if self.branch_assignment else None)
+        return _Result()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_team_lead_cannot_read_original_even_when_granted_copy_creation(monkeypatch):
+    session = _CopyPolicySession(branch_assignment=True)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _copy_only_context("team_lead"),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="cannot access an original dataset"):
+        supabase_provider.authorize_dataset(
+            {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+            "workspace-owner", "dataset-owner", "dataset.view_original",
+        )
+
+
+def test_copy_creation_permission_requires_active_assignment_to_source_branch(monkeypatch):
+    session = _CopyPolicySession(branch_assignment=False)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _copy_only_context("team_lead"),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="active assignment to the source dataset"):
+        supabase_provider.authorize_dataset(
+            {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+            "workspace-owner", "dataset-owner", "dataset.create_working_copy",
+        )
+
+
+def test_copy_creation_is_allowed_only_with_grant_and_active_source_branch(monkeypatch):
+    session = _CopyPolicySession(branch_assignment=True)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _copy_only_context("team_lead"),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+        "workspace-owner", "dataset-owner", "dataset.create_working_copy",
+    )
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"
+
+
+def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatch):
+    context = _copy_only_context("team_lead")
+
+    class Dataset:
+        dataset_id = "dataset-owner"
+        organization_id = "org-owner"
+
+    class Version:
+        version_id = "version-original"
+        status = "ready"
+
+    class Repo:
+        def __init__(self, db):
+            self.db = db
+
+        def get_by_id(self, dataset_id):
+            assert dataset_id == "dataset-owner"
+            return Dataset()
+
+        def get_version(self, dataset_id):
+            assert dataset_id == "dataset-owner"
+            return Version()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(dataset_service, "_claims", lambda token: {
+        "uid": "team-lead", "sub": "team-lead", "provider": "supabase"
+    })
+    monkeypatch.setattr(dataset_service, "_authorization_context", lambda claims, workspace_id: context)
+    monkeypatch.setattr(dataset_service, "_authorize_dataset", lambda *args: {"authorized": True})
+    monkeypatch.setattr(dataset_service, "DatasetRepository", Repo)
+    monkeypatch.setattr(dataset_service, "SessionLocal", lambda: object())
+    monkeypatch.setattr(dataset_service, "create_working_copy", lambda *args: {
+        "working_copy_id": "wc-new",
+        "organization_id": "org-owner",
+        "workspace_id": "workspace-owner",
+        "source_dataset_id": "dataset-owner",
+        "source_version": "version-original",
+        "access_mode": "working_copy",
+    })
+    monkeypatch.setattr(dataset_service, "_audit_safely", lambda *args, **kwargs: None)
+
+    result = dataset_service.create_managed_working_copy(
+        workspace_id="workspace-owner", token="valid-token", dataset_id="dataset-owner"
+    )
+    assert result["working_copy_id"] == "wc-new"
+    assert result["access_mode"] == "working_copy"
+    for forbidden in (
+        "source_dataset_id", "source_version",
+        "structured_dataset_id", "structured_version_id",
+    ):
+        assert forbidden not in result
