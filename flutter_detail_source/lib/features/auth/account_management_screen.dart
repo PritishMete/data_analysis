@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
 import 'dart:convert';
 
-import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import 'auth_glass_widgets.dart';
 
 class AccountManagementScreen extends StatefulWidget {
@@ -28,8 +28,8 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   @override
   void initState() {
     super.initState();
-    final user = InsightFlowAuthService.currentUser;
-    _nameController.text = user?.displayName ?? '';
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+    _nameController.text = user?.userMetadata?['display_name']?.toString() ?? '';
     _emailController.text = user?.email ?? '';
   }
 
@@ -51,55 +51,58 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   }
 
   Future<bool> _reauthenticate() async {
-    try {
-      if (InsightFlowAuthService.hasProvider('password')) {
-        final controller = TextEditingController();
-        final password = await showCupertinoDialog<String>(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('Recent authentication required'),
-            content: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: CupertinoTextField(
-                controller: controller,
-                obscureText: true,
-                placeholder: 'Current password',
-              ),
-            ),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              CupertinoDialogAction(
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(context, controller.text),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        );
-        controller.dispose();
-        if (password == null || password.isEmpty) return false;
-        await InsightFlowAuthService.reauthenticateWithPassword(password);
-        return true;
-      }
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+    if (user == null) {
+      _setMessage('Sign in again before changing account security settings.', error: true);
+      return false;
+    }
 
-      if (InsightFlowAuthService.hasProvider('google.com')) {
-        await InsightFlowAuthService.reauthenticateWithGoogle();
-        return true;
-      }
-
+    final provider = user.appMetadata['provider']?.toString().toLowerCase();
+    if (provider != 'email') {
       _setMessage(
-        'This account does not have a supported reauthentication method.',
+        'For this account provider, reauthenticate by signing out and signing in again before retrying this change.',
         error: true,
       );
       return false;
-    } catch (error) {
-      _setMessage(
-        InsightFlowAuthService.userFacingAuthError(error),
-        error: true,
+    }
+
+    final controller = TextEditingController();
+    final password = await showCupertinoDialog<String>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Confirm your identity'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            obscureText: true,
+            placeholder: 'Current password',
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (password == null || password.isEmpty) return false;
+
+    try {
+      await InsightFlowSupabaseAuthService.signInWithPassword(
+        email: user.email ?? '',
+        password: password,
       );
+      return true;
+    } catch (_) {
+      _setMessage('Current password could not be verified.', error: true);
       return false;
     }
   }
@@ -107,7 +110,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   Future<void> _saveProfile() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
-    final user = InsightFlowAuthService.currentUser;
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
     if (user == null) return;
 
     setState(() {
@@ -115,14 +118,16 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
       _message = null;
     });
     try {
-      if (name != (user.displayName ?? '')) {
-        await InsightFlowAuthService.updateProfile(
-          displayName: name.isEmpty ? null : name,
+      if (name != (user.userMetadata?['display_name']?.toString() ?? '')) {
+        await InsightFlowSupabaseAuthService.client.auth.updateUser(
+          UserAttributes(data: {'display_name': name}),
         );
       }
       if (email.isNotEmpty && email != (user.email ?? '')) {
         if (!await _reauthenticate()) return;
-        await InsightFlowAuthService.verifyBeforeUpdateEmail(email);
+        await InsightFlowSupabaseAuthService.client.auth.updateUser(
+          UserAttributes(email: email),
+        );
         _setMessage(
           'A verification email was sent to the new address. The change applies after verification.',
         );
@@ -131,7 +136,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
       }
     } catch (error) {
       _setMessage(
-        InsightFlowAuthService.userFacingAuthError(error),
+        'The profile update could not be completed. Please try again.',
         error: true,
       );
     } finally {
@@ -155,13 +160,13 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     });
     try {
       if (!await _reauthenticate()) return;
-      await InsightFlowAuthService.changePassword(password);
+      await InsightFlowSupabaseAuthService.setPassword(password);
       _newPasswordController.clear();
       _confirmPasswordController.clear();
       _setMessage('Password changed successfully.');
     } catch (error) {
       _setMessage(
-        InsightFlowAuthService.userFacingAuthError(error),
+        'The password change could not be completed. Please try again.',
         error: true,
       );
     } finally {
@@ -177,7 +182,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         content: const Padding(
           padding: EdgeInsets.only(top: 8),
           child: Text(
-            'This permanently deletes your Firebase Authentication account. '
+            'This permanently deletes your InsightFlow account and revokes its organization access. '
             'It does not create replacement organization access.',
           ),
         ),
@@ -202,7 +207,8 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     });
     try {
       if (!await _reauthenticate()) return;
-      final token = await InsightFlowAuthService.getIdToken(forceRefresh: true);
+      final token = InsightFlowSupabaseAuthService.accessToken;
+      if (token == null || token.isEmpty) throw StateError('Sign-in required.');
       final cleanup = await http.post(
         Uri.parse('$insightFlowBackendBaseUrl/v1/authz/account/cleanup'),
         headers: {
@@ -212,7 +218,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
             'X-InsightFlow-Workspace-ID': insightFlowWorkspaceId,
         },
         body: jsonEncode({
-          'uid': InsightFlowAuthService.currentUser?.uid,
+          'uid': InsightFlowSupabaseAuthService.currentSupabaseUser?.id,
         }),
       );
       if (cleanup.statusCode != 200) {
@@ -220,11 +226,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
           'Authorization cleanup could not be completed. The account was not deleted.',
         );
       }
-      await InsightFlowAuthService.deleteAccount();
+      await InsightFlowSupabaseAuthService.signOut();
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       _setMessage(
-        InsightFlowAuthService.userFacingAuthError(error),
+        'The account could not be deleted. Organization access was not intentionally bypassed.',
         error: true,
       );
     } finally {
@@ -236,11 +242,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
   Widget build(BuildContext context) {
     final passwordQuality =
         GlassThemeData.of(context).qualityFor(context) ?? GlassQuality.standard;
-    final user = InsightFlowAuthService.currentUser;
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
 
     return AuthGlassScaffold(
       title: 'ACCOUNT / PROFILE',
-      subtitle: user?.email ?? 'Firebase account',
+      subtitle: user?.email ?? 'Supabase account',
       children: [
         const AuthGlassFieldLabel('Display name'),
         GlassTextField(
@@ -310,7 +316,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
           ),
         ),
         TextButton(
-          onPressed: _busy ? null : InsightFlowAuthService.signOut,
+          onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
           child: const Text('Sign out'),
         ),
       ],
