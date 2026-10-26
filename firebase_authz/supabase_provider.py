@@ -1587,6 +1587,25 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
 
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
+    # A legacy multipart endpoint can call this with dataset.upload but without
+    # a dataset resource ID. Do not let stale/aggregated permissions turn a
+    # Manager into a direct-upload actor; Managers must use the proposal API.
+    if action in {"dataset.upload", "dataset.upload_original"} and not resource_id:
+        context = authorization_context(claims, workspace_id)
+        if not context.get("workspace_authorized"):
+            raise AuthzError("Workspace authorization denied.")
+        roles = set(context.get("role_ids", []))
+        if "organization_owner" in roles:
+            if "dataset.upload" not in set(context.get("permissions", [])):
+                raise AuthzError("The active role lacks the dataset.upload permission.")
+            return {
+                **context, "authorized": True, "action": action,
+                "permission": "dataset.upload",
+            }
+        if "branch_head" in roles:
+            return authorize_dataset_upload_scope(claims, workspace_id)
+        raise AuthzError("Only an Organization Owner or Branch Head may upload directly; Managers must submit a proposal for review.")
+
     # Dataset operations have stricter resource/branch policy than workspace
     # permission bits; use the same decision point as managed-dataset APIs.
     if action.startswith("dataset.") and resource_id:
