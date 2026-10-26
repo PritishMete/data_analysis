@@ -796,11 +796,7 @@ class _AuthorizationManagementScreenState
       'team_lead_uid': leadUid,
       'member_ids': memberIds.toList(),
       'dataset_ids': datasetIds.toList(),
-      'permissions': [
-        'dataset.view_original',
-        'dataset.create_working_copy',
-        'dataset.share',
-      ],
+      'permissions': ['dataset.create_working_copy'],
     });
     await _load();
   }
