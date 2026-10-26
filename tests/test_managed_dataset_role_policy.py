@@ -28,12 +28,13 @@ class _Result:
 class _Db:
     def __init__(
         self, roles, grant=None, manager_locations=None, branch_locations=None,
-        protected=True, location_id="branch-1",
+        protected=True, location_id="branch-1", owner_locations=None,
     ):
         self.roles = roles
         self.grant = grant
         self.manager_locations = manager_locations or []
         self.branch_locations = branch_locations or []
+        self.owner_locations = ["branch-1"] if owner_locations is None else owner_locations
         self.protected = protected
         self.location_id = location_id
 
@@ -45,6 +46,15 @@ class _Db:
 
     def execute(self, statement, params=None):
         sql = str(statement)
+        params = params or {}
+        if "FROM manager_dataset_upload_grants g" in sql:
+            return _Result(scalars=self.manager_locations)
+        if "FROM organizational_assignments oa" in sql and "oa.location_id=:location" in sql:
+            return _Result(scalar=1 if params.get("location") == self.location_id else None)
+        if "FROM delegations d" in sql:
+            return _Result(scalar=None)
+        if "FROM locations" in sql:
+            return _Result(scalars=self.owner_locations)
         if "FROM authorization_resources" in sql:
             return _Result(row={"resource_type": "dataset", "owner_principal_id": "owner"})
         if "FROM dataset_authorization" in sql:
@@ -153,8 +163,8 @@ def test_manager_with_grant_still_cannot_replace_another_branch_dataset(monkeypa
         )
 
 
-def test_organization_owner_cannot_write_original_dataset(monkeypatch):
-    db = _Db(["organization_owner"])
+def test_organization_owner_can_write_original_dataset(monkeypatch):
+    db = _Db(["organization_owner"], owner_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
@@ -163,11 +173,12 @@ def test_organization_owner_cannot_write_original_dataset(monkeypatch):
             "permissions": ["dataset.upload", "dataset.manage_acl"],
         },
     )
-    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
-        supabase_provider.authorize_dataset(
-            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
-            "workspace-1", "dataset-1", "dataset.upload",
-        )
+    result = supabase_provider.authorize_dataset(
+        {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+        "workspace-1", "dataset-1", "dataset.upload",
+    )
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"
 
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
     db = _Db(["branch_head"], branch_locations=["branch-1"])
