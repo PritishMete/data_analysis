@@ -68,6 +68,12 @@ ROUTE_ACTIONS: list[tuple[str, str, str]] = [
 ]
 
 
+# These managed-dataset routes enforce their complete authorization contract in
+# dataset_storage.routes plus the proposal/grant services. The middleware must
+# not reinterpret names such as "proposals" or "upload-grants" as dataset IDs.
+MANAGED_DATASET_SERVICE_AUTH_POLICY = ("__service_authorized__", False)
+
+
 def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | None:
     base = "/v1/managed-datasets"
     if path == base and method == "GET":
@@ -77,6 +83,18 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
     if path.startswith(base + "/"):
         suffix = path[len(base) + 1:]
         parts = suffix.split("/")
+        if (
+            (suffix in {"proposals", "upload-grants"} and method in {"GET", "POST"})
+            or (len(parts) == 2 and parts[0] == "upload-grants" and method == "DELETE")
+            or (len(parts) == 2 and parts[1] == "proposals" and method == "POST")
+            or (
+                len(parts) == 3
+                and parts[0] == "proposals"
+                and parts[2] == "decision"
+                and method == "POST"
+            )
+        ):
+            return MANAGED_DATASET_SERVICE_AUTH_POLICY
         # Dataset identity is already part of the protected URL. These reads
         # must use the same resource boundary as the service layer instead of
         # falling through to the generic analysis policy (which would require
@@ -127,6 +145,12 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         managed_policy = managed_dataset_route_policy(request.method, request.url.path)
+        if managed_policy == MANAGED_DATASET_SERVICE_AUTH_POLICY:
+            # Proposal and Manager-grant handlers perform verified-token,
+            # active-membership, role, and exact-branch checks in their service
+            # layer. Running the generic resource policy here both misclassifies
+            # route names as resource IDs and denies valid authorized operations.
+            return await call_next(request)
         if managed_policy is not None:
             policy = managed_policy
         elif request.url.path == "/v1/managed-datasets" and request.method == "GET":
