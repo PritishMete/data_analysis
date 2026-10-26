@@ -36,11 +36,11 @@ def _audit(db, *, organization_id: str, principal_id: str, action: str,
 def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
                            principal_id: str, location_id: str, role_id: str,
                            provider: str, provider_subject: str,
-                           require_proposal_permission: bool = False) -> None:
+                           required_permission: str | None = None) -> None:
     permission_join = """
         JOIN role_permissions rp
-          ON rp.role_id=oa.role_id AND rp.permission_id='dataset.propose'
-    """ if require_proposal_permission else ""
+          ON rp.role_id=oa.role_id AND rp.permission_id=:required_permission
+    """ if required_permission else ""
     lock_targets = "oa, l, m, mr, ib, o, w" + (", rp" if require_proposal_permission else "")
     row = db.execute(text(f"""
         SELECT oa.assignment_id
@@ -67,7 +67,7 @@ def _revalidate_assignment(db, *, organization_id: str, workspace_id: str,
     """), {
         "org": organization_id, "workspace": workspace_id,
         "principal": principal_id, "location": location_id, "role": role_id,
-        "provider": provider, "provider_subject": provider_subject,
+        "provider": provider, "provider_subject": provider_subject,\n        "required_permission": required_permission,
     }).scalar_one_or_none()
     if row is None:
         raise PermissionDenied("An active membership and assignment to this exact branch are required.")
@@ -366,6 +366,7 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                 repo.db, organization_id=organization_id, workspace_id=workspace_id,
                 principal_id=principal_id, location_id=str(proposal["location_id"]),
                 role_id="branch_head", provider=provider, provider_subject=provider_subject,
+                required_permission="dataset.upload",
             )
             # Serialize review against grant revocation and verify the submitter
             # still has an active Manager assignment to this exact branch.
