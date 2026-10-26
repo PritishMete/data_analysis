@@ -1607,10 +1607,12 @@ def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_i
                     JOIN member_roles mr
                       ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
                      AND mr.role_id='organization_owner'
+                    JOIN role_permissions rp
+                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
                     WHERE oa.organization_id=:org AND oa.principal_id=:principal
                       AND oa.role_id='organization_owner' AND oa.status='active'
                       AND m.workspace_id=:workspace AND m.status='active'
-                    LIMIT 1
+                    LIMIT 1 FOR SHARE OF oa, m, mr, rp
                 """), {
                     "org": context["organization_id"],
                     "principal": context["principal_id"],
@@ -1898,13 +1900,15 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
                 JOIN member_roles mr
                   ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
                  AND mr.role_id='organization_owner'
+                JOIN role_permissions rp
+                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
                 JOIN locations l
                   ON l.organization_id=oa.organization_id AND l.location_id=:location
                  AND l.status='active'
                 WHERE oa.organization_id=:org AND oa.principal_id=:actor
                   AND oa.role_id='organization_owner' AND oa.status='active'
                   AND m.workspace_id=:workspace AND m.status='active'
-                LIMIT 1 FOR SHARE OF oa, m, mr, l
+                LIMIT 1 FOR SHARE OF oa, m, mr, rp, l
             """), {"org": organization_id, "actor": actor,
                     "workspace": resolved_workspace_id, "location": owner_location}).scalar_one_or_none()
         elif upload_role == "branch_head":
