@@ -2598,11 +2598,16 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
             VALUES (:org, :copy, :dataset, :version, :principal)
         """), {"org": org, "copy": copy_id, "dataset": dataset_id,
                 "version": version_id, "principal": principal})
+        copy_permissions = {
+            "working_copy.view", "working_copy.modify", "working_copy.delete"
+        }
+        if "analysis.run" in set(context.get("permissions", [])):
+            copy_permissions.add("analysis.run")
         db.execute(text("""
             INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
         """), {"org": org, "copy": copy_id, "principal": principal,
-                "permissions": '["working_copy.view","working_copy.modify","working_copy.delete","working_copy.assign"]'})
+                "permissions": json.dumps(sorted(copy_permissions))})
     return {"working_copy_id": copy_id, "organization_id": org,
             "workspace_id": workspace, "source_dataset_id": dataset_id,
             "source_version": version_id}
@@ -2663,6 +2668,7 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             "working_copy_id": working_copy_id,
             "source_dataset_id": row["source_dataset_id"],
             "source_version": row["source_version"], "version": row["version"],
+            "location_id": row["location_id"],
         }
 
     if action not in set(context.get("permissions", [])):
@@ -2692,6 +2698,7 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
         "working_copy_id": working_copy_id,
         "source_dataset_id": row["source_dataset_id"],
         "source_version": row["source_version"], "version": row["version"],
+        "location_id": row["location_id"],
     }
 
 
