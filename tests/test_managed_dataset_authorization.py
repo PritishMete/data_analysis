@@ -606,8 +606,12 @@ def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatc
     })
     monkeypatch.setattr(dataset_service, "_authorization_context", lambda claims, workspace_id: context)
     monkeypatch.setattr(dataset_service, "_authorize_dataset", lambda *args: {"authorized": True})
+    class Db:
+        def close(self):
+            pass
+
     monkeypatch.setattr(dataset_service, "DatasetRepository", Repo)
-    monkeypatch.setattr(dataset_service, "SessionLocal", lambda: object())
+    monkeypatch.setattr(dataset_service, "SessionLocal", Db)
     monkeypatch.setattr(dataset_service, "create_working_copy", lambda *args: {
         "working_copy_id": "wc-new",
         "organization_id": "org-owner",
