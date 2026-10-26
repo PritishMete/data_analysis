@@ -85,6 +85,12 @@ def managed_dataset_route_policy(method: str, path: str) -> tuple[str, bool] | N
         parts = suffix.split("/")
         if (
             (suffix in {"proposals", "upload-grants"} and method in {"GET", "POST"})
+            or (
+                len(parts) == 3
+                and parts[0] == "working-copies"
+                and parts[2] in {"profile", "rows"}
+                and method == "GET"
+            )
             or (len(parts) == 2 and parts[0] == "upload-grants" and method == "DELETE")
             or (len(parts) == 2 and parts[1] == "proposals" and method == "POST")
             or (
@@ -146,10 +152,10 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
 
         managed_policy = managed_dataset_route_policy(request.method, request.url.path)
         if managed_policy == MANAGED_DATASET_SERVICE_AUTH_POLICY:
-            # Proposal and Manager-grant handlers perform verified-token,
-            # active-membership, role, and exact-branch checks in their service
-            # layer. Running the generic resource policy here both misclassifies
-            # route names as resource IDs and denies valid authorized operations.
+            # Proposal/grant handlers and working-copy profile/row handlers
+            # perform verified-token, active-membership, role and exact-branch
+            # checks in their service layer. Generic resource policy here would
+            # misclassify fixed route names as resource IDs.
             return await call_next(request)
         if managed_policy is not None:
             policy = managed_policy
