@@ -1,20 +1,19 @@
 from pathlib import Path
 
 
-def test_manager_original_writes_are_proposal_only():
+def test_manager_original_writes_require_explicit_active_branch_grant():
     service = Path("dataset_storage/service.py").read_text(encoding="utf-8")
     provider = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
-    proposals = Path("dataset_storage/proposals.py").read_text(encoding="utf-8")
     gate = service.split("def _authorize_upload(", 1)[1].split("\n\ndef _authorize_delete", 1)[0]
     upload_scope = provider.split("def authorize_dataset_upload_scope(", 1)[1].split("\n\ndef _has_active_branch_assignment", 1)[0]
-    assert '"organization_owner", "branch_head"' in gate
-    assert "Managers must submit a proposal for Branch Head review." in gate
-    assert "manager_dataset_upload_grants" not in upload_scope
-    assert "def submit_dataset_proposal(" in proposals
-    assert "def decide_dataset_proposal(" in proposals
-    decision = proposals.split("def decide_dataset_proposal(", 1)[1]
-    assert 'required_permission="dataset.upload"' in decision
-    assert 'if "branch_head" not in set(context.get("role_ids", []))' in proposals
+    publication_lock = service.split("def _lock_active_upload_assignment(", 1)[1].split("\n\ndef upload_managed_dataset_stream", 1)[0]
+    assert '"organization_owner", "branch_head", "manager"' in gate
+    assert "manager_dataset_upload_grants g" in upload_scope
+    assert "g.revoked_at IS NULL" in upload_scope
+    assert "oa.location_id=g.location_id" in upload_scope
+    assert '"upload_role_id": upload_role' in upload_scope
+    assert "manager_dataset_upload_grants g" in publication_lock
+    assert "g.revoked_at IS NULL" in publication_lock
 
 
 def test_original_write_grants_are_not_delegable():
