@@ -76,3 +76,14 @@ def test_manager_role_gets_only_narrow_section_and_team_lead_request_permissions
     assert "DELETE FROM role_permissions" in migration
     assert "'membership.manage'" in migration
     assert "'users.manage'" in migration
+
+
+def test_resource_grants_scope_branch_heads_and_external_viewers():
+    source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    grant = _function_body(source, "set_resource_grant")
+    view_authorization = _function_body(source, "authorize_dataset")
+
+    assert "The resource belongs to a branch outside your Branch Head scope." in grant
+    assert "External Viewers may receive read-only grants" in grant
+    assert 'elif "external_viewer" in actor_roles:' in view_authorization
+    assert "dataset.view_original" in view_authorization

@@ -397,3 +397,23 @@ def test_external_viewer_cannot_create_working_copy_even_with_resource_grant(mon
             "dataset-1",
             "dataset.create_working_copy",
         )
+
+
+def test_external_viewer_can_read_only_an_explicitly_shared_original(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.view_original"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["external_viewer"]),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+        "workspace-1",
+        "dataset-shared",
+        "dataset.view_original",
+    )
+
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-1"

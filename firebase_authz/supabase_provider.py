@@ -752,7 +752,7 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
     return {"password_setup": True, "organization_id": str(invitation["organization_id"])}
 
 def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list[dict[str, Any]]:
-    """Return only role assignments backed by an active membership and active scope."""
+    """Return role assignments backed by active membership and active scope."""
     rows = db.execute(text("""
         SELECT oa.assignment_id, oa.location_id, oa.section_id, oa.role_id
         FROM organizational_assignments oa
@@ -768,25 +768,18 @@ def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list
          AND s.location_id=oa.location_id
         WHERE oa.organization_id=:org AND m.workspace_id=:workspace
           AND oa.principal_id=:principal AND m.status='active' AND oa.status='active'
-          AND oa.role_id <> 'organization_owner'
-          AND oa.location_id IS NOT NULL AND l.status='active'
-          AND (oa.section_id IS NULL OR s.status='active')
-          AND (oa.role_id <> 'team_lead' OR oa.section_id IS NOT NULL)
-        UNION ALL
-        SELECT NULL::text AS assignment_id, NULL::text AS location_id,
-               NULL::text AS section_id, mr.role_id
-        FROM organization_members owner_member
-        JOIN member_roles mr
-          ON mr.organization_id=owner_member.organization_id
-         AND mr.principal_id=owner_member.principal_id
-        WHERE owner_member.organization_id=:org AND owner_member.workspace_id=:workspace
-          AND owner_member.principal_id=:principal AND owner_member.status='active'
-          AND mr.role_id='organization_owner'
-        ORDER BY role_id, location_id, section_id, assignment_id
+          AND (
+            oa.role_id='organization_owner'
+            OR (
+              oa.location_id IS NOT NULL AND l.status='active'
+              AND (oa.section_id IS NULL OR s.status='active')
+              AND (oa.role_id <> 'team_lead' OR oa.section_id IS NOT NULL)
+            )
+          )
+        ORDER BY oa.role_id, oa.location_id, oa.section_id, oa.assignment_id
     """), {"org": workspace_id, "workspace": workspace_id,
            "principal": principal_id}).mappings().all()
     return [dict(row) for row in rows]
-
 
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
@@ -1589,34 +1582,109 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
                        target_uid: str, permissions: list[str],
                        required_permission: str | None = None) -> bool:
     actor = authorization_context(claims, workspace_id)
+    if not actor.get("workspace_authorized"):
+        raise AuthzError("Workspace authorization denied.")
     capability = required_permission or "users.manage"
     if capability not in actor["permissions"]:
         raise AuthzError("Workspace authorization denied.")
+    actor_roles = set(actor.get("role_ids", []))
+    if not actor_roles.intersection({"organization_owner", "branch_head"}):
+        raise AuthzError("Only an Organization Owner or Branch Head can grant resource access.")
     from .schema import clean_permissions
     permissions = clean_permissions(permissions)
     organization_id = str(actor["organization_id"])
+    resolved_workspace_id = str(actor["workspace_id"])
+
     with SessionLocal.begin() as db:
-        target = db.execute(text("""SELECT b.principal_id FROM identity_bindings b
+        target = db.execute(text("""
+            SELECT b.principal_id, m.employee_id
+            FROM identity_bindings b
             JOIN organization_members m ON m.principal_id=b.principal_id
             WHERE ((b.provider='supabase' AND b.provider_subject=:uid)
                 OR (b.provider='firebase' AND b.firebase_uid=:uid))
-              AND m.organization_id=:org AND m.status='active'
-              AND b.status='active'"""),
-                            {"uid": target_uid, "org": organization_id}).scalar_one_or_none()
+              AND m.organization_id=:org AND m.workspace_id=:workspace
+              AND m.status='active' AND b.status='active'
+            LIMIT 1
+        """), {"uid": target_uid, "org": organization_id,
+                "workspace": resolved_workspace_id}).mappings().first()
         if not target:
-            raise AuthzError("Grant target is not a workspace member.")
-        exists = db.execute(text("SELECT 1 FROM authorization_resources WHERE organization_id=:org AND resource_id=:resource"),
-                            {"org": organization_id, "resource": resource_id}).scalar_one_or_none()
-        if not exists:
+            raise AuthzError("Grant target is not an active workspace member.")
+        resource = db.execute(text("""
+            SELECT resource_type FROM authorization_resources
+            WHERE organization_id=:org AND resource_id=:resource
+        """), {"org": organization_id, "resource": resource_id}).mappings().first()
+        if not resource:
             raise AuthzError("Resource is not accessible.")
-        db.execute(text("""INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+
+        scoped_dataset = None
+        if resource["resource_type"] == "dataset":
+            scoped_dataset = db.execute(text("""
+                SELECT location_id, status
+                FROM dataset_authorization
+                WHERE organization_id=:org AND dataset_id=:resource
+            """), {"org": organization_id, "resource": resource_id}).mappings().first()
+            if not scoped_dataset or scoped_dataset["status"] != "active" or not scoped_dataset["location_id"]:
+                raise AuthzError("Dataset must have an active branch assignment before it can be shared.")
+            if any(p not in {"dataset.view_original", "dataset.create_working_copy"} for p in permissions):
+                raise AuthzError("Dataset grants may only provide read access or working-copy creation.")
+        elif resource["resource_type"] == "working_copy":
+            scoped_dataset = db.execute(text("""
+                SELECT da.location_id, da.status
+                FROM working_copy_authorization wc
+                JOIN dataset_authorization da
+                  ON da.organization_id=wc.organization_id AND da.dataset_id=wc.source_dataset_id
+                WHERE wc.organization_id=:org AND wc.working_copy_id=:resource
+                  AND wc.status='active' AND da.status='active'
+            """), {"org": organization_id, "resource": resource_id}).mappings().first()
+            if not scoped_dataset or not scoped_dataset["location_id"]:
+                raise AuthzError("Working copy must resolve to an active branch-scoped source dataset.")
+        elif "organization_owner" not in actor_roles:
+            raise AuthzError("Branch Heads may grant access only to branch-scoped datasets and working copies.")
+
+        if "organization_owner" not in actor_roles:
+            branch_locations = {
+                str(value) for value in db.execute(text("""
+                    SELECT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+                     AND mr.role_id='branch_head'
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+                    WHERE oa.organization_id=:org AND oa.principal_id=:actor
+                      AND oa.role_id='branch_head' AND oa.status='active'
+                      AND m.workspace_id=:workspace AND m.status='active'
+                      AND l.status='active' AND oa.location_id IS NOT NULL
+                """), {"org": organization_id, "actor": actor["principal_id"],
+                        "workspace": resolved_workspace_id}).scalars().all()
+            }
+            if not scoped_dataset or str(scoped_dataset["location_id"]) not in branch_locations:
+                raise AuthzError("The resource belongs to a branch outside your Branch Head scope.")
+            target_assignments = _active_assigned_role_rows(
+                db, resolved_workspace_id, str(target["principal_id"])
+            )
+            if not any(str(row["location_id"] or "") == str(scoped_dataset["location_id"])
+                       for row in target_assignments):
+                raise AuthzError("The grant target is outside your Branch Head scope.")
+
+        target_roles = {
+            str(row["role_id"])
+            for row in _active_assigned_role_rows(db, resolved_workspace_id, str(target["principal_id"]))
+        }
+        if "external_viewer" in target_roles:
+            if resource["resource_type"] != "dataset" or any(p != "dataset.view_original" for p in permissions):
+                raise AuthzError("External Viewers may receive read-only grants for explicitly shared datasets only.")
+
+        db.execute(text("""
+            INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :resource, :principal, CAST(:permissions AS jsonb))
             ON CONFLICT (organization_id, resource_id, principal_id)
-            DO UPDATE SET permissions=EXCLUDED.permissions"""),
-                   {"org": organization_id, "resource": resource_id,
-                    "principal": target, "permissions": __import__('json').dumps(permissions)})
+            DO UPDATE SET permissions=EXCLUDED.permissions
+        """), {"org": organization_id, "resource": resource_id,
+                "principal": target["principal_id"], "permissions": json.dumps(permissions)})
     return True
-
 
 def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str | None,
                      owner_uid: str, protected: bool = True,
@@ -2075,8 +2143,12 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                  "workspace": resolved_workspace_id}).scalars().all())
             if not row["location_id"] or str(row["location_id"]) not in {str(v) for v in manager_locations}:
                 raise AuthzError("The dataset belongs to a branch outside your Manager scope.")
+        elif "external_viewer" in actor_roles:
+            # External Viewers are read-only; an explicit per-resource grant is
+            # their complete authority to access this dataset.
+            pass
         else:
-            raise AuthzError("Only a Manager, Branch Head, or Organization Owner can view an original dataset.")
+            raise AuthzError("Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view a dataset.")
         if "dataset.view_original" not in grant_permissions:
             raise AuthzError("Permission denied for this resource.")
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:

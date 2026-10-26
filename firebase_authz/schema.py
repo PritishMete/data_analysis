@@ -6,7 +6,7 @@ ACTIONS = frozenset({
     "worksheet.modify", "worksheet.delete", "operation.undo.own",
     "operation.undo.other", "history.view", "users.manage", "roles.manage",
     "policies.manage",
-    "organization.view", "organization.manage", "organization.section.create", "team_lead.request"
+    "organization.view", "organization.manage", "organization.section.create", "team_lead.request",
     "membership.view", "membership.manage",
     "dataset.upload", "dataset.upload_original", "dataset.view_original", "dataset.create_working_copy",
     "dataset.edit_working_copy", "dataset.delete", "dataset.share",
@@ -46,7 +46,7 @@ DEFAULT_ROLES = {
     "viewer": {"data.view","history.view","organization.view"},
     "organization_owner": set(ACTIONS),
     "branch_head": set(ACTIONS) - {"account.delete","roles.manage","policies.manage"},
-    "manager": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","worksheet.delete","operation.undo.own","history.view","organization.view","membership.view","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy","organization.section.create","team_lead.request"}
+    "manager": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","worksheet.delete","operation.undo.own","history.view","organization.view","membership.view","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy","organization.section.create","team_lead.request"},
     "team_lead": {"data.view","analysis.run","worksheet.create","pivot.create","worksheet.modify","operation.undo.own","history.view","organization.view","membership.view","working_copy.view","working_copy.modify","working_copy.delete","dataset.copy.request","authorization.request.view","excel.mutate.working_copy"},
     "external_viewer": {"data.view","history.view","organization.view"},
     # Ordinary employees can work with authorized copies, but cannot manage users,
