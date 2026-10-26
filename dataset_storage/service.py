@@ -78,17 +78,17 @@ def _authorize_upload(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Restrict direct original writes to Owner or Branch Head.
+    """Authorize original writes for Owner/BH or a Manager with a live branch grant.
 
-    Managers must submit a private proposal for Branch Head review; an upload
-    grant never lets a Manager publish or replace an original directly.
+    The shared scope check validates the current Manager grant, exact branch
+    assignment and active membership. A per-dataset ACL cannot grant upload.
     """
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head"}):
+    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
         raise AuthzError(
-            "Only an Organization Owner or Branch Head may write an original dataset. "
-            "Managers must submit a proposal for Branch Head review."
+            "Only an Organization Owner, assigned Branch Head, or explicitly "
+            "authorized Manager may write an original dataset."
         )
     return authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
@@ -715,8 +715,38 @@ def _lock_active_upload_assignment(
             ORDER BY oa.assignment_id LIMIT 1
             FOR SHARE OF oa, m, mr, rp, l
         """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    elif role == "manager":
+        assignment = repo.db.execute(text("""
+            SELECT g.grant_id
+            FROM manager_dataset_upload_grants g
+            JOIN organizational_assignments oa
+              ON oa.organization_id=g.organization_id
+             AND oa.principal_id=g.manager_principal_id
+             AND oa.location_id=g.location_id
+             AND oa.role_id='manager' AND oa.status='active'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=g.workspace_id AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='manager'
+            JOIN identity_bindings ib
+              ON ib.principal_id=m.principal_id AND ib.status='active'
+             AND ib.provider='supabase' AND ib.provider_subject=:subject
+            JOIN locations l
+              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+             AND l.status='active'
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.manager_principal_id=:principal AND g.location_id=:location
+              AND g.revoked_at IS NULL
+            LIMIT 1
+            FOR SHARE OF g, oa, m, mr, ib, l
+        """), {
+            "org": org, "workspace": workspace, "principal": principal,
+            "location": location, "subject": str(context.get("_identity_subject") or ""),
+        }).scalar_one_or_none()
     else:
-        raise AuthzError("Only an Organization Owner or Branch Head may write an original dataset.")
+        raise AuthzError("The active role is not authorized to write an original dataset.")
 
     if assignment is None:
         raise AuthzError("The upload role or active branch assignment is no longer valid.")
