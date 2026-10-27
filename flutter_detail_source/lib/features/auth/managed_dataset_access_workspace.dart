@@ -98,7 +98,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       return;
     }
     try {
-      final result = await _get('/v1/managed-datasets/upload-grants/mine');
+      final result = await _get('/v1/managed-datasets/upload-grants/me');
       final items = ((result as Map?)?['grants'] as List? ?? const [])
           .whereType<Map>().map((e) => Map<String,dynamic>.from(e))
           .where((e) => e['status']?.toString() == 'active').toList();
@@ -110,7 +110,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   bool _managerHasUploadGrantFor(Map<String,dynamic>? dataset) {
     if (!roles.contains('manager')) return false;
-    if (dataset == null) return managerUploadGrants.length == 1;
+    if (dataset == null) return managerUploadGrants.isNotEmpty;
     final locationId = dataset['location_id']?.toString();
     return locationId != null && managerUploadGrants.any(
       (grant) => grant['location_id']?.toString() == locationId,
@@ -268,19 +268,47 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _upload({String? datasetId}) async {
     try {
+      String? uploadLocationId;
+      if (datasetId == null) {
+        final scope = await _get('/v1/managed-datasets/upload-scope');
+        final locations = ((scope as Map?)?['locations'] as List? ?? const [])
+            .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+        if (locations.isEmpty) throw StateError('No branch is authorized for original dataset uploads.');
+        if (locations.length == 1) {
+          uploadLocationId = locations.single['location_id']?.toString();
+        } else {
+          uploadLocationId = await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              backgroundColor: const Color(0xFF0B1725),
+              title: const Text('Choose upload branch', style: TextStyle(color: Colors.white)),
+              content: SizedBox(
+                width: 360,
+                child: ListView(shrinkWrap: true, children: [
+                  for (final location in locations)
+                    ListTile(
+                      title: Text(location['location_name']?.toString() ?? 'Branch',
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(location['location_id']?.toString() ?? '',
+                          style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+                      onTap: () => Navigator.of(dialogContext).pop(location['location_id']?.toString()),
+                    ),
+                ]),
+              ),
+            ),
+          );
+          if (uploadLocationId == null) return;
+        }
+      } else if (roles.contains('manager') && !_managerHasUploadGrantFor(selected)) {
+        throw StateError('A current upload grant for this exact branch is required.');
+      }
       final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['csv'], withData: true);
       if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) return;
       final file = picked.files.single;
       final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
       final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
       request.headers.addAll(await _headers());
-      if (roles.contains('manager')) {
-        if (!_managerHasUploadGrantFor(datasetId == null ? null : selected)) {
-          throw StateError('A current upload grant for this exact branch is required.');
-        }
-        request.headers['X-InsightFlow-Location-ID'] =
-            (datasetId == null ? managerUploadGrants.single['location_id'] : selected?['location_id']).toString();
-      }
+      if (uploadLocationId != null) request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
       request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
       final response = await request.send().timeout(const Duration(minutes: 5));
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -336,7 +364,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canUpload => !widget.readOnly && (
       roles.contains('organization_owner') ||
       roles.contains('branch_head') ||
-      (roles.contains('manager') && managerUploadGrants.length == 1)
+      (roles.contains('manager') && managerUploadGrants.isNotEmpty)
   );
   bool get canDelete => !widget.readOnly &&
       (roles.contains('organization_owner') || roles.contains('branch_head'));
