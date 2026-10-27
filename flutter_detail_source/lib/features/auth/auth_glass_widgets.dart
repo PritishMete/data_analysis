@@ -162,10 +162,22 @@ class AuthGlassScaffold extends StatelessWidget {
                                 child: Stack(
                                   fit: StackFit.passthrough,
                                   children: [
-                                    BackdropFilter(
-                                      filter: ImageFilter.blur(
-                                        sigmaX: cardTransitioning ? 4.5 : 0,
-                                        sigmaY: cardTransitioning ? 4.5 : 0,
+                                    TweenAnimationBuilder<double>(
+                                      tween: Tween<double>(
+                                        begin: 0,
+                                        end: cardTransitioning ? 2.4 : 0,
+                                      ),
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      curve: Curves.easeInOutCubic,
+                                      builder: (context, blur, child) =>
+                                          ImageFiltered(
+                                        imageFilter: ImageFilter.blur(
+                                          sigmaX: blur,
+                                          sigmaY: blur,
+                                        ),
+                                        child: child,
                                       ),
                                       child: cardContents,
                                     ),
