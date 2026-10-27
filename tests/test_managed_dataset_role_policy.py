@@ -243,7 +243,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner or Branch Head"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",
