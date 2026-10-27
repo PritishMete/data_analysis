@@ -132,15 +132,11 @@ class AuthGlassScaffold extends StatelessWidget {
                               Expanded(
                                 child: SingleChildScrollView(
                                   physics: const BouncingScrollPhysics(),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: children,
-                                  ),
+                                  child: _buildAnimatedAuthFormContents(),
                                 ),
                               )
                             else
-                              ...children,
+                              _buildAnimatedAuthFormContents(),
                           ],
                         ),
                       ),
@@ -158,32 +154,7 @@ class AuthGlassScaffold extends StatelessWidget {
                               child: Stack(
                                 fit: StackFit.passthrough,
                                 children: [
-                                    TweenAnimationBuilder<double>(
-                                      tween: Tween<double>(
-                                        begin: 0,
-                                        end: cardTransitioning ? 3.6 : 0,
-                                      ),
-                                      duration: const Duration(
-                                        milliseconds: 500,
-                                      ),
-                                      curve: Curves.easeInOutCubic,
-                                      builder: (context, blur, child) =>
-                                          ImageFiltered(
-                                        imageFilter: ImageFilter.blur(
-                                          sigmaX: blur,
-                                          sigmaY: blur,
-                                        ),
-                                        child: child,
-                                      ),
-                                      child: AnimatedOpacity(
-                                        duration: const Duration(
-                                          milliseconds: 180,
-                                        ),
-                                        curve: Curves.easeOutCubic,
-                                        opacity: cardTransitioning ? 0 : 1,
-                                        child: cardContents,
-                                      ),
-                                    ),
+                                    cardContents,
                                     Positioned.fill(
                                       child: IgnorePointer(
                                         child: AnimatedContainer(
@@ -325,6 +296,30 @@ class AuthGlassScaffold extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedAuthFormContents() {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(
+        begin: 0,
+        end: cardTransitioning ? 3.6 : 0,
+      ),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOutCubic,
+      builder: (context, blur, child) => ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: child,
+      ),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        opacity: cardTransitioning ? 0 : 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
         ),
       ),
     );
