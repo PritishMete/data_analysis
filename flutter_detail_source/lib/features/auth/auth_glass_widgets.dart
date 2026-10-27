@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -19,6 +21,8 @@ class AuthGlassScaffold extends StatelessWidget {
     this.wideContent = false,
     this.brandedLayout = false,
     this.fitViewport = false,
+    this.animateCardMorph = false,
+    this.cardTransitioning = false,
   });
 
   final String title;
@@ -28,6 +32,13 @@ class AuthGlassScaffold extends StatelessWidget {
   final bool brandedLayout;
   /// Keeps onboarding inside the visible viewport; only the form body scrolls.
   final bool fitViewport;
+
+  /// Animates the auth card's size and glass treatment when its form changes.
+  /// Disabled by default so other auth/onboarding screens remain unchanged.
+  final bool animateCardMorph;
+
+  /// Whether the entire auth card is in the translucent transition phase.
+  final bool cardTransitioning;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +61,7 @@ class AuthGlassScaffold extends StatelessWidget {
                     final horizontal = narrow ? 16.0 : 24.0;
                     final vertical = short ? 16.0 : 32.0;
 
-                    final card = ConstrainedBox(
+                    final cardContents = ConstrainedBox(
                       constraints: BoxConstraints(
                         maxWidth: wideContent
                             ? (fitViewport ? 760 : 1280)
@@ -134,6 +145,66 @@ class AuthGlassScaffold extends StatelessWidget {
                         ),
                       ),
                     );
+
+                    final card = animateCardMorph
+                        ? AnimatedSize(
+                            duration: const Duration(milliseconds: 460),
+                            curve: Curves.easeInOutCubic,
+                            alignment: Alignment.topCenter,
+                            clipBehavior: Clip.hardEdge,
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutCubic,
+                              opacity: cardTransitioning ? 0.82 : 1,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(28),
+                                child: Stack(
+                                  fit: StackFit.passthrough,
+                                  children: [
+                                    BackdropFilter(
+                                      filter: ImageFilter.blur(
+                                        sigmaX: cardTransitioning ? 4.5 : 0,
+                                        sigmaY: cardTransitioning ? 4.5 : 0,
+                                      ),
+                                      child: cardContents,
+                                    ),
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: AnimatedContainer(
+                                          key: const ValueKey<String>(
+                                            'auth-card-morph-wash',
+                                          ),
+                                          duration: const Duration(
+                                            milliseconds: 220,
+                                          ),
+                                          curve: Curves.easeInOutCubic,
+                                          decoration: BoxDecoration(
+                                            color: cardTransitioning
+                                                ? Colors.white.withValues(
+                                                    alpha: 0.055,
+                                                  )
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(
+                                              28,
+                                            ),
+                                            border: Border.all(
+                                              color: cardTransitioning
+                                                  ? kAuthAccent.withValues(
+                                                      alpha: 0.34,
+                                                    )
+                                                  : Colors.transparent,
+                                              width: 1,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        : cardContents;
 
                     if (fitViewport) {
                       final viewportHeight =
