@@ -475,6 +475,23 @@ class _SignInScreenState extends State<SignInScreen> {
           duration: const Duration(milliseconds: 260),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
+          // Outgoing forms do not hold the layout at their old height. The
+          // incoming form determines the card's target size immediately, so
+          // the whole outer card can expand/collapse during the glass phase.
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              ...previousChildren.map(
+                (child) => Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: child,
+                ),
+              ),
+              if (currentChild != null) currentChild,
+            ],
+          ),
           transitionBuilder: (child, animation) {
             final offset = Tween<Offset>(
               begin: const Offset(0, 0.025),
