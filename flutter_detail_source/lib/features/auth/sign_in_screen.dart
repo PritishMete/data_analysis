@@ -370,7 +370,7 @@ class _SignInScreenState extends State<SignInScreen> {
           label: 'Sign In',
           busy: _loading,
           onTap: _signIn,
-          icon: CupertinoIcons.arrow_right_to_line,
+          icon: CupertinoIcons.arrow_right,
         ),
         const SizedBox(height: 10),
         const Divider(height: 1),
@@ -448,7 +448,7 @@ class _SignInScreenState extends State<SignInScreen> {
           label: 'Create Account',
           busy: _loading,
           onTap: _signUp,
-          icon: CupertinoIcons.person_crop_circle_badge_plus,
+          icon: CupertinoIcons.person_add,
         ),
         const SizedBox(height: 10),
         _modeSwitch(
