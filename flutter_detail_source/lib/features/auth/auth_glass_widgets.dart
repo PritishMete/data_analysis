@@ -149,12 +149,12 @@ class AuthGlassScaffold extends StatelessWidget {
                     final card = animateCardMorph
                         ? AnimatedSize(
                             key: const ValueKey<String>('auth-card-morph-size'),
-                            duration: const Duration(milliseconds: 460),
+                            duration: const Duration(milliseconds: 500),
                             curve: Curves.easeInOutCubic,
                             alignment: Alignment.topCenter,
                             clipBehavior: Clip.hardEdge,
                             child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 320),
+                              duration: const Duration(milliseconds: 420),
                               curve: Curves.easeInOutCubic,
                               opacity: cardTransitioning ? 0.82 : 1,
                               child: ClipRRect(
@@ -168,7 +168,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                         end: cardTransitioning ? 3.6 : 0,
                                       ),
                                       duration: const Duration(
-                                        milliseconds: 380,
+                                        milliseconds: 500,
                                       ),
                                       curve: Curves.easeInOutCubic,
                                       builder: (context, blur, child) =>
@@ -188,7 +188,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                             'auth-card-morph-wash',
                                           ),
                                           duration: const Duration(
-                                            milliseconds: 220,
+                                            milliseconds: 420,
                                           ),
                                           curve: Curves.easeInOutCubic,
                                           decoration: BoxDecoration(
