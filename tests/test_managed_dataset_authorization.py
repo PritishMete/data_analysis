@@ -748,23 +748,26 @@ def test_dataset_registration_cannot_register_for_another_member(monkeypatch):
 
 
 
-def test_only_owner_or_branch_head_can_reach_original_upload_policy(monkeypatch):
+def test_manager_reaches_explicit_grant_scope_for_original_upload(monkeypatch):
     context = {
         **_context(),
         "role_ids": ["manager"],
     }
+    seen = []
     monkeypatch.setattr(
         dataset_service, "_authorization_context",
         lambda claims, workspace_id: context,
     )
-    monkeypatch.setattr(
-        dataset_service, "authorize_dataset_upload_scope",
-        lambda *args, **kwargs: pytest.fail("manager must be rejected before original upload scope lookup"),
-    )
+    def authorize_scope(claims, workspace_id, *, location_id=None):
+        seen.append((workspace_id, location_id))
+        return {**context, "authorized": True, "location_id": location_id, "upload_role_id": "manager"}
+    monkeypatch.setattr(dataset_service, "authorize_dataset_upload_scope", authorize_scope)
 
-    with pytest.raises(supabase_provider.AuthzError, match="Managers must submit a proposal"):
-        dataset_service._authorize_upload(
-            {"uid": "manager", "sub": "manager", "provider": "supabase"},
-            "workspace-owner",
-            location_id="branch-1",
-        )
+    result = dataset_service._authorize_upload(
+        {"uid": "manager", "sub": "manager", "provider": "supabase"},
+        "workspace-owner",
+        location_id="branch-1",
+    )
+    assert seen == [("workspace-owner", "branch-1")]
+    assert result["upload_role_id"] == "manager"
+    assert result["location_id"] == "branch-1"
