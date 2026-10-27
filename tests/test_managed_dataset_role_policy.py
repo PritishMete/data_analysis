@@ -328,6 +328,13 @@ class _GrantDb:
             return _Result(scalars=[self.actor_location] if self.actor_location else [])
         if "FROM organizational_assignments oa" in sql and "mr.role_id=oa.role_id" in sql:
             principal = str(params.get("principal") or "")
+            if principal == "head-principal":
+                return _Result(scalars=[{
+                    "assignment_id": "assignment-head",
+                    "location_id": self.actor_location,
+                    "section_id": None,
+                    "role_id": "branch_head",
+                }] if self.actor_location else [])
             if principal == self.target_principal and self.target_manager_active:
                 return _Result(scalars=[{
                     "assignment_id": "assignment-manager",
