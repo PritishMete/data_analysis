@@ -343,7 +343,7 @@ class _GrantDb:
                     "role_id": "manager",
                 }])
             return _Result(scalars=[])
-        if "INSERT INTO resource_grants" in sql:
+        if "INSERT INTO resource_grants" in sql or "INSERT INTO audit_events" in sql:
             return _Result()
         raise AssertionError(f"Unexpected grant query: {sql}")
 
