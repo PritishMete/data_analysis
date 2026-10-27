@@ -2313,6 +2313,8 @@ def authorize_dataset_upload_scope(
                   ON mr.organization_id=m.organization_id
                  AND mr.principal_id=m.principal_id
                  AND mr.role_id='organization_owner'
+                JOIN role_permissions rp
+                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
                 WHERE l.organization_id=:org AND l.status='active'
             """
             params = {"org": org, "principal": principal, "workspace": workspace}
