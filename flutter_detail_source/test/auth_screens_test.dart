@@ -72,9 +72,34 @@ void main() {
 
     await tester.tap(find.text('Create account'));
     await tester.pump();
+
+    final morphSize = find.byKey(
+      const ValueKey<String>('auth-card-morph-size'),
+    );
+    expect(morphSize, findsOneWidget);
+    final morphOpacity = find.descendant(
+      of: morphSize,
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0.82);
+    final washDuringExpansion = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+    );
+    expect(
+      (washDuringExpansion.decoration! as BoxDecoration).color,
+      Colors.white.withValues(alpha: 0.055),
+    );
+
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 40));
 
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 1);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
     expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
     expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
