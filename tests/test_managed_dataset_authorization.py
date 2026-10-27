@@ -55,6 +55,10 @@ class _AuthzSession:
             return _Result(row=row)
         if "FROM resource_grants" in sql:
             return _Result(scalar=self.grant)
+        if "SELECT DISTINCT oa.location_id" in sql:
+            return _Result(scalars=["branch-1"])
+        if "FROM manager_dataset_upload_grants g" in sql:
+            return _Result(scalars=[])
         if "FROM member_roles" in sql:
             return _Result(scalars=["organization_owner"])
         if "FROM locations" in sql:
@@ -653,7 +657,7 @@ def test_copy_only_working_copy_response_does_not_expose_original_ids(monkeypatc
 
 
 
-def test_manager_grant_does_not_authorize_direct_original_upload(monkeypatch):
+def test_manager_without_explicit_grant_cannot_directly_upload_original(monkeypatch):
     context = {
         **_context(),
         "role_ids": ["manager"],
@@ -663,10 +667,8 @@ def test_manager_grant_does_not_authorize_direct_original_upload(monkeypatch):
         supabase_provider, "authorization_context",
         lambda claims, workspace_id: context,
     )
-    with pytest.raises(
-        supabase_provider.AuthzError,
-        match="Managers must submit a proposal for review",
-    ):
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(_AuthzSession()))
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         supabase_provider.authorize_dataset_upload_scope(
             {"uid": "manager", "sub": "manager", "provider": "supabase"},
             "workspace-owner",
@@ -674,35 +676,36 @@ def test_manager_grant_does_not_authorize_direct_original_upload(monkeypatch):
         )
 
 
-def test_manager_cannot_authorize_original_version_write_even_with_grant(monkeypatch):
+def test_manager_original_version_write_uses_explicit_grant_scope(monkeypatch):
     session = _AuthzSession(
         resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
         protected=True,
         grant=[],
     )
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
-    monkeypatch.setattr(
-        supabase_provider, "authorization_context",
-        lambda claims, workspace_id: {
-            **_context(),
-            "role_ids": ["manager"],
-            "permissions": ["data.view"],
-        },
-    )
+    context = {
+        **_context(),
+        "role_ids": ["manager"],
+        "permissions": ["data.view"],
+    }
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: context)
+    seen = []
     monkeypatch.setattr(
         supabase_provider, "authorize_dataset_upload_scope",
-        lambda *args, **kwargs: pytest.fail("manager must not reach original-write grant validation"),
+        lambda claims, workspace_id, *, location_id=None: (
+            seen.append(location_id) or {
+                **context, "authorized": True, "location_id": location_id,
+                "upload_role_id": "manager",
+            }
+        ),
     )
-    with pytest.raises(
-        supabase_provider.AuthzError,
-        match="Managers must submit a proposal for review",
-    ):
-        supabase_provider.authorize_dataset(
-            {"uid": "manager", "sub": "manager", "provider": "supabase"},
-            "workspace-owner",
-            "dataset-owner",
-            "dataset.upload",
-        )
+    result = supabase_provider.authorize_dataset(
+        {"uid": "manager", "sub": "manager", "provider": "supabase"},
+        "workspace-owner", "dataset-owner", "dataset.upload",
+    )
+    assert seen == ["branch-1"]
+    assert result["authorized"] is True
+    assert result["upload_role_id"] == "manager"
 
 def test_dataset_registration_cannot_overwrite_existing_original_acl(monkeypatch):
     session = _AuthzSession(
