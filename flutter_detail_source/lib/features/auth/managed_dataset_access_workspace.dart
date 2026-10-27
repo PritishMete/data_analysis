@@ -24,6 +24,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
   List<Map<String,dynamic>> proposals = [];
+  List<Map<String,dynamic>> managerUploadGrants = [];
   String? proposalsError;
   Map<String,dynamic>? selected, profile;
   int offset = 0;
@@ -84,10 +85,36 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
         loading = false;
       });
+      await _loadManagerUploadGrants();
       await _loadProposals();
     } catch (e) {
       if (mounted) setState(() { loading = false; error = e.toString().replaceFirst('Bad state: ', ''); });
     }
+  }
+
+  Future<void> _loadManagerUploadGrants() async {
+    if (!roles.contains('manager') || widget.readOnly) {
+      if (mounted) setState(() { managerUploadGrants = []; });
+      return;
+    }
+    try {
+      final result = await _get('/v1/managed-datasets/upload-grants/mine');
+      final items = ((result as Map?)?['grants'] as List? ?? const [])
+          .whereType<Map>().map((e) => Map<String,dynamic>.from(e))
+          .where((e) => e['status']?.toString() == 'active').toList();
+      if (mounted) setState(() { managerUploadGrants = items; });
+    } catch (_) {
+      if (mounted) setState(() { managerUploadGrants = []; });
+    }
+  }
+
+  bool _managerHasUploadGrantFor(Map<String,dynamic>? dataset) {
+    if (!roles.contains('manager')) return false;
+    if (dataset == null) return managerUploadGrants.length == 1;
+    final locationId = dataset['location_id']?.toString();
+    return locationId != null && managerUploadGrants.any(
+      (grant) => grant['location_id']?.toString() == locationId,
+    );
   }
 
   Future<void> _loadProposals() async {
@@ -247,6 +274,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
       final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
       request.headers.addAll(await _headers());
+      if (roles.contains('manager')) {
+        if (!_managerHasUploadGrantFor(datasetId == null ? null : selected)) {
+          throw StateError('A current upload grant for this exact branch is required.');
+        }
+        request.headers['X-InsightFlow-Location-ID'] =
+            (datasetId == null ? managerUploadGrants.single['location_id'] : selected?['location_id']).toString();
+      }
       request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
       final response = await request.send().timeout(const Duration(minutes: 5));
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -297,10 +331,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canViewOriginal => roles.any((role) => {
     'organization_owner', 'branch_head', 'manager', 'external_viewer'
   }.contains(role));
-  // Permanent original changes are restricted to the Organization Owner and Branch Head.
-  // Manager upload grants use the proposal/review flow; copy-only roles never import originals.
-  bool get canUpload => !widget.readOnly &&
-      (roles.contains('organization_owner') || roles.contains('branch_head'));
+  // Managers can publish permanent original changes only with a current explicit
+  // branch grant. Team Leads and other copy-only roles never import originals.
+  bool get canUpload => !widget.readOnly && (
+      roles.contains('organization_owner') ||
+      roles.contains('branch_head') ||
+      (roles.contains('manager') && managerUploadGrants.length == 1)
+  );
   bool get canDelete => !widget.readOnly &&
       (roles.contains('organization_owner') || roles.contains('branch_head'));
   bool get canCopy => !widget.readOnly && !canViewOriginal;
@@ -406,8 +443,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           if (!widget.readOnly)
             _action('START WORKING', Icons.edit_note, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
-          if (canUpload) _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (!widget.readOnly && roles.contains('manager')) _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
+          if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
+            _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
+          if (!widget.readOnly && roles.contains('manager') && !_managerHasUploadGrantFor(d))
+            _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
       ])),
@@ -486,7 +525,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 5),
-    const Text('Only the Organization Owner and assigned Branch Head can directly publish permanent original changes. Managers need an explicit branch upload grant and must submit proposals for Branch Head review. Team Leads and employees can analyze only individually authorized copies within their branch.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const Text('The Organization Owner and assigned Branch Head can publish permanent original changes within their scope. Managers can publish only when they hold an active explicit upload grant for the exact branch. Team Leads and employees work only on individually authorized copies; they cannot modify the original dataset.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
     if (roles.contains('manager') || roles.contains('team_lead')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
