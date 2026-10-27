@@ -489,7 +489,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   child: child,
                 ),
               ),
-              if (currentChild != null) currentChild,
+              ?currentChild,
             ],
           ),
           transitionBuilder: (child, animation) {
