@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -470,59 +468,29 @@ class _SignInScreenState extends State<SignInScreen> {
           ? 'Set up your InsightFlow workspace access.'
           : 'Access your InsightFlow workspace securely.',
       brandedLayout: true,
+      animateCardMorph: true,
+      cardTransitioning: _transitioning,
       children: [
-        AnimatedSize(
-          duration: const Duration(milliseconds: 440),
-          curve: Curves.easeInOutCubic,
-          alignment: Alignment.topCenter,
-          clipBehavior: Clip.hardEdge,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: _transitioning
-                  ? Colors.white.withValues(alpha: 0.035)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _transitioning
-                    ? TechColors.borderActive.withValues(alpha: 0.22)
-                    : Colors.transparent,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final offset = Tween<Offset>(
+              begin: const Offset(0, 0.025),
+              end: Offset.zero,
+            ).animate(animation);
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: offset,
+                child: child,
               ),
-            ),
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: _transitioning ? 5.5 : 0,
-                  sigmaY: _transitioning ? 5.5 : 0,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(2),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, animation) {
-                      final offset = Tween<Offset>(
-                        begin: const Offset(0, 0.025),
-                        end: Offset.zero,
-                      ).animate(animation);
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: offset,
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: _showCreateAccount
-                        ? _signUpForm(quality)
-                        : _signInForm(quality),
-                  ),
-                ),
-              ),
-            ),
-          ),
+            );
+          },
+          child: _showCreateAccount
+              ? _signUpForm(quality)
+              : _signInForm(quality),
         ),
       ],
     );
