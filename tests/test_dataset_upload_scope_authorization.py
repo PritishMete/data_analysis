@@ -41,8 +41,14 @@ class _AssignmentDb:
         assert "JOIN organization_members m" in sql
         assert "JOIN member_roles mr" in sql
         role = (params or {}).get("role")
+        if role is None:
+            if "oa.role_id='branch_head'" in sql:
+                role = "branch_head"
+            elif "oa.role_id='organization_owner'" in sql:
+                role = "organization_owner"
         if role != "manager":
-            assert "JOIN role_permissions rp" in sql
+            if role == "branch_head":
+                assert "JOIN role_permissions rp" in sql
             if role not in self.upload_permission_roles:
                 return _Result([])
         return _Result(self.assignments.get(role, []))
