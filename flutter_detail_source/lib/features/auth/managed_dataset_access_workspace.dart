@@ -188,6 +188,95 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
+  Future<void> _revokeManagerUpload() async {
+    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    try {
+      final scope = await _get('/v1/managed-datasets/upload-scope');
+      final locations = ((scope as Map?)?['locations'] as List? ?? const [])
+          .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      if (locations.isEmpty) throw StateError('No branch is available within your authorization scope.');
+      String? locationId = locations.first['location_id']?.toString();
+      String? grantId;
+      List<Map<String,dynamic>> grants = [];
+      Future<void> refreshGrants() async {
+        if (locationId == null) { grants = []; return; }
+        final path = '/v1/managed-datasets/upload-grants?location_id=' + Uri.encodeQueryComponent(locationId!);
+        final result = await _get(path);
+        grants = ((result as Map?)?['grants'] as List? ?? const [])
+            .whereType<Map>().map((e) => Map<String,dynamic>.from(e))
+            .where((grant) => grant['status']?.toString() == 'active').toList();
+        grantId = grants.isEmpty ? null : grants.first['grant_id']?.toString();
+      }
+      await refreshGrants();
+      final selectedGrant = await showDialog<Map<String,String>>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) =>
+          AlertDialog(
+            backgroundColor: const Color(0xFF0B1725),
+            title: const Text('Revoke Manager upload access', style: TextStyle(color: Colors.white)),
+            content: SizedBox(width: 380, child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: locationId,
+                  dropdownColor: const Color(0xFF0B1725),
+                  decoration: const InputDecoration(labelText: 'Branch'),
+                  items: locations.map((location) => DropdownMenuItem(
+                    value: location['location_id']?.toString(),
+                    child: Text(location['location_name']?.toString() ?? 'Branch', overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (value) async {
+                    locationId = value;
+                    await refreshGrants();
+                    setDialogState(() {});
+                  },
+                ),
+                const SizedBox(height: 10),
+                if (grants.isEmpty)
+                  const Text('No active Manager upload grants exist for this branch.', style: TextStyle(color: TechColors.textMuted, fontSize: 11))
+                else
+                  DropdownButtonFormField<String>(
+                    value: grantId,
+                    dropdownColor: const Color(0xFF0B1725),
+                    decoration: const InputDecoration(labelText: 'Manager grant'),
+                    items: grants.map((grant) {
+                      final matching = members.where((m) => m['principal_id']?.toString() == grant['manager_principal_id']?.toString());
+                      final member = matching.isEmpty ? null : matching.first;
+                      final name = member?['employee_name'] ?? member?['name'] ?? grant['manager_principal_id'];
+                      return DropdownMenuItem(value: grant['grant_id']?.toString(), child: Text(name.toString(), overflow: TextOverflow.ellipsis));
+                    }).toList(),
+                    onChanged: (value) => setDialogState(() { grantId = value; }),
+                  ),
+              ],
+            )),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('CANCEL')),
+              FilledButton(
+                onPressed: grantId == null ? null : () => Navigator.of(dialogContext).pop({'grant_id': grantId!, 'location_id': locationId!}),
+                child: const Text('REVOKE ACCESS'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (selectedGrant == null) return;
+      final headers = await _headers();
+      final response = await http.delete(
+        Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/upload-grants/' + Uri.encodeComponent(selectedGrant['grant_id']!)),
+        headers: headers,
+      ).timeout(const Duration(seconds: 45));
+      dynamic body; try { body = jsonDecode(response.body); } catch (_) {}
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(body is Map && body['detail'] != null ? body['detail'].toString() : 'Manager upload grant revocation was rejected.');
+      }
+      _snack('Manager upload access revoked.');
+      await _loadManagerUploadGrants();
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
   Future<void> _loadProposals() async {
     if (!roles.any((role) => role == 'manager' || role == 'branch_head')) return;
     try {
@@ -500,6 +589,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
         if (canManage) _action('MANAGER UPLOAD GRANTS', Icons.admin_panel_settings_outlined, _grantManagerUpload),
+        if (canManage) _action('REVOKE MANAGER UPLOAD', Icons.remove_moderator_outlined, _revokeManagerUpload),
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
         ]),
       ])),
