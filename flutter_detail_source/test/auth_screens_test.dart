@@ -73,7 +73,7 @@ void main() {
     await tester.tap(find.text('Create account'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 40));
 
     expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
@@ -85,7 +85,7 @@ void main() {
     await tester.tap(find.text('Sign in'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 40));
 
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.byType(GlassPasswordField), findsOneWidget);
