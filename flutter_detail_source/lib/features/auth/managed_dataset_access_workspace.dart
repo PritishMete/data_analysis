@@ -635,7 +635,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
             _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (!widget.readOnly && roles.contains('manager') && !_managerHasUploadGrantFor(d))
+          if (!widget.readOnly && roles.contains('manager') && _managerHasUploadGrantFor(d))
             _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
