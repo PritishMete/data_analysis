@@ -81,6 +81,7 @@ void main() {
       of: morphSize,
       matching: find.byType(AnimatedOpacity),
     );
+    final initialCardHeight = tester.getSize(morphSize).height;
     expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0.82);
     final washDuringExpansion = tester.widget<AnimatedContainer>(
       find.byKey(const ValueKey<String>('auth-card-morph-wash')),
@@ -90,9 +91,14 @@ void main() {
       Colors.white.withValues(alpha: 0.055),
     );
 
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 220));
+    final expandingCardHeight = tester.getSize(morphSize).height;
+    expect(expandingCardHeight, greaterThan(initialCardHeight));
+
+    await tester.pump(const Duration(milliseconds: 280));
     await tester.pump(const Duration(milliseconds: 40));
 
+    expect(tester.getSize(morphSize).height, greaterThan(initialCardHeight));
     expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 1);
     expect(
       (tester.widget<AnimatedContainer>(
@@ -107,11 +113,30 @@ void main() {
     expect(find.byType(SignUpScreen), findsNothing);
     expect(tester.takeException(), isNull);
 
+    final expandedCardHeight = tester.getSize(morphSize).height;
     await tester.tap(find.text('Sign in'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0.82);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.white.withValues(alpha: 0.055),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    final collapsingCardHeight = tester.getSize(morphSize).height;
+    expect(collapsingCardHeight, lessThan(expandedCardHeight));
+
+    await tester.pump(const Duration(milliseconds: 280));
     await tester.pump(const Duration(milliseconds: 40));
 
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 1);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.byType(GlassPasswordField), findsOneWidget);
     expect(find.byType(SignUpScreen), findsNothing);
