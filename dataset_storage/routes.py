@@ -170,6 +170,22 @@ def managed_manager_upload_grant_list(
         raise _map_error(exc)
 
 
+@router.get("/upload-grants/mine")
+def managed_manager_upload_grant_list_mine(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    """Let a Manager inspect only their own active branch upload grants."""
+    try:
+        from .manager_grants import list_my_manager_upload_grants
+        return {"grants": list_my_manager_upload_grants(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
 @router.post("/upload-grants")
 def managed_manager_upload_grant_create(
     body: dict = Body(...),
