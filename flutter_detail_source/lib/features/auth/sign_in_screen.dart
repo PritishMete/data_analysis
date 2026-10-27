@@ -49,8 +49,13 @@ class _SignInScreenState extends State<SignInScreen> {
       _messageIsError = true;
     });
 
+    // Respect the platform's reduced-motion preference while keeping the
+    // same single-card state change and form behavior.
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     // Keep the transient blur and translucent wash only for the card morph.
-    await Future<void>.delayed(const Duration(milliseconds: 480));
+    await Future<void>.delayed(
+      reduceMotion ? Duration.zero : const Duration(milliseconds: 480),
+    );
     if (!mounted || sequence != _transitionSequence) return;
     setState(() => _transitioning = false);
   }
@@ -462,17 +467,18 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget build(BuildContext context) {
     final quality =
         GlassThemeData.of(context).qualityFor(context) ?? GlassQuality.standard;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AuthGlassScaffold(
       title: _showCreateAccount ? 'Create account' : 'Sign in',
       subtitle: _showCreateAccount
           ? 'Set up your InsightFlow workspace access.'
           : 'Access your InsightFlow workspace securely.',
       brandedLayout: true,
-      animateCardMorph: true,
-      cardTransitioning: _transitioning,
+      animateCardMorph: !reduceMotion,
+      cardTransitioning: _transitioning && !reduceMotion,
       children: [
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
+          duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
           // Outgoing forms do not hold the layout at their old height. The
