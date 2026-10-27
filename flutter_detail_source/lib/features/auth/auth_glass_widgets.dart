@@ -153,15 +153,11 @@ class AuthGlassScaffold extends StatelessWidget {
                             curve: Curves.easeInOutCubic,
                             alignment: Alignment.topCenter,
                             clipBehavior: Clip.hardEdge,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 420),
-                              curve: Curves.easeInOutCubic,
-                              opacity: cardTransitioning ? 0.82 : 1,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(28),
-                                child: Stack(
-                                  fit: StackFit.passthrough,
-                                  children: [
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(28),
+                              child: Stack(
+                                fit: StackFit.passthrough,
+                                children: [
                                     TweenAnimationBuilder<double>(
                                       tween: Tween<double>(
                                         begin: 0,
@@ -179,7 +175,14 @@ class AuthGlassScaffold extends StatelessWidget {
                                         ),
                                         child: child,
                                       ),
-                                      child: cardContents,
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(
+                                          milliseconds: 180,
+                                        ),
+                                        curve: Curves.easeOutCubic,
+                                        opacity: cardTransitioning ? 0 : 1,
+                                        child: cardContents,
+                                      ),
                                     ),
                                     Positioned.fill(
                                       child: IgnorePointer(
@@ -212,8 +215,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                ],
                               ),
                             ),
                           )
