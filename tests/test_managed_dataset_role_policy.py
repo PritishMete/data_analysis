@@ -322,7 +322,9 @@ class _GrantDb:
             return _Result(row={"resource_type": "dataset"})
         if "FROM organizational_assignments oa" in sql and "oa.role_id='manager'" in sql:
             return _Result(scalar=1 if self.target_manager_active else None)
-        if "FROM organizational_assignments oa" in sql and "role_id='branch_head'" in sql:
+        if "FROM organizational_assignments oa" in sql and (
+            "role_id='branch_head'" in sql or params.get("role") == "branch_head"
+        ):
             return _Result(scalars=[self.actor_location] if self.actor_location else [])
         if "FROM organizational_assignments oa" in sql and "mr.role_id=oa.role_id" in sql:
             principal = str(params.get("principal") or "")
