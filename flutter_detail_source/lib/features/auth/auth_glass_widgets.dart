@@ -148,6 +148,7 @@ class AuthGlassScaffold extends StatelessWidget {
 
                     final card = animateCardMorph
                         ? AnimatedSize(
+                            key: const ValueKey<String>('auth-card-morph-size'),
                             duration: const Duration(milliseconds: 460),
                             curve: Curves.easeInOutCubic,
                             alignment: Alignment.topCenter,
