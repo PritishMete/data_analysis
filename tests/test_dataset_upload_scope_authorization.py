@@ -235,7 +235,7 @@ def test_denied_upload_never_reads_stream_or_initializes_registry(monkeypatch, d
     monkeypatch.setattr(dataset_service, "DatasetRepository", fail_if_registry_created)
     stream = io.BytesIO(b"id,value\n1,private\n")
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner or Branch Head"):
+    with pytest.raises(supabase_provider.AuthzError, match="no active upload grant"):
         dataset_service.upload_managed_dataset_stream(
             workspace_id="workspace-1",
             token="unused-by-test",
