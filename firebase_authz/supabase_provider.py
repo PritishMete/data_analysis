@@ -2290,7 +2290,7 @@ def authorize_dataset_upload_scope(
         )
 
     if upload_role != "manager" and "dataset.upload" not in set(context.get("permissions", [])):
-        raise AuthzError("The active role lacks the dataset.upload permission.")
+        raise AuthzError("active role lacks the dataset.upload permission.")
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -2369,7 +2369,7 @@ def authorize_dataset_upload_scope(
     if location_id is None:
         if not allowed_locations:
             if upload_role == "manager":
-                raise AuthzError("An active Manager assignment and explicit upload grant are required.")
+                raise AuthzError("Manager has no active upload grant; an active Manager assignment and explicit upload grant are required.")
             raise AuthzError("An active branch assignment with dataset.upload permission is required.")
         if len(allowed_locations) != 1:
             raise AuthzError("An unambiguous active branch assignment is required.")
