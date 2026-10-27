@@ -119543,7 +119543,7 @@ n.push(j.l5("DOWNLOAD CSV",B.a5u,j.gan_()))
 if(j.ga5O())m=!B.c.n(j.at,"manager")||j.NJ(f)
 else m=!1
 if(m)n.push(j.l5("NEW VERSION",B.a5H,new A.b_p(j,f)))
-if(!j.a.c&&B.c.n(j.at,"manager")&&!j.NJ(f))n.push(j.m1("SUBMIT PROPOSAL",B.a5B,new A.b_q(j,f),!0))
+if(!j.a.c&&B.c.n(j.at,"manager")&&j.NJ(f))n.push(j.m1("SUBMIT PROPOSAL",B.a5B,new A.b_q(j,f),!0))
 if(!j.a.c)f=B.c.n(j.at,"organization_owner")||B.c.n(j.at,"branch_head")
 else f=!1
 if(f)n.push(j.l5("DELETE",B.y8,j.gamq()))
