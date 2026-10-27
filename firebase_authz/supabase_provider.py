@@ -2243,13 +2243,7 @@ def authorize_dataset_upload_scope(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Authorize publication writes to an original dataset.
-
-    Only Organization Owners and Branch Heads may write originals. Owners can
-    write within their organization; Branch Heads must have the dataset.upload
-    capability and an active assignment to the exact target branch. Managers
-    submit private proposals through dataset_storage.proposals instead.
-    """
+    """Authorize Owner/Branch Head uploads or an explicit Manager branch grant."""
     context = authorization_context(claims, workspace_id)
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
@@ -2259,61 +2253,95 @@ def authorize_dataset_upload_scope(
         upload_role = "organization_owner"
     elif "branch_head" in roles:
         upload_role = "branch_head"
+    elif "manager" in roles:
+        upload_role = "manager"
     else:
-        raise AuthzError("Only an Organization Owner or Branch Head may write an original dataset; Managers must submit a proposal for review.")
+        raise AuthzError(
+            "Only an Organization Owner, assigned Branch Head, or Manager "
+            "with an explicit branch upload grant may write an original dataset."
+        )
 
-    if "dataset.upload" not in set(context.get("permissions", [])):
+    if upload_role != "manager" and "dataset.upload" not in set(context.get("permissions", [])):
         raise AuthzError("The active role lacks the dataset.upload permission.")
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
     principal = str(context["principal_id"])
+    provider, subject = _identity(claims)
     with SessionLocal() as db:
         if upload_role == "organization_owner":
-            allowed_locations = {
-                str(value) for value in db.execute(text("""
-                    SELECT DISTINCT l.location_id
-                    FROM locations l
-                    JOIN organizational_assignments oa
-                      ON oa.organization_id=l.organization_id
-                     AND oa.principal_id=:principal
-                     AND oa.role_id='organization_owner' AND oa.status='active'
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id
-                     AND m.principal_id=oa.principal_id
-                     AND m.workspace_id=:workspace AND m.status='active'
-                    JOIN member_roles mr
-                      ON mr.organization_id=m.organization_id
-                     AND mr.principal_id=m.principal_id
-                     AND mr.role_id='organization_owner'
-                    JOIN role_permissions rp
-                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                    WHERE l.organization_id=:org AND l.status='active'
-                """), {"org": org, "principal": principal, "workspace": workspace}).scalars().all()
-            }
+            query = """
+                SELECT DISTINCT l.location_id
+                FROM locations l
+                JOIN organizational_assignments oa
+                  ON oa.organization_id=l.organization_id
+                 AND oa.principal_id=:principal
+                 AND oa.role_id='organization_owner' AND oa.status='active'
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id
+                 AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=:workspace AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=m.organization_id
+                 AND mr.principal_id=m.principal_id
+                 AND mr.role_id='organization_owner'
+                WHERE l.organization_id=:org AND l.status='active'
+            """
+            params = {"org": org, "principal": principal, "workspace": workspace}
+        elif upload_role == "branch_head":
+            query = """
+                SELECT DISTINCT oa.location_id
+                FROM organizational_assignments oa
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+                JOIN member_roles mr
+                  ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+                 AND mr.role_id='branch_head'
+                JOIN role_permissions rp
+                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+                JOIN locations l
+                  ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+                WHERE oa.organization_id=:org AND oa.principal_id=:principal
+                  AND oa.role_id='branch_head' AND oa.status='active'
+                  AND oa.location_id IS NOT NULL AND l.status='active'
+                  AND m.status='active' AND m.workspace_id=:workspace
+            """
+            params = {"org": org, "principal": principal, "workspace": workspace}
         else:
-            allowed_locations = {
-                str(value) for value in db.execute(text("""
-                    SELECT DISTINCT oa.location_id
-                    FROM organizational_assignments oa
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                    JOIN member_roles mr
-                      ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
-                     AND mr.role_id='branch_head'
-                    JOIN role_permissions rp
-                      ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
-                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
-                      AND oa.role_id='branch_head' AND oa.status='active'
-                      AND oa.location_id IS NOT NULL AND l.status='active'
-                      AND m.status='active' AND m.workspace_id=:workspace
-                """), {"org": org, "principal": principal, "workspace": workspace}).scalars().all()
-            }
+            query = """
+                SELECT DISTINCT g.location_id
+                FROM manager_dataset_upload_grants g
+                JOIN organizational_assignments oa
+                  ON oa.organization_id=g.organization_id
+                 AND oa.principal_id=g.manager_principal_id
+                 AND oa.location_id=g.location_id
+                 AND oa.role_id='manager' AND oa.status='active'
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id
+                 AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=g.workspace_id AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=m.organization_id
+                 AND mr.principal_id=m.principal_id AND mr.role_id='manager'
+                JOIN identity_bindings ib
+                  ON ib.principal_id=m.principal_id AND ib.status='active'
+                 AND ib.provider=:provider AND ib.provider_subject=:subject
+                JOIN locations l
+                  ON l.organization_id=g.organization_id
+                 AND l.location_id=g.location_id AND l.status='active'
+                WHERE g.organization_id=:org AND g.workspace_id=:workspace
+                  AND g.manager_principal_id=:principal AND g.revoked_at IS NULL
+            """
+            params = {"org": org, "workspace": workspace, "principal": principal,
+                      "provider": provider, "subject": subject}
+        allowed_locations = {
+            str(value) for value in db.execute(text(query), params).scalars().all()
+        }
 
     if location_id is None:
         if not allowed_locations:
+            if upload_role == "manager":
+                raise AuthzError("An active Manager assignment and explicit upload grant are required.")
             raise AuthzError("An active branch assignment with dataset.upload permission is required.")
         if len(allowed_locations) != 1:
             raise AuthzError("An unambiguous active branch assignment is required.")
@@ -2321,6 +2349,8 @@ def authorize_dataset_upload_scope(
     else:
         target_location = str(location_id).strip()
         if not target_location or target_location not in allowed_locations:
+            if upload_role == "manager":
+                raise AuthzError("The Manager has no active upload grant for this branch.")
             raise AuthzError("You are without an active branch assignment or required upload permission for the selected branch.")
 
     return {
@@ -2329,6 +2359,7 @@ def authorize_dataset_upload_scope(
         "permission": "dataset.upload",
         "location_id": target_location,
         "upload_role_id": upload_role,
+        "_identity_provider": provider,
         "_identity_subject": subject,
     }
 
