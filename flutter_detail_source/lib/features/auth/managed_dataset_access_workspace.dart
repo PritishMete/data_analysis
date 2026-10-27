@@ -117,6 +117,77 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     );
   }
 
+  Future<void> _grantManagerUpload() async {
+    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    try {
+      final scope = await _get('/v1/managed-datasets/upload-scope');
+      final locations = ((scope as Map?)?['locations'] as List? ?? const [])
+          .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      final managers = members.where((member) {
+        final roleIds = (member['role_ids'] as List? ?? const []).map((e) => e.toString());
+        return roleIds.contains('manager') && member['status']?.toString() == 'active'
+            && member['principal_id'] != null;
+      }).toList();
+      if (locations.isEmpty || managers.isEmpty) {
+        throw StateError('An active Manager and an authorized branch are required before granting upload access.');
+      }
+      String? locationId = locations.first['location_id']?.toString();
+      String? managerId = managers.first['principal_id']?.toString();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) =>
+          AlertDialog(
+            backgroundColor: const Color(0xFF0B1725),
+            title: const Text('Grant Manager upload access', style: TextStyle(color: Colors.white)),
+            content: SizedBox(width: 380, child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('This permits permanent original dataset uploads only within the selected branch. You can revoke it later.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: locationId,
+                  dropdownColor: const Color(0xFF0B1725),
+                  decoration: const InputDecoration(labelText: 'Branch'),
+                  items: locations.map((location) => DropdownMenuItem(
+                    value: location['location_id']?.toString(),
+                    child: Text(location['location_name']?.toString() ?? 'Branch', overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (value) => setDialogState(() { locationId = value; }),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: managerId,
+                  dropdownColor: const Color(0xFF0B1725),
+                  decoration: const InputDecoration(labelText: 'Manager'),
+                  items: managers.map((member) => DropdownMenuItem(
+                    value: member['principal_id']?.toString(),
+                    child: Text((member['employee_name'] ?? member['name'] ?? member['employee_id'] ?? member['principal_id']).toString(), overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (value) => setDialogState(() { managerId = value; }),
+                ),
+              ],
+            )),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('CANCEL')),
+              FilledButton(onPressed: locationId == null || managerId == null
+                ? null : () => Navigator.of(dialogContext).pop(true), child: const Text('GRANT ACCESS')),
+            ],
+          ),
+        ),
+      );
+      if (confirmed != true || locationId == null || managerId == null) return;
+      await _post('/v1/managed-datasets/upload-grants', {
+        'manager_principal_id': managerId,
+        'location_id': locationId,
+      });
+      _snack('Manager upload access granted for the selected branch.');
+      await _loadManagerUploadGrants();
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
   Future<void> _loadProposals() async {
     if (!roles.any((role) => role == 'manager' || role == 'branch_head')) return;
     try {
@@ -428,6 +499,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
+        if (canManage) _action('MANAGER UPLOAD GRANTS', Icons.admin_panel_settings_outlined, _grantManagerUpload),
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true), _action('REFRESH', Icons.refresh, _load),
         ]),
       ])),
