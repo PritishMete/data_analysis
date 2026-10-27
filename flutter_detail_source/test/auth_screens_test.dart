@@ -62,6 +62,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('sign in has a visible mobile action and morphs into sign up in place', (
+    tester,
+  ) async {
+    await pumpAuthApp(tester, const SignInScreen());
+
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.byType(SignUpScreen), findsNothing);
+
+    await tester.tap(find.text('Create account'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.byType(SignUpScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.byType(GlassPasswordField), findsOneWidget);
+    expect(find.byType(SignUpScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('account management uses shared glass fields', (tester) async {
     await pumpAuthApp(tester, const AccountManagementScreen());
 
