@@ -505,11 +505,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
       // Never pass the original dataset ID into the analysis screen. The
       // backend resolves the pinned source version using this copy capability.
-      openInsightFlowAnalysis(
-        context,
-        managedWorkingCopyId: workingCopyId,
-        initialView: "AI_ANALYTICS",
-      );
+      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId, initialView: "AI_ANALYTICS");
     } catch (e) { _snack(e); }
   }
 
