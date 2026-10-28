@@ -162,7 +162,7 @@ class AuthGlassScaffold extends StatelessWidget {
                                             'auth-card-morph-wash',
                                           ),
                                           duration: const Duration(
-                                            milliseconds: 420,
+                                            milliseconds: 500,
                                           ),
                                           curve: Curves.easeInOutCubic,
                                           decoration: BoxDecoration(
@@ -305,16 +305,16 @@ class AuthGlassScaffold extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(
         begin: 0,
-        end: cardTransitioning ? 8.1 : 0,
+        end: cardTransitioning ? 12.15 : 0,
       ),
-      duration: const Duration(milliseconds: 480),
+      duration: const Duration(milliseconds: 500),
       curve: Curves.easeInOutCubic,
       builder: (context, blur, child) => ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: child,
       ),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 420),
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOutCubic,
         // Hide only the form contents while the surrounding glass card morphs.
         opacity: cardTransitioning ? 0 : 1,
