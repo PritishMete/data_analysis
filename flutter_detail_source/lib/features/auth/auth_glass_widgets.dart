@@ -305,18 +305,18 @@ class AuthGlassScaffold extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(
         begin: 0,
-        end: cardTransitioning ? 3.6 : 0,
+        end: cardTransitioning ? 5.4 : 0,
       ),
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 480),
       curve: Curves.easeInOutCubic,
       builder: (context, blur, child) => ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: child,
       ),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        opacity: cardTransitioning ? 0 : 1,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOutCubic,
+        opacity: cardTransitioning ? 0.82 : 1,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
