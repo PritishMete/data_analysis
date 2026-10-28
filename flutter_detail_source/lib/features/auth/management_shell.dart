@@ -3563,9 +3563,27 @@ class _ManagementShellState extends State<ManagementShell> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            itemCount: tabs.length,
+            itemCount: tabs.length + 1,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
+              if (index == tabs.length) {
+                return GlassChip(
+                  label: 'AI ANALYTICS',
+                  selected: false,
+                  selectedColor: TechColors.borderActive.withValues(alpha: 0.22),
+                  padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
+                  labelStyle: const TextStyle(
+                    fontSize: 12,
+                    letterSpacing: 0.45,
+                    fontWeight: FontWeight.w600,
+                    color: TechColors.borderActive,
+                  ),
+                  onTap: () => openInsightFlowAnalysis(
+                    context,
+                    initialView: 'AI_ANALYTICS',
+                  ),
+                );
+              }
               final tab = tabs[index];
               final selected = section == tab.key;
               return GlassChip(
@@ -3672,6 +3690,29 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                   ),
                 ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(9),
+                onTap: () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0x221BD6F6),
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: const Color(0x663BDCF5)),
+                  ),
+                  child: const Row(children: [
+                    Icon(Icons.auto_awesome, size: 19, color: Color(0xFF1BD6F6)),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('AI Analytics', maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Color(0xFFD0E5FA),
+                        fontWeight: FontWeight.w700))),
+                  ]),
+                ),
+              ),
+            ),
             const SizedBox(height: 17),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 9),
