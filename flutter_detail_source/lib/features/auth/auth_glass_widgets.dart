@@ -305,7 +305,7 @@ class AuthGlassScaffold extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(
         begin: 0,
-        end: cardTransitioning ? 5.4 : 0,
+        end: cardTransitioning ? 8.1 : 0,
       ),
       duration: const Duration(milliseconds: 480),
       curve: Curves.easeInOutCubic,
@@ -314,9 +314,10 @@ class AuthGlassScaffold extends StatelessWidget {
         child: child,
       ),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 420),
         curve: Curves.easeInOutCubic,
-        opacity: cardTransitioning ? 0.82 : 1,
+        // Hide only the form contents while the surrounding glass card morphs.
+        opacity: cardTransitioning ? 0 : 1,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,

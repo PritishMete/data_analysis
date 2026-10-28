@@ -82,7 +82,7 @@ void main() {
       matching: find.byType(AnimatedOpacity),
     );
     final initialCardHeight = tester.getSize(morphSize).height;
-    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0.82);
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0);
     final washDuringExpansion = tester.widget<AnimatedContainer>(
       find.byKey(const ValueKey<String>('auth-card-morph-wash')),
     );
@@ -116,7 +116,7 @@ void main() {
     final expandedCardHeight = tester.getSize(morphSize).height;
     await tester.tap(find.text('Sign in'));
     await tester.pump();
-    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0.82);
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0);
     expect(
       (tester.widget<AnimatedContainer>(
         find.byKey(const ValueKey<String>('auth-card-morph-wash')),
