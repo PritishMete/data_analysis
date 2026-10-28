@@ -163,11 +163,13 @@ class DataScreen extends StatefulWidget {
     this.managedDatasetId,
     this.managedVersionId,
     this.managedWorkingCopyId,
+    this.initialView = "ALL_SYSTEMS",
   });
 
   final String? managedDatasetId;
   final String? managedVersionId;
   final String? managedWorkingCopyId;
+  final String initialView;
 
   @override
   State<DataScreen> createState() => DataScreenState();
@@ -181,7 +183,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // ── Analysis ──────────────────────────────────────────────────────────────
   Map<String, dynamic>? analysisData;
   bool isLoading = false;
-  String selectedView = "ALL_SYSTEMS";
+  late String selectedView = widget.initialView;
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   final TextEditingController chatController = TextEditingController();

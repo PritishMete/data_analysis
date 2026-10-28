@@ -505,7 +505,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
       // Never pass the original dataset ID into the analysis screen. The
       // backend resolves the pinned source version using this copy capability.
-      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId);
+      openInsightFlowAnalysis(
+        context,
+        managedWorkingCopyId: workingCopyId,
+        initialView: "AI_ANALYTICS",
+      );
     } catch (e) { _snack(e); }
   }
 
@@ -631,7 +635,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
           if (!widget.readOnly)
-            _action('START WORKING', Icons.edit_note, _startWorking, active: true),
+            _action('OPEN AI ANALYTICS', Icons.auto_awesome, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
             _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),

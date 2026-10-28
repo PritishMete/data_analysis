@@ -7,6 +7,7 @@ void openInsightFlowAnalysis(
   String? managedDatasetId,
   String? managedVersionId,
   String? managedWorkingCopyId,
+  String initialView = "ALL_SYSTEMS",
 }) {
   Navigator.of(context).push(
     MaterialPageRoute(
@@ -14,6 +15,7 @@ void openInsightFlowAnalysis(
         managedDatasetId: managedDatasetId,
         managedVersionId: managedVersionId,
         managedWorkingCopyId: managedWorkingCopyId,
+        initialView: initialView,
       ),
     ),
   );
