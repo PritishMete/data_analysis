@@ -204,4 +204,4 @@ def test_postgres_copy_writer_uses_real_newline_record_terminators():
         if keyword.arg == "lineterminator"
     )
     assert isinstance(line_terminator, ast.Constant)
-    assert line_terminator.value == "\\n"
+    assert line_terminator.value == "\n"
