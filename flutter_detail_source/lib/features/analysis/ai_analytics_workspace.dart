@@ -37,7 +37,7 @@ class AiAnalyticsWorkspace extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, box) {
                 if (box.maxWidth < 820) {
-                  final chatHeight = (box.maxHeight * 0.64).clamp(270.0, 600.0);
+                  final chatHeight = (box.maxHeight * 0.64).clamp(270.0, 600.0).toDouble();
                   return Column(
                     children: [
                       SizedBox(
