@@ -255,7 +255,10 @@ class _OverviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final report = state.aiReport;
-    final rows = state.uploadedFile?.rows.length;
+    final summary = state.analysisData?['summary'];
+    final managedRowCount = summary is Map ? summary['rows'] : null;
+    final uploadedRowCount = state.uploadedFile?.dataRowCount;
+    final rowCount = uploadedRowCount ?? (managedRowCount is num ? managedRowCount.toInt() : null);
     return ListView(
       children: [
         Wrap(
@@ -269,7 +272,7 @@ class _OverviewSection extends StatelessWidget {
             ),
             _MetricCard(
               label: 'UPLOADED ROWS',
-              value: rows == null ? 'Workbook' : '${rows > 0 ? rows - 1 : 0}',
+              value: rowCount == null ? 'Workbook' : rowCount.toString(),
               icon: Icons.table_rows_outlined,
             ),
             _MetricCard(
@@ -359,7 +362,17 @@ class _DataExplorerSectionState extends State<_DataExplorerSection> {
     try {
       final state = widget.state;
       List<List<dynamic>> rows;
-      if (state.dataSourceMode == DataSourceMode.uploadedFile) {
+      if (state.isManagedDatasetSession) {
+        // Display only the bounded preview returned by the authorized profile endpoint.
+        final headers = state.detectedHeaders;
+        final preview = state.analysisData?['preview'];
+        rows = <List<dynamic>>[
+          headers.cast<dynamic>(),
+          if (preview is List)
+            for (final item in preview.whereType<Map>())
+              headers.map((header) => item[header]).toList(growable: false),
+        ].where((row) => row.isNotEmpty).toList(growable: false);
+      } else if (state.dataSourceMode == DataSourceMode.uploadedFile) {
         final uploadedRows = state.uploadedFile?.rows ?? <List<dynamic>>[];
         rows = uploadedRows
             .map((row) => List<dynamic>.from(row))
