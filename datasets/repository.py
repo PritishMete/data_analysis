@@ -86,7 +86,7 @@ class DatasetRepository:
                         "FROM STDIN WITH (FORMAT CSV)"
                     ) as copy:
                         buffer = io.StringIO()
-                        writer = csv.writer(buffer, lineterminator="\\n")
+                        writer = csv.writer(buffer, lineterminator="\n")
                         for item in payload:
                             writer.writerow([item[name] for name in column_names])
                             if buffer.tell() >= 1024 * 1024:

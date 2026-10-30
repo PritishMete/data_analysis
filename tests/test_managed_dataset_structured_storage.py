@@ -1,3 +1,6 @@
+import ast
+import inspect
+import textwrap
 from io import BytesIO
 
 import pytest
@@ -183,3 +186,22 @@ def test_delete_cascades_structured_rows(db_session):
     repo.delete_dataset(dataset_id)
     assert repo.get_by_id(dataset_id) is None
     assert repo.count_rows(result.version.version_pk) == 0
+
+
+def test_postgres_copy_writer_uses_real_newline_record_terminators():
+    source = textwrap.dedent(inspect.getsource(DatasetRepository.bulk_add_rows))
+    tree = ast.parse(source)
+    writer_call = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "writer"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "csv"
+    )
+    line_terminator = next(
+        keyword.value for keyword in writer_call.keywords
+        if keyword.arg == "lineterminator"
+    )
+    assert isinstance(line_terminator, ast.Constant)
+    assert line_terminator.value == "\\n"
