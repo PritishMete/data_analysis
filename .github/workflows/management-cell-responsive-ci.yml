@@ -33,7 +33,7 @@ jobs:
         run: flutter pub get
 
       - name: Run Management Cell regression tests
-        run: flutter test test/management_responsive_filter_contract_test.dart test/management_shell_contract_test.dart
+        run: flutter test test/management_responsive_filter_contract_test.dart test/management_shell_contract_test.dart test/managed_dataset_file_picker_performance_test.dart
 
       - name: Build release web app
         run: flutter build web --release --base-href /data_analysis/
