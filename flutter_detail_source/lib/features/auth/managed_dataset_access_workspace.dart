@@ -428,6 +428,20 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _upload({String? datasetId}) async {
     try {
+      // Open the native/browser file chooser immediately. Resolving the
+      // authenticated upload scope can require several network round trips
+      // (and a cold Render start); doing that first made Import CSV appear
+      // unresponsive while the user waited for the picker to open.
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) {
+        return;
+      }
+      final file = picked.files.single;
+
       String? uploadLocationId;
       if (datasetId == null) {
         final scope = await _get('/v1/managed-datasets/upload-scope');
@@ -462,9 +476,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       } else if (roles.contains('manager') && !_managerHasUploadGrantFor(selected)) {
         throw StateError('A current upload grant for this exact branch is required.');
       }
-      final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['csv'], withData: true);
-      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) return;
-      final file = picked.files.single;
+      // Only resolve scope and upload after the user has selected a file.
       final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
       final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
       request.headers.addAll(await _headers());
