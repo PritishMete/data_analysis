@@ -527,6 +527,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     _transformationManager.addListener(_onTransformationManagerChanged);
     _loadDatasetUploadCapability();
     syncOnStartup();
+    if (widget.initialView == 'AI_ANALYTICS' && isManagedDatasetSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && analysisData == null && !isLoading) {
+          analyzeData();
+        }
+      });
+    }
   }
 
   @override
@@ -6393,7 +6400,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                     _buildGlassAppBar(),
 
                     // ── Navigation tabs (only when data is loaded) ─────────
-                    if (analysisData != null) NavigationTabs(state: this),
+                    if (analysisData != null || selectedView == 'AI_ANALYTICS')
+                      NavigationTabs(state: this),
 
                     // ── Body ──────────────────────────────────────────────
                     Expanded(child: _buildBody()),
@@ -6408,7 +6416,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // anchors to a corner and can't do a full-width bar, so this is
             // a plain Positioned row instead — same fixed-at-bottom result,
             // just not routed through the FAB slot.
-            if (selectedView != 'NEURAL_CHAT')
+            if (selectedView != 'NEURAL_CHAT' && selectedView != 'AI_ANALYTICS')
               Positioned(
                 left: 20,
                 right: 20,
@@ -6501,6 +6509,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildBody() {
+    // The dedicated workspace must render even before an Excel scan exists.
+    // In particular, managed working-copy sessions load their profile on entry
+    // and must not be routed back to the generic empty-state/pipeline screen.
+    if (selectedView == 'AI_ANALYTICS') {
+      return AnalysisScreen(state: this);
+    }
     if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: TechColors.borderActive),
