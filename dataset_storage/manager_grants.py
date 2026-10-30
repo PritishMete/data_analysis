@@ -314,7 +314,7 @@ def list_uploadable_locations(*, workspace_id: str, token: str) -> list[dict[str
               ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
              AND m.workspace_id=:workspace AND m.status='active'
             WHERE l.organization_id=:org AND l.status='active'
-            ORDER BY lower(l.name), l.location_id
+            ORDER BY l.name, l.location_id
         """
     elif "branch_head" in roles:
         sql = """
@@ -334,7 +334,7 @@ def list_uploadable_locations(*, workspace_id: str, token: str) -> list[dict[str
             WHERE oa.organization_id=:org AND oa.principal_id=:principal
               AND oa.role_id='branch_head' AND oa.status='active'
               AND oa.location_id IS NOT NULL
-            ORDER BY lower(l.name), l.location_id
+            ORDER BY l.name, l.location_id
         """
     elif "manager" in roles:
         sql = """
@@ -356,7 +356,7 @@ def list_uploadable_locations(*, workspace_id: str, token: str) -> list[dict[str
              AND l.status='active'
             WHERE g.organization_id=:org AND g.workspace_id=:workspace
               AND g.manager_principal_id=:principal AND g.revoked_at IS NULL
-            ORDER BY lower(l.name), l.location_id
+            ORDER BY l.name, l.location_id
         """
     else:
         raise PermissionDenied("This role has no authority to upload original datasets.")

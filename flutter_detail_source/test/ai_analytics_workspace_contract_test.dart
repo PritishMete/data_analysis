@@ -21,6 +21,23 @@ void main() {
     }
   });
 
+  test('AI Analytics route renders before a workbook scan is present', () {
+    final source = File(
+      'lib/features/dashboard/data_screen.dart',
+    ).readAsStringSync();
+
+    final workspaceRoute = source.indexOf("if (selectedView == 'AI_ANALYTICS')");
+    final emptyStateGuard = source.indexOf(
+      "if (analysisData == null || analysisData!.containsKey('error'))",
+    );
+    expect(workspaceRoute, greaterThanOrEqualTo(0));
+    expect(emptyStateGuard, greaterThan(workspaceRoute));
+    expect(
+      source,
+      contains("if (analysisData != null || selectedView == 'AI_ANALYTICS')"),
+    );
+  });
+
   test('AI Analytics reuses the existing report and analyst operations', () {
     final source = File(
       'lib/features/analysis/ai_analytics_workspace.dart',
