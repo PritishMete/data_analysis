@@ -6400,8 +6400,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                     _buildGlassAppBar(),
 
                     // ── Navigation tabs (only when data is loaded) ─────────
-                    if (analysisData != null || selectedView == 'AI_ANALYTICS')
-                      NavigationTabs(state: this),
+                    // Keep navigation visible before the first scan so users
+                    // can open AI Analytics directly from a fresh Data Screen.
+                    NavigationTabs(state: this),
 
                     // ── Body ──────────────────────────────────────────────
                     Expanded(child: _buildBody()),

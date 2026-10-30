@@ -32,9 +32,10 @@ void main() {
     );
     expect(workspaceRoute, greaterThanOrEqualTo(0));
     expect(emptyStateGuard, greaterThan(workspaceRoute));
+    expect(source, contains('NavigationTabs(state: this)'));
     expect(
       source,
-      contains("if (analysisData != null || selectedView == 'AI_ANALYTICS')"),
+      isNot(contains("if (analysisData != null) NavigationTabs(state: this)")),
     );
   });
 
