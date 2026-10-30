@@ -37,7 +37,7 @@ class AiAnalyticsWorkspace extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, box) {
                 if (box.maxWidth < 820) {
-                  if (box.maxHeight < 500) {
+                  if (box.maxHeight < 620) {
                     // On short screens, let the two work areas scroll rather
                     // than squeezing report controls into an unusable sliver.
                     return SingleChildScrollView(
