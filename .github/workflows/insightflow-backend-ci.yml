@@ -164,6 +164,8 @@ jobs:
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
           test/supabase_multi_device_session_test.dart
+          lib/features/analysis/ai_analytics_workspace.dart
+          test/ai_analytics_workspace_contract_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
@@ -189,6 +191,10 @@ jobs:
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/supabase_multi_device_session_test.dart
+          test/ai_analytics_workspace_contract_test.dart
+
+      - name: Analyze dedicated AI Analytics workspace
+        run: flutter analyze lib/features/analysis/ai_analytics_workspace.dart test/ai_analytics_workspace_contract_test.dart
 
       - name: Build Flutter web
         run: >-
