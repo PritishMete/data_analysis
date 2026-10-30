@@ -37,7 +37,27 @@ class AiAnalyticsWorkspace extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, box) {
                 if (box.maxWidth < 820) {
-                  final chatHeight = (box.maxHeight * 0.64).clamp(270.0, 600.0).toDouble();
+                  if (box.maxHeight < 500) {
+                    // On short screens, let the two work areas scroll rather
+                    // than squeezing report controls into an unusable sliver.
+                    return SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 380,
+                            child: _AnalysisPanel(state: state),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 520,
+                            child: _ConversationPanel(state: state),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final chatHeight =
+                      (box.maxHeight * 0.64).clamp(270.0, 600.0).toDouble();
                   return Column(
                     children: [
                       SizedBox(
