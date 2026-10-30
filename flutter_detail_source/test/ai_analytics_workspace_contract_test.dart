@@ -3,22 +3,23 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('AI Analytics workspace exposes all seven dedicated sections', () {
+  test('AI Analytics is a focused analysis and conversation command centre', () {
     final source = File(
       'lib/features/analysis/ai_analytics_workspace.dart',
     ).readAsStringSync();
 
-    for (final section in const [
-      'Overview',
-      'Data Explorer',
-      'AI Analyst',
-      'Reports',
-      'Monitoring',
-      'Governance',
-      'History',
-    ]) {
-      expect(source, contains("'$section'"));
-    }
+    expect(source, contains('AI Analytics'));
+    expect(source, contains('Analysis snapshot'));
+    expect(source, contains('Ask your data'));
+    expect(source, contains('Report & next steps'));
+    expect(source, contains('ChatConsole(state: state, fullHeight: true)'));
+    expect(source, contains('state.generateReport'));
+    expect(source, contains('state.processChatQuery'));
+    expect(source, isNot(contains('Data Explorer')));
+    expect(source, isNot(contains('Monitoring')));
+    expect(source, isNot(contains('Governance')));
+    expect(source, isNot(contains('PipelineScreen')));
+    expect(source, isNot(contains('runTransformationPipeline')));
   });
 
   test('AI Analytics route renders before a workbook scan is present', () {
@@ -39,17 +40,14 @@ void main() {
     );
   });
 
-  test('AI Analytics reuses the existing report and analyst operations', () {
+  test('AI Analytics does not replace the existing pipeline screen', () {
     final source = File(
-      'lib/features/analysis/ai_analytics_workspace.dart',
+      'lib/features/dashboard/data_screen.dart',
     ).readAsStringSync();
 
-    expect(source, contains('state.generateReport'));
-    expect(source, contains('state.processChatQuery'));
-    expect(source, contains('ChatConsole(state: state'));
-    expect(
-      source,
-      contains('Workspace navigation does not grant dataset access.'),
-    );
+    expect(source, contains('PipelineScreen(state: this)'));
+    expect(source, contains('runTransformationPipeline'));
+    expect(source, contains('runColumnSplitPipeline'));
+    expect(source, contains('runTableBuilderPipeline'));
   });
 }
