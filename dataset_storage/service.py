@@ -823,14 +823,33 @@ def upload_managed_dataset_stream(
             # explicitly confirm which existing dataset to replace.
             incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
             stream.seek(0)
-            same_name = repo.db.execute(
-                select(Dataset).where(
-                    Dataset.organization_id == organization_id,
-                    func.lower(func.trim(Dataset.dataset_name)) == safe_dataset_name.casefold(),
-                    Dataset.status.notin_(("deleted", "failed")),
-                ).order_by(Dataset.created_at.desc())
-            ).scalars().first()
-            same_file = repo.db.execute(
+            duplicate_scope = None
+            duplicate_scope_params = {}
+            if "organization_owner" not in set(context.get("role_ids", [])):
+                # Branch-scoped roles must not learn dataset names or hashes
+                # from another branch in the same organization.
+                duplicate_scope = text("""
+                    EXISTS (
+                        SELECT 1
+                        FROM dataset_authorization da
+                        WHERE da.organization_id = :duplicate_org_id
+                          AND da.dataset_id = datasets.dataset_id
+                          AND da.location_id = :duplicate_location_id
+                          AND da.status = 'active'
+                          AND da.protected_original IS TRUE
+                    )
+                """)
+                duplicate_scope_params = {
+                    "duplicate_org_id": organization_id,
+                    "duplicate_location_id": str(context.get("location_id") or ""),
+                }
+
+            name_query = select(Dataset).where(
+                Dataset.organization_id == organization_id,
+                func.lower(func.trim(Dataset.dataset_name)) == safe_dataset_name.casefold(),
+                Dataset.status.notin_(("deleted", "failed")),
+            )
+            file_query = (
                 select(Dataset)
                 .outerjoin(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
                 .where(
@@ -844,7 +863,15 @@ def upload_managed_dataset_stream(
                         ),
                     ),
                 )
-                .order_by(Dataset.created_at.desc())
+            )
+            if duplicate_scope is not None:
+                name_query = name_query.where(duplicate_scope).params(**duplicate_scope_params)
+                file_query = file_query.where(duplicate_scope).params(**duplicate_scope_params)
+            same_name = repo.db.execute(
+                name_query.order_by(Dataset.created_at.desc())
+            ).scalars().first()
+            same_file = repo.db.execute(
+                file_query.order_by(Dataset.created_at.desc())
             ).scalars().first()
             conflicts_by_id: dict[str, dict[str, Any]] = {}
             for candidate, reason in ((same_name, "name"), (same_file, "content")):
