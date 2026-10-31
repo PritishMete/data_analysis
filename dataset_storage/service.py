@@ -9,7 +9,7 @@ import uuid
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -24,7 +24,7 @@ from firebase_authz.supabase_provider import (
     register_dataset,
     revoke_dataset_working_copies,
 )
-from datasets.models import DatasetColumn, DatasetRow
+from datasets.models import Dataset, DatasetColumn, DatasetRow
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from schema_intelligence.repository import RelationshipRepository
@@ -36,6 +36,14 @@ MAX_DATASET_BYTES = int(
     os.getenv("INSIGHTFLOW_DATASET_MAX_BYTES", str(100 * 1024 * 1024))
 )
 BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".sh"}
+
+
+class DatasetUploadConflict(Exception):
+    """A new upload matches an existing dataset name or exact file content."""
+
+    def __init__(self, conflicts: list[dict[str, Any]]):
+        self.conflicts = conflicts
+        super().__init__("A matching dataset already exists.")
 
 
 def _safe_filename(filename: str) -> str:
@@ -777,9 +785,14 @@ def upload_managed_dataset_stream(
     dataset_name: str | None = None,
     provider: SupabaseDatasetStorageProvider | None = None,
     dataset_id: str | None = None,
+    replace_dataset_id: str | None = None,
     location_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
+    if replace_dataset_id is not None:
+        if dataset_id is not None and dataset_id != replace_dataset_id:
+            raise ValueError("Only one replacement dataset may be selected.")
+        dataset_id = replace_dataset_id
     if dataset_id is not None:
         # Resolve branch scope from the authoritative source ACL, not request body.
         dataset_scope = _authorize_dataset(
@@ -803,6 +816,35 @@ def upload_managed_dataset_stream(
     provider = provider or SupabaseDatasetStorageProvider()
     base_version_id = None
     try:
+        if new_dataset:
+            # Detect both duplicate display names and byte-identical CSV uploads
+            # before creating any rows or physical tables. The client must
+            # explicitly confirm which existing dataset to replace.
+            incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
+            stream.seek(0)
+            same_name = repo.db.execute(
+                select(Dataset).where(
+                    Dataset.organization_id == organization_id,
+                    func.lower(func.trim(Dataset.dataset_name)) == safe_dataset_name.casefold(),
+                    Dataset.status.notin_(("deleted", "failed")),
+                ).order_by(Dataset.created_at.desc())
+            ).scalars().first()
+            same_file = repo.find_by_file_hash(incoming_hash, organization_id)
+            conflicts = []
+            seen_ids = set()
+            for candidate, reason in ((same_name, "name"), (same_file, "content")):
+                if candidate is not None and candidate.status not in {"deleted", "failed"} and candidate.dataset_id not in seen_ids:
+                    seen_ids.add(candidate.dataset_id)
+                    conflicts.append({
+                        "dataset_id": candidate.dataset_id,
+                        "dataset_name": candidate.dataset_name,
+                        "original_filename": candidate.original_filename,
+                        "reason": reason,
+                    })
+            if replace_dataset_id is None and conflicts:
+                raise DatasetUploadConflict(conflicts)
+            if replace_dataset_id is not None and replace_dataset_id not in seen_ids:
+                raise ValueError("The selected replacement dataset no longer matches this upload.")
         if dataset_id is not None:
             current_dataset = repo.get_by_id(dataset_id)
             if current_dataset is None or current_dataset.organization_id != organization_id:
