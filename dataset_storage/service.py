@@ -786,6 +786,7 @@ def upload_managed_dataset_stream(
     provider: SupabaseDatasetStorageProvider | None = None,
     dataset_id: str | None = None,
     replace_dataset_id: str | None = None,
+    confirm_duplicate: bool = False,
     location_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
@@ -895,6 +896,23 @@ def upload_managed_dataset_stream(
             if current_dataset is None or current_dataset.organization_id != organization_id:
                 raise FileNotFoundError("Dataset not found.")
             base_version_id = current_dataset.current_version_id
+            if not requested_new_dataset:
+                incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
+                stream.seek(0)
+                matching_version = repo.db.execute(
+                    select(DatasetVersion).where(
+                        DatasetVersion.dataset_id == dataset_id,
+                        DatasetVersion.file_hash == incoming_hash,
+                        DatasetVersion.status == "ready",
+                    ).order_by(DatasetVersion.version_number.desc())
+                ).scalars().first()
+                if matching_version is not None and not confirm_duplicate:
+                    raise DatasetUploadConflict([{
+                        "dataset_id": current_dataset.dataset_id,
+                        "dataset_name": current_dataset.dataset_name,
+                        "original_filename": current_dataset.original_filename,
+                        "reasons": ["content"],
+                    }])
         registration = registry.register_csv_stream(
             file_obj=stream,
             filename=safe_name,
