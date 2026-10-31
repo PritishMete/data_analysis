@@ -9,7 +9,7 @@ import uuid
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -24,7 +24,7 @@ from firebase_authz.supabase_provider import (
     register_dataset,
     revoke_dataset_working_copies,
 )
-from datasets.models import Dataset, DatasetColumn, DatasetRow
+from datasets.models import Dataset, DatasetColumn, DatasetRow, DatasetVersion
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from schema_intelligence.repository import RelationshipRepository
@@ -830,21 +830,38 @@ def upload_managed_dataset_stream(
                     Dataset.status.notin_(("deleted", "failed")),
                 ).order_by(Dataset.created_at.desc())
             ).scalars().first()
-            same_file = repo.find_by_file_hash(incoming_hash, organization_id)
-            conflicts = []
-            seen_ids = set()
+            same_file = repo.db.execute(
+                select(Dataset)
+                .outerjoin(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
+                .where(
+                    Dataset.organization_id == organization_id,
+                    Dataset.status.notin_(("deleted", "failed")),
+                    or_(
+                        Dataset.file_hash == incoming_hash,
+                        and_(
+                            DatasetVersion.file_hash == incoming_hash,
+                            DatasetVersion.status == "ready",
+                        ),
+                    ),
+                )
+                .order_by(Dataset.created_at.desc())
+            ).scalars().first()
+            conflicts_by_id: dict[str, dict[str, Any]] = {}
             for candidate, reason in ((same_name, "name"), (same_file, "content")):
-                if candidate is not None and candidate.status not in {"deleted", "failed"} and candidate.dataset_id not in seen_ids:
-                    seen_ids.add(candidate.dataset_id)
-                    conflicts.append({
-                        "dataset_id": candidate.dataset_id,
-                        "dataset_name": candidate.dataset_name,
-                        "original_filename": candidate.original_filename,
-                        "reason": reason,
-                    })
+                if candidate is None or candidate.status in {"deleted", "failed"}:
+                    continue
+                conflict = conflicts_by_id.setdefault(candidate.dataset_id, {
+                    "dataset_id": candidate.dataset_id,
+                    "dataset_name": candidate.dataset_name,
+                    "original_filename": candidate.original_filename,
+                    "reasons": [],
+                })
+                if reason not in conflict["reasons"]:
+                    conflict["reasons"].append(reason)
+            conflicts = list(conflicts_by_id.values())
             if replace_dataset_id is None and conflicts:
                 raise DatasetUploadConflict(conflicts)
-            if replace_dataset_id is not None and replace_dataset_id not in seen_ids:
+            if replace_dataset_id is not None and replace_dataset_id not in conflicts_by_id:
                 raise ValueError("The selected replacement dataset no longer matches this upload.")
         if dataset_id is not None:
             current_dataset = repo.get_by_id(dataset_id)
