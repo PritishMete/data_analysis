@@ -42,3 +42,13 @@ def test_no_public_download_url_is_returned():
 
     route = next(item for item in router.routes if item.path.endswith("/download"))
     assert route.path == "/v1/managed-datasets/{dataset_id}/download"
+
+def test_dataset_display_name_is_validated_and_defaults_to_filename():
+    assert service._safe_dataset_name("Retail Sales 2026", "retail_sales.csv") == "Retail Sales 2026"
+    assert service._safe_dataset_name(None, "retail_sales.csv") == "retail_sales"
+    with pytest.raises(ValueError, match="Dataset name"):
+        service._safe_dataset_name("   ", "retail_sales.csv")
+    with pytest.raises(ValueError, match="Dataset name"):
+        service._safe_dataset_name("bad\\nname", "retail_sales.csv")
+    with pytest.raises(ValueError, match="Dataset name"):
+        service._safe_dataset_name("x" * 256, "retail_sales.csv")
