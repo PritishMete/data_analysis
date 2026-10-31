@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
@@ -358,6 +358,7 @@ def managed_dataset_rows(
 @router.post("")
 async def managed_dataset_upload(
     file: UploadFile = File(...),
+    dataset_name: str | None = Form(default=None, max_length=255),
     authorization: str = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
     location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
@@ -369,6 +370,7 @@ async def managed_dataset_upload(
             filename=file.filename or "",
             stream=file.file,
             content_type=file.content_type,
+            dataset_name=dataset_name,
             location_id=location_id,
         )
         return {"success": True, "dataset": result}
