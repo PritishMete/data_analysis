@@ -77,6 +77,7 @@ def test_managed_upload_route_accepts_dataset_name_and_replacement_target():
     from dataset_storage.routes import router
 
     route = next(item for item in router.routes if item.path == "/v1/managed-datasets" and "POST" in item.methods)
-    parameters = route.endpoint.__signature__.parameters
+    import inspect
+    parameters = inspect.signature(route.endpoint).parameters
     assert "dataset_name" in parameters
     assert "replace_dataset_id" in parameters
