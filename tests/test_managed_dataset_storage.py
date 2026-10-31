@@ -81,3 +81,14 @@ def test_managed_upload_route_accepts_dataset_name_and_replacement_target():
     parameters = inspect.signature(route.endpoint).parameters
     assert "dataset_name" in parameters
     assert "replace_dataset_id" in parameters
+
+
+
+def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    assert "DatasetVersion.file_hash == incoming_hash" in source
+    assert "DatasetVersion.status == \"ready\"" in source
+    assert "replace_dataset_id not in conflicts_by_id" in source
+    assert "replace_dataset_id is None and conflicts" in source
