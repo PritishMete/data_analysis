@@ -102,6 +102,12 @@ void main() {
     final upload = source.substring(uploadStart, uploadEnd);
     expect(upload, contains('if (datasetId == null)'));
     expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
+    // Dataset naming must not regress the existing authorized dataset actions.
+    expect(source, contains('/profile?preview_limit=5'));
+    expect(source, contains('Future<void> _select(Map<String,dynamic> d)'));
+    expect(source, contains('Future<void> _requestCopy(String datasetId)'));
+    expect(source, contains('Future<void> _decideRequest(String requestId, bool approve)'));
+    expect(source, contains("'/decision'"));
   });
 
 }
