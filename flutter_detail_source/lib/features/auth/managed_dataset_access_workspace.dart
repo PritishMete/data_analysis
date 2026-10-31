@@ -445,8 +445,132 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _submitProposal(String datasetId) async {
     try {
-      final picked = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['csv'], withData: true);
-      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) return;
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) {
+        return;
+      }
+      final file = picked.files.single;
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(
+          insightFlowBackendBaseUrl +
+              '/v1/managed-datasets/' +
+              Uri.encodeComponent(datasetId) +
+              '/proposals',
+        ),
+      );
+      request.headers.addAll(await _headers());
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          file.bytes!,
+          filename: file.name,
+        ),
+      );
+      final response = await request.send().timeout(const Duration(minutes: 5));
+      final body = await response.stream.bytesToString();
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(body);
+      } catch (_) {}
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Proposal submission was rejected.',
+        );
+      }
+      _snack('Dataset proposal submitted for Branch Head review.');
+      await _loadProposals();
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
+  Future<String?> _promptDatasetName(String suggestedName) async {
+    final controller = TextEditingController(text: suggestedName);
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF0B1725),
+          title: const Text(
+            'Name this dataset',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Choose the name that will appear in InsightFlow and be saved with the dataset in the database.',
+                  style: TextStyle(
+                    color: TechColors.textMuted,
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 255,
+                  textInputAction: TextInputAction.done,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Dataset name',
+                    hintText: 'e.g. Retail Sales 2026',
+                  ),
+                  onSubmitted: (value) {
+                    final name = value.trim();
+                    if (name.isNotEmpty) {
+                      Navigator.of(dialogContext).pop(name);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                if (name.isNotEmpty) {
+                  Navigator.of(dialogContext).pop(name);
+                }
+              },
+              child: const Text('CONTINUE TO UPLOAD'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _upload({String? datasetId}) async {
+    try {
+      // Keep the native/browser file picker immediate; ask for the dataset
+      // label before resolving remote scope or starting the upload.
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty || picked.files.single.bytes == null) {
+        return;
+      }
       final file = picked.files.single;
       String? datasetName;
       if (datasetId == null) {
@@ -461,8 +585,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       if (datasetId == null) {
         final scope = await _get('/v1/managed-datasets/upload-scope');
         final locations = ((scope as Map?)?['locations'] as List? ?? const [])
-            .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-        if (locations.isEmpty) throw StateError('No branch is authorized for original dataset uploads.');
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        if (locations.isEmpty) {
+          throw StateError('No branch is authorized for original dataset uploads.');
+        }
         if (locations.length == 1) {
           uploadLocationId = locations.single['location_id']?.toString();
         } else {
@@ -470,43 +598,88 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             context: context,
             builder: (dialogContext) => AlertDialog(
               backgroundColor: const Color(0xFF0B1725),
-              title: const Text('Choose upload branch', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Choose upload branch',
+                style: TextStyle(color: Colors.white),
+              ),
               content: SizedBox(
                 width: 360,
-                child: ListView(shrinkWrap: true, children: [
-                  for (final location in locations)
-                    ListTile(
-                      title: Text(location['location_name']?.toString() ?? 'Branch',
-                          style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(location['location_id']?.toString() ?? '',
-                          style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-                      onTap: () => Navigator.of(dialogContext).pop(location['location_id']?.toString()),
-                    ),
-                ]),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final location in locations)
+                      ListTile(
+                        title: Text(
+                          location['location_name']?.toString() ?? 'Branch',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          location['location_id']?.toString() ?? '',
+                          style: const TextStyle(
+                            color: TechColors.textMuted,
+                            fontSize: 10,
+                          ),
+                        ),
+                        onTap: () => Navigator.of(dialogContext)
+                            .pop(location['location_id']?.toString()),
+                      ),
+                  ],
+                ),
               ),
             ),
           );
           if (uploadLocationId == null) return;
         }
-      } else if (roles.contains('manager') && !_managerHasUploadGrantFor(selected)) {
-        throw StateError('A current upload grant for this exact branch is required.');
+      } else if (roles.contains('manager') &&
+          !_managerHasUploadGrantFor(selected)) {
+        throw StateError(
+          'A current upload grant for this exact branch is required.',
+        );
       }
-      // Only resolve scope and upload after the user has selected a file.
-      final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
-      final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
+
+      final path = datasetId == null
+          ? '/v1/managed-datasets'
+          : '/v1/managed-datasets/' + Uri.encodeComponent(datasetId) + '/versions';
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(insightFlowBackendBaseUrl + path),
+      );
       request.headers.addAll(await _headers());
-      if (uploadLocationId != null) request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
-      if (datasetName != null) request.fields['dataset_name'] = datasetName;
-      request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
+      if (uploadLocationId != null) {
+        request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
+      }
+      if (datasetName != null) {
+        request.fields['dataset_name'] = datasetName;
+      }
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          file.bytes!,
+          filename: file.name,
+        ),
+      );
       final response = await request.send().timeout(const Duration(minutes: 5));
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final body = await response.stream.bytesToString();
-        dynamic decoded; try { decoded = jsonDecode(body); } catch (_) {}
-        throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Dataset import was rejected.');
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Dataset import was rejected.',
+        );
       }
-      _snack(datasetId == null ? 'Managed dataset imported.' : 'New dataset version imported.');
+      _snack(
+        datasetId == null
+            ? 'Managed dataset imported.'
+            : 'New dataset version imported.',
+      );
       await _load();
-    } catch (e) { _snack(e); }
+    } catch (e) {
+      _snack(e);
+    }
   }
 
   Future<void> _deleteDataset() async {
@@ -542,371 +715,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   String _name(Map<String,dynamic> d) => d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? d['original_filename']?.toString() ?? 'Managed dataset';
-  Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
-  Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canViewOriginal => roles.any((role) => {
-    'organization_owner', 'branch_head', 'manager', 'external_viewer'
-  }.contains(role));
-  // Managers can publish permanent original changes only with a current explicit
-  // branch grant. Team Leads and other copy-only roles never import originals.
-  bool get canUpload => !widget.readOnly && (
-      roles.contains('organization_owner') ||
-      roles.contains('branch_head') ||
-      (roles.contains('manager') && managerUploadGrants.isNotEmpty)
-  );
-  bool get canDelete => !widget.readOnly &&
-      (roles.contains('organization_owner') || roles.contains('branch_head'));
-  bool get canCopy => !widget.readOnly && !canViewOriginal;
-
-  Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
-
-  @override Widget build(BuildContext context) {
-    if (loading) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(height: 22, width: 150, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-        const SizedBox(height: 10),
-        Container(height: 13, width: 270, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-      ])),
-      const SizedBox(height: 12),
-      _surface(Column(children: [
-        for (var i = 0; i < 3; i++) Padding(padding: const EdgeInsets.only(bottom: 9), child: Container(height: 48, decoration: BoxDecoration(color: TechColors.panelBg.withValues(alpha: .6), borderRadius: BorderRadius.circular(12)))),
-      ])),
-    ]);
-    if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Access is temporarily unavailable', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 7),
-      const Text('We could not load the current access information. Please retry; no access settings were changed.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
-      const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
-    ]));
-    final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
-    final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (refreshError != null) ...[
-        _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          const Icon(Icons.cloud_off_outlined, color: Color(0xFFFFB454), size: 18),
-          const SizedBox(width: 9),
-          const Expanded(child: Text(
-            'The latest refresh could not be completed. Showing the last successfully loaded data; retry to sync again.',
-            style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4),
-          )),
-          _action('RETRY', Icons.refresh, _load, active: true),
-        ])),
-        const SizedBox(height: 10),
-      ],
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(width: 42, height: 42, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.shield_outlined, color: Color(0xFF43C8F3), size: 22)),
-          const SizedBox(width: 12),
-          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Branch Data & Access', style: TextStyle(color: Color(0xFFE5F2FF), fontSize: 23, fontWeight: FontWeight.w800, letterSpacing: -.4)),
-            SizedBox(height: 5),
-            Text('Manage source datasets, review access requests, and work within your authorized scope.', style: TextStyle(color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45)),
-          ])),
-        ]),
-        const SizedBox(height: 16),
-        LayoutBuilder(builder: (context, constraints) {
-          final gap = 9.0, columns = constraints.maxWidth < 520 ? 2 : 4;
-          final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-          Widget stat(String label, String value, IconData icon, Color accent) => Container(
-            width: width, padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(color: const Color(0xFF061522), borderRadius: BorderRadius.circular(11), border: Border.all(color: accent.withValues(alpha: .35))),
-            child: Row(children: [Icon(icon, color: accent, size: 18), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(value, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 3), Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 9)),
-            ]))]),
-          );
-          return Wrap(spacing: gap, runSpacing: gap, children: [
-            stat('Managed datasets', datasets.length.toString(), Icons.dataset_outlined, const Color(0xFF00CFFF)),
-            stat('Catalog resources', catalogError == null ? catalog.length.toString() : '—', Icons.storage_outlined, const Color(0xFF168BFF)),
-            stat('Access requests', requestsError == null ? requests.length.toString() : '—', Icons.pending_actions_outlined, const Color(0xFFFFB454)),
-            stat('People in scope', members.length.toString(), Icons.groups_outlined, const Color(0xFF00D89A)),
-          ]);
-        }),
-        const SizedBox(height: 14),
-        Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        const SizedBox(height: 10),
-        _eye('RESOURCE SEARCH'),
-        SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
-        _action('OPEN AI ANALYTICS', Icons.auto_awesome,
-          () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
-          active: true),
-        if (canManage) _action('MANAGER UPLOAD GRANTS', Icons.admin_panel_settings_outlined, _grantManagerUpload),
-        if (canManage) _action('REVOKE MANAGER UPLOAD', Icons.remove_moderator_outlined, _revokeManagerUpload),
-        if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true),
-        _action('REFRESH', Icons.refresh, _load),
-        ]),
-      ])),
-      if (!widget.readOnly &&
-          roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
-        const SizedBox(height: 12),
-        _proposalPanel(),
-      ],
-      const SizedBox(height: 12),
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(filtered.length.toString() + (filtered.length == 1 ? ' managed resource' : ' managed resources'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 8),
-        if (filtered.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(q.isEmpty ? 'No managed resources are available in this scope yet.' : 'No resources match your search. Clear the search or try another term.', textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4))),
-        ...filtered.map((d) {
-          final sel = d['dataset_id']?.toString() == selected?['dataset_id']?.toString();
-          return Padding(padding: const EdgeInsets.only(bottom: 6), child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 13), padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9), child: InkWell(onTap: () => _select(d), borderRadius: BorderRadius.circular(13), child: Row(children: [
-            Icon(sel ? Icons.dataset_rounded : Icons.insert_drive_file_outlined, size: 16, color: sel ? TechColors.borderActive : TechColors.textMuted), const SizedBox(width: 9),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_name(d), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 3),
-              Text((d['status'] ?? 'UNKNOWN').toString().toUpperCase() + ' · ' + (d['row_count'] ?? '—').toString() + ' ROWS · ' + (d['column_count'] ?? '—').toString() + ' COLUMNS · ' + (d['current_version'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
-            ])),
-            if (sel) const Icon(CupertinoIcons.chevron_right, size: 14, color: TechColors.borderActive),
-          ]))));
-        }),
-      ])),
-      if (selected != null) ...[const SizedBox(height: 12), _detail()],
-    ]);
-  }
-
-  Widget _detail() {
-    final d = selected!;
-    final cols = ((profile?['column_names'] as List?) ?? const []).map((e) => e.toString()).toList();
-    final total = int.tryParse((profile?['row_count'] ?? d['row_count'] ?? 0).toString()) ?? 0;
-    final end = (offset + rows.length).clamp(0, total);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
-        _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
-        if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
-        if (canViewOriginal) ...[
-          if (!widget.readOnly)
-            _action('OPEN AI ANALYTICS', Icons.auto_awesome, _startWorking, active: true),
-          _action('DOWNLOAD CSV', Icons.download_outlined, _download),
-          if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
-            _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (!widget.readOnly && roles.contains('manager') && _managerHasUploadGrantFor(d))
-            _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
-          if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
-        ],
-      ])),
-      const SizedBox(height: 12),
-      if (canViewOriginal) _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _eye('DATASET PREVIEW'), const SizedBox(height: 5), Text(total == 0 ? 'EMPTY DATASET' : 'SHOWING ' + (offset + 1).toString() + '–' + end.toString() + ' OF ' + total.toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontFamily: 'monospace')), const SizedBox(height: 8),
-        if (rowsLoading) const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(strokeWidth: 1.7, color: TechColors.borderActive)))
-        else if (rowsError != null) Column(children: [Text(rowsError!, style: const TextStyle(color: TechColors.statusRed)), const SizedBox(height: 8), _action('RETRY', Icons.refresh, _loadRows, active: true)])
-        else if (cols.isEmpty || total == 0) _eye('NO ROWS / NO COLUMNS')
-        else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
-          headingRowHeight: 36, dataRowMinHeight: 32, dataRowMaxHeight: 44, columnSpacing: 20,
-          headingTextStyle: const TextStyle(color: TechColors.borderActive, fontSize: 8, fontFamily: 'monospace', fontWeight: FontWeight.w700),
-          dataTextStyle: const TextStyle(color: TechColors.textPrimary, fontSize: 9),
-          columns: cols.map((c) => DataColumn(label: Text(c))).toList(),
-          rows: rows.map((r) {
-            final data = r['row_data'] is Map ? Map<String,dynamic>.from(r['row_data']) : <String,dynamic>{};
-            return DataRow(cells: cols.map((c) => DataCell(SizedBox(width: 145, child: Text(data[c]?.toString() ?? '—', maxLines: 2, overflow: TextOverflow.ellipsis)))).toList());
-          }).toList(),
-        )),
-        if (!rowsLoading && rowsError == null && total > 0) Padding(padding: const EdgeInsets.only(top: 9), child: Row(children: [
-          _action('PREVIOUS', Icons.chevron_left, offset == 0 ? () {} : () { setState(() => offset = (offset - pageSize).clamp(0, total)); _loadRows(); }),
-          const Spacer(), Text('PAGE ' + ((offset ~/ pageSize) + 1).toString() + ' / ' + (total / pageSize).ceil().toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')), const Spacer(),
-          _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
-        ])),
-      ])),
-      if (!widget.readOnly) ...[
-        const SizedBox(height: 12),
-        _accessPanel(),
-        const SizedBox(height: 12),
-      ],
-      _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
-        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
-      ])),
-    ]);
-  }
-
-  Widget _proposalPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    const Text('Original dataset proposals', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
-    const SizedBox(height: 4),
-    Text(roles.contains('branch_head') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
-    const SizedBox(height: 9),
-    if (proposalsError != null) Text(proposalsError!, style: const TextStyle(color: TechColors.statusRed, fontSize: 10)),
-    if (proposals.isEmpty && proposalsError == null) const Text('No proposals in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
-    ...proposals.map((p) {
-      final status = p['status']?.toString() ?? 'pending';
-      final pending = status == 'pending';
-      final canReview = roles.contains('branch_head') && pending;
-      final rejection = p['decision_note']?.toString();
-      return Padding(padding: const EdgeInsets.only(bottom: 7), child: GlassContainer(
-        useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
-        shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.all(10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            const Icon(Icons.fact_check_outlined, color: Color(0xFF43C8F3), size: 17), const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text((p['original_filename'] ?? p['dataset_id'] ?? 'Dataset proposal').toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 3),
-              Text('STATUS: ' + status.toUpperCase() + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
-            ])),
-            if (canReview) ...[
-              _action('APPROVE', Icons.check, () => _decideProposal(p['proposal_id'].toString(), true), active: true),
-              const SizedBox(width: 5),
-              _action('REJECT', Icons.close, () => _decideProposal(p['proposal_id'].toString(), false)),
-            ],
-          ]),
-          if (rejection != null && rejection.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Review note: ' + rejection, style: const TextStyle(color: TechColors.textMuted, fontSize: 10))),
-        ]),
-      ));
-    }),
-    Align(alignment: Alignment.centerRight, child: _action('REFRESH PROPOSALS', Icons.refresh, _loadProposals)),
-  ]));
-
-  Widget _stat(String label, String value) => GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye(label), const SizedBox(height: 2), Text(value, style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
-
-  Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
-    const SizedBox(height: 5),
-    const Text('The Organization Owner and assigned Branch Head can publish permanent original changes within their scope. Managers can publish only when they hold an active explicit upload grant for the exact branch. Team Leads and employees work only on individually authorized copies; they cannot modify the original dataset.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
-    const SizedBox(height: 10),
-    if (roles.contains('manager') || roles.contains('team_lead')) ...[
-      const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-      const SizedBox(height: 6),
-      if (catalogError != null)
-        Row(children: [
-          const Expanded(child: Text('The branch catalog could not be loaded. Retry this section without reloading the dataset list.', style: TextStyle(color: TechColors.statusRed, fontSize: 10))),
-          _action('RETRY', Icons.refresh, _loadCatalog, active: true),
-        ])
-      else if (catalog.isEmpty)
-        const Text('No copyable datasets are available in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
-      ...catalog.map((d) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(d['dataset_name']?.toString() ?? d['dataset_id']?.toString() ?? 'Dataset', style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
-              Text(d['location_name']?.toString() ?? 'Branch', style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
-            ])),
-            _action('REQUEST COPY', Icons.lock_open_outlined, () => _requestCopy(d['dataset_id'].toString()), active: true),
-          ]),
-        ),
-      )),
-    ],
-    if (roles.contains('organization_owner') || roles.contains('branch_head')) ...[
-      const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-      const SizedBox(height: 6),
-      if (requestsError != null)
-        Row(children: [
-          const Expanded(child: Text('Copy requests could not be loaded. Retry this section without hiding the dataset list.', style: TextStyle(color: TechColors.statusRed, fontSize: 10))),
-          _action('RETRY', Icons.refresh, _loadCopyRequests, active: true),
-        ])
-      else if (requests.isEmpty)
-        const Text('No copy authorization requests.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
-      ...requests.map((r) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
-          shape: const LiquidRoundedSuperellipse(borderRadius: 11), padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text((r['requester_name']?.toString() ?? r['requester_employee_id']?.toString() ?? 'Employee') + ' · ' + (r['dataset_id']?.toString() ?? 'dataset'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 2),
-              Text((r['status']?.toString() ?? 'pending').toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
-            ])),
-            if (r['status']?.toString() == 'pending') ...[
-              _action('APPROVE', Icons.check, () => _decideRequest(r['request_id'].toString(), true), active: true),
-              _action('REJECT', Icons.close, () => _decideRequest(r['request_id'].toString(), false)),
-            ],
-          ]),
-        ),
-      )),
-    ],
-  ]));
-}
-, caseSensitive: false),
-          '',
-        ).trim();
-        datasetName = await _promptDatasetName(suggestedName);
-        if (datasetName == null || !mounted) return;
-      }
-
-      String? uploadLocationId;
-      if (datasetId == null) {
-        final scope = await _get('/v1/managed-datasets/upload-scope');
-        final locations = ((scope as Map?)?['locations'] as List? ?? const [])
-            .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-        if (locations.isEmpty) throw StateError('No branch is authorized for original dataset uploads.');
-        if (locations.length == 1) {
-          uploadLocationId = locations.single['location_id']?.toString();
-        } else {
-          uploadLocationId = await showDialog<String>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              backgroundColor: const Color(0xFF0B1725),
-              title: const Text('Choose upload branch', style: TextStyle(color: Colors.white)),
-              content: SizedBox(
-                width: 360,
-                child: ListView(shrinkWrap: true, children: [
-                  for (final location in locations)
-                    ListTile(
-                      title: Text(location['location_name']?.toString() ?? 'Branch',
-                          style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(location['location_id']?.toString() ?? '',
-                          style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-                      onTap: () => Navigator.of(dialogContext).pop(location['location_id']?.toString()),
-                    ),
-                ]),
-              ),
-            ),
-          );
-          if (uploadLocationId == null) return;
-        }
-      } else if (roles.contains('manager') && !_managerHasUploadGrantFor(selected)) {
-        throw StateError('A current upload grant for this exact branch is required.');
-      }
-      // Only resolve scope and upload after the user has selected a file.
-      final path = datasetId == null ? '/v1/managed-datasets' : '/v1/managed-datasets/' + datasetId + '/versions';
-      final request = http.MultipartRequest('POST', Uri.parse(insightFlowBackendBaseUrl + path));
-      request.headers.addAll(await _headers());
-      if (uploadLocationId != null) request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
-      request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
-      final response = await request.send().timeout(const Duration(minutes: 5));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final body = await response.stream.bytesToString();
-        dynamic decoded; try { decoded = jsonDecode(body); } catch (_) {}
-        throw StateError(decoded is Map && decoded['detail'] != null ? decoded['detail'].toString() : 'Dataset import was rejected.');
-      }
-      _snack(datasetId == null ? 'Managed dataset imported.' : 'New dataset version imported.');
-      await _load();
-    } catch (e) { _snack(e); }
-  }
-
-  Future<void> _deleteDataset() async {
-    final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
-    try {
-      final response = await http.delete(Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + id), headers: await _headers()).timeout(const Duration(seconds: 45));
-      if (response.statusCode < 200 || response.statusCode >= 300) throw StateError('Dataset deletion was rejected.');
-      setState(() { selected = null; profile = null; rows = []; });
-      await _load();
-    } catch (e) { _snack(e); }
-  }
-
-  Future<void> _startWorking() async {
-    final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
-    try {
-      final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
-      final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
-      if (!mounted) return;
-      final workingCopyId = w['working_copy_id']?.toString();
-      if (workingCopyId == null || workingCopyId.isEmpty) {
-        throw StateError('The backend did not return an authorized working-copy ID.');
-      }
-      // Never pass the original dataset ID into the analysis screen. The
-      // backend resolves the pinned source version using this copy capability.
-      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId, initialView: "AI_ANALYTICS");
-    } catch (e) { _snack(e); }
-  }
-
-  void _snack(Object e) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))));
-  }
-
-  String _name(Map<String,dynamic> d) => d['original_filename']?.toString() ?? d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? 'Managed dataset';
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
   bool get canViewOriginal => roles.any((role) => {
