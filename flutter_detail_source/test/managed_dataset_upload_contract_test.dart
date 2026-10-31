@@ -104,6 +104,9 @@ void main() {
     expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
     expect(source, contains('Future<String?> _confirmDatasetReplacement(List conflicts)'));
     expect(source, contains("request.fields['replace_dataset_id'] = replaceId"));
+    expect(source, contains("request.fields['confirm_duplicate'] = 'true'"));
+    expect(source, contains('if (response.statusCode == 409)'));
+    expect(source, contains('sendUpload(confirmDuplicate: true)'));
     expect(source, contains('Identical CSV content found'));
     expect(source, contains('Dataset name already exists'));
     expect(source, contains("response.statusCode == 409"));
