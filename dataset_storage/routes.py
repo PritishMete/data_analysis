@@ -387,6 +387,7 @@ async def managed_dataset_upload(
 async def managed_dataset_version(
     dataset_id: str,
     file: UploadFile = File(...),
+    confirm_duplicate: bool = Form(default=False),
     authorization: str = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
@@ -398,6 +399,7 @@ async def managed_dataset_version(
             stream=file.file,
             content_type=file.content_type,
             dataset_id=dataset_id,
+            confirm_duplicate=confirm_duplicate,
         )
         return {"success": True, "dataset": result}
     except Exception as exc:
