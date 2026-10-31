@@ -110,7 +110,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         });
       }
     } catch (e) {
-      if (mounted) setState(() => catalogError = _errorMessage(e));
+      if (mounted) {
+        setState(() {
+          catalog = [];
+          catalogError = _errorMessage(e);
+        });
+      }
     }
   }
 
@@ -129,7 +134,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         });
       }
     } catch (e) {
-      if (mounted) setState(() => requestsError = _errorMessage(e));
+      if (mounted) {
+        setState(() {
+          requests = [];
+          requestsError = _errorMessage(e);
+        });
+      }
     }
   }
 
@@ -171,8 +181,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           ? Map<String, dynamic>.from(values[1] as Map)
           : <String, dynamic>{};
       if (!mounted) return;
+      final selectedDatasetId = selected?['dataset_id']?.toString();
+      final selectedStillAuthorized = selectedDatasetId == null ||
+          ds.any((item) => item['dataset_id']?.toString() == selectedDatasetId);
       setState(() {
         datasets = ds;
+        if (!selectedStillAuthorized) {
+          selected = null;
+          profile = null;
+          rows = [];
+          offset = 0;
+        }
         members = (mg['members'] as List? ?? const [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
@@ -214,6 +233,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           members = [];
           requests = [];
           roles = [];
+          selected = null;
+          profile = null;
+          rows = [];
+          offset = 0;
+          managerUploadGrants = [];
+          proposals = [];
+          catalogError = null;
+          requestsError = null;
         }
       });
     }
