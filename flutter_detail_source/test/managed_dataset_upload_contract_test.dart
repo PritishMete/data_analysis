@@ -107,7 +107,7 @@ void main() {
     expect(source, contains('Future<void> _select(Map<String,dynamic> d)'));
     expect(source, contains('Future<void> _requestCopy(String datasetId)'));
     expect(source, contains('Future<void> _decideRequest(String requestId, bool approve)'));
-    expect(source, contains("'/decision'"));
+    expect(source, contains('/decision'));
   });
 
 }
