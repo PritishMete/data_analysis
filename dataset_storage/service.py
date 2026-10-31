@@ -836,36 +836,44 @@ def _find_managed_dataset_upload_conflicts(
             func.lower(func.trim(Dataset.dataset_name)) == safe_name.casefold()
         )
 
-    file_query = (
+    dataset_hash_query = select(Dataset).where(
+        Dataset.organization_id == organization_id,
+        Dataset.status.notin_(("deleted", "failed")),
+        Dataset.file_hash == file_sha256,
+    )
+    version_hash_query = (
         select(Dataset)
-        .outerjoin(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
+        .join(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
         .where(
             Dataset.organization_id == organization_id,
             Dataset.status.notin_(("deleted", "failed")),
-            or_(
-                Dataset.file_hash == file_sha256,
-                and_(
-                    DatasetVersion.file_hash == file_sha256,
-                    DatasetVersion.status == "ready",
-                ),
-            ),
+            DatasetVersion.file_hash == file_sha256,
+            DatasetVersion.status == "ready",
         )
+        .distinct()
     )
     if duplicate_scope is not None:
         name_query = name_query.where(duplicate_scope).params(**duplicate_scope_params)
-        file_query = file_query.where(duplicate_scope).params(**duplicate_scope_params)
+        dataset_hash_query = dataset_hash_query.where(duplicate_scope).params(**duplicate_scope_params)
+        version_hash_query = version_hash_query.where(duplicate_scope).params(**duplicate_scope_params)
 
     conflicts_by_id: dict[str, dict[str, Any]] = {}
-    candidates = []
+    candidates: list[tuple[Any, str]] = []
     if safe_name is not None:
-        candidates.append((
-            repo.db.execute(name_query.order_by(Dataset.created_at.desc())).scalars().first(),
-            "name",
-        ))
-    candidates.append((
-        repo.db.execute(file_query.order_by(Dataset.created_at.desc())).scalars().first(),
-        "content",
-    ))
+        candidates.extend(
+            (candidate, "name")
+            for candidate in repo.db.execute(
+                name_query.order_by(Dataset.created_at.desc()).limit(20)
+            ).scalars().all()
+        )
+    hash_matches = repo.db.execute(
+        dataset_hash_query.order_by(Dataset.created_at.desc()).limit(20)
+    ).scalars().all()
+    version_matches = repo.db.execute(
+        version_hash_query.order_by(Dataset.created_at.desc()).limit(20)
+    ).scalars().all()
+    candidates.extend((candidate, "content") for candidate in hash_matches)
+    candidates.extend((candidate, "content") for candidate in version_matches)
     for candidate, reason in candidates:
         if candidate is None or candidate.status in {"deleted", "failed"}:
             continue
