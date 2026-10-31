@@ -876,11 +876,21 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
               : 'Dataset import was rejected.',
         );
       }
-      _snack(
-        datasetId == null
-            ? 'Managed dataset imported.'
-            : 'New dataset version imported.',
-      );
+      final successBody = await response.stream.bytesToString();
+      dynamic successDecoded;
+      try { successDecoded = jsonDecode(successBody); } catch (_) {}
+      final datasetResult = successDecoded is Map && successDecoded['dataset'] is Map
+          ? Map<String, dynamic>.from(successDecoded['dataset'])
+          : <String, dynamic>{};
+      if (datasetResult['content_unchanged'] == true) {
+        _snack('Identical CSV already exists. The existing dataset was kept; no duplicate data was uploaded.');
+      } else {
+        _snack(
+          datasetId == null
+              ? 'Managed dataset imported.'
+              : 'New dataset version imported.',
+        );
+      }
       await _load();
     } catch (e) {
       _snack(e);
