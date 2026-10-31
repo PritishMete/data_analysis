@@ -52,3 +52,31 @@ def test_dataset_display_name_is_validated_and_defaults_to_filename():
         service._safe_dataset_name("bad\nname", "retail_sales.csv")
     with pytest.raises(ValueError, match="Dataset name"):
         service._safe_dataset_name("x" * 256, "retail_sales.csv")
+
+
+
+def test_duplicate_dataset_upload_conflict_is_a_confirmable_http_409():
+    from dataset_storage.routes import _map_error
+    from dataset_storage.service import DatasetUploadConflict
+
+    conflict = DatasetUploadConflict([
+        {
+            "dataset_id": "existing-dataset",
+            "dataset_name": "Retail Sales 2026",
+            "original_filename": "retail.csv",
+            "reason": "name",
+        }
+    ])
+    response = _map_error(conflict)
+    assert response.status_code == 409
+    assert response.detail["code"] == "dataset_duplicate"
+    assert response.detail["conflicts"][0]["dataset_id"] == "existing-dataset"
+
+
+def test_managed_upload_route_accepts_dataset_name_and_replacement_target():
+    from dataset_storage.routes import router
+
+    route = next(item for item in router.routes if item.path == "/v1/managed-datasets" and "POST" in item.methods)
+    parameters = route.endpoint.__signature__.parameters
+    assert "dataset_name" in parameters
+    assert "replace_dataset_id" in parameters
