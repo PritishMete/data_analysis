@@ -103,3 +103,14 @@ def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
     assert 'DatasetVersion.status == "ready"' in source
     assert "replace_dataset_id not in conflicts_by_id" in source
     assert "replace_dataset_id is None and conflicts" in source
+
+
+
+def test_branch_scoped_roles_only_receive_duplicate_matches_in_their_branch():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    assert "organization_owner" not in set(context.get("role_ids", [])) in source or "duplicate_location_id" in source
+    assert "FROM dataset_authorization da" in source
+    assert "da.location_id = :duplicate_location_id" in source
+    assert "da.protected_original IS TRUE" in source
