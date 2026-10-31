@@ -865,14 +865,23 @@ def upload_managed_dataset_stream(
             max_bytes=MAX_DATASET_BYTES,
         )
         if registration.registration.was_duplicate:
+            duplicate_dataset = registration.registration.dataset
+            # A confirmed exact-content replacement may also correct the
+            # display name that was previously stored as the CSV filename.
+            if replace_dataset_id is not None and duplicate_dataset.dataset_name != safe_dataset_name:
+                duplicate_dataset = repo.update_dataset(
+                    duplicate_dataset.dataset_id,
+                    dataset_name=safe_dataset_name,
+                )
             _audit_safely(
-                workspace_id, str(claims["uid"]), "dataset.upload", "duplicate",
-                resource_id=registration.registration.dataset.dataset_id,
-                metadata={"version_id": registration.version.version_id},
+                workspace_id, str(claims["uid"]), "dataset.upload", "duplicate_confirmed",
+                resource_id=duplicate_dataset.dataset_id,
+                metadata={"version_id": registration.version.version_id,
+                          "dataset_name": duplicate_dataset.dataset_name},
             )
             return _structured_summary(
-                registration.registration.dataset,
-                len(repo.list_versions(registration.registration.dataset.dataset_id)),
+                duplicate_dataset,
+                len(repo.list_versions(duplicate_dataset.dataset_id)),
             )
 
         if new_dataset:
@@ -923,6 +932,11 @@ def upload_managed_dataset_stream(
             storage_object_id=stored.storage_object_id if stored else None,
             expected_current_version_id=(base_version_id if not new_dataset else None),
         )
+        if replace_dataset_id is not None and dataset.dataset_name != safe_dataset_name:
+            dataset = repo.update_dataset(
+                dataset.dataset_id,
+                dataset_name=safe_dataset_name,
+            )
         _audit_safely(
             workspace_id, str(claims["uid"]),
             "dataset.upload" if new_dataset else "dataset.version_upload",
