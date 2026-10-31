@@ -678,46 +678,75 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<String?> _confirmDatasetReplacement(List conflicts) async {
+    String? selectedId;
     return showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF0B1725),
-        title: const Text('Existing dataset found', style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: 390,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'A dataset with the same name or identical CSV content already exists. Choose the dataset to replace. Cancel keeps all existing data unchanged.',
-                style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4),
-              ),
-              const SizedBox(height: 10),
-              ...conflicts.whereType<Map>().map((raw) {
-                final item = Map<String, dynamic>.from(raw);
-                final reason = item['reason']?.toString() == 'content'
-                    ? 'Exact same CSV content'
-                    : 'Dataset name already exists';
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFFB454)),
-                  title: Text(item['dataset_name']?.toString() ?? 'Existing dataset',
-                      style: const TextStyle(color: Colors.white, fontSize: 12)),
-                  subtitle: Text(reason,
-                      style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
-                  onTap: () => Navigator.of(dialogContext).pop(item['dataset_id']?.toString()),
-                );
-              }),
-            ],
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF0B1725),
+          title: const Text('Duplicate dataset found', style: TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: 390,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'This upload matches an existing dataset name or CSV content. Select the existing dataset, then explicitly confirm replacement. Nothing will change if you cancel.',
+                  style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                ...conflicts.whereType<Map>().map((raw) {
+                  final item = Map<String, dynamic>.from(raw);
+                  final id = item['dataset_id']?.toString() ?? '';
+                  final rawReasons = item['reasons'] is List
+                      ? (item['reasons'] as List).map((value) => value.toString()).toList()
+                      : [item['reason']?.toString() ?? 'duplicate'];
+                  final labels = <String>[
+                    if (rawReasons.contains('name')) 'Dataset name already exists',
+                    if (rawReasons.contains('content')) 'Identical CSV content found',
+                  ];
+                  final selected = selectedId == id;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Radio<String>(
+                      value: id,
+                      groupValue: selectedId,
+                      onChanged: id.isEmpty
+                          ? null
+                          : (value) => setDialogState(() => selectedId = value),
+                    ),
+                    title: Text(
+                      item['dataset_name']?.toString() ?? 'Existing dataset',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    subtitle: Text(
+                      labels.isEmpty ? 'Duplicate dataset' : labels.join(' · '),
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 10),
+                    ),
+                    selected: selected,
+                    onTap: id.isEmpty
+                        ? null
+                        : () => setDialogState(() => selectedId = id),
+                  );
+                }),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: selectedId == null
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(selectedId),
+              child: const Text('REPLACE DATASET'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('CANCEL'),
-          ),
-        ],
       ),
     );
   }
