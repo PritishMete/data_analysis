@@ -856,7 +856,8 @@ def upload_managed_dataset_stream(
             filename=safe_name,
             organization_id=organization_id,
             dataset_name=(
-                safe_dataset_name if dataset_id is None
+                safe_dataset_name
+                if dataset_id is None or replace_dataset_id is not None
                 else str(current_dataset.dataset_name or safe_dataset_name)
             ),
             uploaded_by=str(context.get("principal_id") or claims["uid"]),
