@@ -148,15 +148,18 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     String path,
     Map<String,dynamic> body, {
     Map<String,String>? extraHeaders,
+    Map<String,String>? headersOverride,
   }) async {
-    final h = await _headers();
+    final h = headersOverride == null
+        ? await _headers()
+        : Map<String,String>.from(headersOverride);
     h['Content-Type'] = 'application/json';
     if (extraHeaders != null) h.addAll(extraHeaders);
     final r = await http.post(
       Uri.parse(insightFlowBackendBaseUrl + path),
       headers: h,
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(const Duration(seconds: 45));
     dynamic d;
     try { d = jsonDecode(r.body); } catch (_) {}
     if (r.statusCode < 200 || r.statusCode >= 300) {
@@ -472,6 +475,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return;
       }
       final file = picked.files.single;
+      // Resolve the branch list while the user is naming the CSV so the
+      // network lookup does not add another wait before duplicate checking.
+      final uploadScopeFuture = datasetId == null
+          ? _get('/v1/managed-datasets/upload-scope')
+          : null;
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(
@@ -793,7 +801,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
       String? uploadLocationId;
       if (datasetId == null) {
-        final scope = await _get('/v1/managed-datasets/upload-scope');
+        final scope = await uploadScopeFuture!;
         final locations = ((scope as Map?)?['locations'] as List? ?? const [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
@@ -860,12 +868,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (datasetName != null) 'dataset_name': datasetName,
         if (datasetId != null) 'dataset_id': datasetId,
       };
+      final uploadHeaders = await _headers();
+      if (uploadLocationId != null) {
+        uploadHeaders['X-InsightFlow-Location-ID'] = uploadLocationId;
+      }
       final preflight = await _post(
         '/v1/managed-datasets/duplicate-check',
         preflightBody,
-        extraHeaders: uploadLocationId == null
-            ? null
-            : {'X-InsightFlow-Location-ID': uploadLocationId},
+        headersOverride: uploadHeaders,
       );
       final conflicts = (preflight is Map && preflight['conflicts'] is List)
           ? preflight['conflicts'] as List
@@ -890,10 +900,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           'POST',
           Uri.parse(insightFlowBackendBaseUrl + path),
         );
-        request.headers.addAll(await _headers());
-        if (uploadLocationId != null) {
-          request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
-        }
+        request.headers.addAll(uploadHeaders);
         if (datasetName != null) request.fields['dataset_name'] = datasetName;
         if (replaceId != null) request.fields['replace_dataset_id'] = replaceId;
         if (confirmDuplicate) request.fields['confirm_duplicate'] = 'true';
