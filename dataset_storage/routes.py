@@ -18,6 +18,7 @@ from .service import (
     get_working_copy_profile,
     list_authorized_datasets,
     upload_managed_dataset_stream,
+    check_managed_dataset_duplicates,
     DatasetUploadConflict,
 )
 from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
@@ -144,6 +145,37 @@ def managed_upload_scope(
             workspace_id=_workspace(workspace_id, authorization),
             token=_token(authorization),
         )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/duplicate-check")
+def managed_dataset_duplicate_check(
+    body: dict = Body(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        file_sha256 = body.get("file_sha256")
+        dataset_name = body.get("dataset_name")
+        dataset_id = body.get("dataset_id")
+        if dataset_name is not None and not isinstance(dataset_name, str):
+            raise ValueError("dataset_name must be text.")
+        if dataset_id is not None and not isinstance(dataset_id, str):
+            raise ValueError("dataset_id must be text.")
+        if not isinstance(file_sha256, str):
+            raise ValueError("A valid SHA-256 file hash is required.")
+        return check_managed_dataset_duplicates(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            file_sha256=file_sha256,
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+            location_id=location_id,
+        )
     except Exception as exc:
         raise _map_error(exc)
 
