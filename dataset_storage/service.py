@@ -61,9 +61,10 @@ def _safe_filename(filename: str) -> str:
 
 
 def _safe_dataset_name(dataset_name: str | None, filename: str) -> str:
-    name = str(dataset_name or "").strip()
-    if not name:
+    if dataset_name is None:
         name = os.path.splitext(filename)[0].strip()
+    else:
+        name = str(dataset_name).strip()
     if (
         not name
         or len(name) > 255
