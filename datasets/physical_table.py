@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Iterable
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, MetaData, Numeric, Table, Text, text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, MetaData, Numeric, Table, Text, inspect, text
 from sqlalchemy.engine import Connection
 
 PHYSICAL_SCHEMA = "managed_data"
@@ -16,6 +17,66 @@ _TABLE_RE = re.compile(r"^[a-z0-9_]+$")
 def physical_table_name(version_pk: str) -> str:
     compact = re.sub(r"[^a-zA-Z0-9]", "", str(version_pk)).lower()
     return f"dataset_{compact}"
+
+
+def _dataset_name_slug(dataset_name: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(dataset_name or ""))
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_name).strip("_").lower()
+    return slug or "managed_dataset"
+
+
+def resolve_dataset_table_name(
+    connection: Connection,
+    *,
+    dataset_name: str,
+    dataset_id: str,
+    version_number: int,
+    version_pk: str,
+) -> str:
+    """Resolve a readable, collision-safe table name for one dataset version.
+
+    The first version uses the dataset's normalized name when it is available.
+    Subsequent versions retain the same readable base and add a version suffix.
+    Names are kept below PostgreSQL's 63-byte identifier limit and contain only
+    lowercase ASCII letters, digits, and underscores.
+    """
+    schema = PHYSICAL_SCHEMA if connection.dialect.name == "postgresql" else None
+    base = _dataset_name_slug(dataset_name)
+    version_suffix = f"_v{int(version_number)}" if int(version_number) > 1 else ""
+
+    # Serialize table-name resolution for identical human-readable names so
+    # two concurrent uploads cannot both select the same physical table.
+    if connection.dialect.name == "postgresql":
+        lock_key = f"{schema}.{base}{version_suffix}"
+        connection.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": lock_key},
+        )
+
+    def candidate(extra_suffix: str = "") -> str:
+        suffix = f"{extra_suffix}{version_suffix}"
+        stem_limit = max(1, 63 - len(suffix))
+        return f"{base[:stem_limit].rstrip('_') or 'dataset'}{suffix}"
+
+    def exists(table_name: str) -> bool:
+        return inspect(connection).has_table(table_name, schema=schema)
+
+    preferred = candidate()
+    if not exists(preferred):
+        return preferred
+
+    dataset_suffix = "_" + re.sub(r"[^a-zA-Z0-9]", "", str(dataset_id)).lower()[-8:]
+    disambiguated = candidate(dataset_suffix)
+    if not exists(disambiguated):
+        return disambiguated
+
+    version_key = "_" + re.sub(r"[^a-zA-Z0-9]", "", str(version_pk)).lower()[-8:]
+    final_name = candidate(dataset_suffix + version_key)
+    if not exists(final_name):
+        return final_name
+
+    raise RuntimeError("Could not allocate a unique managed dataset table name.")
 
 
 def _sql_type(detected_type: str):
@@ -62,7 +123,7 @@ def create_physical_table(
     ensure_schema(connection)
     schema = PHYSICAL_SCHEMA if connection.dialect.name == "postgresql" else None
     table = build_physical_table(table_name, columns, schema=schema)
-    table.create(connection, checkfirst=True)
+    table.create(connection, checkfirst=False)
     if schema:
         quoted = f'"{schema}"."{table_name}"'
         connection.execute(text(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY"))
