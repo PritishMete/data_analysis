@@ -15,11 +15,13 @@ void main() {
 
     final upload = source.substring(uploadStart, uploadEnd);
     final pickerIndex = upload.indexOf('FilePicker.platform.pickFiles');
+    final namePromptIndex = upload.indexOf('_promptDatasetName(suggestedName)');
     final scopeIndex = upload.indexOf("_get('/v1/managed-datasets/upload-scope')");
     final managerGrantIndex = upload.indexOf('_managerHasUploadGrantFor(selected)');
 
     expect(pickerIndex, greaterThanOrEqualTo(0));
-    expect(scopeIndex, greaterThan(pickerIndex));
+    expect(namePromptIndex, greaterThan(pickerIndex));
+    expect(scopeIndex, greaterThan(namePromptIndex));
     // Keep the existing exact-branch Manager grant check after selection.
     expect(managerGrantIndex, greaterThan(pickerIndex));
     expect(upload, contains("allowedExtensions: const ['csv']"));
