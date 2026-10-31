@@ -81,6 +81,10 @@ void main() {
     expect(source, contains('retryableStatuses = {429, 500, 502, 503, 504}'));
     expect(source, contains('catalogError != null'));
     expect(source, contains('requestsError != null'));
+    expect(source, contains('selectedStillAuthorized'));
+    expect(source, contains('if (!selectedStillAuthorized)'));
+    expect(source, contains('catalog = [];'));
+    expect(source, contains('requests = [];'));
   });
 
 }
