@@ -475,11 +475,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return;
       }
       final file = picked.files.single;
-      // Resolve the branch list while the user is naming the CSV so the
-      // network lookup does not add another wait before duplicate checking.
-      final uploadScopeFuture = datasetId == null
-          ? _get('/v1/managed-datasets/upload-scope')
-          : null;
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(
@@ -790,6 +785,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return;
       }
       final file = picked.files.single;
+      // Resolve the branch list while the user is naming the CSV so the
+      // network lookup does not add another wait before duplicate checking.
+      final uploadScopeFuture = datasetId == null
+          ? _get('/v1/managed-datasets/upload-scope')
+          : null;
       String? datasetName;
       if (datasetId == null) {
         final suggestedName = file.name
