@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from .hashing import compute_file_hash, compute_schema_hash
 from .models import Dataset, DatasetColumn, DatasetVersion
-from .physical_table import create_physical_table, physical_table_name
+from .physical_table import create_physical_table, resolve_dataset_table_name
 from .repository import DatasetRepository
 
 
@@ -216,6 +216,14 @@ class DatasetRegistryService:
         ):
             raise ValueError("Only safe CSV files are accepted as managed datasets.")
 
+        display_name = str(dataset_name or "").strip()
+        if (
+            not display_name
+            or len(display_name) > 255
+            or any(ord(char) < 32 or ord(char) == 127 for char in display_name)
+        ):
+            raise ValueError("Dataset name must be between 1 and 255 printable characters.")
+
         file_hash, file_size = self._hash_stream(file_obj, max_bytes)
         existing = None
         if existing_dataset_id is None:
@@ -323,7 +331,7 @@ class DatasetRegistryService:
             else:
                 dataset = Dataset(
                     organization_id=organization_id,
-                    dataset_name=dataset_name,
+                    dataset_name=display_name,
                     uploaded_by=uploaded_by,
                     schema_hash="",
                     file_hash=file_hash,
@@ -355,9 +363,16 @@ class DatasetRegistryService:
             )
             self.repository.add_version(version, commit=False)
 
-            table_name = physical_table_name(version.version_pk)
+            connection = self.repository.db.connection()
+            table_name = resolve_dataset_table_name(
+                connection,
+                dataset_name=dataset.dataset_name or display_name,
+                dataset_id=dataset.dataset_id,
+                version_number=version_number,
+                version_pk=version.version_pk,
+            )
             create_physical_table(
-                self.repository.db.connection(),
+                connection,
                 table_name,
                 physical_columns,
             )
