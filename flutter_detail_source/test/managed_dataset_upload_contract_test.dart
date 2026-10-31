@@ -104,10 +104,12 @@ void main() {
     expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
     expect(source, contains('Future<String?> _confirmDatasetReplacement(List conflicts)'));
     expect(source, contains("request.fields['replace_dataset_id'] = replaceId"));
-    expect(source, contains('Exact same CSV content'));
+    expect(source, contains('Identical CSV content found'));
     expect(source, contains('Dataset name already exists'));
     expect(source, contains("response.statusCode == 409"));
     expect(source, contains("child: const Text('CANCEL')"));
+    expect(source, contains("child: const Text('REPLACE DATASET')"));
+    expect(source, contains('groupValue: selectedId'));
     // Dataset naming must not regress the existing authorized dataset actions.
     expect(source, contains('/profile?preview_limit=5'));
     expect(source, contains('Future<void> _select(Map<String,dynamic> d)'));
