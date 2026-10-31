@@ -833,7 +833,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           ? '/v1/managed-datasets'
           : '/v1/managed-datasets/' + Uri.encodeComponent(datasetId) + '/versions';
 
-      Future<http.StreamedResponse> sendUpload({String? replaceId}) async {
+      Future<http.StreamedResponse> sendUpload({String? replaceId, bool confirmDuplicate = false}) async {
         final request = http.MultipartRequest(
           'POST',
           Uri.parse(insightFlowBackendBaseUrl + path),
@@ -844,6 +844,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         }
         if (datasetName != null) request.fields['dataset_name'] = datasetName;
         if (replaceId != null) request.fields['replace_dataset_id'] = replaceId;
+        if (confirmDuplicate) request.fields['confirm_duplicate'] = 'true';
         request.files.add(http.MultipartFile.fromBytes(
           'file',
           file.bytes!,
@@ -853,7 +854,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
 
       var response = await sendUpload();
-      if (response.statusCode == 409 && datasetId == null) {
+      if (response.statusCode == 409) {
         final body = await response.stream.bytesToString();
         dynamic decoded;
         try { decoded = jsonDecode(body); } catch (_) {}
@@ -862,9 +863,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             ? detail['conflicts'] as List
             : const [];
         if (conflicts.isEmpty) throw StateError('A duplicate dataset was found, but its details could not be loaded.');
-        final replaceId = await _confirmDatasetReplacement(conflicts);
-        if (replaceId == null || !mounted) return;
-        response = await sendUpload(replaceId: replaceId);
+        final selectedConflictId = await _confirmDatasetReplacement(conflicts);
+        if (selectedConflictId == null || !mounted) return;
+        if (datasetId == null) {
+          response = await sendUpload(replaceId: selectedConflictId);
+        } else {
+          if (selectedConflictId != datasetId) {
+            throw StateError('The duplicate confirmation did not match the selected dataset.');
+          }
+          response = await sendUpload(confirmDuplicate: true);
+        }
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final body = await response.stream.bytesToString();
