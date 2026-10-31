@@ -7,7 +7,12 @@ import pytest
 
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
-from datasets.physical_table import ROW_NUMBER_COLUMN, build_physical_table
+from datasets.physical_table import (
+    ROW_NUMBER_COLUMN,
+    build_physical_table,
+    create_physical_table,
+    resolve_dataset_table_name,
+)
 
 
 def csv_bytes(rows: int = 3, offset: int = 0) -> bytes:
@@ -205,3 +210,48 @@ def test_postgres_copy_writer_uses_real_newline_record_terminators():
     )
     assert isinstance(line_terminator, ast.Constant)
     assert line_terminator.value == "\n"
+
+def test_physical_tables_use_readable_dataset_names_and_safe_collision_suffixes(db_session):
+    connection = db_session.connection()
+
+    first = resolve_dataset_table_name(
+        connection,
+        dataset_name="Retail Sales / 2026",
+        dataset_id="dataset-11111111",
+        version_number=1,
+        version_pk="version-aaaa1111",
+    )
+    assert first == "retail_sales_2026"
+    create_physical_table(connection, first, [("id", "integer")])
+
+    second = resolve_dataset_table_name(
+        connection,
+        dataset_name="Retail Sales / 2026",
+        dataset_id="dataset-22222222",
+        version_number=1,
+        version_pk="version-bbbb2222",
+    )
+    assert second == "retail_sales_2026_22222222"
+    create_physical_table(connection, second, [("id", "integer")])
+
+    first_version_two = resolve_dataset_table_name(
+        connection,
+        dataset_name="Retail Sales / 2026",
+        dataset_id="dataset-11111111",
+        version_number=2,
+        version_pk="version-cccc1111",
+    )
+    assert first_version_two == "retail_sales_2026_v2"
+    create_physical_table(connection, first_version_two, [("id", "integer")])
+
+    second_version_two = resolve_dataset_table_name(
+        connection,
+        dataset_name="Retail Sales / 2026",
+        dataset_id="dataset-22222222",
+        version_number=2,
+        version_pk="version-dddd2222",
+    )
+    assert second_version_two == "retail_sales_2026_22222222_v2"
+    assert all(len(name) <= 63 for name in (
+        first, second, first_version_two, second_version_two
+    ))
