@@ -18,9 +18,21 @@ class ManagedDatasetAccessWorkspace extends StatefulWidget {
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
 }
 
+class _ManagedDatasetRequestException implements Exception {
+  const _ManagedDatasetRequestException(this.statusCode, this.message);
+
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWorkspace> {
   bool loading = true, rowsLoading = false;
-  String? error, rowsError, search;
+  bool _hasLoadedCoreSnapshot = false;
+  String? error, rowsError, search, refreshError;
+  String? catalogError, requestsError;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
   List<Map<String,dynamic>> proposals = [];
@@ -39,10 +51,85 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<dynamic> _get(String path) async {
-    final r = await http.get(Uri.parse(insightFlowBackendBaseUrl + path), headers: await _headers()).timeout(const Duration(seconds: 45));
-    dynamic d; try { d = jsonDecode(r.body); } catch (_) {}
-    if (r.statusCode < 200 || r.statusCode >= 300) throw StateError(d is Map && d['detail'] != null ? d['detail'].toString() : 'Managed dataset request failed.');
-    return d;
+    final headers = await _headers();
+    const retryableStatuses = {429, 500, 502, 503, 504};
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final response = await http
+          .get(Uri.parse(insightFlowBackendBaseUrl + path), headers: headers)
+          .timeout(const Duration(seconds: 45));
+      if (retryableStatuses.contains(response.statusCode) && attempt < 2) {
+        final retryAfterSeconds =
+            int.tryParse(response.headers['retry-after'] ?? '');
+        final delayMs = retryAfterSeconds == null
+            ? 350 * (attempt + 1)
+            : (retryAfterSeconds * 1000).clamp(250, 2000).toInt();
+        await Future.delayed(Duration(milliseconds: delayMs));
+        continue;
+      }
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {}
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _ManagedDatasetRequestException(
+          response.statusCode,
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Managed dataset request failed.',
+        );
+      }
+      return decoded;
+    }
+    throw StateError('Managed dataset request failed after retrying.');
+  }
+
+  String _errorMessage(Object error) =>
+      error.toString().replaceFirst('Bad state: ', '');
+
+  bool _isTransientRefreshFailure(Object error) {
+    if (error is TimeoutException || error is http.ClientException) {
+      return true;
+    }
+    return error is _ManagedDatasetRequestException &&
+        const {429, 500, 502, 503, 504}.contains(error.statusCode);
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final result =
+          await _get('/v1/authz/management/data-access/catalog');
+      final items = ((result as Map?)?['datasets'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (mounted) {
+        setState(() {
+          catalog = items;
+          catalogError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => catalogError = _errorMessage(e));
+    }
+  }
+
+  Future<void> _loadCopyRequests() async {
+    try {
+      final result =
+          await _get('/v1/authz/management/data-access/requests');
+      final items = ((result as Map?)?['requests'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (mounted) {
+        setState(() {
+          requests = items;
+          requestsError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => requestsError = _errorMessage(e));
+    }
   }
 
   Future<dynamic> _post(String path, Map<String,dynamic> body) async {
@@ -56,11 +143,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   @override void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
-    setState(() { loading = true; error = null; });
+    final hadCoreSnapshot = _hasLoadedCoreSnapshot;
+    setState(() {
+      loading = !hadCoreSnapshot;
+      error = null;
+      refreshError = null;
+    });
     try {
-      // External Viewers do not call management-only endpoints. Their role
-      // and scope come from /authz/me, and dataset visibility from the
-      // resource-authorized managed-dataset endpoint.
+      // Dataset visibility and the role/member snapshot are the core view.
+      // Catalog and copy-request lists are loaded independently below so a
+      // transient failure in either optional panel cannot blank this screen.
       final values = widget.readOnly
           ? await Future.wait([
               _get('/v1/managed-datasets'),
@@ -69,26 +161,60 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           : await Future.wait([
               _get('/v1/managed-datasets'),
               _get('/v1/authz/management'),
-              _get('/v1/authz/management/data-access/catalog'),
-              _get('/v1/authz/management/data-access/requests'),
             ]);
-      final ds = ((values[0] as Map?)?['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-      final mg = values[1] is Map ? Map<String,dynamic>.from(values[1] as Map) : <String,dynamic>{};
-      final cat = !widget.readOnly && values[2] is Map ? Map<String,dynamic>.from(values[2] as Map) : <String,dynamic>{};
-      final rq = !widget.readOnly && values[3] is Map ? Map<String,dynamic>.from(values[3] as Map) : <String,dynamic>{};
+      final ds = ((values[0] as Map?)?['datasets'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final mg = values[1] is Map
+          ? Map<String, dynamic>.from(values[1] as Map)
+          : <String, dynamic>{};
       if (!mounted) return;
       setState(() {
         datasets = ds;
-        catalog = (cat['datasets'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-        requests = (rq['requests'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-        members = (mg['members'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-        roles = (mg['role_ids'] as List? ?? const []).map((e) => e.toString()).toList();
+        members = (mg['members'] as List? ?? const [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        roles = (mg['role_ids'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList();
         loading = false;
+        error = null;
+        refreshError = null;
+        _hasLoadedCoreSnapshot = true;
       });
+
+      if (!widget.readOnly) {
+        await Future.wait([_loadCatalog(), _loadCopyRequests()]);
+      }
       await _loadManagerUploadGrants();
       await _loadProposals();
     } catch (e) {
-      if (mounted) setState(() { loading = false; error = e.toString().replaceFirst('Bad state: ', ''); });
+      if (!mounted) return;
+      final keepLastSnapshot =
+          _hasLoadedCoreSnapshot && _isTransientRefreshFailure(e);
+      setState(() {
+        loading = false;
+        if (keepLastSnapshot) {
+          // Preserve the last successful screen during a temporary gateway,
+          // service or rate-limit failure. Authorization is still enforced by
+          // every server mutation/read endpoint.
+          refreshError = _errorMessage(e);
+          error = null;
+        } else {
+          // Never retain stale role/member information after an auth or scope
+          // failure; those values control which management actions are shown.
+          error = _errorMessage(e);
+          refreshError = null;
+          _hasLoadedCoreSnapshot = false;
+          datasets = [];
+          catalog = [];
+          members = [];
+          requests = [];
+          roles = [];
+        }
+      });
     }
   }
 
@@ -566,6 +692,18 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
     final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (refreshError != null) ...[
+        _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          const Icon(Icons.cloud_off_outlined, color: Color(0xFFFFB454), size: 18),
+          const SizedBox(width: 9),
+          const Expanded(child: Text(
+            'The latest refresh could not be completed. Showing the last successfully loaded data; retry to sync again.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4),
+          )),
+          _action('RETRY', Icons.refresh, _load, active: true),
+        ])),
+        const SizedBox(height: 10),
+      ],
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(width: 42, height: 42, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFF0D3854), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.shield_outlined, color: Color(0xFF43C8F3), size: 22)),
@@ -580,19 +718,19 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         LayoutBuilder(builder: (context, constraints) {
           final gap = 9.0, columns = constraints.maxWidth < 520 ? 2 : 4;
           final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-          Widget stat(String label, int value, IconData icon, Color accent) => Container(
+          Widget stat(String label, String value, IconData icon, Color accent) => Container(
             width: width, padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(color: const Color(0xFF061522), borderRadius: BorderRadius.circular(11), border: Border.all(color: accent.withValues(alpha: .35))),
             child: Row(children: [Icon(icon, color: accent, size: 18), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(value.toString(), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+              Text(value, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
               const SizedBox(height: 3), Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF9DBDDC), fontSize: 9)),
             ]))]),
           );
           return Wrap(spacing: gap, runSpacing: gap, children: [
-            stat('Managed datasets', datasets.length, Icons.dataset_outlined, const Color(0xFF00CFFF)),
-            stat('Catalog resources', catalog.length, Icons.storage_outlined, const Color(0xFF168BFF)),
-            stat('Access requests', requests.length, Icons.pending_actions_outlined, const Color(0xFFFFB454)),
-            stat('People in scope', members.length, Icons.groups_outlined, const Color(0xFF00D89A)),
+            stat('Managed datasets', datasets.length.toString(), Icons.dataset_outlined, const Color(0xFF00CFFF)),
+            stat('Catalog resources', catalogError == null ? catalog.length.toString() : '—', Icons.storage_outlined, const Color(0xFF168BFF)),
+            stat('Access requests', requestsError == null ? requests.length.toString() : '—', Icons.pending_actions_outlined, const Color(0xFFFFB454)),
+            stat('People in scope', members.length.toString(), Icons.groups_outlined, const Color(0xFF00D89A)),
           ]);
         }),
         const SizedBox(height: 14),
@@ -736,6 +874,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (roles.contains('manager') || roles.contains('team_lead')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
+      if (catalogError != null)
+        Row(children: [
+          const Expanded(child: Text('The branch catalog could not be loaded. Retry this section without reloading the dataset list.', style: TextStyle(color: TechColors.statusRed, fontSize: 10))),
+          _action('RETRY', Icons.refresh, _loadCatalog, active: true),
+        ])
+      else if (catalog.isEmpty)
+        const Text('No copyable datasets are available in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
       ...catalog.map((d) => Padding(
         padding: const EdgeInsets.only(bottom: 5),
         child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
@@ -754,7 +899,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (roles.contains('organization_owner') || roles.contains('branch_head')) ...[
       const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
-      if (requests.isEmpty) const Text('No copy authorization requests.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
+      if (requestsError != null)
+        Row(children: [
+          const Expanded(child: Text('Copy requests could not be loaded. Retry this section without hiding the dataset list.', style: TextStyle(color: TechColors.statusRed, fontSize: 10))),
+          _action('RETRY', Icons.refresh, _loadCopyRequests, active: true),
+        ])
+      else if (requests.isEmpty)
+        const Text('No copy authorization requests.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
       ...requests.map((r) => Padding(
         padding: const EdgeInsets.only(bottom: 5),
         child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
