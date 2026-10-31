@@ -110,6 +110,8 @@ void main() {
     expect(source, contains("child: const Text('CANCEL')"));
     expect(source, contains("child: const Text('REPLACE DATASET')"));
     expect(source, contains('groupValue: selectedId'));
+    expect(source, contains("datasetResult['content_unchanged'] == true"));
+    expect(source, contains('no duplicate data was uploaded'));
     // Dataset naming must not regress the existing authorized dataset actions.
     expect(source, contains('/profile?preview_limit=5'));
     expect(source, contains('Future<void> _select(Map<String,dynamic> d)'));
