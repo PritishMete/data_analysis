@@ -110,7 +110,7 @@ def test_branch_scoped_roles_only_receive_duplicate_matches_in_their_branch():
     from pathlib import Path
 
     source = Path("dataset_storage/service.py").read_text()
-    assert "organization_owner" not in set(context.get("role_ids", [])) in source or "duplicate_location_id" in source
+    assert 'if "organization_owner" not in set(context.get("role_ids", []))' in source
     assert "FROM dataset_authorization da" in source
     assert "da.location_id = :duplicate_location_id" in source
     assert "da.protected_original IS TRUE" in source
