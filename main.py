@@ -436,6 +436,7 @@ app.add_middleware(
         "Content-Type",
         "X-InsightFlow-Workspace-ID",
         "X-InsightFlow-Resource-ID",
+        "X-InsightFlow-Location-ID",
     ],
 )
 
