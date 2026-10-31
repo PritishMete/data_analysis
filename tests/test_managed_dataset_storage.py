@@ -114,3 +114,22 @@ def test_branch_scoped_roles_only_receive_duplicate_matches_in_their_branch():
     assert "FROM dataset_authorization da" in source
     assert "da.location_id = :duplicate_location_id" in source
     assert "da.protected_original IS TRUE" in source
+
+
+
+def test_existing_dataset_version_requires_explicit_identical_content_confirmation():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    assert "DatasetVersion.dataset_id == dataset_id" in source
+    assert "matching_version is not None and not confirm_duplicate" in source
+    assert '"reasons": ["content"]' in source
+
+    from dataset_storage.routes import router
+    import inspect
+
+    version_route = next(
+        item for item in router.routes
+        if item.path == "/v1/managed-datasets/{dataset_id}/versions"
+    )
+    assert "confirm_duplicate" in inspect.signature(version_route.endpoint).parameters
