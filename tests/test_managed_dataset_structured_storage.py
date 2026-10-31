@@ -255,3 +255,22 @@ def test_physical_tables_use_readable_dataset_names_and_safe_collision_suffixes(
     assert all(len(name) <= 63 for name in (
         first, second, first_version_two, second_version_two
     ))
+
+def test_user_dataset_name_is_saved_and_used_for_physical_table(db_session):
+    service = DatasetRegistryService(DatasetRepository(db_session))
+    result = service.register_csv_stream(
+        file_obj=BytesIO(csv_bytes(3)),
+        filename="original_export.csv",
+        organization_id="org_1",
+        dataset_name="Retail Sales 2026",
+        uploaded_by="principal_1",
+        content_type="text/csv",
+        max_bytes=20 * 1024 * 1024,
+        chunk_rows=2,
+    )
+
+    dataset = result.registration.dataset
+    assert dataset.dataset_name == "Retail Sales 2026"
+    assert dataset.original_filename == "original_export.csv"
+    assert result.version.original_filename == "original_export.csv"
+    assert result.version.data_table_name == "retail_sales_2026"
