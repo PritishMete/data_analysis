@@ -133,3 +133,30 @@ def test_existing_dataset_version_requires_explicit_identical_content_confirmati
         if item.path == "/v1/managed-datasets/{dataset_id}/versions"
     )
     assert "confirm_duplicate" in inspect.signature(version_route.endpoint).parameters
+
+
+
+def test_duplicate_preflight_rejects_invalid_hash_without_uploading_file():
+    with pytest.raises(ValueError, match="SHA-256"):
+        service.check_managed_dataset_duplicates(
+            workspace_id="workspace",
+            token="unused",
+            file_sha256="not-a-sha256-hash",
+            dataset_name="Monthly sales",
+        )
+
+
+def test_duplicate_preflight_route_is_registered():
+    from dataset_storage.routes import router
+    import inspect
+
+    route = next(
+        item for item in router.routes
+        if item.path == "/v1/managed-datasets/duplicate-check"
+        and "POST" in item.methods
+    )
+    parameters = inspect.signature(route.endpoint).parameters
+    assert "body" in parameters
+    assert "authorization" in parameters
+    assert "workspace_id" in parameters
+    assert "location_id" in parameters
