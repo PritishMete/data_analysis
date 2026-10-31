@@ -772,6 +772,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     );
   }
 
+  Future<dynamic> _loadUploadScopeSafely() async {
+    try {
+      return await _get('/v1/managed-datasets/upload-scope');
+    } catch (error) {
+      // The name prompt may be cancelled while this request is running.
+      // Return failures as values so an abandoned prefetch is not unhandled.
+      return error;
+    }
+  }
+
   Future<void> _upload({String? datasetId}) async {
     try {
       // Keep the native/browser file picker immediate; ask for the dataset
@@ -788,7 +798,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       // Resolve the branch list while the user is naming the CSV so the
       // network lookup does not add another wait before duplicate checking.
       final uploadScopeFuture = datasetId == null
-          ? _get('/v1/managed-datasets/upload-scope')
+          ? _loadUploadScopeSafely()
           : null;
       String? datasetName;
       if (datasetId == null) {
@@ -801,7 +811,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
       String? uploadLocationId;
       if (datasetId == null) {
-        final scope = await uploadScopeFuture!;
+        final scopeResult = await uploadScopeFuture!;
+        if (scopeResult is Exception) throw scopeResult;
+        if (scopeResult is Error) throw scopeResult;
+        final scope = scopeResult;
         final locations = ((scope as Map?)?['locations'] as List? ?? const [])
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
