@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -143,11 +144,28 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
-  Future<dynamic> _post(String path, Map<String,dynamic> body) async {
-    final h = await _headers(); h['Content-Type'] = 'application/json';
-    final r = await http.post(Uri.parse(insightFlowBackendBaseUrl + path), headers: h, body: jsonEncode(body)).timeout(const Duration(seconds: 45));
-    dynamic d; try { d = jsonDecode(r.body); } catch (_) {}
-    if (r.statusCode < 200 || r.statusCode >= 300) throw StateError(d is Map && d['detail'] != null ? d['detail'].toString() : 'Authorization change was rejected.');
+  Future<dynamic> _post(
+    String path,
+    Map<String,dynamic> body, {
+    Map<String,String>? extraHeaders,
+  }) async {
+    final h = await _headers();
+    h['Content-Type'] = 'application/json';
+    if (extraHeaders != null) h.addAll(extraHeaders);
+    final r = await http.post(
+      Uri.parse(insightFlowBackendBaseUrl + path),
+      headers: h,
+      body: jsonEncode(body),
+    ).timeout(const Duration(seconds: 15));
+    dynamic d;
+    try { d = jsonDecode(r.body); } catch (_) {}
+    if (r.statusCode < 200 || r.statusCode >= 300) {
+      throw StateError(
+        d is Map && d['detail'] != null
+            ? d['detail'].toString()
+            : 'Authorization change was rejected.',
+      );
+    }
     return d;
   }
 
@@ -833,6 +851,40 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           ? '/v1/managed-datasets'
           : '/v1/managed-datasets/' + Uri.encodeComponent(datasetId) + '/versions';
 
+      // Hash locally and ask the backend about duplicates BEFORE sending
+      // the CSV bytes. This is the fast path that makes the alert appear
+      // without waiting for a potentially large multipart upload.
+      final fileSha256 = sha256.convert(file.bytes!).toString();
+      final preflightBody = <String, dynamic>{
+        'file_sha256': fileSha256,
+        if (datasetName != null) 'dataset_name': datasetName,
+        if (datasetId != null) 'dataset_id': datasetId,
+      };
+      final preflight = await _post(
+        '/v1/managed-datasets/duplicate-check',
+        preflightBody,
+        extraHeaders: uploadLocationId == null
+            ? null
+            : {'X-InsightFlow-Location-ID': uploadLocationId},
+      );
+      final conflicts = (preflight is Map && preflight['conflicts'] is List)
+          ? preflight['conflicts'] as List
+          : const <dynamic>[];
+      String? preflightReplaceId;
+      var preflightConfirmDuplicate = false;
+      if (conflicts.isNotEmpty) {
+        final selectedConflictId = await _confirmDatasetReplacement(conflicts);
+        if (selectedConflictId == null || !mounted) return;
+        if (datasetId == null) {
+          preflightReplaceId = selectedConflictId;
+        } else {
+          if (selectedConflictId != datasetId) {
+            throw StateError('The duplicate confirmation did not match the selected dataset.');
+          }
+          preflightConfirmDuplicate = true;
+        }
+      }
+
       Future<http.StreamedResponse> sendUpload({String? replaceId, bool confirmDuplicate = false}) async {
         final request = http.MultipartRequest(
           'POST',
@@ -853,7 +905,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return request.send().timeout(const Duration(minutes: 5));
       }
 
-      var response = await sendUpload();
+      var response = await sendUpload(
+        replaceId: preflightReplaceId,
+        confirmDuplicate: preflightConfirmDuplicate,
+      );
+      // Keep the upload endpoint's 409 handling as a race-condition fallback:
+      // another user may upload the same file after preflight but before us.
       if (response.statusCode == 409) {
         final body = await response.stream.bytesToString();
         dynamic decoded;
