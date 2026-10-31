@@ -28,3 +28,13 @@ def test_managed_dataset_profile_route_exists():
     routes = (root / "dataset_storage" / "routes.py").read_text(encoding="utf-8")
     assert '/{dataset_id}/profile' in routes
     assert 'X-InsightFlow-Workspace-ID' in routes
+
+def test_managed_dataset_upload_accepts_a_user_defined_dataset_name():
+    from dataset_storage.routes import router as dataset_storage_router
+
+    upload_route = next(
+        route for route in dataset_storage_router.routes
+        if route.path == "/v1/managed-datasets" and "POST" in route.methods
+    )
+    body_fields = {parameter.name for parameter in upload_route.dependant.body_params}
+    assert "dataset_name" in body_fields
