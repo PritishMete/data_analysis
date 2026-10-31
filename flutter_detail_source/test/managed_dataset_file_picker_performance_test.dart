@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Import CSV opens the file picker before resolving remote upload scope', () {
+  test('Import CSV starts branch lookup while the user names the file', () {
     final source = File(
       'lib/features/auth/managed_dataset_access_workspace.dart',
     ).readAsStringSync();
@@ -16,12 +16,16 @@ void main() {
     final upload = source.substring(uploadStart, uploadEnd);
     final pickerIndex = upload.indexOf('FilePicker.platform.pickFiles');
     final namePromptIndex = upload.indexOf('_promptDatasetName(suggestedName)');
-    final scopeIndex = upload.indexOf("_get('/v1/managed-datasets/upload-scope')");
+    final scopeStartIndex = upload.indexOf('final uploadScopeFuture = datasetId == null');
+    final scopeAwaitIndex = upload.indexOf('await uploadScopeFuture!');
     final managerGrantIndex = upload.indexOf('_managerHasUploadGrantFor(selected)');
 
     expect(pickerIndex, greaterThanOrEqualTo(0));
     expect(namePromptIndex, greaterThan(pickerIndex));
-    expect(scopeIndex, greaterThan(namePromptIndex));
+    expect(scopeStartIndex, greaterThan(pickerIndex));
+    expect(scopeStartIndex, lessThan(namePromptIndex));
+    expect(scopeAwaitIndex, greaterThan(namePromptIndex));
+    expect(upload, contains("'/v1/managed-datasets/duplicate-check'"));
     // Keep the existing exact-branch Manager grant check after selection.
     expect(managerGrantIndex, greaterThan(pickerIndex));
     expect(upload, contains("allowedExtensions: const ['csv']"));
