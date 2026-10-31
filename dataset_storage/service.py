@@ -60,6 +60,19 @@ def _safe_filename(filename: str) -> str:
     return name
 
 
+def _safe_dataset_name(dataset_name: str | None, filename: str) -> str:
+    name = str(dataset_name or "").strip()
+    if not name:
+        name = os.path.splitext(filename)[0].strip()
+    if (
+        not name
+        or len(name) > 255
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+    ):
+        raise ValueError("Dataset name must be between 1 and 255 printable characters.")
+    return name
+
+
 def _claims(token: str) -> dict[str, Any]:
     return require_email_verified(verify_id_token(token))
 
@@ -760,6 +773,7 @@ def upload_managed_dataset_stream(
     filename: str,
     stream: BinaryIO,
     content_type: str | None,
+    dataset_name: str | None = None,
     provider: SupabaseDatasetStorageProvider | None = None,
     dataset_id: str | None = None,
     location_id: str | None = None,
@@ -777,6 +791,7 @@ def upload_managed_dataset_stream(
         context = _authorize_upload(claims, workspace_id, location_id=location_id)
 
     safe_name = _safe_filename(filename)
+    safe_dataset_name = _safe_dataset_name(dataset_name, safe_name)
     organization_id = str(context["organization_id"])
     from core.db import SessionLocal
     repo = DatasetRepository(SessionLocal())
@@ -796,7 +811,10 @@ def upload_managed_dataset_stream(
             file_obj=stream,
             filename=safe_name,
             organization_id=organization_id,
-            dataset_name=safe_name,
+            dataset_name=(
+                safe_dataset_name if dataset_id is None
+                else str(current_dataset.dataset_name or safe_dataset_name)
+            ),
             uploaded_by=str(context.get("principal_id") or claims["uid"]),
             existing_dataset_id=dataset_id,
             content_type=content_type or "text/csv",
