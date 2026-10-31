@@ -18,6 +18,7 @@ from .service import (
     get_working_copy_profile,
     list_authorized_datasets,
     upload_managed_dataset_stream,
+    DatasetUploadConflict,
 )
 from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
 from .manager_grants import (
@@ -95,6 +96,8 @@ def _map_error(exc: Exception) -> HTTPException:
         return HTTPException(403, str(exc))
     if isinstance(exc, FileNotFoundError):
         return HTTPException(404, str(exc))
+    if isinstance(exc, DatasetUploadConflict):
+        return HTTPException(409, detail={"code": "dataset_duplicate", "conflicts": exc.conflicts})
     if isinstance(exc, ValueError):
         return HTTPException(400, str(exc))
     return HTTPException(500, "Managed dataset operation failed.")
@@ -359,6 +362,7 @@ def managed_dataset_rows(
 async def managed_dataset_upload(
     file: UploadFile = File(...),
     dataset_name: str | None = Form(default=None, max_length=255),
+    replace_dataset_id: str | None = Form(default=None),
     authorization: str = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
     location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
@@ -371,6 +375,7 @@ async def managed_dataset_upload(
             stream=file.file,
             content_type=file.content_type,
             dataset_name=dataset_name,
+            replace_dataset_id=replace_dataset_id,
             location_id=location_id,
         )
         return {"success": True, "dataset": result}
