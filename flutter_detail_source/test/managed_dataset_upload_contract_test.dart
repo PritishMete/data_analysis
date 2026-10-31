@@ -102,6 +102,13 @@ void main() {
     final upload = source.substring(uploadStart, uploadEnd);
     expect(upload, contains('if (datasetId == null)'));
     expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
+    expect(source, contains("import 'package:crypto/crypto.dart';"));
+    expect(source, contains('sha256.convert(file.bytes!).toString()'));
+    expect(source, contains("'/v1/managed-datasets/duplicate-check'"));
+    final preflightIndex = source.indexOf("'/v1/managed-datasets/duplicate-check'");
+    final uploadIndex = source.indexOf('var response = await sendUpload(', preflightIndex);
+    expect(preflightIndex, greaterThanOrEqualTo(0));
+    expect(uploadIndex, greaterThan(preflightIndex));
     expect(source, contains('Future<String?> _confirmDatasetReplacement(List conflicts)'));
     expect(source, contains("request.fields['replace_dataset_id'] = replaceId"));
     expect(source, contains("request.fields['confirm_duplicate'] = 'true'"));
