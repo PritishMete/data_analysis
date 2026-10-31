@@ -775,6 +775,156 @@ def _lock_active_upload_assignment(
 
 
 
+
+def _find_managed_dataset_upload_conflicts(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    context: dict[str, Any],
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Look up duplicate names/content without receiving the CSV bytes."""
+    duplicate_scope = None
+    duplicate_scope_params: dict[str, Any] = {}
+    if "organization_owner" not in set(context.get("role_ids", [])):
+        # Branch-scoped roles must not learn dataset names or hashes
+        # from another branch in the same organization.
+        duplicate_scope = text("""
+            EXISTS (
+                SELECT 1
+                FROM dataset_authorization da
+                WHERE da.organization_id = :duplicate_org_id
+                  AND da.dataset_id = datasets.dataset_id
+                  AND da.location_id = :duplicate_location_id
+                  AND da.status = 'active'
+                  AND da.protected_original IS TRUE
+            )
+        """)
+        duplicate_scope_params = {
+            "duplicate_org_id": organization_id,
+            "duplicate_location_id": str(context.get("location_id") or ""),
+        }
+
+    if dataset_id is not None:
+        current_dataset = repo.get_by_id(dataset_id)
+        if current_dataset is None or current_dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        query = select(DatasetVersion).where(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.file_hash == file_sha256,
+            DatasetVersion.status == "ready",
+        ).order_by(DatasetVersion.version_number.desc())
+        matching_version = repo.db.execute(query).scalars().first()
+        if matching_version is None:
+            return []
+        return [{
+            "dataset_id": current_dataset.dataset_id,
+            "dataset_name": current_dataset.dataset_name,
+            "original_filename": current_dataset.original_filename,
+            "reasons": ["content"],
+        }]
+
+    safe_name = _safe_dataset_name(dataset_name, "upload.csv") if dataset_name is not None else None
+    name_query = select(Dataset).where(
+        Dataset.organization_id == organization_id,
+        Dataset.status.notin_(("deleted", "failed")),
+    )
+    if safe_name is not None:
+        name_query = name_query.where(
+            func.lower(func.trim(Dataset.dataset_name)) == safe_name.casefold()
+        )
+
+    file_query = (
+        select(Dataset)
+        .outerjoin(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
+        .where(
+            Dataset.organization_id == organization_id,
+            Dataset.status.notin_(("deleted", "failed")),
+            or_(
+                Dataset.file_hash == file_sha256,
+                and_(
+                    DatasetVersion.file_hash == file_sha256,
+                    DatasetVersion.status == "ready",
+                ),
+            ),
+        )
+    )
+    if duplicate_scope is not None:
+        name_query = name_query.where(duplicate_scope).params(**duplicate_scope_params)
+        file_query = file_query.where(duplicate_scope).params(**duplicate_scope_params)
+
+    conflicts_by_id: dict[str, dict[str, Any]] = {}
+    candidates = []
+    if safe_name is not None:
+        candidates.append((
+            repo.db.execute(name_query.order_by(Dataset.created_at.desc())).scalars().first(),
+            "name",
+        ))
+    candidates.append((
+        repo.db.execute(file_query.order_by(Dataset.created_at.desc())).scalars().first(),
+        "content",
+    ))
+    for candidate, reason in candidates:
+        if candidate is None or candidate.status in {"deleted", "failed"}:
+            continue
+        conflict = conflicts_by_id.setdefault(candidate.dataset_id, {
+            "dataset_id": candidate.dataset_id,
+            "dataset_name": candidate.dataset_name,
+            "original_filename": candidate.original_filename,
+            "reasons": [],
+        })
+        if reason not in conflict["reasons"]:
+            conflict["reasons"].append(reason)
+    return list(conflicts_by_id.values())
+
+
+def check_managed_dataset_duplicates(
+    *,
+    workspace_id: str,
+    token: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+    location_id: str | None = None,
+) -> dict[str, Any]:
+    """Fast duplicate preflight. Only metadata and a client-computed hash cross the network."""
+    normalized_hash = str(file_sha256 or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized_hash) is None:
+        raise ValueError("A valid SHA-256 file hash is required.")
+
+    claims = _claims(token)
+    if dataset_id is not None:
+        dataset_scope = _authorize_dataset(
+            claims, workspace_id, dataset_id, "dataset.upload"
+        )
+        context = _authorize_upload(
+            claims, workspace_id,
+            location_id=str(dataset_scope.get("location_id") or ""),
+        )
+    else:
+        if dataset_name is None:
+            raise ValueError("Dataset name is required for duplicate checking.")
+        context = _authorize_upload(claims, workspace_id, location_id=location_id)
+
+    organization_id = str(context["organization_id"])
+    from core.db import SessionLocal
+    repo = DatasetRepository(SessionLocal())
+    try:
+        conflicts = _find_managed_dataset_upload_conflicts(
+            repo,
+            organization_id=organization_id,
+            context=context,
+            file_sha256=normalized_hash,
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+        )
+        return {"conflicts": conflicts}
+    finally:
+        repo.db.close()
+
+
 def upload_managed_dataset_stream(
     *,
     workspace_id: str,
@@ -819,77 +969,21 @@ def upload_managed_dataset_stream(
     base_version_id = None
     try:
         if requested_new_dataset:
-            # Detect both duplicate display names and byte-identical CSV uploads
-            # before creating any rows or physical tables. The client must
-            # explicitly confirm which existing dataset to replace.
+            # The client performs a fast preflight before sending the CSV.
+            # Recheck the hash here to close races and never trust the browser.
             incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
             stream.seek(0)
-            duplicate_scope = None
-            duplicate_scope_params = {}
-            if "organization_owner" not in set(context.get("role_ids", [])):
-                # Branch-scoped roles must not learn dataset names or hashes
-                # from another branch in the same organization.
-                duplicate_scope = text("""
-                    EXISTS (
-                        SELECT 1
-                        FROM dataset_authorization da
-                        WHERE da.organization_id = :duplicate_org_id
-                          AND da.dataset_id = datasets.dataset_id
-                          AND da.location_id = :duplicate_location_id
-                          AND da.status = 'active'
-                          AND da.protected_original IS TRUE
-                    )
-                """)
-                duplicate_scope_params = {
-                    "duplicate_org_id": organization_id,
-                    "duplicate_location_id": str(context.get("location_id") or ""),
-                }
-
-            name_query = select(Dataset).where(
-                Dataset.organization_id == organization_id,
-                func.lower(func.trim(Dataset.dataset_name)) == safe_dataset_name.casefold(),
-                Dataset.status.notin_(("deleted", "failed")),
+            conflicts = _find_managed_dataset_upload_conflicts(
+                repo,
+                organization_id=organization_id,
+                context=context,
+                file_sha256=incoming_hash,
+                dataset_name=safe_dataset_name,
             )
-            file_query = (
-                select(Dataset)
-                .outerjoin(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
-                .where(
-                    Dataset.organization_id == organization_id,
-                    Dataset.status.notin_(("deleted", "failed")),
-                    or_(
-                        Dataset.file_hash == incoming_hash,
-                        and_(
-                            DatasetVersion.file_hash == incoming_hash,
-                            DatasetVersion.status == "ready",
-                        ),
-                    ),
-                )
-            )
-            if duplicate_scope is not None:
-                name_query = name_query.where(duplicate_scope).params(**duplicate_scope_params)
-                file_query = file_query.where(duplicate_scope).params(**duplicate_scope_params)
-            same_name = repo.db.execute(
-                name_query.order_by(Dataset.created_at.desc())
-            ).scalars().first()
-            same_file = repo.db.execute(
-                file_query.order_by(Dataset.created_at.desc())
-            ).scalars().first()
-            conflicts_by_id: dict[str, dict[str, Any]] = {}
-            for candidate, reason in ((same_name, "name"), (same_file, "content")):
-                if candidate is None or candidate.status in {"deleted", "failed"}:
-                    continue
-                conflict = conflicts_by_id.setdefault(candidate.dataset_id, {
-                    "dataset_id": candidate.dataset_id,
-                    "dataset_name": candidate.dataset_name,
-                    "original_filename": candidate.original_filename,
-                    "reasons": [],
-                })
-                if reason not in conflict["reasons"]:
-                    conflict["reasons"].append(reason)
-            conflicts = list(conflicts_by_id.values())
+            conflict_ids = {item["dataset_id"] for item in conflicts}
             if replace_dataset_id is None and conflicts:
                 raise DatasetUploadConflict(conflicts)
-            if replace_dataset_id is not None and replace_dataset_id not in conflicts_by_id:
+            if replace_dataset_id is not None and replace_dataset_id not in conflict_ids:
                 raise ValueError("The selected replacement dataset no longer matches this upload.")
         if dataset_id is not None:
             current_dataset = repo.get_by_id(dataset_id)
