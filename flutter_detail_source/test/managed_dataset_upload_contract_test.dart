@@ -87,4 +87,21 @@ void main() {
     expect(source, contains('requests = [];'));
   });
 
+  test('new managed dataset uploads persist the name entered by the user', () {
+    final source = File(
+      'lib/features/auth/managed_dataset_access_workspace.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('Future<String?> _promptDatasetName'));
+    expect(source, contains("request.fields['dataset_name'] = datasetName"));
+    expect(source, contains("d['display_name']?.toString() ?? d['dataset_name']"));
+    final uploadStart = source.indexOf('Future<void> _upload({String? datasetId})');
+    final uploadEnd = source.indexOf('Future<void> _deleteDataset()', uploadStart);
+    expect(uploadStart, greaterThanOrEqualTo(0));
+    expect(uploadEnd, greaterThan(uploadStart));
+    final upload = source.substring(uploadStart, uploadEnd);
+    expect(upload, contains('if (datasetId == null)'));
+    expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
+  });
+
 }
