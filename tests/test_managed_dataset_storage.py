@@ -49,6 +49,6 @@ def test_dataset_display_name_is_validated_and_defaults_to_filename():
     with pytest.raises(ValueError, match="Dataset name"):
         service._safe_dataset_name("   ", "retail_sales.csv")
     with pytest.raises(ValueError, match="Dataset name"):
-        service._safe_dataset_name("bad\\nname", "retail_sales.csv")
+        service._safe_dataset_name("bad\nname", "retail_sales.csv")
     with pytest.raises(ValueError, match="Dataset name"):
         service._safe_dataset_name("x" * 256, "retail_sales.csv")
