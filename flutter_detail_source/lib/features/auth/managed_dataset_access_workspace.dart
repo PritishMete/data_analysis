@@ -677,6 +677,51 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
+  Future<String?> _confirmDatasetReplacement(List conflicts) async {
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF0B1725),
+        title: const Text('Existing dataset found', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 390,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'A dataset with the same name or identical CSV content already exists. Choose the dataset to replace. Cancel keeps all existing data unchanged.',
+                style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4),
+              ),
+              const SizedBox(height: 10),
+              ...conflicts.whereType<Map>().map((raw) {
+                final item = Map<String, dynamic>.from(raw);
+                final reason = item['reason']?.toString() == 'content'
+                    ? 'Exact same CSV content'
+                    : 'Dataset name already exists';
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFFB454)),
+                  title: Text(item['dataset_name']?.toString() ?? 'Existing dataset',
+                      style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  subtitle: Text(reason,
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
+                  onTap: () => Navigator.of(dialogContext).pop(item['dataset_id']?.toString()),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('CANCEL'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _upload({String? datasetId}) async {
     try {
       // Keep the native/browser file picker immediate; ask for the dataset
@@ -758,31 +803,44 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final path = datasetId == null
           ? '/v1/managed-datasets'
           : '/v1/managed-datasets/' + Uri.encodeComponent(datasetId) + '/versions';
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse(insightFlowBackendBaseUrl + path),
-      );
-      request.headers.addAll(await _headers());
-      if (uploadLocationId != null) {
-        request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
-      }
-      if (datasetName != null) {
-        request.fields['dataset_name'] = datasetName;
-      }
-      request.files.add(
-        http.MultipartFile.fromBytes(
+
+      Future<http.StreamedResponse> sendUpload({String? replaceId}) async {
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse(insightFlowBackendBaseUrl + path),
+        );
+        request.headers.addAll(await _headers());
+        if (uploadLocationId != null) {
+          request.headers['X-InsightFlow-Location-ID'] = uploadLocationId;
+        }
+        if (datasetName != null) request.fields['dataset_name'] = datasetName;
+        if (replaceId != null) request.fields['replace_dataset_id'] = replaceId;
+        request.files.add(http.MultipartFile.fromBytes(
           'file',
           file.bytes!,
           filename: file.name,
-        ),
-      );
-      final response = await request.send().timeout(const Duration(minutes: 5));
+        ));
+        return request.send().timeout(const Duration(minutes: 5));
+      }
+
+      var response = await sendUpload();
+      if (response.statusCode == 409 && datasetId == null) {
+        final body = await response.stream.bytesToString();
+        dynamic decoded;
+        try { decoded = jsonDecode(body); } catch (_) {}
+        final detail = decoded is Map ? decoded['detail'] : null;
+        final conflicts = detail is Map && detail['conflicts'] is List
+            ? detail['conflicts'] as List
+            : const [];
+        if (conflicts.isEmpty) throw StateError('A duplicate dataset was found, but its details could not be loaded.');
+        final replaceId = await _confirmDatasetReplacement(conflicts);
+        if (replaceId == null || !mounted) return;
+        response = await sendUpload(replaceId: replaceId);
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final body = await response.stream.bytesToString();
         dynamic decoded;
-        try {
-          decoded = jsonDecode(body);
-        } catch (_) {}
+        try { decoded = jsonDecode(body); } catch (_) {}
         throw StateError(
           decoded is Map && decoded['detail'] != null
               ? decoded['detail'].toString()
