@@ -897,10 +897,13 @@ def upload_managed_dataset_stream(
                 metadata={"version_id": registration.version.version_id,
                           "dataset_name": duplicate_dataset.dataset_name},
             )
-            return _structured_summary(
-                duplicate_dataset,
-                len(repo.list_versions(duplicate_dataset.dataset_id)),
-            )
+            return {
+                **_structured_summary(
+                    duplicate_dataset,
+                    len(repo.list_versions(duplicate_dataset.dataset_id)),
+                ),
+                "content_unchanged": True,
+            }
 
         if new_dataset:
             _register_authorization(
