@@ -491,6 +491,124 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
+  Future<void> _decideProposal(String proposalId, bool approve) async {
+    final controller = TextEditingController();
+    final note = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF0B1725),
+      title: Text(approve ? 'Approve dataset proposal?' : 'Reject dataset proposal?', style: const TextStyle(color: Colors.white)),
+      content: TextField(controller: controller, maxLength: 1000, maxLines: 3,
+        style: const TextStyle(color: Colors.white),
+        decoration: const InputDecoration(labelText: 'Decision note (optional)', labelStyle: TextStyle(color: Color(0xFF9DBDDC)))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(approve ? 'APPROVE' : 'REJECT'))],
+    ));
+    controller.dispose();
+    if (note == null) return;
+    try {
+      await _post('/v1/managed-datasets/proposals/' + Uri.encodeComponent(proposalId) + '/decision', {'approve': approve, 'decision_note': note});
+      _snack(approve ? 'Proposal approved and published.' : 'Proposal rejected.');
+      await _loadProposals();
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _select(Map<String,dynamic> d) async {
+    final id = d['dataset_id']?.toString();
+    if (id == null) return;
+    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewOriginal; rowsError = null; });
+    if (!canViewOriginal) return;
+    try {
+      final p = await _get('/v1/managed-datasets/' + id + '/profile?preview_limit=5');
+      profile = p is Map ? Map<String,dynamic>.from(p) : <String,dynamic>{};
+      await _loadRows();
+    } catch (e) {
+      if (mounted) setState(() { rowsLoading = false; rowsError = e.toString().replaceFirst('Bad state: ', ''); });
+    }
+  }
+
+  Future<void> _loadRows() async {
+    final id = selected?['dataset_id']?.toString();
+    if (id == null) return;
+    setState(() { rowsLoading = true; rowsError = null; });
+    try {
+      final v = profile?['version_id']?.toString();
+      final q = 'limit=' + pageSize.toString() + '&offset=' + offset.toString() +
+          ((v == null || v.isEmpty) ? '' : '&version_id=' + Uri.encodeQueryComponent(v));
+      final d = await _get('/v1/managed-datasets/' + id + '/rows?' + q);
+      final loaded = ((d as Map?)?['rows'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
+      if (mounted) setState(() { rows = loaded; rowsLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() { rowsLoading = false; rowsError = e.toString().replaceFirst('Bad state: ', ''); });
+    }
+  }
+
+  Future<void> _requestCopy(String datasetId) async {
+    try {
+      await _post('/v1/authz/management/data-access/requests?dataset_id=' + Uri.encodeQueryComponent(datasetId), {});
+      _snack('Copy request submitted to the Branch Head.');
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _decideRequest(String requestId, bool approve) async {
+    try {
+      await _post('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString(), {});
+      _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
+      await _load();
+    } catch (e) { _snack(e); }
+  }
+
+  Future<void> _grant(String uid, List<String> permissions) async {
+    final id = selected?['dataset_id']?.toString();
+    if (id == null) return;
+    try {
+      await _post('/v1/authz/datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': id, 'target_uid': uid, 'permissions': permissions});
+      _snack(permissions.isEmpty ? 'Dataset access revoked.' : 'Dataset access updated.');
+    } catch (e) { _snack(e); }
+  }
+
+  // Backend authorization remains the source of truth; download surfaces its safe HTTP detail.
+  Future<void> _download() async {
+    final id = selected?['dataset_id']?.toString();
+    if (id == null) return;
+    try {
+      final v = profile?['version_id']?.toString();
+      var path = '/v1/managed-datasets/' + id + '/download';
+      if (v != null && v.isNotEmpty) path += '?version_id=' + Uri.encodeQueryComponent(v);
+      final r = await http.get(Uri.parse(insightFlowBackendBaseUrl + path), headers: await _headers()).timeout(const Duration(minutes: 2));
+      if (r.statusCode != 200) {
+        dynamic decoded;
+        try { decoded = jsonDecode(r.body); } catch (_) {}
+        late final String detail;
+        if (decoded is Map && decoded['detail'] != null) {
+          detail = decoded['detail'].toString();
+        } else {
+          switch (r.statusCode) {
+            case 401:
+              detail = 'Authentication required.';
+              break;
+            case 403:
+              detail = 'Permission denied for this resource.';
+              break;
+            case 404:
+              detail = 'Dataset version not found.';
+              break;
+            case 409:
+              detail = 'Workspace context conflict.';
+              break;
+            default:
+              detail = 'Managed dataset operation failed.';
+              break;
+          }
+        }
+        throw StateError(detail);
+      }
+      var filename = _name(selected!);
+      if (!filename.toLowerCase().endsWith('.csv')) filename += '.csv';
+      await FilePicker.platform.saveFile(dialogTitle: 'Save managed dataset', fileName: filename, bytes: r.bodyBytes);
+    } catch (e) { _snack(e); }
+  }
+
   Future<String?> _promptDatasetName(String suggestedName) async {
     final controller = TextEditingController(text: suggestedName);
     try {
