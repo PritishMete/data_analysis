@@ -789,6 +789,7 @@ def upload_managed_dataset_stream(
     location_id: str | None = None,
 ) -> dict[str, Any]:
     claims = _claims(token)
+    requested_new_dataset = dataset_id is None
     if replace_dataset_id is not None:
         if dataset_id is not None and dataset_id != replace_dataset_id:
             raise ValueError("Only one replacement dataset may be selected.")
@@ -816,7 +817,7 @@ def upload_managed_dataset_stream(
     provider = provider or SupabaseDatasetStorageProvider()
     base_version_id = None
     try:
-        if new_dataset:
+        if requested_new_dataset:
             # Detect both duplicate display names and byte-identical CSV uploads
             # before creating any rows or physical tables. The client must
             # explicitly confirm which existing dataset to replace.
