@@ -205,7 +205,7 @@ def test_stale_recovery_cleans_orphaned_proposal_candidates_but_never_publishes_
 def test_csv_validation_accepts_large_text_fields_within_upload_limit():
     import io
 
-    payload = b"id,description\\n1," + (b"x" * 200_000) + b"\\n"
+    payload = b"id,description\n1," + (b"x" * 200_000) + b"\n"
     columns = service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
     assert columns == ["id", "description"]
 
@@ -213,7 +213,7 @@ def test_csv_validation_accepts_large_text_fields_within_upload_limit():
 def test_csv_validation_rejects_malformed_quoting():
     import io
 
-    payload = b'id,description\\n1,"unterminated\\n'
+    payload = b'id,description\n1,"unterminated\n'
     with pytest.raises(ValueError, match="could not be parsed safely"):
         service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
 
@@ -221,6 +221,6 @@ def test_csv_validation_rejects_malformed_quoting():
 def test_csv_validation_rejects_inconsistent_row_width():
     import io
 
-    payload = b"id,name\\n1,valid\\n2,extra,column\\n"
+    payload = b"id,name\n1,valid\n2,extra,column\n"
     with pytest.raises(ValueError, match="row 3 has 3 fields; expected 2"):
         service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
