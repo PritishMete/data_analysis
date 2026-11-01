@@ -699,6 +699,40 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<String?> _confirmDatasetReplacement(List conflicts) async {
+    final hasCrossBranchConflict = conflicts.whereType<Map>().any((raw) {
+      final reasons = raw['reasons'] is List
+          ? (raw['reasons'] as List).map((value) => value.toString()).toSet()
+          : <String>{};
+      return raw['code'] == 'content_outside_branch' ||
+          reasons.contains('content_outside_branch');
+    });
+    final visibleConflictIds = <String>{
+      for (final raw in conflicts.whereType<Map>())
+        if ((raw['dataset_id']?.toString() ?? '').trim().isNotEmpty)
+          raw['dataset_id'].toString(),
+    };
+    if (hasCrossBranchConflict || visibleConflictIds.length != 1) {
+      final message = hasCrossBranchConflict
+          ? 'This CSV already exists in another branch. To protect branch data, InsightFlow cannot show or replace that dataset here. This upload is blocked.'
+          : 'This upload matches more than one existing dataset. A single replacement could update the wrong data, so nothing has been changed. Use a different dataset name or resolve the other duplicate first.';
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF0B1725),
+          title: const Text('Cannot safely replace this dataset', style: TextStyle(color: Colors.white)),
+          content: Text(message, style: const TextStyle(color: TechColors.textMuted, fontSize: 12, height: 1.45)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('CLOSE'),
+            ),
+          ],
+        ),
+      );
+      return null;
+    }
+
     String? selectedId;
     return showDialog<String>(
       context: context,
@@ -964,9 +998,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final successBody = await response.stream.bytesToString();
       dynamic successDecoded;
       try { successDecoded = jsonDecode(successBody); } catch (_) {}
-      final datasetResult = successDecoded is Map && successDecoded['dataset'] is Map
-          ? Map<String, dynamic>.from(successDecoded['dataset'])
-          : <String, dynamic>{};
+      if (successDecoded is! Map || successDecoded['dataset'] is! Map) {
+        throw StateError('The server did not confirm a published dataset.');
+      }
+      final datasetResult = Map<String, dynamic>.from(successDecoded['dataset']);
+      final datasetStatus = (datasetResult['status'] ?? '').toString().toLowerCase();
+      if (datasetStatus != 'ready') {
+        throw StateError(
+          'The CSV is not ready for use yet. Current status: '
+          '${datasetStatus.isEmpty ? 'unknown' : datasetStatus}.',
+        );
+      }
       if (datasetResult['content_unchanged'] == true) {
         _snack('Identical CSV already exists. The existing dataset was kept; no duplicate data was uploaded.');
       } else {
