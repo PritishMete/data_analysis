@@ -41,6 +41,7 @@ def test_proposal_and_manager_grant_routes_use_their_service_authorization():
     routes = [
         ("GET", "/v1/managed-datasets/proposals"),
         ("POST", "/v1/managed-datasets/proposals"),
+        ("POST", "/v1/managed-datasets/duplicate-check"),
         ("POST", "/v1/managed-datasets/ds_123/proposals"),
         ("POST", "/v1/managed-datasets/proposals/dsp_123/decision"),
         ("GET", "/v1/managed-datasets/upload-grants"),
