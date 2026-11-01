@@ -108,8 +108,11 @@ class _Result:
     def mappings(self):
         return self
 
+    def scalars(self):
+        return self
+
     def first(self):
-        return self.row
+        return self.row if self.row is not None else self.scalar
 
     def scalar_one_or_none(self):
         return self.scalar
@@ -146,8 +149,21 @@ class _ProposalSession:
     def execute(self, statement, params=None):
         sql = str(statement)
         params = params or {}
+        if "SELECT p.proposal_id, p.dataset_id, p.location_id, p.status" in sql:
+            if self.proposal is None:
+                return _Result(row=None)
+            return _Result(row={
+                "proposal_id": self.proposal["proposal_id"],
+                "dataset_id": self.proposal["dataset_id"],
+                "location_id": self.proposal["location_id"],
+                "status": self.proposal["status"],
+                "dataset_name": self.dataset.dataset_name,
+                "file_hash": self.candidate.file_hash,
+            })
         if "SELECT * FROM dataset_change_proposals" in sql:
             return _Result(row=self.proposal)
+        if "SELECT 1 FROM datasets d" in sql:
+            return _Result(scalar=None)
         if "FROM manager_dataset_upload_grants g" in sql:
             return _Result(scalar="grant-1")
         if "SELECT location_id, status, protected_original" in sql:
@@ -251,6 +267,31 @@ def _patch_proposal_auth(monkeypatch, *, role, principal_id):
         "protected_original": True, "location_id": "branch-1",
     })
     monkeypatch.setattr(proposals, "_safe_filename", lambda value: value)
+    monkeypatch.setattr(
+        proposals,
+        "_acquire_managed_dataset_upload_locks",
+        lambda *args, **kwargs: (None, []),
+    )
+    monkeypatch.setattr(
+        proposals,
+        "_release_managed_dataset_upload_locks",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        proposals,
+        "_find_managed_dataset_upload_conflicts",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        proposals,
+        "_pending_new_proposal_name_exists",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        proposals,
+        "_approved_branch_name_exists",
+        lambda *args, **kwargs: False,
+    )
     return proposals
 
 
@@ -271,6 +312,14 @@ def test_manager_submission_keeps_official_pointer_and_metadata_unchanged(monkey
     class _Registry:
         def __init__(self, repo):
             pass
+
+        def _hash_stream(self, stream, max_bytes):
+            import hashlib
+            payload = stream.read(max_bytes + 1)
+            stream.seek(0)
+            if len(payload) > max_bytes:
+                raise ValueError("file too large")
+            return hashlib.sha256(payload).hexdigest(), len(payload)
 
         def register_csv_stream(self, **kwargs):
             assert kwargs["candidate_version_id"].startswith("p")

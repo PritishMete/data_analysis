@@ -89,20 +89,12 @@ def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
 
     source = Path("dataset_storage/service.py").read_text()
     assert "DatasetVersion.file_hash == incoming_hash" in source
-    assert "DatasetVersion.status == \"ready\"" in source
-    assert "replace_dataset_id not in conflict_ids" in source
-    assert "replace_dataset_id is None and conflicts" in source
-
-
-
-def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
-    from pathlib import Path
-
-    source = Path("dataset_storage/service.py").read_text()
-    assert "DatasetVersion.file_hash == incoming_hash" in source
     assert 'DatasetVersion.status == "ready"' in source
-    assert "replace_dataset_id not in conflict_ids" in source
+    assert "def _single_replacement_target" in source
+    assert "replacement_target != replace_dataset_id" in source
     assert "replace_dataset_id is None and conflicts" in source
+
+
 
 
 
@@ -160,3 +152,52 @@ def test_duplicate_preflight_route_is_registered():
     assert "authorization" in parameters
     assert "workspace_id" in parameters
     assert "location_id" in parameters
+
+
+
+def test_stale_upload_recovery_preserves_complete_physical_data():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    helper_start = source.index("def _physical_upload_is_complete")
+    recovery_start = source.index("def _recover_stale_processing_uploads")
+    lock_start = source.index("def _lock_active_upload_assignment", recovery_start)
+    helper = source[helper_start:recovery_start]
+    recovery = source[recovery_start:lock_start]
+
+    # Recovery must prove row count, contiguous unique row numbers, and schema
+    # consistency before publishing READY; complete physical rows must not be
+    # dropped just because finalization was interrupted.
+    assert "COUNT(*) AS row_count" in helper
+    assert 'MIN("{ROW_NUMBER_COLUMN}") AS min_row' in helper
+    assert 'MAX("{ROW_NUMBER_COLUMN}") AS max_row' in helper
+    assert 'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows' in helper
+    assert "information_schema.columns" in helper
+    assert "if ROW_NUMBER_COLUMN not in all_physical_columns" in helper
+    assert "metadata_columns" in helper
+    assert "_physical_upload_is_complete(repo, version)" in recovery
+    assert 'version.status = "ready"' in recovery
+    assert "dataset.current_version_id = version.version_id" in recovery
+    assert recovery.index("_physical_upload_is_complete(repo, version)") < recovery.index(
+        "drop_physical_table"
+    )
+
+
+
+def test_stale_recovery_cleans_orphaned_proposal_candidates_but_never_publishes_them():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    recovery_start = source.index("def _recover_stale_processing_uploads")
+    lock_start = source.index("def _lock_active_upload_assignment", recovery_start)
+    recovery = source[recovery_start:lock_start]
+
+    # Pending proposals are excluded by the candidate query. An orphan p-prefixed
+    # candidate without a pending proposal must be cleaned, not skipped forever
+    # and never auto-published as an official dataset version.
+    assert "dataset_change_proposals.status = 'pending'" in recovery
+    assert 'not str(version.version_id).startswith("p")' in recovery
+    assert recovery.index('not str(version.version_id).startswith("p")') < recovery.index(
+        "_physical_upload_is_complete(repo, version)"
+    )
+    assert 'version.status = "failed"' in recovery

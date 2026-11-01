@@ -12,7 +12,16 @@ from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from firebase_authz.service import AuthzError, PermissionDenied
 from firebase_authz.supabase_provider import _identity, authorize_dataset
-from .service import MAX_DATASET_BYTES, _claims, _safe_filename, _authorization_context
+from .service import (
+    MAX_DATASET_BYTES,
+    _acquire_managed_dataset_upload_locks,
+    _authorization_context,
+    _claims,
+    _find_managed_dataset_upload_conflicts,
+    _release_managed_dataset_upload_locks,
+    _safe_dataset_name,
+    _safe_filename,
+)
 
 
 def _audit(db, *, organization_id: str, principal_id: str, action: str,
@@ -136,6 +145,84 @@ def _active_manager_grant(db, *, organization_id: str, workspace_id: str,
     return str(grant)
 
 
+def _pending_new_proposal_name_exists(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    location_id: str,
+    dataset_name: str,
+    exclude_proposal_id: str | None = None,
+) -> bool:
+    result = repo.db.execute(text("""
+        SELECT 1
+        FROM dataset_change_proposals p
+        JOIN datasets d
+          ON d.dataset_id = p.dataset_id
+         AND d.organization_id = p.organization_id
+        WHERE p.organization_id = :org
+          AND p.location_id = :location
+          AND p.dataset_kind = 'new'
+          AND p.status = 'pending'
+          AND lower(trim(d.dataset_name)) = :dataset_name
+          AND (:exclude_proposal IS NULL OR p.proposal_id <> :exclude_proposal)
+        LIMIT 1
+    """), {
+        "org": organization_id,
+        "location": location_id,
+        "dataset_name": dataset_name.lower(),
+        "exclude_proposal": exclude_proposal_id,
+    }).scalar_one_or_none()
+    return result is not None
+
+
+def _approved_branch_name_exists(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    location_id: str,
+    dataset_name: str,
+    dataset_id: str,
+    proposal_id: str,
+) -> bool:
+    result = repo.db.execute(text("""
+        SELECT 1
+        FROM datasets d
+        WHERE d.organization_id = :org
+          AND d.dataset_id <> :dataset
+          AND d.status NOT IN ('deleted', 'failed')
+          AND lower(trim(d.dataset_name)) = :dataset_name
+          AND (
+            EXISTS (
+                SELECT 1
+                FROM dataset_authorization da
+                WHERE da.organization_id = d.organization_id
+                  AND da.dataset_id = d.dataset_id
+                  AND da.location_id = :location
+                  AND da.status = 'active'
+                  AND da.protected_original IS TRUE
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM dataset_change_proposals p
+                WHERE p.organization_id = d.organization_id
+                  AND p.dataset_id = d.dataset_id
+                  AND p.location_id = :location
+                  AND p.dataset_kind = 'new'
+                  AND p.status = 'pending'
+                  AND p.proposal_id <> :proposal
+            )
+          )
+        LIMIT 1
+    """), {
+        "org": organization_id,
+        "location": location_id,
+        "dataset_name": dataset_name.lower(),
+        "dataset": dataset_id,
+        "proposal": proposal_id,
+    }).scalar_one_or_none()
+    return result is not None
+
+
 def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | None,
                             filename: str, stream: BinaryIO,
                             content_type: str | None,
@@ -165,6 +252,8 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | 
 
     repo = DatasetRepository(SessionLocal())
     registration = None
+    upload_lock_connection = None
+    upload_lock_keys: list[str] = []
     proposal_id = "dsp_" + uuid.uuid4().hex
     candidate_version_id = "p" + uuid.uuid4().hex
     is_new = dataset_id is None
@@ -177,16 +266,67 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | 
             principal_id=principal_id, location_id=location_id,
             provider=provider, provider_subject=provider_subject,
         )
-        if not is_new:
-            dataset = repo.get_by_id(str(dataset_id))
-            if (dataset is None or dataset.organization_id != organization_id
-                    or dataset.status != "ready" or not dataset.current_version_id):
-                raise FileNotFoundError("Published original dataset not found.")
-            base_version_id = str(dataset.current_version_id)
+        registry = DatasetRegistryService(repo)
+        incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
+        stream.seek(0)
+        safe_dataset_name = _safe_dataset_name(safe_name, safe_name)
+        upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
+            repo,
+            organization_id=organization_id,
+            file_sha256=incoming_hash,
+            dataset_name=(safe_dataset_name if is_new else None),
+            dataset_id=(None if is_new else str(dataset_id)),
+        )
 
-        registration = DatasetRegistryService(repo).register_csv_stream(
+        # Match the direct upload duplicate rules before creating a hidden
+        # proposal candidate. The context remains scoped to the Manager's branch.
+        if not is_new:
+            current_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == str(dataset_id),
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if (
+                current_dataset is None
+                or current_dataset.status != "ready"
+                or not current_dataset.current_version_id
+            ):
+                raise FileNotFoundError("Published original dataset not found.")
+            base_version_id = str(current_dataset.current_version_id)
+
+        upload_context = {**context, "location_id": location_id}
+        conflicts = _find_managed_dataset_upload_conflicts(
+            repo,
+            organization_id=organization_id,
+            context=upload_context,
+            file_sha256=incoming_hash,
+            dataset_name=(safe_dataset_name if is_new else None),
+            dataset_id=(None if is_new else str(dataset_id)),
+        )
+        if conflicts:
+            raise AuthzError(
+                "This proposal matches an existing dataset or a dataset in another branch. "
+                "Use a different file or submit the proposal against the existing dataset."
+            )
+        if is_new and _pending_new_proposal_name_exists(
+            repo,
+            organization_id=organization_id,
+            location_id=location_id,
+            dataset_name=safe_dataset_name,
+        ):
+            raise AuthzError(
+                "A new dataset proposal with this name is already awaiting Branch Head review."
+            )
+        repo.db.rollback()
+        stream.seek(0)
+
+        registration = registry.register_csv_stream(
             file_obj=stream, filename=safe_name, organization_id=organization_id,
-            dataset_name=safe_name, uploaded_by=principal_id,
+            dataset_name=safe_dataset_name, uploaded_by=principal_id,
             existing_dataset_id=None if is_new else str(dataset_id),
             content_type=content_type or "text/csv", max_bytes=MAX_DATASET_BYTES,
             candidate_version_id=candidate_version_id,
@@ -283,6 +423,7 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | 
             raise AuthzError("An identical proposal is already pending for this dataset version.") from exc
         raise
     finally:
+        _release_managed_dataset_upload_locks(upload_lock_connection, upload_lock_keys)
         repo.db.close()
 
 
@@ -341,7 +482,41 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
     principal_id = str(context["principal_id"])
     provider, provider_subject = _identity(claims)
     repo = DatasetRepository(SessionLocal())
+    approval_lock_connection = None
+    approval_lock_keys: list[str] = []
     try:
+        # Read the lock key metadata first, then release that read transaction.
+        # The dedicated advisory lock must be obtained before locking proposal
+        # or dataset rows to keep a consistent lock order with direct uploads.
+        proposal_metadata = repo.db.execute(text("""
+            SELECT p.proposal_id, p.dataset_id, p.location_id, p.status,
+                   d.dataset_name, dv.file_hash
+            FROM dataset_change_proposals p
+            JOIN datasets d
+              ON d.dataset_id=p.dataset_id AND d.organization_id=p.organization_id
+            JOIN dataset_versions dv
+              ON dv.version_pk=p.candidate_version_pk
+             AND dv.dataset_id=p.dataset_id
+            WHERE p.proposal_id=:proposal
+              AND p.organization_id=:org
+              AND p.workspace_id=:workspace
+        """), {"proposal": proposal_id, "org": organization_id, "workspace": workspace_id}).mappings().first()
+        repo.db.rollback()
+        if proposal_metadata is None:
+            raise FileNotFoundError("Dataset proposal not found.")
+
+        approval_lock_connection, approval_lock_keys = _acquire_managed_dataset_upload_locks(
+            repo,
+            organization_id=organization_id,
+            file_sha256=str(proposal_metadata["file_hash"]),
+            dataset_name=(
+                str(proposal_metadata["dataset_name"])
+                if str(proposal_metadata["status"]) == "pending"
+                else None
+            ),
+            dataset_id=str(proposal_metadata["dataset_id"]),
+        )
+
         with repo.db.begin():
             proposal = repo.db.execute(text("""
                 SELECT * FROM dataset_change_proposals
@@ -438,6 +613,20 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                                  "base_version_id": proposal["base_version_id"],
                                  "current_version_id": dataset.current_version_id})
                 result = {"proposal_id": proposal_id, "status": "stale"}
+            elif is_new and _approved_branch_name_exists(
+                repo,
+                organization_id=organization_id,
+                location_id=str(proposal["location_id"]),
+                dataset_name=str(dataset.dataset_name or ""),
+                dataset_id=dataset.dataset_id,
+                proposal_id=proposal_id,
+            ):
+                # Leave the proposal pending so the Branch Head can reject it
+                # explicitly or retry after resolving the conflicting name.
+                raise AuthzError(
+                    "A dataset with this name already exists in this branch. "
+                    "This proposal cannot be approved until the name conflict is resolved."
+                )
             elif not approve:
                 repo.db.execute(text("""
                     UPDATE dataset_change_proposals
@@ -521,4 +710,5 @@ def decide_dataset_proposal(*, workspace_id: str, token: str, proposal_id: str,
                           "dataset_id": dataset.dataset_id, "published_version_id": candidate.version_id}
         return result
     finally:
+        _release_managed_dataset_upload_locks(approval_lock_connection, approval_lock_keys)
         repo.db.close()

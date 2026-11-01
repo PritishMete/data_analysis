@@ -5,11 +5,12 @@ import io
 import os
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, exists, func, or_, select, text
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -35,6 +36,9 @@ from .provider import SupabaseDatasetStorageProvider, archive_original_enabled
 MAX_DATASET_BYTES = int(
     os.getenv("INSIGHTFLOW_DATASET_MAX_BYTES", str(100 * 1024 * 1024))
 )
+STALE_MANAGED_DATASET_PROCESSING_SECONDS = max(
+    60, int(os.getenv("INSIGHTFLOW_MANAGED_DATASET_PROCESSING_GRACE_SECONDS", "7200"))
+)
 BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".sh"}
 
 
@@ -44,6 +48,29 @@ class DatasetUploadConflict(Exception):
     def __init__(self, conflicts: list[dict[str, Any]]):
         self.conflicts = conflicts
         super().__init__("A matching dataset already exists.")
+
+
+def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
+    """Return a replacement ID only when every conflict resolves to one visible dataset."""
+    if any(
+        item.get("code") in {
+            "content_outside_branch", "upload_in_progress", "proposal_pending"
+        }
+        or {
+            "content_outside_branch", "upload_in_progress", "proposal_pending"
+        }.intersection(
+            item.get("reasons") or []
+        )
+        for item in conflicts
+        if isinstance(item, dict)
+    ):
+        return None
+    dataset_ids = {
+        str(item.get("dataset_id") or "").strip()
+        for item in conflicts
+        if isinstance(item, dict) and str(item.get("dataset_id") or "").strip()
+    }
+    return next(iter(dataset_ids)) if len(dataset_ids) == 1 else None
 
 
 def _safe_filename(filename: str) -> str:
@@ -206,9 +233,10 @@ def list_authorized_datasets(
 
     repo = DatasetRepository(SessionLocal())
     try:
+        _recover_stale_processing_uploads(repo, organization_id)
         result = []
         for dataset in repo.list_by_organization(organization_id, limit=100):
-            if dataset.status == "deleted":
+            if dataset.status in {"deleted", "failed"}:
                 continue
             try:
                 scope = _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
@@ -688,6 +716,306 @@ def _discard_sql_registration(
 
 
 
+def _managed_dataset_upload_lock_key(
+    organization_id: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> list[str]:
+    keys = [f"insightflow:managed-upload:hash:{organization_id}:{file_sha256}"]
+    normalized_name = str(dataset_name or "").strip().lower()
+    if normalized_name:
+        keys.append(
+            f"insightflow:managed-upload:name:{organization_id}:{normalized_name}"
+        )
+    if dataset_id:
+        keys.append(
+            f"insightflow:managed-upload:dataset:{organization_id}:{dataset_id}"
+        )
+    return sorted(set(keys))
+
+
+def _acquire_managed_dataset_upload_locks(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> tuple[Any | None, list[str]]:
+    """Hold session locks on a dedicated connection throughout the upload."""
+    if repo.db.bind.dialect.name != "postgresql":
+        return None, []
+    lock_keys = _managed_dataset_upload_lock_key(
+        organization_id, file_sha256, dataset_name, dataset_id
+    )
+    lock_connection = repo.db.get_bind().connect()
+    lock_connection = lock_connection.execution_options(isolation_level="AUTOCOMMIT")
+    acquired: list[str] = []
+    try:
+        for lock_key in lock_keys:
+            lock_connection.execute(
+                text("SELECT pg_advisory_lock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+            acquired.append(lock_key)
+        return lock_connection, acquired
+    except Exception:
+        _release_managed_dataset_upload_locks(lock_connection, acquired)
+        raise
+
+
+def _release_managed_dataset_upload_locks(
+    lock_connection: Any | None,
+    lock_keys: list[str],
+) -> None:
+    if lock_connection is None:
+        return
+    try:
+        for lock_key in reversed(lock_keys):
+            lock_connection.execute(
+                text("SELECT pg_advisory_unlock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+    except Exception:
+        try:
+            lock_connection.execute(text("SELECT pg_advisory_unlock_all()"))
+        except Exception:
+            pass
+    finally:
+        lock_connection.close()
+
+
+def _physical_upload_is_complete(
+    repo: DatasetRepository,
+    version: DatasetVersion,
+) -> bool:
+    """Return True only when persisted physical rows and schema match version metadata."""
+    from datasets.physical_table import PHYSICAL_SCHEMA, ROW_NUMBER_COLUMN
+
+    table_name = str(version.data_table_name or "")
+    if re.fullmatch(r"[a-z0-9_]+", table_name) is None:
+        return False
+    if int(version.row_count or 0) <= 0 or int(version.column_count or 0) <= 0:
+        return False
+
+    qualified_name = f'{PHYSICAL_SCHEMA}."{table_name}"'
+    exists_in_database = repo.db.execute(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": qualified_name},
+    ).scalar_one_or_none()
+    if exists_in_database is None:
+        return False
+
+    all_physical_columns = repo.db.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = :table_name "
+            "ORDER BY ordinal_position"
+        ),
+        {"schema": PHYSICAL_SCHEMA, "table_name": table_name},
+    ).scalars().all()
+    if ROW_NUMBER_COLUMN not in all_physical_columns:
+        return False
+    physical_columns = [
+        name for name in all_physical_columns if name != ROW_NUMBER_COLUMN
+    ]
+
+    physical = repo.db.execute(
+        text(
+            f'SELECT COUNT(*) AS row_count, MIN("{ROW_NUMBER_COLUMN}") AS min_row, '
+            f'MAX("{ROW_NUMBER_COLUMN}") AS max_row, '
+            f'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows '
+            f'FROM "{PHYSICAL_SCHEMA}"."{table_name}"'
+        )
+    ).mappings().one()
+    if (
+        int(physical["row_count"] or 0) != int(version.row_count)
+        or int(physical["min_row"] or 0) != 1
+        or int(physical["max_row"] or 0) != int(version.row_count)
+        or int(physical["distinct_rows"] or 0) != int(version.row_count)
+    ):
+        return False
+    metadata_columns = repo.db.execute(
+        select(DatasetColumn.column_name)
+        .where(DatasetColumn.version_pk == version.version_pk)
+        .order_by(DatasetColumn.column_name)
+    ).scalars().all()
+
+    return (
+        len(physical_columns) == int(version.column_count)
+        and len(metadata_columns) == int(version.column_count)
+        and set(physical_columns) == set(metadata_columns)
+    )
+
+
+def _recover_stale_processing_uploads(
+    repo: DatasetRepository,
+    organization_id: str,
+) -> int:
+    """Recover complete abandoned uploads; clean only versions proven incomplete."""
+    if repo.db.bind.dialect.name != "postgresql":
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=STALE_MANAGED_DATASET_PROCESSING_SECONDS
+    )
+    candidates = repo.db.execute(
+        select(
+            DatasetVersion.version_pk,
+            DatasetVersion.dataset_id,
+            DatasetVersion.file_hash,
+            Dataset.dataset_name,
+        )
+        .join(Dataset, Dataset.dataset_id == DatasetVersion.dataset_id)
+        .where(
+            Dataset.organization_id == organization_id,
+            DatasetVersion.status == "processing",
+            DatasetVersion.created_at < cutoff,
+            ~exists(
+                select(1)
+                .select_from(text("dataset_change_proposals"))
+                .where(
+                    text(
+                        "dataset_change_proposals.candidate_version_pk "
+                        "= dataset_versions.version_pk"
+                    )
+                )
+                .where(text("dataset_change_proposals.status = 'pending'"))
+            ),
+        )
+        .order_by(DatasetVersion.created_at.asc())
+        .limit(100)
+    ).all()
+    repo.db.rollback()
+
+    recovered = 0
+    for candidate in candidates:
+        recovery_lock_keys = _managed_dataset_upload_lock_key(
+            organization_id,
+            candidate.file_hash,
+            candidate.dataset_name,
+            candidate.dataset_id,
+        )
+        lock_connection = None
+        acquired_lock_keys: list[str] = []
+        try:
+            lock_connection = repo.db.get_bind().connect()
+            lock_connection = lock_connection.execution_options(
+                isolation_level="AUTOCOMMIT"
+            )
+            for lock_key in recovery_lock_keys:
+                acquired = bool(
+                    lock_connection.execute(
+                        text(
+                            "SELECT pg_try_advisory_lock(hashtextextended(:lock_key, 0))"
+                        ),
+                        {"lock_key": lock_key},
+                    ).scalar_one()
+                )
+                if not acquired:
+                    break
+                acquired_lock_keys.append(lock_key)
+        except Exception:
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+            continue
+        if len(acquired_lock_keys) != len(recovery_lock_keys):
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+            continue
+
+        try:
+            with repo.db.begin():
+                version = repo.db.execute(
+                    select(DatasetVersion)
+                    .where(DatasetVersion.version_pk == candidate.version_pk)
+                    .with_for_update(skip_locked=True)
+                ).scalars().first()
+                if (
+                    version is None
+                    or version.status != "processing"
+                    or version.created_at >= cutoff
+                ):
+                    continue
+
+                dataset = repo.db.execute(
+                    select(Dataset)
+                    .where(
+                        Dataset.dataset_id == candidate.dataset_id,
+                        Dataset.organization_id == organization_id,
+                    )
+                    .with_for_update()
+                ).scalars().first()
+                if dataset is None:
+                    continue
+
+                # A process can die after committing every row and column but
+                # before publishing READY. Verify the persisted table first so
+                # recovery never deletes a complete, recoverable upload.
+                if (
+                    not str(version.version_id).startswith("p")
+                    and _physical_upload_is_complete(repo, version)
+                ):
+                    version.status = "ready"
+                    version.failure_reason = None
+                    dataset.status = "ready"
+                    dataset.current_version_id = version.version_id
+                    dataset.version_number = version.version_number
+                    dataset.row_count = version.row_count
+                    dataset.column_count = version.column_count
+                    dataset.schema_hash = version.schema_hash
+                    dataset.file_hash = version.file_hash
+                    recovered += 1
+                    continue
+
+                if version.data_table_name:
+                    from datasets.physical_table import drop_physical_table
+
+                    drop_physical_table(
+                        repo.db.connection(), version.data_table_name
+                    )
+                    version.data_table_name = None
+
+                repo.db.execute(
+                    delete(DatasetRow).where(
+                        DatasetRow.version_pk == version.version_pk
+                    )
+                )
+                repo.db.execute(
+                    delete(DatasetColumn).where(
+                        DatasetColumn.version_pk == version.version_pk
+                    )
+                )
+                version.status = "failed"
+                version.failure_reason = (
+                    "Upload was interrupted before publication and its stored "
+                    "rows or schema did not pass integrity checks. Please upload "
+                    "the CSV again."
+                )
+                version.row_count = 0
+                version.column_count = 0
+
+                # Keep any last published version intact when a later version
+                # was interrupted. Only an unpublished first upload is failed.
+                if dataset.current_version_id is None:
+                    dataset.status = "failed"
+                    dataset.row_count = 0
+                    dataset.column_count = 0
+                    dataset.schema_hash = ""
+                recovered += 1
+        except Exception:
+            repo.db.rollback()
+        finally:
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+
+    return recovered
+
+
 def _lock_active_upload_assignment(
     repo: DatasetRepository,
     context: dict[str, Any],
@@ -833,7 +1161,7 @@ def _find_managed_dataset_upload_conflicts(
     )
     if safe_name is not None:
         name_query = name_query.where(
-            func.lower(func.trim(Dataset.dataset_name)) == safe_name.casefold()
+            func.lower(func.trim(Dataset.dataset_name)) == safe_name.lower()
         )
 
     dataset_hash_query = select(Dataset).where(
@@ -885,7 +1213,87 @@ def _find_managed_dataset_upload_conflicts(
         })
         if reason not in conflict["reasons"]:
             conflict["reasons"].append(reason)
-    return list(conflicts_by_id.values())
+        if candidate.status == "processing":
+            conflict["code"] = "upload_in_progress"
+            if "upload_in_progress" not in conflict["reasons"]:
+                conflict["reasons"].append("upload_in_progress")
+    conflicts = list(conflicts_by_id.values())
+
+    # A pending Manager proposal is a reserved name in its branch even though
+    # its candidate has no dataset authorization until Branch Head approval.
+    if safe_name is not None:
+        pending_proposal_query = """
+            SELECT 1
+            FROM dataset_change_proposals p
+            JOIN datasets d
+              ON d.dataset_id = p.dataset_id
+             AND d.organization_id = p.organization_id
+            WHERE p.organization_id = :org
+              AND p.dataset_kind = 'new'
+              AND p.status = 'pending'
+              AND lower(trim(d.dataset_name)) = :dataset_name
+        """
+        pending_params = {
+            "org": organization_id,
+            "dataset_name": safe_name.lower(),
+        }
+        if duplicate_scope is not None:
+            pending_proposal_query += " AND p.location_id = :location_id"
+            pending_params["location_id"] = str(context.get("location_id") or "")
+        if repo.db.execute(
+            text(pending_proposal_query + " LIMIT 1"), pending_params
+        ).scalar_one_or_none() is not None:
+            conflicts.append({
+                "dataset_id": None,
+                "dataset_name": None,
+                "original_filename": None,
+                "reasons": ["proposal_pending"],
+                "code": "proposal_pending",
+            })
+
+    if duplicate_scope is not None:
+        outside_branch_match = repo.db.execute(
+            text("""
+                SELECT 1
+                FROM datasets d
+                WHERE d.organization_id = :org
+                  AND d.status NOT IN ('deleted', 'failed')
+                  AND (
+                    d.file_hash = :file_hash
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dataset_versions dv
+                        WHERE dv.dataset_id = d.dataset_id
+                          AND dv.file_hash = :file_hash
+                          AND dv.status = 'ready'
+                    )
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM dataset_authorization da
+                    WHERE da.organization_id = d.organization_id
+                      AND da.dataset_id = d.dataset_id
+                      AND da.location_id = :location_id
+                      AND da.status = 'active'
+                      AND da.protected_original IS TRUE
+                  )
+                LIMIT 1
+            """),
+            {
+                "org": organization_id,
+                "file_hash": file_sha256,
+                "location_id": str(context.get("location_id") or ""),
+            },
+        ).scalar_one_or_none()
+        if outside_branch_match is not None:
+            conflicts.append({
+                "dataset_id": None,
+                "dataset_name": None,
+                "original_filename": None,
+                "reasons": ["content_outside_branch"],
+                "code": "content_outside_branch",
+            })
+    return conflicts
 
 
 def check_managed_dataset_duplicates(
@@ -920,6 +1328,7 @@ def check_managed_dataset_duplicates(
     from core.db import SessionLocal
     repo = DatasetRepository(SessionLocal())
     try:
+        _recover_stale_processing_uploads(repo, organization_id)
         conflicts = _find_managed_dataset_upload_conflicts(
             repo,
             organization_id=organization_id,
@@ -975,12 +1384,23 @@ def upload_managed_dataset_stream(
     new_dataset = dataset_id is None
     provider = provider or SupabaseDatasetStorageProvider()
     base_version_id = None
+    upload_lock_connection = None
+    upload_lock_keys: list[str] = []
     try:
+        _recover_stale_processing_uploads(repo, organization_id)
+
         if requested_new_dataset:
-            # The client performs a fast preflight before sending the CSV.
-            # Recheck the hash here to close races and never trust the browser.
+            # Hold a PostgreSQL session lock across conflict checking, row
+            # creation, authorization registration and final publication.
             incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
             stream.seek(0)
+            upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
+                repo,
+                organization_id=organization_id,
+                file_sha256=incoming_hash,
+                dataset_name=safe_dataset_name,
+                dataset_id=dataset_id,
+            )
             conflicts = _find_managed_dataset_upload_conflicts(
                 repo,
                 organization_id=organization_id,
@@ -988,19 +1408,41 @@ def upload_managed_dataset_stream(
                 file_sha256=incoming_hash,
                 dataset_name=safe_dataset_name,
             )
-            conflict_ids = {item["dataset_id"] for item in conflicts}
+            replacement_target = _single_replacement_target(conflicts)
             if replace_dataset_id is None and conflicts:
                 raise DatasetUploadConflict(conflicts)
-            if replace_dataset_id is not None and replace_dataset_id not in conflict_ids:
-                raise ValueError("The selected replacement dataset no longer matches this upload.")
+            if replace_dataset_id is not None and replacement_target != replace_dataset_id:
+                raise DatasetUploadConflict(conflicts)
         if dataset_id is not None:
-            current_dataset = repo.get_by_id(dataset_id)
-            if current_dataset is None or current_dataset.organization_id != organization_id:
-                raise FileNotFoundError("Dataset not found.")
-            base_version_id = current_dataset.current_version_id
             if not requested_new_dataset:
                 incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
                 stream.seek(0)
+                upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
+                    repo,
+                    organization_id=organization_id,
+                    file_sha256=incoming_hash,
+                    dataset_id=dataset_id,
+                )
+
+            # Read the target only after the serialized lock has been acquired.
+            # A previous request may have published a newer version while this
+            # request was waiting; never derive its next version from stale ORM state.
+            current_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == dataset_id,
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if current_dataset is None:
+                raise FileNotFoundError("Dataset not found.")
+            if current_dataset.status != "ready" or not current_dataset.current_version_id:
+                raise ValueError("The selected dataset is not READY for a new version.")
+
+            base_version_id = current_dataset.current_version_id
+            if not requested_new_dataset:
                 matching_version = repo.db.execute(
                     select(DatasetVersion).where(
                         DatasetVersion.dataset_id == dataset_id,
@@ -1019,10 +1461,16 @@ def upload_managed_dataset_stream(
             file_obj=stream,
             filename=safe_name,
             organization_id=organization_id,
+            # Replacement updates data in place but does not rename the
+            # existing managed dataset. Renaming is a separate operation.
             dataset_name=(
-                safe_dataset_name
-                if dataset_id is None or replace_dataset_id is not None
-                else str(current_dataset.dataset_name or safe_dataset_name)
+                str(current_dataset.dataset_name or safe_dataset_name)
+                if replace_dataset_id is not None
+                else (
+                    safe_dataset_name
+                    if dataset_id is None
+                    else str(current_dataset.dataset_name or safe_dataset_name)
+                )
             ),
             uploaded_by=str(context.get("principal_id") or claims["uid"]),
             existing_dataset_id=dataset_id,
@@ -1031,26 +1479,22 @@ def upload_managed_dataset_stream(
         )
         if registration.registration.was_duplicate:
             duplicate_dataset = registration.registration.dataset
-            # A confirmed exact-content replacement may also correct the
-            # display name that was previously stored as the CSV filename.
-            if replace_dataset_id is not None and duplicate_dataset.dataset_name != safe_dataset_name:
-                duplicate_dataset = repo.update_dataset(
-                    duplicate_dataset.dataset_id,
-                    dataset_name=safe_dataset_name,
-                )
             _audit_safely(
                 workspace_id, str(claims["uid"]), "dataset.upload", "duplicate_confirmed",
                 resource_id=duplicate_dataset.dataset_id,
                 metadata={"version_id": registration.version.version_id,
                           "dataset_name": duplicate_dataset.dataset_name},
             )
-            return {
+            result = {
                 **_structured_summary(
                     duplicate_dataset,
                     len(repo.list_versions(duplicate_dataset.dataset_id)),
                 ),
                 "content_unchanged": True,
             }
+            if result.get("status") != "ready":
+                raise RuntimeError("An identical dataset exists but is not READY.")
+            return result
 
         if new_dataset:
             _register_authorization(
@@ -1100,11 +1544,6 @@ def upload_managed_dataset_stream(
             storage_object_id=stored.storage_object_id if stored else None,
             expected_current_version_id=(base_version_id if not new_dataset else None),
         )
-        if replace_dataset_id is not None and dataset.dataset_name != safe_dataset_name:
-            dataset = repo.update_dataset(
-                dataset.dataset_id,
-                dataset_name=safe_dataset_name,
-            )
         _audit_safely(
             workspace_id, str(claims["uid"]),
             "dataset.upload" if new_dataset else "dataset.version_upload",
@@ -1113,7 +1552,10 @@ def upload_managed_dataset_stream(
                       "row_count": dataset.row_count, "column_count": dataset.column_count,
                       "storage_mode": "sql_structured"},
         )
-        return _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
+        result = _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
+        if result.get("status") != "ready":
+            raise RuntimeError("Dataset ingestion finished without a READY publication status.")
+        return result
     except Exception as exc:
         repo.db.rollback()
         if stored is not None:
@@ -1148,6 +1590,7 @@ def upload_managed_dataset_stream(
         )
         raise
     finally:
+        _release_managed_dataset_upload_locks(upload_lock_connection, upload_lock_keys)
         repo.db.close()
 
 
