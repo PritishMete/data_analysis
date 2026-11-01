@@ -63,3 +63,46 @@ def test_managed_dataset_file_ingestion_routes_are_threadpool_dispatched():
     for path in file_upload_paths:
         assert path in routes_by_path
         assert not inspect.iscoroutinefunction(routes_by_path[path].endpoint)
+
+
+def test_duplicate_replacement_requires_one_unambiguous_dataset():
+    from dataset_storage.service import _single_replacement_target
+
+    same_dataset_for_name_and_content = [{
+        "dataset_id": "dataset-a",
+        "reasons": ["name", "content"],
+    }]
+    two_different_datasets = [
+        {"dataset_id": "dataset-a", "reasons": ["name"]},
+        {"dataset_id": "dataset-b", "reasons": ["content"]},
+    ]
+    hidden_cross_branch_match = [{
+        "dataset_id": None,
+        "reasons": ["content_outside_branch"],
+        "code": "content_outside_branch",
+    }]
+
+    assert _single_replacement_target(same_dataset_for_name_and_content) == "dataset-a"
+    assert _single_replacement_target(two_different_datasets) is None
+    assert _single_replacement_target(hidden_cross_branch_match) is None
+    assert _single_replacement_target([]) is None
+
+
+def test_stale_upload_recovery_preserves_pending_proposals_and_active_uploads():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+
+    assert "def _recover_stale_processing_uploads" in service
+    assert "pg_try_advisory_lock" in service
+    assert '~DatasetVersion.version_id.like("p%")' in service
+    assert "STALE_MANAGED_DATASET_PROCESSING_SECONDS" in service
+
+
+def test_cross_branch_duplicate_response_does_not_include_other_branch_identity():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+
+    assert '"code": "content_outside_branch"' in service
+    assert '"dataset_id": None' in service
+    assert '"dataset_name": None' in service
+    assert "def _single_replacement_target" in service
