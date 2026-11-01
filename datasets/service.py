@@ -23,6 +23,12 @@ DEFAULT_CHUNK_ROWS = int(os.getenv("INSIGHTFLOW_DATASET_CHUNK_ROWS", "5000"))
 MAX_COLUMNS = int(os.getenv("INSIGHTFLOW_MANAGED_DATASET_MAX_COLUMNS", "200"))
 SAMPLE_ROWS = int(os.getenv("INSIGHTFLOW_SCHEMA_SAMPLE_ROWS", "10000"))
 
+# Python's csv module defaults to a 128 KiB field ceiling. That is too small
+# for legitimate exported text/JSON cells in managed datasets. Keep parsing
+# bounded while allowing large fields inside the overall upload-size limit.
+CSV_MAX_FIELD_BYTES = max(128 * 1024, int(os.getenv("INSIGHTFLOW_CSV_MAX_FIELD_BYTES", str(10 * 1024 * 1024))))
+csv.field_size_limit(CSV_MAX_FIELD_BYTES)
+
 
 def _json_value(value):
     if value is None:
