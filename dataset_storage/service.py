@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, exists, func, or_, select, text
 
 from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
@@ -809,9 +809,16 @@ def _recover_stale_processing_uploads(
             Dataset.organization_id == organization_id,
             DatasetVersion.status == "processing",
             DatasetVersion.created_at < cutoff,
-            # Proposal candidates use a p-prefixed version ID and remain
-            # PROCESSING intentionally while awaiting a Branch Head decision.
-            ~DatasetVersion.version_id.like("p%"),
+            # Keep only candidate versions with an actual pending proposal.
+            # A process may die after creating the p-prefixed candidate but
+            # before inserting its review record; that orphan must be cleaned.
+            ~exists().where(
+                text(
+                    "dataset_change_proposals.candidate_version_pk "
+                    "= dataset_versions.version_pk"
+                ),
+                text("dataset_change_proposals.status = 'pending'"),
+            ),
         )
         .order_by(DatasetVersion.created_at.asc())
         .limit(100)
