@@ -53,8 +53,12 @@ class DatasetUploadConflict(Exception):
 def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
     """Return a replacement ID only when every conflict resolves to one visible dataset."""
     if any(
-        item.get("code") in {"content_outside_branch", "upload_in_progress"}
-        or {"content_outside_branch", "upload_in_progress"}.intersection(
+        item.get("code") in {
+            "content_outside_branch", "upload_in_progress", "proposal_pending"
+        }
+        or {
+            "content_outside_branch", "upload_in_progress", "proposal_pending"
+        }.intersection(
             item.get("reasons") or []
         )
         for item in conflicts
@@ -1124,6 +1128,39 @@ def _find_managed_dataset_upload_conflicts(
             if "upload_in_progress" not in conflict["reasons"]:
                 conflict["reasons"].append("upload_in_progress")
     conflicts = list(conflicts_by_id.values())
+
+    # A pending Manager proposal is a reserved name in its branch even though
+    # its candidate has no dataset authorization until Branch Head approval.
+    if safe_name is not None:
+        pending_proposal_query = """
+            SELECT 1
+            FROM dataset_change_proposals p
+            JOIN datasets d
+              ON d.dataset_id = p.dataset_id
+             AND d.organization_id = p.organization_id
+            WHERE p.organization_id = :org
+              AND p.dataset_kind = 'new'
+              AND p.status = 'pending'
+              AND lower(trim(d.dataset_name)) = :dataset_name
+        """
+        pending_params = {
+            "org": organization_id,
+            "dataset_name": safe_name.lower(),
+        }
+        if duplicate_scope is not None:
+            pending_proposal_query += " AND p.location_id = :location_id"
+            pending_params["location_id"] = str(context.get("location_id") or "")
+        if repo.db.execute(
+            text(pending_proposal_query + " LIMIT 1"), pending_params
+        ).scalar_one_or_none() is not None:
+            conflicts.append({
+                "dataset_id": None,
+                "dataset_name": None,
+                "original_filename": None,
+                "reasons": ["proposal_pending"],
+                "code": "proposal_pending",
+            })
+
     if duplicate_scope is not None:
         outside_branch_match = repo.db.execute(
             text("""
