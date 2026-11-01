@@ -152,3 +152,31 @@ def test_duplicate_preflight_route_is_registered():
     assert "authorization" in parameters
     assert "workspace_id" in parameters
     assert "location_id" in parameters
+
+
+
+def test_stale_upload_recovery_preserves_complete_physical_data():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    helper_start = source.index("def _physical_upload_is_complete")
+    recovery_start = source.index("def _recover_stale_processing_uploads")
+    lock_start = source.index("def _lock_active_upload_assignment", recovery_start)
+    helper = source[helper_start:recovery_start]
+    recovery = source[recovery_start:lock_start]
+
+    # Recovery must prove row count, contiguous unique row numbers, and schema
+    # consistency before publishing READY; complete physical rows must not be
+    # dropped just because finalization was interrupted.
+    assert "COUNT(*) AS row_count" in helper
+    assert 'MIN("{ROW_NUMBER_COLUMN}") AS min_row' in helper
+    assert 'MAX("{ROW_NUMBER_COLUMN}") AS max_row' in helper
+    assert 'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows' in helper
+    assert "information_schema.columns" in helper
+    assert "metadata_columns" in helper
+    assert "_physical_upload_is_complete(repo, version)" in recovery
+    assert 'version.status = "ready"' in recovery
+    assert "dataset.current_version_id = version.version_id" in recovery
+    assert recovery.index("_physical_upload_is_complete(repo, version)") < recovery.index(
+        "drop_physical_table"
+    )
