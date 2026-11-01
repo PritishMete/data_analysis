@@ -167,3 +167,22 @@ def test_version_upload_refreshes_target_after_waiting_on_advisory_lock():
 
     assert lock_position < refresh_position < base_version_position
     assert ".with_for_update()" in upload[refresh_position - 160:refresh_position]
+
+
+def test_manager_proposals_share_upload_duplicate_and_name_locks():
+    root = Path(__file__).resolve().parents[1]
+    proposals = (root / "dataset_storage" / "proposals.py").read_text(encoding="utf-8")
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+    workspace = (
+        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        / "managed_dataset_access_workspace.dart"
+    ).read_text(encoding="utf-8")
+
+    assert "_acquire_managed_dataset_upload_locks" in proposals
+    assert "_find_managed_dataset_upload_conflicts" in proposals
+    assert "def _pending_new_proposal_name_exists" in proposals
+    assert "def _approved_branch_name_exists" in proposals
+    assert "_approved_branch_name_exists(" in proposals
+    assert '"code": "proposal_pending"' in service
+    assert "hasPendingProposal" in workspace
+    assert "A new dataset with this name is already awaiting Branch Head review." in workspace
