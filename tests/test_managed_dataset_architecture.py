@@ -121,3 +121,23 @@ def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
     assert "insightflow:managed-upload:dataset:" in service
     assert "if (datasetStatus != 'ready')" in workspace
     assert "visibleConflictIds.length != 1" in workspace
+
+
+def test_failed_uploads_are_not_returned_as_active_datasets():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+
+    assert 'if dataset.status in {"deleted", "failed"}:' in service
+
+
+def test_managed_dataset_ui_only_reports_import_after_ready_confirmation():
+    root = Path(__file__).resolve().parents[1]
+    workspace = (
+        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        / "managed_dataset_access_workspace.dart"
+    ).read_text(encoding="utf-8")
+
+    ready_check = workspace.index("if (datasetStatus != 'ready')")
+    success_message = workspace.index("Managed dataset imported.")
+    assert ready_check < success_message
+    assert "The server did not confirm a published dataset." in workspace
