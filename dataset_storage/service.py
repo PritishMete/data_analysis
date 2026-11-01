@@ -786,11 +786,73 @@ def _release_managed_dataset_upload_locks(
         lock_connection.close()
 
 
+def _physical_upload_is_complete(
+    repo: DatasetRepository,
+    version: DatasetVersion,
+) -> bool:
+    """Return True only when persisted physical rows and schema match version metadata."""
+    from datasets.physical_table import PHYSICAL_SCHEMA, ROW_NUMBER_COLUMN
+
+    table_name = str(version.data_table_name or "")
+    if re.fullmatch(r"[a-z0-9_]+", table_name) is None:
+        return False
+    if int(version.row_count or 0) <= 0 or int(version.column_count or 0) <= 0:
+        return False
+
+    qualified_name = f'{PHYSICAL_SCHEMA}."{table_name}"'
+    exists_in_database = repo.db.execute(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": qualified_name},
+    ).scalar_one_or_none()
+    if exists_in_database is None:
+        return False
+
+    physical = repo.db.execute(
+        text(
+            f'SELECT COUNT(*) AS row_count, MIN("{ROW_NUMBER_COLUMN}") AS min_row, '
+            f'MAX("{ROW_NUMBER_COLUMN}") AS max_row, '
+            f'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows '
+            f'FROM "{PHYSICAL_SCHEMA}"."{table_name}"'
+        )
+    ).mappings().one()
+    if (
+        int(physical["row_count"] or 0) != int(version.row_count)
+        or int(physical["min_row"] or 0) != 1
+        or int(physical["max_row"] or 0) != int(version.row_count)
+        or int(physical["distinct_rows"] or 0) != int(version.row_count)
+    ):
+        return False
+
+    physical_columns = repo.db.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = :table_name "
+            "AND column_name <> :row_number_column ORDER BY ordinal_position"
+        ),
+        {
+            "schema": PHYSICAL_SCHEMA,
+            "table_name": table_name,
+            "row_number_column": ROW_NUMBER_COLUMN,
+        },
+    ).scalars().all()
+    metadata_columns = repo.db.execute(
+        select(DatasetColumn.column_name)
+        .where(DatasetColumn.version_pk == version.version_pk)
+        .order_by(DatasetColumn.column_name)
+    ).scalars().all()
+
+    return (
+        len(physical_columns) == int(version.column_count)
+        and len(metadata_columns) == int(version.column_count)
+        and set(physical_columns) == set(metadata_columns)
+    )
+
+
 def _recover_stale_processing_uploads(
     repo: DatasetRepository,
     organization_id: str,
 ) -> int:
-    """Fail abandoned direct uploads without touching active uploads or review proposals."""
+    """Recover complete abandoned uploads; clean only versions proven incomplete."""
     if repo.db.bind.dialect.name != "postgresql":
         return 0
 
@@ -809,9 +871,6 @@ def _recover_stale_processing_uploads(
             Dataset.organization_id == organization_id,
             DatasetVersion.status == "processing",
             DatasetVersion.created_at < cutoff,
-            # Keep only candidate versions with an actual pending proposal.
-            # A process may die after creating the p-prefixed candidate but
-            # before inserting its review record; that orphan must be cleaned.
             ~exists(
                 select(1)
                 .select_from(text("dataset_change_proposals"))
@@ -893,6 +952,22 @@ def _recover_stale_processing_uploads(
                 if dataset is None:
                     continue
 
+                # A process can die after committing every row and column but
+                # before publishing READY. Verify the persisted table first so
+                # recovery never deletes a complete, recoverable upload.
+                if _physical_upload_is_complete(repo, version):
+                    version.status = "ready"
+                    version.failure_reason = None
+                    dataset.status = "ready"
+                    dataset.current_version_id = version.version_id
+                    dataset.version_number = version.version_number
+                    dataset.row_count = version.row_count
+                    dataset.column_count = version.column_count
+                    dataset.schema_hash = version.schema_hash
+                    dataset.file_hash = version.file_hash
+                    recovered += 1
+                    continue
+
                 if version.data_table_name:
                     from datasets.physical_table import drop_physical_table
 
@@ -913,13 +988,14 @@ def _recover_stale_processing_uploads(
                 )
                 version.status = "failed"
                 version.failure_reason = (
-                    "Upload was interrupted before publication. Please upload "
+                    "Upload was interrupted before publication and its stored "
+                    "rows or schema did not pass integrity checks. Please upload "
                     "the CSV again."
                 )
                 version.row_count = 0
                 version.column_count = 0
 
-                # Keep the last published version intact when a later version
+                # Keep any last published version intact when a later version
                 # was interrupted. Only an unpublished first upload is failed.
                 if dataset.current_version_id is None:
                     dataset.status = "failed"
