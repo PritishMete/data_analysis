@@ -713,6 +713,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       return raw['code'] == 'upload_in_progress' ||
           reasons.contains('upload_in_progress');
     });
+    final hasPendingProposal = conflicts.whereType<Map>().any((raw) {
+      final reasons = raw['reasons'] is List
+          ? (raw['reasons'] as List).map((value) => value.toString()).toSet()
+          : <String>{};
+      return raw['code'] == 'proposal_pending' ||
+          reasons.contains('proposal_pending');
+    });
     final visibleConflictIds = <String>{
       for (final raw in conflicts.whereType<Map>())
         if ((raw['dataset_id']?.toString() ?? '').trim().isNotEmpty)
@@ -720,12 +727,15 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     };
     if (hasCrossBranchConflict ||
         hasUploadInProgress ||
+        hasPendingProposal ||
         visibleConflictIds.length != 1) {
       final message = hasCrossBranchConflict
           ? 'This CSV already exists in another branch. To protect branch data, InsightFlow cannot show or replace that dataset here. This upload is blocked.'
           : hasUploadInProgress
               ? 'An upload for this dataset is still processing. Nothing has been replaced. Wait for it to finish, or try again after InsightFlow marks an interrupted upload as failed.'
-              : 'This upload matches more than one existing dataset. A single replacement could update the wrong data, so nothing has been changed. Use a different dataset name or resolve the other duplicate first.';
+              : hasPendingProposal
+                  ? 'A new dataset with this name is already awaiting Branch Head review. Do not upload it again. Wait for the proposal decision or ask the Branch Head to resolve it.'
+                  : 'This upload matches more than one existing dataset. A single replacement could update the wrong data, so nothing has been changed. Use a different dataset name or resolve the other duplicate first.';
       await showDialog<void>(
         context: context,
         barrierDismissible: true,
