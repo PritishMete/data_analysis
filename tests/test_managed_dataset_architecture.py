@@ -147,3 +147,23 @@ def test_managed_dataset_ui_only_reports_import_after_ready_confirmation():
     success_message = workspace.index("Managed dataset imported.")
     assert ready_check < success_message
     assert "The server did not confirm a published dataset." in workspace
+
+
+def test_version_upload_refreshes_target_after_waiting_on_advisory_lock():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+    upload = service[
+        service.index("def upload_managed_dataset_stream("):
+        service.index("\ndef upload_managed_dataset(", service.index("def upload_managed_dataset_stream("))
+    ]
+
+    lock_position = upload.rindex(
+        "upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks("
+    )
+    refresh_position = upload.index("execution_options(populate_existing=True)")
+    base_version_position = upload.index(
+        "base_version_id = current_dataset.current_version_id"
+    )
+
+    assert lock_position < refresh_position < base_version_position
+    assert ".with_for_update()" in upload[refresh_position - 160:refresh_position]
