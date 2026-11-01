@@ -32,6 +32,9 @@ class _ManagedDatasetRequestException implements Exception {
 
 class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWorkspace> {
   bool loading = true, rowsLoading = false;
+  bool _uploading = false;
+  bool _cancelUploadRequested = false;
+  http.Client? _activeUploadClient;
   bool _hasLoadedCoreSnapshot = false;
   String? error, rowsError, search, refreshError;
   String? catalogError, requestsError;
@@ -838,6 +841,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _upload({String? datasetId}) async {
+    if (_uploading) return;
+    var uploadDialogOpen = false;
     try {
       // Keep the native/browser file picker immediate; ask for the dataset
       // label before resolving remote scope or starting the upload.
@@ -850,6 +855,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return;
       }
       final file = picked.files.single;
+      if (file.size > 100 * 1024 * 1024) {
+        throw StateError('This CSV exceeds the 100 MB managed-dataset upload limit.');
+      }
       // Resolve the branch list while the user is naming the CSV so the
       // network lookup does not add another wait before duplicate checking.
       final uploadScopeFuture = datasetId == null
@@ -963,6 +971,38 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         }
       }
 
+      _cancelUploadRequested = false;
+      _uploading = true;
+      final uploadClient = http.Client();
+      _activeUploadClient = uploadClient;
+      if (mounted) {
+        setState(() {});
+        uploadDialogOpen = true;
+        unawaited(showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            backgroundColor: const Color(0xFF0B1725),
+            title: const Text('Importing dataset', style: TextStyle(color: Colors.white)),
+            content: const Row(children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              SizedBox(width: 12),
+              Expanded(child: Text('Uploading and validating the CSV. Keep this window open until the server responds.', style: TextStyle(color: TechColors.textMuted, fontSize: 12))),
+            ]),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  _cancelUploadRequested = true;
+                  uploadDialogOpen = false;
+                  _activeUploadClient?.close();
+                  Navigator.of(dialogContext).pop();
+                },
+                child: const Text('CANCEL UPLOAD'),
+              ),
+            ],
+          ),
+        ));
+      }
       Future<http.StreamedResponse> sendUpload({String? replaceId, bool confirmDuplicate = false}) async {
         final request = http.MultipartRequest(
           'POST',
@@ -977,7 +1017,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           file.bytes!,
           filename: file.name,
         ));
-        return request.send().timeout(const Duration(minutes: 5));
+        return uploadClient.send(request).timeout(const Duration(minutes: 5));
       }
 
       var response = await sendUpload(
@@ -1030,18 +1070,43 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           '${datasetStatus.isEmpty ? 'unknown' : datasetStatus}.',
         );
       }
+      final uploadedDatasetId = datasetResult['dataset_id']?.toString();
+      await _load();
+      if (!mounted) return;
+      if (uploadedDatasetId == null ||
+          !datasets.any((item) => item['dataset_id']?.toString() == uploadedDatasetId)) {
+        throw StateError(
+          'The server marked the CSV READY, but the refreshed dataset list did not confirm it. Use REFRESH before attempting another upload.',
+        );
+      }
       if (datasetResult['content_unchanged'] == true) {
         _snack('Identical CSV already exists. The existing dataset was kept; no duplicate data was uploaded.');
       } else {
         _snack(
           datasetId == null
-              ? 'Managed dataset imported.'
-              : 'New dataset version imported.',
+              ? 'Managed dataset imported and verified.'
+              : 'New dataset version imported and verified.',
         );
       }
-      await _load();
     } catch (e) {
-      _snack(e);
+      if (_cancelUploadRequested) {
+        _snack('Upload connection cancelled. Refresh the dataset list before retrying because the server may already have received the CSV.');
+      } else if (e is TimeoutException || e is http.ClientException) {
+        _snack('The upload connection ended before confirmation. The server may have completed the import. Refresh the dataset list before retrying to avoid a duplicate upload.');
+      } else {
+        _snack(e);
+      }
+    } finally {
+      _activeUploadClient?.close();
+      _activeUploadClient = null;
+      if (mounted) {
+        if (uploadDialogOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        setState(() { _uploading = false; });
+      } else {
+        _uploading = false;
+      }
     }
   }
 
