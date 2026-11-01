@@ -115,7 +115,7 @@ def test_reserved_internal_row_number_header_is_rejected_before_registration(db_
     service = DatasetRegistryService(repo)
 
     with pytest.raises(ValueError, match="reserved for internal row tracking"):
-        register(service, db_session, b"__row_number,id\\n1,10\\n")
+        register(service, db_session, b"__row_number,id\n1,10\n")
 
     assert repo.list_by_organization("org_1") == []
 
