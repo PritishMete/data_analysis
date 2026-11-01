@@ -5,6 +5,7 @@ import hashlib
 import io
 import itertools
 import os
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import BinaryIO
@@ -168,6 +169,40 @@ class DatasetRegistryService:
         return DatasetRegistration(dataset, columns, False)
 
     @staticmethod
+    def _normalize_reserved_column_name(column: str) -> str:
+        """Normalize a header only for comparison with reserved internal names."""
+        normalized = unicodedata.normalize("NFKC", str(column)).casefold()
+        return "".join(
+            character
+            for character in normalized
+            if not character.isspace() and unicodedata.category(character) != "Cf"
+        )
+
+    @staticmethod
+    def _rename_reserved_csv_columns(columns: list[str]) -> list[str]:
+        """Keep source row-number values while avoiding the internal DB column."""
+        reserved_name = DatasetRegistryService._normalize_reserved_column_name(
+            ROW_NUMBER_COLUMN
+        )
+        renamed = list(columns)
+        used_names = set(columns)
+        for index, column in enumerate(columns):
+            if (
+                DatasetRegistryService._normalize_reserved_column_name(column)
+                != reserved_name
+            ):
+                continue
+
+            candidate = "source_row_number"
+            suffix = 2
+            while candidate in used_names:
+                candidate = f"source_row_number_{suffix}"
+                suffix += 1
+            renamed[index] = candidate
+            used_names.add(candidate)
+        return renamed
+
+    @staticmethod
     def _validate_csv_structure(file_obj: BinaryIO) -> list[str]:
         file_obj.seek(0)
         text_stream = io.TextIOWrapper(file_obj, encoding="utf-8-sig", newline="")
@@ -176,23 +211,22 @@ class DatasetRegistryService:
             header = next(reader, None)
             if not header or any(not str(column).strip() for column in header):
                 raise ValueError("CSV header must contain named columns.")
-            columns = [str(column) for column in header]
-            if any(
-                column.strip().casefold() == ROW_NUMBER_COLUMN.casefold()
-                for column in columns
-            ):
-                raise ValueError(
-                    f"CSV column name '{ROW_NUMBER_COLUMN}' is reserved for internal row tracking. "
-                    "Rename this column before importing."
-                )
-            if len(columns) > MAX_COLUMNS:
+            source_columns = [str(column) for column in header]
+            if len(source_columns) > MAX_COLUMNS:
                 raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
-            if len(set(columns)) != len(columns):
+            if len(set(source_columns)) != len(source_columns):
                 raise ValueError("CSV contains duplicate column names.")
+
+            # Names that look like the internal row tracker after Unicode,
+            # whitespace, or case normalization are retained as source data
+            # under a safe, non-reserved column name.
+            columns = DatasetRegistryService._rename_reserved_csv_columns(
+                source_columns
+            )
             for row_number, row in enumerate(reader, start=2):
-                if len(row) != len(columns):
+                if len(row) != len(source_columns):
                     raise ValueError(
-                        f"CSV row {row_number} has {len(row)} fields; expected {len(columns)}."
+                        f"CSV row {row_number} has {len(row)} fields; expected {len(source_columns)}."
                     )
             return columns
         except csv.Error as exc:
@@ -281,6 +315,8 @@ class DatasetRegistryService:
                 chunksize=max(1, chunk_rows),
                 encoding="utf-8-sig",
                 on_bad_lines="error",
+                header=0,
+                names=expected_columns,
             )
             first = next(chunks)
         except StopIteration as exc:
@@ -394,6 +430,8 @@ class DatasetRegistryService:
                 chunksize=max(1, chunk_rows),
                 encoding="utf-8-sig",
                 on_bad_lines="error",
+                header=0,
+                names=expected_columns,
             )
             inserted_rows = 0
             for chunk in insert_chunks:

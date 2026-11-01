@@ -110,14 +110,50 @@ def test_malformed_csv_does_not_create_dataset(db_session):
 
 
 
-def test_reserved_internal_row_number_header_is_rejected_before_registration(db_session):
+@pytest.mark.parametrize(
+    "header",
+    ["__row_number", " __ row_number", "__ ROW_NUMBER", "__\\trow_number"],
+)
+def test_reserved_internal_row_number_header_is_preserved_under_safe_name(
+    db_session, header
+):
     repo = DatasetRepository(db_session)
     service = DatasetRegistryService(repo)
 
-    with pytest.raises(ValueError, match="reserved for internal row tracking"):
-        register(service, db_session, b"__row_number,id\n1,10\n")
+    result = register(
+        service,
+        db_session,
+        f"{header},id\\n41,10\\n".encode(),
+    )
 
-    assert repo.list_by_organization("org_1") == []
+    assert result.version.row_count == 1
+    assert {column.column_name for column in result.registration.columns} == {
+        "source_row_number",
+        "id",
+    }
+    rows = repo.get_rows(result.version.version_pk, limit=10)
+    assert rows[0]["row_data"]["source_row_number"] == 41
+    assert rows[0]["row_data"]["id"] == 10
+
+
+def test_reserved_header_rename_avoids_existing_source_row_number_column(db_session):
+    repo = DatasetRepository(db_session)
+    service = DatasetRegistryService(repo)
+
+    result = register(
+        service,
+        db_session,
+        b"source_row_number, __ row_number,id\\noriginal,41,10\\n",
+    )
+
+    assert {column.column_name for column in result.registration.columns} == {
+        "source_row_number",
+        "source_row_number_2",
+        "id",
+    }
+    rows = repo.get_rows(result.version.version_pk, limit=10)
+    assert rows[0]["row_data"]["source_row_number"] == "original"
+    assert rows[0]["row_data"]["source_row_number_2"] == 41
 
 
 def test_missing_header_is_rejected(db_session):
