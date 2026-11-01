@@ -2368,6 +2368,15 @@ def authorize_dataset_upload_scope(
             str(value) for value in db.execute(text(query), params).scalars().all()
         }
 
+    # The product's Branch Head model is deliberately single-branch. Other
+    # management endpoints already fail closed when a Branch Head has more
+    # than one active branch assignment; dataset APIs must enforce the same
+    # invariant even when the caller supplies an explicit location_id.
+    if upload_role == "branch_head" and len(allowed_locations) != 1:
+        raise AuthzError(
+            "A Branch Head must have exactly one active branch assignment to upload original datasets."
+        )
+
     if location_id is None:
         if not allowed_locations:
             if upload_role == "manager":
@@ -2494,6 +2503,17 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
                     "workspace": workspace,
                 }).scalars().all()
             }
+
+    # Do not let a stale or duplicated Branch Head assignment expand dataset
+    # visibility beyond the single branch this role is designed to manage.
+    if (
+        "organization_owner" not in roles
+        and "branch_head" in roles
+        and len(scoped_locations) != 1
+    ):
+        raise AuthzError(
+            "A Branch Head must have exactly one active branch assignment to access original datasets."
+        )
 
     grant_permissions = set(grants or [])
     if action in {"dataset.upload", "dataset.upload_original"}:
@@ -2801,6 +2821,43 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     assigned = assignment is not None
     granted = set(grant or [])
     source_location = str(row["location_id"] or "")
+
+    # Working-copy endpoints do not pass through authorize_dataset(), so
+    # independently enforce the same single-branch invariant here.
+    if "organization_owner" not in roles and "branch_head" in roles:
+        with SessionLocal() as db:
+            branch_locations = {
+                str(value) for value in db.execute(text("""
+                    SELECT DISTINCT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id
+                     AND m.principal_id=oa.principal_id
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id
+                     AND mr.principal_id=oa.principal_id
+                     AND mr.role_id='branch_head'
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id
+                    WHERE oa.organization_id=:org
+                      AND oa.principal_id=:principal
+                      AND oa.role_id='branch_head'
+                      AND oa.status='active'
+                      AND oa.location_id IS NOT NULL
+                      AND l.status='active'
+                      AND m.workspace_id=:workspace
+                      AND m.status='active'
+                """), {
+                    "org": organization_id,
+                    "principal": principal_id,
+                    "workspace": resolved_workspace_id,
+                }).scalars().all()
+            }
+        if len(branch_locations) != 1 or source_location not in branch_locations:
+            raise AuthzError(
+                "A Branch Head must have exactly one active branch assignment to access this working copy."
+            )
 
     if action == "working_copy.assign":
         if not roles.intersection({"organization_owner", "branch_head"}):
