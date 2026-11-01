@@ -94,7 +94,8 @@ def test_stale_upload_recovery_preserves_pending_proposals_and_active_uploads():
 
     assert "def _recover_stale_processing_uploads" in service
     assert "pg_try_advisory_lock" in service
-    assert '~DatasetVersion.version_id.like("p%")' in service
+    assert "dataset_change_proposals.candidate_version_pk" in service
+    assert "dataset_change_proposals.status = 'pending'" in service
     assert "STALE_MANAGED_DATASET_PROCESSING_SECONDS" in service
 
 
@@ -181,6 +182,8 @@ def test_manager_proposals_share_upload_duplicate_and_name_locks():
     assert "_acquire_managed_dataset_upload_locks" in proposals
     assert "_find_managed_dataset_upload_conflicts" in proposals
     assert "def _pending_new_proposal_name_exists" in proposals
+    assert "dataset_kind = 'new'" in proposals
+    assert "p.status = 'pending'" in proposals
     assert "def _approved_branch_name_exists" in proposals
     assert "_approved_branch_name_exists(" in proposals
     assert '"code": "proposal_pending"' in service
