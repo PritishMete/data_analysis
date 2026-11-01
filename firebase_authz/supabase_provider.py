@@ -751,8 +751,10 @@ def mark_invitation_password_setup(claims: dict[str, Any], invitation_id: str) -
         )
     return {"password_setup": True, "organization_id": str(invitation["organization_id"])}
 
-def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list[dict[str, Any]]:
-    """Return role assignments backed by active membership and active scope."""
+def _active_assigned_role_rows_for_scope(
+    db, organization_id: str, workspace_id: str, principal_id: str
+) -> list[dict[str, Any]]:
+    """Return active assignments using distinct organization and workspace IDs."""
     rows = db.execute(text("""
         SELECT oa.assignment_id, oa.location_id, oa.section_id, oa.role_id
         FROM organizational_assignments oa
@@ -777,9 +779,16 @@ def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list
             )
           )
         ORDER BY oa.role_id, oa.location_id, oa.section_id, oa.assignment_id
-    """), {"org": workspace_id, "workspace": workspace_id,
+    """), {"org": organization_id, "workspace": workspace_id,
            "principal": principal_id}).mappings().all()
     return [dict(row) for row in rows]
+
+
+def _active_assigned_role_rows(db, workspace_id: str, principal_id: str) -> list[dict[str, Any]]:
+    """Compatibility wrapper for legacy callers where workspace_id is the organization ID."""
+    return _active_assigned_role_rows_for_scope(
+        db, workspace_id, workspace_id, principal_id
+    )
 
 def set_membership_status(claims: dict[str, Any], workspace_id: str, target_uid: str, status: str) -> bool:
     if status not in {"approved", "active", "suspended", "removed"}:
@@ -1683,8 +1692,8 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
         if not resource:
             raise AuthzError("Resource is not accessible.")
 
-        target_assignments = _active_assigned_role_rows(
-            db, resolved_workspace_id, str(target["principal_id"])
+        target_assignments = _active_assigned_role_rows_for_scope(
+            db, organization_id, resolved_workspace_id, str(target["principal_id"])
         )
         target_roles = {str(row["role_id"]) for row in target_assignments}
         scoped_dataset = None
@@ -2141,7 +2150,9 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
         if not target or target["status"] != "active":
             raise AuthzError("Assignment target is not an active member.")
         target_id = str(target["principal_id"])
-        target_assignments = _active_assigned_role_rows(db, workspace, target_id)
+        target_assignments = _active_assigned_role_rows_for_scope(
+            db, org, workspace, target_id
+        )
         target_roles = {str(item["role_id"]) for item in target_assignments}
         if not target_assignments:
             raise AuthzError("Assignment target must have an active organizational assignment.")
@@ -2653,7 +2664,9 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if not target:
             raise AuthzError("Grant target is not an active workspace member.")
 
-        assigned = _active_assigned_role_rows(db, workspace, str(target))
+        assigned = _active_assigned_role_rows_for_scope(
+            db, org, workspace, str(target)
+        )
         target_roles = {str(item["role_id"]) for item in assigned}
         if not assigned and grant_permissions:
             raise AuthzError("The copy recipient must have an active organizational assignment.")
@@ -2664,7 +2677,9 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if "organization_owner" not in actor_roles:
             issuer_role = "branch_head" if "branch_head" in actor_roles else "manager"
             actor_locations = {
-                str(item["location_id"]) for item in _active_assigned_role_rows(db, workspace, actor)
+                str(item["location_id"]) for item in _active_assigned_role_rows_for_scope(
+                    db, org, workspace, actor
+                )
                 if item["role_id"] == issuer_role and item.get("location_id") is not None
             }
             if location not in actor_locations:
