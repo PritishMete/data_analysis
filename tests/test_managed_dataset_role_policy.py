@@ -530,7 +530,7 @@ def test_unprotected_resource_cannot_be_opened_through_original_dataset_api(monk
         lambda claims, workspace_id: _context(["external_viewer"]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="protected original dataset"):
+    with pytest.raises(supabase_provider.AuthzError, match="published, branch-scoped original dataset"):
         supabase_provider.authorize_dataset(
             {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
             "workspace-1", "dataset-unprotected", "dataset.view_original",
