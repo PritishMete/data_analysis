@@ -483,6 +483,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         return;
       }
       final file = picked.files.single;
+      if (file.size > 100 * 1024 * 1024) {
+        throw StateError('This CSV exceeds the 100 MB managed-dataset upload limit.');
+      }
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(
@@ -1036,20 +1039,27 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           ..contentLength = request.contentLength;
         final responseFuture = uploadClient.send(outgoing);
         var sentBytes = 0;
+        final progressClock = Stopwatch()..start();
         await outgoing.sink.addStream(body.transform(
           StreamTransformer<List<int>, List<int>>.fromHandlers(
             handleData: (chunk, sink) {
               sentBytes += chunk.length;
               final totalBytes = outgoing.contentLength ?? 0;
-              if (totalBytes > 0 && mounted) {
+              final isFinalChunk = totalBytes > 0 && sentBytes >= totalBytes;
+              // Throttle rebuilds for large CSVs; update at most every 100 ms.
+              if (totalBytes > 0 && mounted &&
+                  (progressClock.elapsedMilliseconds >= 100 || isFinalChunk)) {
                 _uploadProgress = (sentBytes / totalBytes).clamp(0.0, 1.0);
+                progressClock
+                  ..reset()
+                  ..start();
                 setState(() {});
                 updateUploadDialog?.call(() {});
               }
               sink.add(chunk);
             },
           ),
-        ));
+        )).timeout(const Duration(minutes: 5));
         await outgoing.sink.close();
         return responseFuture.timeout(const Duration(minutes: 5));
       }
@@ -1061,7 +1071,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       // Keep the upload endpoint's 409 handling as a race-condition fallback:
       // another user may upload the same file after preflight but before us.
       if (response.statusCode == 409) {
-        final body = await response.stream.bytesToString();
+        final body = await response.stream.bytesToString().timeout(const Duration(seconds: 45));
         dynamic decoded;
         try { decoded = jsonDecode(body); } catch (_) {}
         final detail = decoded is Map ? decoded['detail'] : null;
@@ -1071,6 +1081,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (conflicts.isEmpty) throw StateError('A duplicate dataset was found, but its details could not be loaded.');
         final selectedConflictId = await _confirmDatasetReplacement(conflicts);
         if (selectedConflictId == null || !mounted) return;
+        // A conflict retry is a new transfer; reset progress for the retry.
+        _uploadProgress = 0;
+        if (mounted) setState(() {});
+        updateUploadDialog?.call(() {});
         if (datasetId == null) {
           response = await sendUpload(replaceId: selectedConflictId);
         } else {
@@ -1081,7 +1095,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         }
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final body = await response.stream.bytesToString();
+        final body = await response.stream.bytesToString().timeout(const Duration(seconds: 45));
         dynamic decoded;
         try { decoded = jsonDecode(body); } catch (_) {}
         throw StateError(
@@ -1090,7 +1104,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
               : 'Dataset import was rejected.',
         );
       }
-      final successBody = await response.stream.bytesToString();
+      final successBody = await response.stream.bytesToString().timeout(const Duration(seconds: 45));
       dynamic successDecoded;
       try { successDecoded = jsonDecode(successBody); } catch (_) {}
       if (successDecoded is! Map || successDecoded['dataset'] is! Map) {
