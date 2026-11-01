@@ -269,7 +269,7 @@ def submit_dataset_proposal(*, workspace_id: str, token: str, dataset_id: str | 
         registry = DatasetRegistryService(repo)
         incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
         stream.seek(0)
-        safe_dataset_name = _safe_dataset_name(None, safe_name)
+        safe_dataset_name = _safe_dataset_name(safe_name, safe_name)
         upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
             repo,
             organization_id=organization_id,
