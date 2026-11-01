@@ -1780,6 +1780,10 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
                 """), {"org": organization_id, "actor": actor_principal_id,
                         "workspace": resolved_workspace_id}).scalars().all()
             }
+            if len(branch_locations) != 1:
+                raise AuthzError(
+                    "A Branch Head must have exactly one active branch assignment to grant resource access."
+                )
             if not scoped_dataset or str(scoped_dataset["location_id"]) not in branch_locations:
                 raise AuthzError("The resource belongs to a branch outside your Branch Head scope.")
 
@@ -2126,6 +2130,36 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
 
         if "organization_owner" not in roles:
             issuer_role = "branch_head" if "branch_head" in roles else "manager"
+            if issuer_role == "branch_head":
+                branch_locations = {
+                    str(value) for value in db.execute(text("""
+                        SELECT DISTINCT oa.location_id
+                        FROM organizational_assignments oa
+                        JOIN organization_members m
+                          ON m.organization_id=oa.organization_id
+                         AND m.principal_id=oa.principal_id
+                        JOIN member_roles mr
+                          ON mr.organization_id=oa.organization_id
+                         AND mr.principal_id=oa.principal_id
+                         AND mr.role_id='branch_head'
+                        JOIN locations l
+                          ON l.organization_id=oa.organization_id
+                         AND l.location_id=oa.location_id
+                        WHERE oa.organization_id=:org
+                          AND oa.principal_id=:actor
+                          AND oa.role_id='branch_head'
+                          AND oa.status='active'
+                          AND m.workspace_id=:workspace
+                          AND m.status='active'
+                          AND l.status='active'
+                    """), {
+                        "org": org, "actor": actor, "workspace": workspace
+                    }).scalars().all()
+                }
+                if len(branch_locations) != 1 or location not in branch_locations:
+                    raise AuthzError(
+                        "A Branch Head must have exactly one active branch assignment to assign working copies."
+                    )
             issuer = db.execute(text("""
                 SELECT 1
                 FROM organizational_assignments oa
@@ -2682,6 +2716,10 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
                 )
                 if item["role_id"] == issuer_role and item.get("location_id") is not None
             }
+            if len(actor_locations) != 1:
+                raise AuthzError(
+                    "A Branch Head must have exactly one active branch assignment to manage dataset copy access."
+                )
             if location not in actor_locations:
                 raise AuthzError("The dataset is outside your branch scope.")
         if grant_permissions and not any(str(item.get("location_id") or "") == location for item in assigned):
