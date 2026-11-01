@@ -230,7 +230,7 @@ def list_authorized_datasets(
         _recover_stale_processing_uploads(repo, organization_id)
         result = []
         for dataset in repo.list_by_organization(organization_id, limit=100):
-            if dataset.status == "deleted":
+            if dataset.status in {"deleted", "failed"}:
                 continue
             try:
                 scope = _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
@@ -717,7 +717,7 @@ def _managed_dataset_upload_lock_key(
     dataset_id: str | None = None,
 ) -> list[str]:
     keys = [f"insightflow:managed-upload:hash:{organization_id}:{file_sha256}"]
-    normalized_name = str(dataset_name or "").strip().casefold()
+    normalized_name = str(dataset_name or "").strip().lower()
     if normalized_name:
         keys.append(
             f"insightflow:managed-upload:name:{organization_id}:{normalized_name}"
@@ -1054,7 +1054,7 @@ def _find_managed_dataset_upload_conflicts(
     )
     if safe_name is not None:
         name_query = name_query.where(
-            func.lower(func.trim(Dataset.dataset_name)) == safe_name.casefold()
+            func.lower(func.trim(Dataset.dataset_name)) == safe_name.lower()
         )
 
     dataset_hash_query = select(Dataset).where(
