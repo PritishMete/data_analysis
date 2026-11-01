@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from .hashing import compute_file_hash, compute_schema_hash
 from .models import Dataset, DatasetColumn, DatasetVersion
-from .physical_table import create_physical_table, resolve_dataset_table_name
+from .physical_table import ROW_NUMBER_COLUMN, create_physical_table, resolve_dataset_table_name
 from .repository import DatasetRepository
 
 
@@ -177,6 +177,14 @@ class DatasetRegistryService:
             if not header or any(not str(column).strip() for column in header):
                 raise ValueError("CSV header must contain named columns.")
             columns = [str(column) for column in header]
+            if any(
+                column.strip().casefold() == ROW_NUMBER_COLUMN.casefold()
+                for column in columns
+            ):
+                raise ValueError(
+                    f"CSV column name '{ROW_NUMBER_COLUMN}' is reserved for internal row tracking. "
+                    "Rename this column before importing."
+                )
             if len(columns) > MAX_COLUMNS:
                 raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
             if len(set(columns)) != len(columns):
