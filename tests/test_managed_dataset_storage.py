@@ -180,3 +180,23 @@ def test_stale_upload_recovery_preserves_complete_physical_data():
     assert recovery.index("_physical_upload_is_complete(repo, version)") < recovery.index(
         "drop_physical_table"
     )
+
+
+
+def test_stale_recovery_cleans_orphaned_proposal_candidates_but_never_publishes_them():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    recovery_start = source.index("def _recover_stale_processing_uploads")
+    lock_start = source.index("def _lock_active_upload_assignment", recovery_start)
+    recovery = source[recovery_start:lock_start]
+
+    # Pending proposals are excluded by the candidate query. An orphan p-prefixed
+    # candidate without a pending proposal must be cleaned, not skipped forever
+    # and never auto-published as an official dataset version.
+    assert "dataset_change_proposals.status = 'pending'" in recovery
+    assert 'not str(version.version_id).startswith("p")' in recovery
+    assert recovery.index('not str(version.version_id).startswith("p")') < recovery.index(
+        "_physical_upload_is_complete(repo, version)"
+    )
+    assert 'version.status = "failed"' in recovery
