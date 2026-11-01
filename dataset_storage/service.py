@@ -714,12 +714,17 @@ def _managed_dataset_upload_lock_key(
     organization_id: str,
     file_sha256: str,
     dataset_name: str | None = None,
+    dataset_id: str | None = None,
 ) -> list[str]:
     keys = [f"insightflow:managed-upload:hash:{organization_id}:{file_sha256}"]
     normalized_name = str(dataset_name or "").strip().casefold()
     if normalized_name:
         keys.append(
             f"insightflow:managed-upload:name:{organization_id}:{normalized_name}"
+        )
+    if dataset_id:
+        keys.append(
+            f"insightflow:managed-upload:dataset:{organization_id}:{dataset_id}"
         )
     return sorted(set(keys))
 
@@ -730,12 +735,13 @@ def _acquire_managed_dataset_upload_locks(
     organization_id: str,
     file_sha256: str,
     dataset_name: str | None = None,
+    dataset_id: str | None = None,
 ) -> list[str]:
-    """Serialize matching content and normalized-name uploads across API workers."""
+    """Serialize matching content, names, and versions of one dataset across API workers."""
     if repo.db.bind.dialect.name != "postgresql":
         return []
     lock_keys = _managed_dataset_upload_lock_key(
-        organization_id, file_sha256, dataset_name
+        organization_id, file_sha256, dataset_name, dataset_id
     )
     acquired: list[str] = []
     try:
@@ -1248,6 +1254,7 @@ def upload_managed_dataset_stream(
                 organization_id=organization_id,
                 file_sha256=incoming_hash,
                 dataset_name=safe_dataset_name,
+                dataset_id=dataset_id,
             )
             conflicts = _find_managed_dataset_upload_conflicts(
                 repo,
@@ -1273,6 +1280,7 @@ def upload_managed_dataset_stream(
                     repo,
                     organization_id=organization_id,
                     file_sha256=incoming_hash,
+                    dataset_id=dataset_id,
                 )
                 matching_version = repo.db.execute(
                     select(DatasetVersion).where(
