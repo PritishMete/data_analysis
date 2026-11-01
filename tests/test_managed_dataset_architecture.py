@@ -106,7 +106,7 @@ def test_cross_branch_duplicate_response_does_not_include_other_branch_identity(
     assert '"dataset_id": None' in service
     assert '"dataset_name": None' in service
     assert "def _single_replacement_target" in service
-    assert '"code": "upload_in_progress"' in service
+    assert 'conflict["code"] = "upload_in_progress"' in service
 
 
 def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
