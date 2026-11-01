@@ -76,6 +76,29 @@ def _require_manager_grant_admin(
     if active is None:
         raise PermissionDenied("An active Branch Head assignment to this branch is required.")
 
+    # A Branch Head is scoped to one branch. Do not allow grant administration
+    # to bypass the single-branch guard used by the dataset service.
+    branch_locations = db.execute(text("""
+        SELECT DISTINCT oa.location_id
+        FROM organizational_assignments oa
+        JOIN organization_members m
+          ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+        JOIN member_roles mr
+          ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+         AND mr.role_id='branch_head'
+        JOIN locations l
+          ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+        WHERE oa.organization_id=:org AND oa.principal_id=:actor
+          AND oa.role_id='branch_head' AND oa.status='active'
+          AND m.workspace_id=:workspace AND m.status='active'
+          AND l.status='active' AND oa.location_id IS NOT NULL
+        FOR SHARE OF oa, m, mr, l
+    """), {"org": org, "actor": actor, "workspace": workspace}).scalars().all()
+    if len({str(value) for value in branch_locations}) != 1:
+        raise PermissionDenied(
+            "A Branch Head must have exactly one active branch assignment to manage upload grants."
+        )
+
 
 def create_manager_upload_grant(
     *, workspace_id: str, token: str, manager_principal_id: str, location_id: str
