@@ -103,7 +103,13 @@ void main() {
     expect(upload, contains('if (datasetId == null)'));
     expect(upload, contains('datasetName = await _promptDatasetName(suggestedName)'));
     expect(source, contains("import 'package:crypto/crypto.dart';"));
-    expect(source, contains('sha256.convert(file.bytes!).toString()'));
+    expect(source, contains('String _managedDatasetSha256(Uint8List bytes)'));
+    expect(source, contains('compute(_managedDatasetSha256, file.bytes!)'));
+    expect(source, contains('progressClock.elapsedMilliseconds >= 100'));
+    expect(source, contains('addStream(body.transform('));
+    expect(source, contains("Duration(minutes: 5)"));
+    expect(source, contains("Duration(seconds: 45)"));
+    expect(source, contains('file.size > 100 * 1024 * 1024'));
     expect(source, contains("'/v1/managed-datasets/duplicate-check'"));
     final preflightIndex = source.indexOf("'/v1/managed-datasets/duplicate-check'");
     final uploadIndex = source.indexOf('var response = await sendUpload(', preflightIndex);
