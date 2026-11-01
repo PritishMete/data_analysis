@@ -51,25 +51,34 @@ class DatasetUploadConflict(Exception):
 
 
 def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
-    """Return a replacement ID only when every conflict resolves to one visible dataset."""
-    if any(
-        item.get("code") in {
-            "content_outside_branch", "upload_in_progress", "proposal_pending"
-        }
-        or {
-            "content_outside_branch", "upload_in_progress", "proposal_pending"
-        }.intersection(
-            item.get("reasons") or []
-        )
-        for item in conflicts
-        if isinstance(item, dict)
-    ):
-        return None
-    dataset_ids = {
-        str(item.get("dataset_id") or "").strip()
-        for item in conflicts
-        if isinstance(item, dict) and str(item.get("dataset_id") or "").strip()
+    """Return a replacement ID only when every conflict resolves unambiguously.
+
+    Fail closed for unknown conflict shapes. A conflict without a visible
+    dataset ID (for example, a cross-branch match or pending proposal) must
+    never be silently ignored while selecting a replacement target.
+    """
+    blocked_reasons = {
+        "content_outside_branch",
+        "upload_in_progress",
+        "proposal_pending",
     }
+    if not conflicts:
+        return None
+
+    dataset_ids: set[str] = set()
+    for item in conflicts:
+        if not isinstance(item, dict):
+            return None
+        reasons = item.get("reasons") or []
+        if not isinstance(reasons, (list, tuple, set)):
+            return None
+        if item.get("code") in blocked_reasons or blocked_reasons.intersection(reasons):
+            return None
+        dataset_id = str(item.get("dataset_id") or "").strip()
+        if not dataset_id:
+            return None
+        dataset_ids.add(dataset_id)
+
     return next(iter(dataset_ids)) if len(dataset_ids) == 1 else None
 
 
@@ -1191,14 +1200,14 @@ def _find_managed_dataset_upload_conflicts(
         candidates.extend(
             (candidate, "name")
             for candidate in repo.db.execute(
-                name_query.order_by(Dataset.created_at.desc()).limit(20)
+                name_query.order_by(Dataset.created_at.desc())
             ).scalars().all()
         )
     hash_matches = repo.db.execute(
-        dataset_hash_query.order_by(Dataset.created_at.desc()).limit(20)
+        dataset_hash_query.order_by(Dataset.created_at.desc())
     ).scalars().all()
     version_matches = repo.db.execute(
-        version_hash_query.order_by(Dataset.created_at.desc()).limit(20)
+        version_hash_query.order_by(Dataset.created_at.desc())
     ).scalars().all()
     candidates.extend((candidate, "content") for candidate in hash_matches)
     candidates.extend((candidate, "content") for candidate in version_matches)
