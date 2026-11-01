@@ -173,6 +173,7 @@ def test_stale_upload_recovery_preserves_complete_physical_data():
     assert 'MAX("{ROW_NUMBER_COLUMN}") AS max_row' in helper
     assert 'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows' in helper
     assert "information_schema.columns" in helper
+    assert "if ROW_NUMBER_COLUMN not in all_physical_columns" in helper
     assert "metadata_columns" in helper
     assert "_physical_upload_is_complete(repo, version)" in recovery
     assert 'version.status = "ready"' in recovery
