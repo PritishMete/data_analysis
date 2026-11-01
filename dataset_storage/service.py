@@ -736,47 +736,48 @@ def _acquire_managed_dataset_upload_locks(
     file_sha256: str,
     dataset_name: str | None = None,
     dataset_id: str | None = None,
-) -> list[str]:
-    """Serialize matching content, names, and versions of one dataset across API workers."""
+) -> tuple[Any | None, list[str]]:
+    """Hold session locks on a dedicated connection throughout the upload."""
     if repo.db.bind.dialect.name != "postgresql":
-        return []
+        return None, []
     lock_keys = _managed_dataset_upload_lock_key(
         organization_id, file_sha256, dataset_name, dataset_id
     )
+    lock_connection = repo.db.get_bind().connect()
+    lock_connection = lock_connection.execution_options(isolation_level="AUTOCOMMIT")
     acquired: list[str] = []
     try:
         for lock_key in lock_keys:
-            repo.db.execute(
+            lock_connection.execute(
                 text("SELECT pg_advisory_lock(hashtextextended(:lock_key, 0))"),
                 {"lock_key": lock_key},
             )
             acquired.append(lock_key)
-        # Advisory locks are session-scoped and survive transaction boundaries.
-        repo.db.commit()
-        return acquired
+        return lock_connection, acquired
     except Exception:
-        _release_managed_dataset_upload_locks(repo, acquired)
+        _release_managed_dataset_upload_locks(lock_connection, acquired)
         raise
 
 
 def _release_managed_dataset_upload_locks(
-    repo: DatasetRepository,
+    lock_connection: Any | None,
     lock_keys: list[str],
 ) -> None:
-    if not lock_keys or repo.db.bind.dialect.name != "postgresql":
+    if lock_connection is None:
         return
-    for lock_key in reversed(lock_keys):
-        try:
-            repo.db.execute(
+    try:
+        for lock_key in reversed(lock_keys):
+            lock_connection.execute(
                 text("SELECT pg_advisory_unlock(hashtextextended(:lock_key, 0))"),
                 {"lock_key": lock_key},
             )
-        except Exception:
-            repo.db.rollback()
-    try:
-        repo.db.commit()
     except Exception:
-        repo.db.rollback()
+        try:
+            lock_connection.execute(text("SELECT pg_advisory_unlock_all()"))
+        except Exception:
+            pass
+    finally:
+        lock_connection.close()
 
 
 def _recover_stale_processing_uploads(
@@ -819,11 +820,16 @@ def _recover_stale_processing_uploads(
             candidate.dataset_name,
             candidate.dataset_id,
         )
+        lock_connection = None
         acquired_lock_keys: list[str] = []
         try:
+            lock_connection = repo.db.get_bind().connect()
+            lock_connection = lock_connection.execution_options(
+                isolation_level="AUTOCOMMIT"
+            )
             for lock_key in recovery_lock_keys:
                 acquired = bool(
-                    repo.db.execute(
+                    lock_connection.execute(
                         text(
                             "SELECT pg_try_advisory_lock(hashtextextended(:lock_key, 0))"
                         ),
@@ -833,13 +839,15 @@ def _recover_stale_processing_uploads(
                 if not acquired:
                     break
                 acquired_lock_keys.append(lock_key)
-            repo.db.commit()
         except Exception:
-            repo.db.rollback()
-            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
             continue
         if len(acquired_lock_keys) != len(recovery_lock_keys):
-            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
             continue
 
         try:
@@ -905,7 +913,9 @@ def _recover_stale_processing_uploads(
         except Exception:
             repo.db.rollback()
         finally:
-            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
 
     return recovered
 
@@ -1241,6 +1251,7 @@ def upload_managed_dataset_stream(
     new_dataset = dataset_id is None
     provider = provider or SupabaseDatasetStorageProvider()
     base_version_id = None
+    upload_lock_connection = None
     upload_lock_keys: list[str] = []
     try:
         _recover_stale_processing_uploads(repo, organization_id)
@@ -1250,7 +1261,7 @@ def upload_managed_dataset_stream(
             # creation, authorization registration and final publication.
             incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
             stream.seek(0)
-            upload_lock_keys = _acquire_managed_dataset_upload_locks(
+            upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
                 repo,
                 organization_id=organization_id,
                 file_sha256=incoming_hash,
@@ -1277,7 +1288,7 @@ def upload_managed_dataset_stream(
             if not requested_new_dataset:
                 incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
                 stream.seek(0)
-                upload_lock_keys = _acquire_managed_dataset_upload_locks(
+                upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
                     repo,
                     organization_id=organization_id,
                     file_sha256=incoming_hash,
@@ -1430,7 +1441,7 @@ def upload_managed_dataset_stream(
         )
         raise
     finally:
-        _release_managed_dataset_upload_locks(repo, upload_lock_keys)
+        _release_managed_dataset_upload_locks(upload_lock_connection, upload_lock_keys)
         repo.db.close()
 
 
