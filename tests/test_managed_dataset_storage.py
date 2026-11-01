@@ -89,20 +89,12 @@ def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
 
     source = Path("dataset_storage/service.py").read_text()
     assert "DatasetVersion.file_hash == incoming_hash" in source
-    assert "DatasetVersion.status == \"ready\"" in source
-    assert "replace_dataset_id not in conflict_ids" in source
-    assert "replace_dataset_id is None and conflicts" in source
-
-
-
-def test_duplicate_detection_checks_ready_version_hashes_and_explicit_target():
-    from pathlib import Path
-
-    source = Path("dataset_storage/service.py").read_text()
-    assert "DatasetVersion.file_hash == incoming_hash" in source
     assert 'DatasetVersion.status == "ready"' in source
-    assert "replace_dataset_id not in conflict_ids" in source
+    assert "def _single_replacement_target" in source
+    assert "replacement_target != replace_dataset_id" in source
     assert "replace_dataset_id is None and conflicts" in source
+
+
 
 
 
