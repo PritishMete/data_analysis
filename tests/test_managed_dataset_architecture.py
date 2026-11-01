@@ -106,3 +106,18 @@ def test_cross_branch_duplicate_response_does_not_include_other_branch_identity(
     assert '"dataset_id": None' in service
     assert '"dataset_name": None' in service
     assert "def _single_replacement_target" in service
+
+
+def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
+    workspace = (
+        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        / "managed_dataset_access_workspace.dart"
+    ).read_text(encoding="utf-8")
+
+    assert "pg_advisory_lock(hashtextextended(:lock_key, 0))" in service
+    assert "insightflow:managed-upload:name:" in service
+    assert "insightflow:managed-upload:dataset:" in service
+    assert "if (datasetStatus != 'ready')" in workspace
+    assert "visibleConflictIds.length != 1" in workspace
