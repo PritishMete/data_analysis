@@ -2419,7 +2419,7 @@ def authorize_dataset_upload_scope(
     # invariant even when the caller supplies an explicit location_id.
     if upload_role == "branch_head" and len(allowed_locations) != 1:
         raise AuthzError(
-            "A Branch Head must have exactly one active branch assignment to upload original datasets."
+            "An unambiguous active branch assignment is required; a Branch Head must have exactly one active branch assignment to upload original datasets."
         )
 
     if location_id is None:
