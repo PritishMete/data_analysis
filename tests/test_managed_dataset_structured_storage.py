@@ -112,7 +112,7 @@ def test_malformed_csv_does_not_create_dataset(db_session):
 
 @pytest.mark.parametrize(
     "header",
-    ["__row_number", " __ row_number", "__ ROW_NUMBER", "__\\trow_number"],
+    ["__row_number", " __ row_number", "__ ROW_NUMBER", "__" + chr(9) + "row_number"],
 )
 def test_reserved_internal_row_number_header_is_preserved_under_safe_name(
     db_session, header
@@ -120,11 +120,8 @@ def test_reserved_internal_row_number_header_is_preserved_under_safe_name(
     repo = DatasetRepository(db_session)
     service = DatasetRegistryService(repo)
 
-    result = register(
-        service,
-        db_session,
-        f"{header},id\\n41,10\\n".encode(),
-    )
+    raw = (f"{header},id" + chr(10) + "41,10" + chr(10)).encode()
+    result = register(service, db_session, raw)
 
     assert result.version.row_count == 1
     assert {column.column_name for column in result.registration.columns} == {
@@ -140,11 +137,13 @@ def test_reserved_header_rename_avoids_existing_source_row_number_column(db_sess
     repo = DatasetRepository(db_session)
     service = DatasetRegistryService(repo)
 
-    result = register(
-        service,
-        db_session,
-        b"source_row_number, __ row_number,id\\noriginal,41,10\\n",
-    )
+    raw = (
+        "source_row_number, __ row_number,id"
+        + chr(10)
+        + "original,41,10"
+        + chr(10)
+    ).encode()
+    result = register(service, db_session, raw)
 
     assert {column.column_name for column in result.registration.columns} == {
         "source_row_number",
@@ -154,7 +153,6 @@ def test_reserved_header_rename_avoids_existing_source_row_number_column(db_sess
     rows = repo.get_rows(result.version.version_pk, limit=10)
     assert rows[0]["row_data"]["source_row_number"] == "original"
     assert rows[0]["row_data"]["source_row_number_2"] == 41
-
 
 def test_missing_header_is_rejected(db_session):
     service = DatasetRegistryService(DatasetRepository(db_session))
