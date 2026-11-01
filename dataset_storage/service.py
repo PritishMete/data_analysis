@@ -807,6 +807,20 @@ def _physical_upload_is_complete(
     if exists_in_database is None:
         return False
 
+    all_physical_columns = repo.db.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = :table_name "
+            "ORDER BY ordinal_position"
+        ),
+        {"schema": PHYSICAL_SCHEMA, "table_name": table_name},
+    ).scalars().all()
+    if ROW_NUMBER_COLUMN not in all_physical_columns:
+        return False
+    physical_columns = [
+        name for name in all_physical_columns if name != ROW_NUMBER_COLUMN
+    ]
+
     physical = repo.db.execute(
         text(
             f'SELECT COUNT(*) AS row_count, MIN("{ROW_NUMBER_COLUMN}") AS min_row, '
@@ -822,19 +836,6 @@ def _physical_upload_is_complete(
         or int(physical["distinct_rows"] or 0) != int(version.row_count)
     ):
         return False
-
-    physical_columns = repo.db.execute(
-        text(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = :schema AND table_name = :table_name "
-            "AND column_name <> :row_number_column ORDER BY ordinal_position"
-        ),
-        {
-            "schema": PHYSICAL_SCHEMA,
-            "table_name": table_name,
-            "row_number_column": ROW_NUMBER_COLUMN,
-        },
-    ).scalars().all()
     metadata_columns = repo.db.execute(
         select(DatasetColumn.column_name)
         .where(DatasetColumn.version_pk == version.version_pk)
