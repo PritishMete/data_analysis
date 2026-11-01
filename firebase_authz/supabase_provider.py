@@ -2524,6 +2524,24 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if not resource or resource["resource_type"] != "dataset" or not row:
             raise AuthzError("Dataset is not accessible.")
 
+        # Managed-dataset endpoints operate only on protected originals. A
+        # stale ACL/resource row must never turn an unprotected resource into
+        # an original-dataset capability.
+        if not row["protected_original"]:
+            raise AuthzError("Only a protected original dataset is accessible through this endpoint.")
+
+        allowed_actions = {
+            "dataset.upload",
+            "dataset.upload_original",
+            "dataset.view_original",
+            "dataset.delete",
+            "dataset.share",
+            "dataset.manage_acl",
+            "dataset.create_working_copy",
+        }
+        if action not in allowed_actions:
+            raise ValueError("Unsupported dataset authorization capability.")
+
         dataset_location = str(row["location_id"] or "")
         scope_role = "branch_head" if "branch_head" in roles else "manager"
         scoped_locations: set[str] = set()
@@ -2592,6 +2610,11 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
             raise AuthzError("This role cannot access an original dataset; Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view it.")
 
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
+        # Role membership is necessary but not sufficient. Respect the
+        # effective permission set so an explicitly revoked capability cannot
+        # be bypassed by a hard-coded role check.
+        if action not in set(context.get("permissions", [])):
+            raise AuthzError("The active role does not include this dataset-management capability.")
         actor_roles = roles
         if "organization_owner" in actor_roles:
             pass
