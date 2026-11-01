@@ -118,7 +118,7 @@ def managed_dataset_list(
 
 
 @router.post("/proposals")
-async def managed_new_dataset_proposal_submit(
+def managed_new_dataset_proposal_submit(
     file: UploadFile = File(...),
     location_id: str = Query(..., min_length=1),
     authorization: str = Header(default=None),
@@ -265,7 +265,7 @@ def managed_dataset_proposal_list(
 
 
 @router.post("/{dataset_id}/proposals")
-async def managed_dataset_proposal_submit(
+def managed_dataset_proposal_submit(
     dataset_id: str,
     file: UploadFile = File(...),
     authorization: str = Header(default=None),
@@ -391,7 +391,7 @@ def managed_dataset_rows(
 
 
 @router.post("")
-async def managed_dataset_upload(
+def managed_dataset_upload(
     file: UploadFile = File(...),
     dataset_name: str | None = Form(default=None, max_length=255),
     replace_dataset_id: str | None = Form(default=None),
@@ -416,7 +416,7 @@ async def managed_dataset_upload(
 
 
 @router.post("/{dataset_id}/versions")
-async def managed_dataset_version(
+def managed_dataset_version(
     dataset_id: str,
     file: UploadFile = File(...),
     confirm_duplicate: bool = Form(default=False),

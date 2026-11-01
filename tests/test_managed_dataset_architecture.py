@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 
 
@@ -38,3 +39,27 @@ def test_managed_dataset_upload_accepts_a_user_defined_dataset_name():
     )
     body_fields = {parameter.name for parameter in upload_route.dependant.body_params}
     assert "dataset_name" in body_fields
+
+
+
+def test_managed_dataset_file_ingestion_routes_are_threadpool_dispatched():
+    # These handlers perform synchronous authentication, CSV parsing, Pandas
+    # profiling and database writes. FastAPI sends normal def endpoints to its
+    # worker threadpool, keeping the ASGI event loop free for /health checks.
+    from dataset_storage.routes import router as managed_dataset_router
+
+    file_upload_paths = {
+        "/v1/managed-datasets",
+        "/v1/managed-datasets/{dataset_id}/versions",
+        "/v1/managed-datasets/proposals",
+        "/v1/managed-datasets/{dataset_id}/proposals",
+    }
+    routes_by_path = {
+        route.path: route
+        for route in managed_dataset_router.routes
+        if "POST" in route.methods
+    }
+
+    for path in file_upload_paths:
+        assert path in routes_by_path
+        assert not inspect.iscoroutinefunction(routes_by_path[path].endpoint)
