@@ -79,7 +79,7 @@ def _require_manager_grant_admin(
     # A Branch Head is scoped to one branch. Do not allow grant administration
     # to bypass the single-branch guard used by the dataset service.
     branch_locations = db.execute(text("""
-        SELECT DISTINCT oa.location_id
+        SELECT oa.location_id
         FROM organizational_assignments oa
         JOIN organization_members m
           ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
