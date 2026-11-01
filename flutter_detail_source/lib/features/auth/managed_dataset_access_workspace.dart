@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
@@ -993,10 +994,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             return AlertDialog(
             backgroundColor: const Color(0xFF0B1725),
             title: const Text('Importing dataset', style: TextStyle(color: Colors.white)),
-            content: const Row(children: [
-              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 12),
-              Expanded(child: Text('Uploading and validating the CSV. Keep this window open until the server responds.', style: TextStyle(color: TechColors.textMuted, fontSize: 12))),
+            content: Row(children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, value: _uploadProgress > 0 ? _uploadProgress : null)),
+              const SizedBox(width: 12),
+              Expanded(child: Text(_uploadProgress > 0 ? 'Uploading CSV · ${(_uploadProgress * 100).round()}%' : 'Preparing upload…', style: const TextStyle(color: TechColors.textMuted, fontSize: 12))),
             ]),
             actions: [
               TextButton(
