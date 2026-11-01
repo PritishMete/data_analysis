@@ -117,6 +117,9 @@ def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
     ).read_text(encoding="utf-8")
 
     assert "pg_advisory_lock(hashtextextended(:lock_key, 0))" in service
+    assert "repo.db.get_bind().connect()" in service
+    assert 'execution_options(isolation_level="AUTOCOMMIT")' in service
+    assert "pg_advisory_unlock_all()" in service
     assert "insightflow:managed-upload:name:" in service
     assert "insightflow:managed-upload:dataset:" in service
     assert "if (datasetStatus != 'ready')" in workspace
