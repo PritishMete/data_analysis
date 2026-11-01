@@ -795,6 +795,7 @@ def _recover_stale_processing_uploads(
             DatasetVersion.version_pk,
             DatasetVersion.dataset_id,
             DatasetVersion.file_hash,
+            Dataset.dataset_name,
         )
         .join(Dataset, Dataset.dataset_id == DatasetVersion.dataset_id)
         .where(
@@ -812,24 +813,33 @@ def _recover_stale_processing_uploads(
 
     recovered = 0
     for candidate in candidates:
-        lock_key = (
-            f"insightflow:managed-upload:hash:{organization_id}:"
-            f"{candidate.file_hash}"
+        recovery_lock_keys = _managed_dataset_upload_lock_key(
+            organization_id,
+            candidate.file_hash,
+            candidate.dataset_name,
+            candidate.dataset_id,
         )
+        acquired_lock_keys: list[str] = []
         try:
-            owns_upload_lock = bool(
-                repo.db.execute(
-                    text(
-                        "SELECT pg_try_advisory_lock(hashtextextended(:lock_key, 0))"
-                    ),
-                    {"lock_key": lock_key},
-                ).scalar_one()
-            )
+            for lock_key in recovery_lock_keys:
+                acquired = bool(
+                    repo.db.execute(
+                        text(
+                            "SELECT pg_try_advisory_lock(hashtextextended(:lock_key, 0))"
+                        ),
+                        {"lock_key": lock_key},
+                    ).scalar_one()
+                )
+                if not acquired:
+                    break
+                acquired_lock_keys.append(lock_key)
             repo.db.commit()
         except Exception:
             repo.db.rollback()
+            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
             continue
-        if not owns_upload_lock:
+        if len(acquired_lock_keys) != len(recovery_lock_keys):
+            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
             continue
 
         try:
@@ -895,16 +905,7 @@ def _recover_stale_processing_uploads(
         except Exception:
             repo.db.rollback()
         finally:
-            try:
-                repo.db.execute(
-                    text(
-                        "SELECT pg_advisory_unlock(hashtextextended(:lock_key, 0))"
-                    ),
-                    {"lock_key": lock_key},
-                )
-                repo.db.commit()
-            except Exception:
-                repo.db.rollback()
+            _release_managed_dataset_upload_locks(repo, acquired_lock_keys)
 
     return recovered
 
