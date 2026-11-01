@@ -937,7 +937,6 @@ def _recover_stale_processing_uploads(
                     version is None
                     or version.status != "processing"
                     or version.created_at >= cutoff
-                    or str(version.version_id).startswith("p")
                 ):
                     continue
 
@@ -955,7 +954,10 @@ def _recover_stale_processing_uploads(
                 # A process can die after committing every row and column but
                 # before publishing READY. Verify the persisted table first so
                 # recovery never deletes a complete, recoverable upload.
-                if _physical_upload_is_complete(repo, version):
+                if (
+                    not str(version.version_id).startswith("p")
+                    and _physical_upload_is_complete(repo, version)
+                ):
                     version.status = "ready"
                     version.failure_reason = None
                     dataset.status = "ready"
