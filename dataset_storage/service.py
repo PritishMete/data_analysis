@@ -1287,10 +1287,6 @@ def upload_managed_dataset_stream(
             if replace_dataset_id is not None and replacement_target != replace_dataset_id:
                 raise DatasetUploadConflict(conflicts)
         if dataset_id is not None:
-            current_dataset = repo.get_by_id(dataset_id)
-            if current_dataset is None or current_dataset.organization_id != organization_id:
-                raise FileNotFoundError("Dataset not found.")
-            base_version_id = current_dataset.current_version_id
             if not requested_new_dataset:
                 incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
                 stream.seek(0)
@@ -1300,6 +1296,26 @@ def upload_managed_dataset_stream(
                     file_sha256=incoming_hash,
                     dataset_id=dataset_id,
                 )
+
+            # Read the target only after the serialized lock has been acquired.
+            # A previous request may have published a newer version while this
+            # request was waiting; never derive its next version from stale ORM state.
+            current_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == dataset_id,
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if current_dataset is None:
+                raise FileNotFoundError("Dataset not found.")
+            if current_dataset.status != "ready" or not current_dataset.current_version_id:
+                raise ValueError("The selected dataset is not READY for a new version.")
+
+            base_version_id = current_dataset.current_version_id
+            if not requested_new_dataset:
                 matching_version = repo.db.execute(
                     select(DatasetVersion).where(
                         DatasetVersion.dataset_id == dataset_id,
