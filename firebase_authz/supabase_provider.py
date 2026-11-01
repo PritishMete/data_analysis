@@ -2528,7 +2528,7 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
         # stale ACL/resource row must never turn an unprotected resource into
         # an original-dataset capability.
         if not row["protected_original"]:
-            raise AuthzError("Only a protected original dataset is accessible through this endpoint.")
+            raise AuthzError("Only a published, branch-scoped original dataset is accessible through this endpoint.")
 
         allowed_actions = {
             "dataset.upload",
