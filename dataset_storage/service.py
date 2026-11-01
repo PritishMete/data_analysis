@@ -53,8 +53,10 @@ class DatasetUploadConflict(Exception):
 def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
     """Return a replacement ID only when every conflict resolves to one visible dataset."""
     if any(
-        item.get("code") == "content_outside_branch"
-        or "content_outside_branch" in (item.get("reasons") or [])
+        item.get("code") in {"content_outside_branch", "upload_in_progress"}
+        or {"content_outside_branch", "upload_in_progress"}.intersection(
+            item.get("reasons") or []
+        )
         for item in conflicts
         if isinstance(item, dict)
     ):
@@ -1117,6 +1119,10 @@ def _find_managed_dataset_upload_conflicts(
         })
         if reason not in conflict["reasons"]:
             conflict["reasons"].append(reason)
+        if candidate.status == "processing":
+            conflict["code"] = "upload_in_progress"
+            if "upload_in_progress" not in conflict["reasons"]:
+                conflict["reasons"].append("upload_in_progress")
     conflicts = list(conflicts_by_id.values())
     if duplicate_scope is not None:
         outside_branch_match = repo.db.execute(
