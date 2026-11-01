@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -10,6 +11,8 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import 'management_navigation.dart';
+
+String _managedDatasetSha256(Uint8List bytes) => sha256.convert(bytes).toString();
 
 class ManagedDatasetAccessWorkspace extends StatefulWidget {
   const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false});
@@ -34,6 +37,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool loading = true, rowsLoading = false;
   bool _uploading = false;
   bool _cancelUploadRequested = false;
+  double _uploadProgress = 0;
   http.Client? _activeUploadClient;
   bool _hasLoadedCoreSnapshot = false;
   String? error, rowsError, search, refreshError;
@@ -940,7 +944,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       // Hash locally and ask the backend about duplicates BEFORE sending
       // the CSV bytes. This is the fast path that makes the alert appear
       // without waiting for a potentially large multipart upload.
-      final fileSha256 = sha256.convert(file.bytes!).toString();
+      final fileSha256 = await compute(_managedDatasetSha256, file.bytes!);
       final preflightBody = <String, dynamic>{
         'file_sha256': fileSha256,
         if (datasetName != null) 'dataset_name': datasetName,
@@ -974,6 +978,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
 
       _cancelUploadRequested = false;
+      _uploadProgress = 0;
+      StateSetter? updateUploadDialog;
       final uploadClient = http.Client();
       _activeUploadClient = uploadClient;
       if (mounted) {
@@ -982,7 +988,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         unawaited(showDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) {
+            updateUploadDialog = setDialogState;
+            return AlertDialog(
             backgroundColor: const Color(0xFF0B1725),
             title: const Text('Importing dataset', style: TextStyle(color: Colors.white)),
             content: const Row(children: [
@@ -1001,7 +1009,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
                 child: const Text('CANCEL UPLOAD'),
               ),
             ],
-          ),
+          );
+          }),
         ));
       }
       Future<http.StreamedResponse> sendUpload({String? replaceId, bool confirmDuplicate = false}) async {
@@ -1018,7 +1027,30 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           file.bytes!,
           filename: file.name,
         ));
-        return uploadClient.send(request).timeout(const Duration(minutes: 5));
+        // Forward the multipart body as a stream so the UI can report actual
+        // bytes sent instead of showing an indefinite spinner for large CSVs.
+        final body = request.finalize();
+        final outgoing = http.StreamedRequest('POST', request.url)
+          ..headers.addAll(request.headers)
+          ..contentLength = request.contentLength;
+        final responseFuture = uploadClient.send(outgoing);
+        var sentBytes = 0;
+        await outgoing.sink.addStream(body.transform(
+          StreamTransformer<List<int>, List<int>>.fromHandlers(
+            handleData: (chunk, sink) {
+              sentBytes += chunk.length;
+              final totalBytes = outgoing.contentLength ?? 0;
+              if (totalBytes > 0 && mounted) {
+                _uploadProgress = (sentBytes / totalBytes).clamp(0.0, 1.0);
+                setState(() {});
+                updateUploadDialog?.call(() {});
+              }
+              sink.add(chunk);
+            },
+          ),
+        ));
+        await outgoing.sink.close();
+        return responseFuture.timeout(const Duration(minutes: 5));
       }
 
       var response = await sendUpload(
