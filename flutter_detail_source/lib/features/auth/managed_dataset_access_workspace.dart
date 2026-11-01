@@ -842,6 +842,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _upload({String? datasetId}) async {
     if (_uploading) return;
+    _uploading = true;
+    if (mounted) setState(() {});
     var uploadDialogOpen = false;
     try {
       // Keep the native/browser file picker immediate; ask for the dataset
@@ -972,7 +974,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
 
       _cancelUploadRequested = false;
-      _uploading = true;
       final uploadClient = http.Client();
       _activeUploadClient = uploadClient;
       if (mounted) {
@@ -1084,7 +1085,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       } else {
         _snack(
           datasetId == null
-              ? 'Managed dataset imported and verified.'
+              ? 'Managed dataset imported. Verified in dataset list.'
               : 'New dataset version imported and verified.',
         );
       }
