@@ -812,12 +812,16 @@ def _recover_stale_processing_uploads(
             # Keep only candidate versions with an actual pending proposal.
             # A process may die after creating the p-prefixed candidate but
             # before inserting its review record; that orphan must be cleaned.
-            ~exists().where(
-                text(
-                    "dataset_change_proposals.candidate_version_pk "
-                    "= dataset_versions.version_pk"
-                ),
-                text("dataset_change_proposals.status = 'pending'"),
+            ~exists(
+                select(1)
+                .select_from(text("dataset_change_proposals"))
+                .where(
+                    text(
+                        "dataset_change_proposals.candidate_version_pk "
+                        "= dataset_versions.version_pk"
+                    )
+                )
+                .where(text("dataset_change_proposals.status = 'pending'"))
             ),
         )
         .order_by(DatasetVersion.created_at.asc())
