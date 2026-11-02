@@ -265,7 +265,12 @@ def list_authorized_datasets(
             if not batch:
                 break
             for dataset in batch:
-                if dataset.status in {"deleted", "failed"}:
+                if dataset.status == "deleted":
+                    continue
+                # Failed records remain visible to privileged managers so they
+                # can distinguish a failed import from an empty catalogue.
+                # Copy-only users must never be offered an unusable source.
+                if dataset.status == "failed" and not privileged:
                     continue
                 try:
                     scope = _authorize_dataset(
@@ -276,6 +281,16 @@ def list_authorized_datasets(
                 if privileged:
                     item = _structured_summary(
                         dataset, len(repo.list_versions(dataset.dataset_id))
+                    )
+                    item["location_id"] = (
+                        str(scope.get("location_id"))
+                        if scope.get("location_id") is not None
+                        else None
+                    )
+                    item["location_name"] = (
+                        scope.get("location_name")
+                        or scope.get("branch_name")
+                        or item["location_id"]
                     )
                 else:
                     # Copy-only roles receive only metadata needed to request
