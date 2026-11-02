@@ -6,6 +6,11 @@ on:
     paths:
       - 'flutter_detail_source/**'
       - '.github/workflows/flutter-detail-analysis-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/flutter-detail-analysis-ci.yml'
   workflow_dispatch:
 
 jobs:
