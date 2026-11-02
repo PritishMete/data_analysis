@@ -185,6 +185,16 @@ class DatasetRegistryService:
         )
 
     @staticmethod
+    def _normalize_csv_header_identity(column: str) -> str:
+        """Normalize cosmetic header differences to catch ambiguous CSV schemas."""
+        normalized = unicodedata.normalize("NFKC", str(column)).casefold().strip()
+        return "".join(
+            character
+            for character in normalized
+            if unicodedata.category(character) != "Cf"
+        )
+
+    @staticmethod
     def _rename_reserved_csv_columns(columns: list[str]) -> list[str]:
         """Keep source row-number values while avoiding the internal DB column."""
         reserved_name = DatasetRegistryService._normalize_reserved_column_name(
@@ -220,8 +230,17 @@ class DatasetRegistryService:
             source_columns = [str(column) for column in header]
             if len(source_columns) > MAX_COLUMNS:
                 raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
-            if len(set(source_columns)) != len(source_columns):
-                raise ValueError("CSV contains duplicate column names.")
+            normalized_headers = [
+                DatasetRegistryService._normalize_csv_header_identity(column)
+                for column in source_columns
+            ]
+            if any(not column for column in normalized_headers):
+                raise ValueError("CSV header contains a column name that is empty after normalization.")
+            if len(set(normalized_headers)) != len(normalized_headers):
+                raise ValueError(
+                    "CSV contains ambiguous duplicate column names. Column names must be unique "
+                    "after case, Unicode, and surrounding-whitespace normalization."
+                )
 
             # Names that look like the internal row tracker after Unicode,
             # whitespace, or case normalization are retained as source data
