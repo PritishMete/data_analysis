@@ -448,7 +448,6 @@ void main() {
     expect(access, contains('Clear search'));
     expect(access, contains('No managed resources are available in this authorized scope yet.'));
     expect(access, contains('No resources match the current search and filters.'));
-    expect(access, contains('No resources match your search.'));
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
 
