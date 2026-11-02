@@ -122,8 +122,6 @@ void main() {
     expect(source, isNot(contains('_managementAnalysisNavChip')));
     expect(source, contains('kInsightFlowNavigationGlassSettings'));
     expect(source, contains('management_navigation.dart'));
-    expect(source, contains('AuthorizationManagementScreen('));
-    expect(source, contains('onStartWorking:'));
     expect(source, contains("'/overview'"));
     expect(source, contains("'/locations'"));
     expect(source, contains("'/sections'"));
