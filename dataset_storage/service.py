@@ -309,6 +309,21 @@ def list_authorized_datasets(
                             if scope.get("location_id") is not None
                             else None
                         ),
+                        "location_name": (
+                            scope.get("location_name")
+                            or scope.get("branch_name")
+                            or (
+                                str(scope.get("location_id"))
+                                if scope.get("location_id") is not None
+                                else None
+                            )
+                        ),
+                        "status": dataset.status,
+                        "created_at": (
+                            dataset.created_at.isoformat()
+                            if dataset.created_at
+                            else None
+                        ),
                         "access_mode": "copy_only",
                     }
                 authorized.append(item)
