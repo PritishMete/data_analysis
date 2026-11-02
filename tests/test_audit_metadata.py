@@ -55,7 +55,7 @@ def test_dataset_audit_event_adds_authoritative_branch_scope(monkeypatch):
         "subject_1",
         "dataset.upload",
         "succeeded",
-        metadata={"resource_id": "dataset_1"},
+        metadata={"resource_id": "dataset_1", "location_id": "forged_other_branch"},
     )
 
     assert db.insert_params is not None
