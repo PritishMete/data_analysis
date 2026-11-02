@@ -870,3 +870,24 @@ def test_stale_upload_recovery_query_is_limited_to_requested_branch(monkeypatch)
     assert "dataset_authorization" in sql
     assert "recovery_location_id" in sql
     assert db.statement.compile().params["recovery_location_id"] == "branch-1"
+
+
+def test_copy_request_approval_uses_one_transaction_and_writes_audit_events():
+    from pathlib import Path
+
+    source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    create_fn = source.split("def create_working_copy(", 1)[1].split(
+        "def authorize_working_copy(", 1
+    )[0]
+    approval_fn = source.split("def approve_copy_request(", 1)[1].split(
+        "def assign_working_copy(", 1
+    )[0]
+    request_fn = source.split("def request_dataset_copy(", 1)[1].split(
+        "def list_copy_requests(", 1
+    )[0]
+
+    assert "*, db: Any | None = None" in create_fn
+    assert "nullcontext(db)" in create_fn
+    assert "None, None, db=db" in approval_fn
+    assert "'dataset.copy_request.submit'" in request_fn
+    assert "'dataset.copy_request.decision'" in approval_fn
