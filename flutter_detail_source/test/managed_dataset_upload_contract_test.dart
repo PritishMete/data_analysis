@@ -63,7 +63,7 @@ void main() {
     ).readAsStringSync();
 
     final loadStart = source.indexOf('Future<void> _load() async {');
-    final loadEnd = source.indexOf('Future<void> _loadManagerUploadGrants()', loadStart);
+    final loadEnd = source.indexOf('Future<void> _loadManagerUploadGrants(int generation)', loadStart);
     expect(loadStart, greaterThanOrEqualTo(0));
     expect(loadEnd, greaterThan(loadStart));
     final coreLoad = source.substring(loadStart, loadEnd);
@@ -73,11 +73,11 @@ void main() {
     expect(coreLoad, contains("_get('/v1/authz/management')"));
     expect(coreLoad, isNot(contains("data-access/catalog")));
     expect(coreLoad, isNot(contains("data-access/requests")));
-    expect(coreLoad, contains('_loadCatalog()'));
-    expect(coreLoad, contains('_loadCopyRequests()'));
+    expect(coreLoad, contains('_loadCatalog(generation)'));
+    expect(coreLoad, contains('_loadCopyRequests(generation)'));
 
-    expect(source, contains('Future<void> _loadCatalog() async'));
-    expect(source, contains('Future<void> _loadCopyRequests() async'));
+    expect(source, contains('Future<void> _loadCatalog(int generation) async'));
+    expect(source, contains('Future<void> _loadCopyRequests(int generation) async'));
     expect(source, contains('_hasLoadedCoreSnapshot && _isTransientRefreshFailure(e)'));
     expect(source, contains('retryableStatuses = {429, 500, 502, 503, 504}'));
     expect(source, contains('catalogError != null'));
