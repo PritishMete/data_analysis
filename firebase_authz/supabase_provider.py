@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import nullcontext
 import os
 import uuid
 from datetime import datetime, timezone
@@ -2029,6 +2030,16 @@ def request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: 
         """), {"id": rid, "org": org, "workspace": workspace, "requester": principal,
                 "dataset": dataset_id, "location": location_id,
                 "note": str(note or "")[:1000]})
+        db.execute(text("""
+            INSERT INTO audit_events
+                (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+            VALUES (:event, :org, :actor, 'dataset.copy_request.submit', 'succeeded',
+                    CAST(:metadata AS jsonb))
+        """), {
+            "event": _id("evt"), "org": org, "actor": principal,
+            "metadata": json.dumps({"request_id": rid, "dataset_id": dataset_id,
+                                    "location_id": location_id}),
+        })
         return {"request_id": rid, "status": "pending", "dataset_id": dataset_id}
 
 
@@ -2171,11 +2182,24 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                   AND workspace_id=:workspace
             """), {"org": org, "workspace": workspace,
                     "reviewer": context["principal_id"], "request": request_id})
+            db.execute(text("""
+                INSERT INTO audit_events
+                    (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+                VALUES (:event, :org, :actor, 'dataset.copy_request.decision', 'rejected',
+                        CAST(:metadata AS jsonb))
+            """), {
+                "event": _id("evt"), "org": org, "actor": actor,
+                "metadata": json.dumps({"request_id": request_id,
+                                        "dataset_id": req["dataset_id"],
+                                        "location_id": req["location_id"]}),
+            })
             return {"request_id": request_id, "status": "rejected"}
 
         # Keep the request row lock while the copy is created in its own
         # transaction; assignment and request status are committed together.
-        copy = create_working_copy(claims, workspace, str(req["dataset_id"]), None, None)
+        copy = create_working_copy(
+            claims, workspace, str(req["dataset_id"]), None, None, db=db
+        )
         db.execute(text("""
             INSERT INTO working_copy_assignments
                 (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
@@ -2195,6 +2219,19 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                 "copy": copy["working_copy_id"], "request": request_id})
         if result.rowcount != 1:
             raise AuthzError("The copy request changed while it was being approved.")
+        db.execute(text("""
+            INSERT INTO audit_events
+                (event_id, organization_id, actor_principal_id, action, outcome, metadata)
+            VALUES (:event, :org, :actor, 'dataset.copy_request.decision', 'approved',
+                    CAST(:metadata AS jsonb))
+        """), {
+            "event": _id("evt"), "org": org, "actor": actor,
+            "metadata": json.dumps({"request_id": request_id,
+                                    "dataset_id": req["dataset_id"],
+                                    "working_copy_id": copy["working_copy_id"],
+                                    "requester_principal_id": req["requester_principal_id"],
+                                    "location_id": req["location_id"]}),
+        })
         return {"request_id": request_id, "status": "approved", "working_copy": copy}
 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
@@ -2879,7 +2916,8 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
 
 def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str,
-                        working_copy_id: str | None, source_version: str | None) -> dict[str, Any]:
+                        working_copy_id: str | None, source_version: str | None,
+                        *, db: Any | None = None) -> dict[str, Any]:
     """Create a working copy bound to an immutable published source version."""
     authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
     context = authorization_context(claims, workspace_id)
@@ -2893,8 +2931,8 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
     copy_id = str(working_copy_id or _id("wc"))
 
     from datasets.repository import DatasetRepository
-    with SessionLocal.begin() as db:
-        repo = DatasetRepository(db)
+    with (SessionLocal.begin() if db is None else nullcontext(db)) as active_db:
+        repo = DatasetRepository(active_db)
         dataset = repo.get_by_id(dataset_id)
         if dataset is None or dataset.organization_id != org or dataset.status != "ready":
             raise AuthzError("Only a published original dataset can be copied.")
@@ -2906,7 +2944,7 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
             raise AuthzError("Only a READY version belonging to this dataset can be copied.")
 
         if not roles.intersection({"organization_owner", "branch_head", "manager"}):
-            grant = db.execute(text("""
+            grant = active_db.execute(text("""
                 SELECT permissions FROM resource_grants
                 WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:principal
                 FOR SHARE
@@ -2914,7 +2952,7 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
             has_copy_grant = "dataset.create_working_copy" in set(grant or [])
             has_delegation = False
             if not has_copy_grant and "team_lead" in roles:
-                has_delegation = db.execute(text("""
+                has_delegation = active_db.execute(text("""
                     SELECT 1 FROM delegations d
                     WHERE d.organization_id=:org AND d.workspace_id=:workspace
                       AND d.team_lead_principal_id=:principal AND d.status='active'
@@ -2930,11 +2968,11 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
             if not has_copy_grant and not has_delegation:
                 raise PermissionDenied("Copy authorization was revoked or does not include this dataset.")
 
-        db.execute(text("""
+        active_db.execute(text("""
             INSERT INTO authorization_resources(organization_id, resource_id, resource_type, owner_principal_id)
             VALUES (:org, :copy, 'working_copy', :principal)
         """), {"org": org, "copy": copy_id, "principal": principal})
-        db.execute(text("""
+        active_db.execute(text("""
             INSERT INTO working_copy_authorization
                 (organization_id, working_copy_id, source_dataset_id, source_version, created_by_principal_id)
             VALUES (:org, :copy, :dataset, :version, :principal)
@@ -2943,7 +2981,7 @@ def create_working_copy(claims: dict[str, Any], workspace_id: str, dataset_id: s
         copy_permissions = {
             "working_copy.view", "working_copy.modify", "working_copy.delete"
         }
-        db.execute(text("""
+        active_db.execute(text("""
             INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
             VALUES (:org, :copy, :principal, CAST(:permissions AS jsonb))
         """), {"org": org, "copy": copy_id, "principal": principal,
