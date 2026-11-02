@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     BigInteger,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -83,6 +85,13 @@ class DatasetVersion(Base):
     __tablename__ = "dataset_versions"
     __table_args__ = (
         UniqueConstraint("dataset_id", "version_id", name="uq_dataset_version_label"),
+        UniqueConstraint("dataset_id", "version_number", name="uq_dataset_version_number"),
+        UniqueConstraint("dataset_id", "version_pk", name="uq_dataset_version_dataset_pk"),
+        CheckConstraint("version_number > 0", name="ck_dataset_version_number_positive"),
+        CheckConstraint(
+            "row_count >= 0 AND column_count >= 0 AND file_size >= 0",
+            name="ck_dataset_version_counts_nonnegative",
+        ),
         Index("ix_dataset_versions_dataset_created", "dataset_id", "created_at"),
     )
 
@@ -132,6 +141,16 @@ class DatasetRow(Base):
 
 class DatasetColumn(Base):
     __tablename__ = "dataset_columns"
+    __table_args__ = (
+        Index(
+            "uq_dataset_columns_version_name",
+            "version_pk",
+            "column_name",
+            unique=True,
+            postgresql_where=text("version_pk IS NOT NULL"),
+            sqlite_where=text("version_pk IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     dataset_id: Mapped[str] = mapped_column(
