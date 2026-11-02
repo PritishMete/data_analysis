@@ -108,11 +108,17 @@ def _map_error(exc: Exception) -> HTTPException:
 def managed_dataset_list(
     authorization: str = Header(default=None),
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ):
+    """Return one bounded page plus an authorized-only total for the catalogue."""
     try:
-        return {"datasets": list_authorized_datasets(
-            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
-        )}
+        return list_authorized_datasets(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            limit=limit,
+            offset=offset,
+        )
     except Exception as exc:
         raise _map_error(exc)
 
