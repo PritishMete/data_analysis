@@ -70,7 +70,26 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   String _httpFailureMessage(int statusCode, dynamic decoded, {String fallback = 'Managed dataset request failed.'}) {
-    final detail = decoded is Map ? decoded['detail']?.toString().trim() : null;
+    final rawDetail = decoded is Map ? decoded['detail'] : null;
+    // FastAPI sometimes returns structured details (for example, a duplicate
+    // conflict object). Never stringify the entire map into a user-facing
+    // error; extract only a deliberate message when one is available.
+    final detail = rawDetail is String
+        ? rawDetail.trim()
+        : rawDetail is Map
+            ? (rawDetail['message'] ?? rawDetail['error'])?.toString().trim()
+            : null;
+    final normalizedDetail = (detail ?? '').toLowerCase();
+
+    if (statusCode == 403 &&
+        (normalizedDetail.contains('authorization context') ||
+            normalizedDetail.contains('active branch assignment') ||
+            normalizedDetail.contains('workspace authorization'))) {
+      return 'InsightFlow could not verify your active branch access. Refresh the page and sign in again. If the problem continues, ask your Organization Owner to verify your branch assignment. No change was confirmed.';
+    }
+    if (statusCode >= 500) {
+      return 'The service is temporarily unavailable. Your change was not confirmed; refresh the dataset list before retrying.';
+    }
     if (detail != null && detail.isNotEmpty) return detail;
     switch (statusCode) {
       case 400: return 'The request is invalid. Check the selected dataset and try again.';
@@ -80,9 +99,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       case 409: return 'This resource changed or conflicts with another operation. Refresh and try again.';
       case 422: return 'The submitted data did not pass validation. Check the input and try again.';
       case 429: return 'Too many requests. Wait a moment and retry.';
-      default:
-        if (statusCode >= 500) return 'The service is temporarily unavailable. Your change was not confirmed; refresh before retrying.';
-        return fallback;
+      default: return fallback;
     }
   }
 
