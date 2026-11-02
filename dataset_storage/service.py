@@ -340,12 +340,19 @@ def list_authorized_datasets(
         scan_offset = 0
         scan_size = 250
         while True:
-            batch = repo.list_by_organization(
-                organization_id,
-                limit=scan_size,
-                offset=scan_offset,
-                location_ids=location_ids,
-            )
+            if location_ids is None:
+                # Preserve compatibility for organization-wide and copy-only
+                # catalogue readers; only branch-scoped roles need SQL prefiltering.
+                batch = repo.list_by_organization(
+                    organization_id, limit=scan_size, offset=scan_offset
+                )
+            else:
+                batch = repo.list_by_organization(
+                    organization_id,
+                    limit=scan_size,
+                    offset=scan_offset,
+                    location_ids=location_ids,
+                )
             if not batch:
                 break
             for dataset in batch:
