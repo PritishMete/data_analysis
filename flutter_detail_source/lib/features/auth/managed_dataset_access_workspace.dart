@@ -185,7 +185,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const {429, 500, 502, 503, 504}.contains(error.statusCode);
   }
 
-  Future<void> _loadCatalog() async {
+  Future<void> _loadCatalog(int generation) async {
     try {
       final result =
           await _get('/v1/authz/management/data-access/catalog');
@@ -193,14 +193,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           catalog = items;
           catalogError = null;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           catalog = [];
           catalogError = _errorMessage(e);
@@ -209,7 +209,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
-  Future<void> _loadCopyRequests() async {
+  Future<void> _loadCopyRequests(int generation) async {
     try {
       final result =
           await _get('/v1/authz/management/data-access/requests');
@@ -217,14 +217,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           requests = items;
           requestsError = null;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           requests = [];
           requestsError = _errorMessage(e);
@@ -340,12 +340,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       });
 
       if (!widget.readOnly) {
-        await Future.wait([_loadCatalog(), _loadCopyRequests()]);
+        await Future.wait([_loadCatalog(generation), _loadCopyRequests(generation)]);
       }
-      await _loadManagerUploadGrants();
-      await _loadProposals();
+      await _loadManagerUploadGrants(generation);
+      await _loadProposals(generation);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       final keepLastSnapshot =
           _hasLoadedCoreSnapshot && _isTransientRefreshFailure(e);
       setState(() {
@@ -380,9 +380,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
-  Future<void> _loadManagerUploadGrants() async {
+  Future<void> _loadManagerUploadGrants(int generation) async {
+    if (generation != _loadGeneration || !mounted) return;
     if (!roles.contains('manager') || widget.readOnly) {
-      if (mounted) setState(() { managerUploadGrants = []; });
+      if (mounted && generation == _loadGeneration) setState(() { managerUploadGrants = []; });
       return;
     }
     try {
@@ -390,9 +391,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final items = ((result as Map?)?['grants'] as List? ?? const [])
           .whereType<Map>().map((e) => Map<String,dynamic>.from(e))
           .where((e) => e['status']?.toString() == 'active').toList();
-      if (mounted) setState(() { managerUploadGrants = items; });
+      if (mounted && generation == _loadGeneration) setState(() { managerUploadGrants = items; });
     } catch (_) {
-      if (mounted) setState(() { managerUploadGrants = []; });
+      if (mounted && generation == _loadGeneration) setState(() { managerUploadGrants = []; });
     }
   }
 
@@ -565,15 +566,19 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     }
   }
 
-  Future<void> _loadProposals() async {
-    if (!roles.any((role) => role == 'manager' || role == 'branch_head')) return;
+  Future<void> _loadProposals(int generation) async {
+    if (generation != _loadGeneration || !mounted) return;
+    if (!roles.any((role) => role == 'manager' || role == 'branch_head')) {
+      setState(() { proposals = []; proposalsError = null; });
+      return;
+    }
     try {
       final result = await _get('/v1/managed-datasets/proposals');
       final items = ((result as Map?)?['proposals'] as List? ?? const [])
           .whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-      if (mounted) setState(() { proposals = items; proposalsError = null; });
+      if (mounted && generation == _loadGeneration) setState(() { proposals = items; proposalsError = null; });
     } catch (e) {
-      if (mounted) setState(() { proposalsError = e.toString().replaceFirst('Bad state: ', ''); });
+      if (mounted && generation == _loadGeneration) setState(() { proposalsError = e.toString().replaceFirst('Bad state: ', ''); });
     }
   }
 
