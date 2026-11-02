@@ -130,11 +130,15 @@ def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
     assert "An upload for this dataset is still processing." in workspace
 
 
-def test_failed_uploads_are_not_returned_as_active_datasets():
+def test_failed_uploads_are_not_returned_as_copyable_datasets():
     root = Path(__file__).resolve().parents[1]
     service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
 
-    assert 'if dataset.status in {"deleted", "failed"}:' in service
+    # Privileged roles can see failed records for diagnostics, but copy-only
+    # roles must not be offered a source that cannot be opened.
+    assert 'if dataset.status == "deleted":' in service
+    assert 'if dataset.status == "failed" and not privileged:' in service
+    assert '"status": dataset.status' in service
 
 
 def test_managed_dataset_ui_only_reports_import_after_ready_confirmation():
