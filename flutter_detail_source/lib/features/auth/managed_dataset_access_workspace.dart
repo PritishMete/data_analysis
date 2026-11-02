@@ -272,10 +272,15 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           : <String, dynamic>{};
       if (!mounted) return;
       final selectedDatasetId = selected?['dataset_id']?.toString();
-      final refreshedSelected = selectedDatasetId == null
-          ? null
-          : ds.where((item) => item['dataset_id']?.toString() == selectedDatasetId)
-              .cast<Map<String, dynamic>?>().firstOrNull;
+      Map<String, dynamic>? refreshedSelected;
+      if (selectedDatasetId != null) {
+        for (final item in ds) {
+          if (item['dataset_id']?.toString() == selectedDatasetId) {
+            refreshedSelected = item;
+            break;
+          }
+        }
+      }
       final selectedStillAuthorized = selectedDatasetId == null || refreshedSelected != null;
       final selectedVersionChanged = selected != null &&
           refreshedSelected != null &&
