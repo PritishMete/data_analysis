@@ -42,6 +42,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   http.Client? _activeUploadClient;
   bool _hasLoadedCoreSnapshot = false;
   String? error, rowsError, search, refreshError;
+  String _sortBy = 'newest';
+  String _statusFilter = 'all';
+  String _locationFilter = 'all';
   String? catalogError, requestsError;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
   List<String> roles = [];
@@ -91,6 +94,63 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       return decoded;
     }
     throw StateError('Managed dataset request failed after retrying.');
+  }
+
+  Future<dynamic> _loadAllAuthorizedDatasets() async {
+    const pageSize = 100;
+    final collected = <Map<String, dynamic>>[];
+    var offset = 0;
+    int? expectedTotal;
+    while (true) {
+      final result = await _get(
+        '/v1/managed-datasets?limit=$pageSize&offset=$offset',
+      );
+      if (result is! Map) {
+        throw StateError('The dataset catalogue returned an invalid response.');
+      }
+      final page = ((result['datasets'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final pagination = result['pagination'];
+      if (pagination is Map) {
+        expectedTotal = int.tryParse((pagination['total'] ?? '').toString());
+      }
+      collected.addAll(page);
+      offset += page.length;
+      if (page.isEmpty ||
+          (expectedTotal != null && offset >= expectedTotal) ||
+          (pagination is Map && pagination['has_more'] == false) ||
+          (pagination is! Map && page.length < pageSize)) {
+        break;
+      }
+      if (page.length < pageSize) break;
+    }
+
+    // Deduplicate repeated records from retries or inconsistent pages. Prefer
+    // the newest representation while keeping a stable first-seen ordering.
+    final unique = <String, Map<String, dynamic>>{};
+    for (final item in collected) {
+      final id = (item['dataset_id'] ?? '').toString().trim();
+      final fallback = [
+        item['location_id'] ?? '',
+        item['dataset_name'] ?? item['display_name'] ?? item['original_filename'] ?? '',
+      ].join('|').toLowerCase();
+      final key = id.isNotEmpty ? id : 'fallback:$fallback';
+      final normalized = Map<String, dynamic>.from(item);
+      final status = (normalized['status'] ?? '').toString().trim().toLowerCase();
+      if (status.isNotEmpty) normalized['status'] = status;
+      unique[key] = {...?unique[key], ...normalized};
+    }
+    return {
+      'datasets': unique.values.toList(),
+      'pagination': {
+        'offset': 0,
+        'limit': unique.length,
+        'total': unique.length,
+        'has_more': false,
+      },
+    };
   }
 
   String _errorMessage(Object error) =>
@@ -195,7 +255,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       // transient failure in either optional panel cannot blank this screen.
       final values = widget.readOnly
           ? await Future.wait([
-              _get('/v1/managed-datasets'),
+              _loadAllAuthorizedDatasets(),
               _get('/v1/authz/me'),
             ])
           : await Future.wait([
@@ -205,6 +265,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final ds = ((values[0] as Map?)?['datasets'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
+          .where((item) => (item['dataset_id']?.toString() ?? '').trim().isNotEmpty)
           .toList();
       final mg = values[1] is Map
           ? Map<String, dynamic>.from(values[1] as Map)
@@ -1190,7 +1251,28 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))));
   }
 
-  String _name(Map<String,dynamic> d) => d['display_name']?.toString() ?? d['dataset_name']?.toString() ?? d['original_filename']?.toString() ?? 'Managed dataset';
+  String _name(Map<String,dynamic> d) {
+    for (final key in const ['display_name', 'dataset_name', 'original_filename']) {
+      final value = d[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return 'Managed dataset';
+  }
+
+  String _displayStatus(Map<String, dynamic> dataset) {
+    final status = (dataset['status'] ?? '').toString().trim().toLowerCase();
+    if (status.isEmpty) return 'STATUS UNKNOWN';
+    const labels = {
+      'ready': 'READY',
+      'processing': 'PROCESSING',
+      'uploading': 'UPLOADING',
+      'pending': 'PENDING',
+      'failed': 'FAILED',
+      'deleted': 'DELETED',
+      'proposal_pending': 'PENDING REVIEW',
+    };
+    return labels[status] ?? status.replaceAll('_', ' ').toUpperCase();
+  }
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
   bool get canViewOriginal => roles.any((role) => {
@@ -1229,7 +1311,46 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     ]));
     final q = (search ?? '').trim().toLowerCase();
     final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
-    final filtered = datasets.where((d) => q.isEmpty || [d['original_filename'], d['dataset_name'], d['dataset_id'], d['current_version']].any((v) => v?.toString().toLowerCase().contains(q) == true)).toList();
+    final locationOptions = <String, String>{};
+    for (final dataset in datasets) {
+      final id = dataset['location_id']?.toString() ?? '';
+      if (id.isNotEmpty) {
+        locationOptions[id] = (dataset['location_name']?.toString().trim().isNotEmpty == true)
+            ? dataset['location_name'].toString()
+            : id;
+      }
+    }
+    final filtered = datasets.where((d) {
+      final values = [
+        _name(d), d['original_filename'], d['dataset_name'], d['display_name'],
+        d['dataset_id'], d['current_version'], d['location_name'],
+        d['status'], d['owner_name'], d['created_at'],
+      ];
+      final matchesSearch = q.isEmpty ||
+          values.any((v) => v?.toString().toLowerCase().contains(q) == true);
+      final status = (d['status'] ?? '').toString().toLowerCase();
+      final matchesStatus = _statusFilter == 'all' || status == _statusFilter;
+      final location = d['location_id']?.toString() ?? '';
+      final matchesLocation = _locationFilter == 'all' || location == _locationFilter;
+      return matchesSearch && matchesStatus && matchesLocation;
+    }).toList()
+      ..sort((a, b) {
+        switch (_sortBy) {
+          case 'name':
+            return _name(a).toLowerCase().compareTo(_name(b).toLowerCase());
+          case 'status':
+            final statusOrder = (a['status'] ?? 'unknown').toString()
+                .toLowerCase().compareTo((b['status'] ?? 'unknown').toString().toLowerCase());
+            return statusOrder != 0 ? statusOrder : _name(a).toLowerCase().compareTo(_name(b).toLowerCase());
+          default:
+            final aDate = DateTime.tryParse((a['created_at'] ?? a['updated_at'] ?? '').toString());
+            final bDate = DateTime.tryParse((b['created_at'] ?? b['updated_at'] ?? '').toString());
+            if (aDate == null && bDate == null) return _name(a).toLowerCase().compareTo(_name(b).toLowerCase());
+            if (aDate == null) return 1;
+            if (bDate == null) return -1;
+            return bDate.compareTo(aDate);
+        }
+      });
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (refreshError != null) ...[
         _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -1277,6 +1398,42 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
         SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
+        SizedBox(width: 150, child: DropdownButtonFormField<String>(
+          value: _sortBy,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Sort by', isDense: true),
+          items: const [
+            DropdownMenuItem(value: 'newest', child: Text('Newest first')),
+            DropdownMenuItem(value: 'name', child: Text('Name A–Z')),
+            DropdownMenuItem(value: 'status', child: Text('Status')),
+          ],
+          onChanged: (value) => setState(() => _sortBy = value ?? 'newest'),
+        )),
+        SizedBox(width: 145, child: DropdownButtonFormField<String>(
+          value: _statusFilter,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Status', isDense: true),
+          items: const [
+            DropdownMenuItem(value: 'all', child: Text('All statuses')),
+            DropdownMenuItem(value: 'ready', child: Text('Ready')),
+            DropdownMenuItem(value: 'processing', child: Text('Processing')),
+            DropdownMenuItem(value: 'uploading', child: Text('Uploading')),
+            DropdownMenuItem(value: 'pending', child: Text('Pending')),
+            DropdownMenuItem(value: 'failed', child: Text('Failed')),
+          ],
+          onChanged: (value) => setState(() => _statusFilter = value ?? 'all'),
+        )),
+        if (locationOptions.isNotEmpty)
+          SizedBox(width: 170, child: DropdownButtonFormField<String>(
+            value: locationOptions.containsKey(_locationFilter) || _locationFilter == 'all' ? _locationFilter : 'all',
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Branch', isDense: true),
+            items: [
+              const DropdownMenuItem(value: 'all', child: Text('All branches')),
+              ...locationOptions.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value, overflow: TextOverflow.ellipsis))),
+            ],
+            onChanged: (value) => setState(() => _locationFilter = value ?? 'all'),
+          )),
         _action('OPEN AI ANALYTICS', Icons.auto_awesome,
           () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
           active: true),
@@ -1302,7 +1459,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(_name(d), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
               const SizedBox(height: 3),
-              Text((d['status'] ?? 'UNKNOWN').toString().toUpperCase() + ' · ' + (d['row_count'] ?? '—').toString() + ' ROWS · ' + (d['column_count'] ?? '—').toString() + ' COLUMNS · ' + (d['current_version'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+              Text(_displayStatus(d) + ' · ' + (d['row_count'] ?? '—').toString() + ' ROWS · ' + (d['column_count'] ?? '—').toString() + ' COLUMNS · ' + (d['current_version'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
             ])),
             if (sel) const Icon(CupertinoIcons.chevron_right, size: 14, color: TechColors.borderActive),
           ]))));
@@ -1320,7 +1477,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _surface(Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_eye('SELECTED DATASET'), const SizedBox(height: 3), Text(_name(d), style: const TextStyle(color: TechColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700))]),
-        _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', (d['status'] ?? 'UNKNOWN').toString().toUpperCase()),
+        _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', _displayStatus(d)),
         if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
           if (!widget.readOnly)
