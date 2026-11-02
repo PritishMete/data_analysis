@@ -191,6 +191,7 @@ jobs:
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/supabase_multi_device_session_test.dart
+          test/onboarding_auth_flow_contract_test.dart
           test/ai_analytics_workspace_contract_test.dart
 
       - name: Analyze dedicated AI Analytics workspace
