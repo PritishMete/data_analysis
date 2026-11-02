@@ -94,7 +94,8 @@ void main() {
 
     expect(source, contains('Future<String?> _promptDatasetName'));
     expect(source, contains("request.fields['dataset_name'] = datasetName"));
-    expect(source, contains("d['display_name']?.toString() ?? d['dataset_name']"));
+    expect(source, contains('String _name(Map<String,dynamic> d)'));
+    expect(source, contains("const ['display_name', 'dataset_name', 'original_filename']"));
     final uploadStart = source.indexOf('Future<void> _upload({String? datasetId})');
     final uploadEnd = source.indexOf('Future<void> _deleteDataset()', uploadStart);
     expect(uploadStart, greaterThanOrEqualTo(0));
