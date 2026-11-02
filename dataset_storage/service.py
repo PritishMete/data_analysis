@@ -1668,13 +1668,23 @@ def upload_managed_dataset_stream(
             storage_object_id=stored.storage_object_id if stored else None,
             expected_current_version_id=(base_version_id if not new_dataset else None),
         )
+        audit_action = (
+            "dataset.upload"
+            if new_dataset
+            else ("dataset.replace" if replace_dataset_id is not None else "dataset.version_upload")
+        )
         _audit_safely(
             workspace_id, str(claims["uid"]),
-            "dataset.upload" if new_dataset else "dataset.version_upload",
+            audit_action,
             "succeeded", resource_id=dataset.dataset_id,
-            metadata={"version_id": registration.version.version_id,
-                      "row_count": dataset.row_count, "column_count": dataset.column_count,
-                      "storage_mode": "sql_structured"},
+            metadata={
+                "version_id": registration.version.version_id,
+                "previous_version_id": base_version_id,
+                "replacement": replace_dataset_id is not None,
+                "row_count": dataset.row_count,
+                "column_count": dataset.column_count,
+                "storage_mode": "sql_structured",
+            },
         )
         result = _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
         if result.get("status") != "ready":
@@ -1709,8 +1719,16 @@ def upload_managed_dataset_stream(
                 _unregister_authorization(workspace_id, registration.registration.dataset.dataset_id)
         _audit_safely(
             workspace_id, str(claims["uid"]),
-            "dataset.upload" if new_dataset else "dataset.version_upload",
-            "failed", resource_id=dataset_id,
+            "dataset.upload" if new_dataset else (
+                "dataset.replace" if replace_dataset_id is not None else "dataset.version_upload"
+            ),
+            "failed",
+            resource_id=dataset_id,
+            metadata={
+                "previous_version_id": base_version_id,
+                "replacement": replace_dataset_id is not None,
+                "error_type": type(exc).__name__,
+            },
         )
         raise
     finally:
