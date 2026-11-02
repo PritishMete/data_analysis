@@ -141,3 +141,26 @@ def test_failed_dataset_status_is_visible_only_to_privileged_catalogue(monkeypat
         workspace_id="workspace-test", token="test-token", limit=100, offset=0
     )
     assert [item["dataset_id"] for item in copy_only["datasets"]] == ["ready-dataset"]
+
+
+
+def test_copy_only_catalogue_includes_safe_status_and_branch_metadata(monkeypatch):
+    dataset = FakeDataset(
+        dataset_id="copy-source",
+        status="ready",
+        dataset_name="Authorized source",
+        created_at=datetime.now(timezone.utc),
+    )
+    _setup_catalogue(monkeypatch, [dataset], roles=["employee"])
+
+    result = managed_service.list_authorized_datasets(
+        workspace_id="workspace-test", token="test-token", limit=100, offset=0
+    )
+
+    item = result["datasets"][0]
+    assert item["status"] == "ready"
+    assert item["location_id"] == "branch-test"
+    assert item["location_name"] == "Test Branch"
+    assert item["created_at"] == dataset.created_at.isoformat()
+    assert "current_version" not in item
+    assert "version_count" not in item
