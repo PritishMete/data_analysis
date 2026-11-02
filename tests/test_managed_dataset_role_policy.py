@@ -343,7 +343,7 @@ class _GrantDb:
                     "role_id": "manager",
                 }])
             return _Result(scalars=[])
-        if "INSERT INTO resource_grants" in sql or "INSERT INTO audit_events" in sql:
+        if "INSERT INTO resource_grants" in sql or "DELETE FROM resource_grants" in sql or "INSERT INTO audit_events" in sql:
             return _Result()
         raise AssertionError(f"Unexpected grant query: {sql}")
 
@@ -418,8 +418,8 @@ def test_branch_head_can_revoke_protected_replacement_grant(monkeypatch):
     )
 
     assert result is True
-    grant_write = next(params for sql, params in db.calls if "INSERT INTO resource_grants" in sql)
-    assert grant_write["permissions"] == "[]"
+    revocation = next(params for sql, params in db.calls if "DELETE FROM resource_grants" in sql)
+    assert revocation["target"] == "manager-principal"
 
 
 def test_branch_head_cannot_create_working_copy_from_another_branch(monkeypatch):
