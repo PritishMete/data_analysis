@@ -106,3 +106,23 @@ def test_team_lead_and_employee_cannot_write_original_datasets():
     # the upload service must still call backend authorization for each request.
     assert 'if not ({"organization_owner", "branch_head", "manager"} & roles)' in dataset_authz
     assert 'def _authorize_upload(' in storage
+
+
+
+def test_copy_requests_are_workspace_branch_scoped_and_review_is_single_writer():
+    provider = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    request = provider.split("def request_dataset_copy(", 1)[1].split("\ndef list_copy_requests", 1)[0]
+    listing = provider.split("def list_copy_requests(", 1)[1].split("\ndef approve_copy_request", 1)[0]
+    decision = provider.split("def approve_copy_request(", 1)[1].split("\ndef assign_working_copy", 1)[0]
+
+    assert "m.workspace_id=:workspace AND m.status='active'" in request
+    assert "mr.role_id=oa.role_id" in request
+    assert "oa.location_id=:location" in request
+    assert "da.protected_original IS TRUE" in request
+    assert 'roles.intersection({"organization_owner", "branch_head"})' in listing
+    assert "len(set(locations)) != 1" in listing
+    assert "r.workspace_id=:workspace" in listing
+    assert "FOR UPDATE" in decision
+    assert "create_working_copy(claims, workspace, str(req[\"dataset_id\"]), None, None)" in decision
+    assert "oa.role_id IN ('manager','team_lead')" in decision
+    assert "result.rowcount != 1" in decision
