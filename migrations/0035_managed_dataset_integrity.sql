@@ -15,6 +15,15 @@ BEGIN
     END IF;
 
     IF EXISTS (
+        SELECT 1 FROM dataset_versions
+        GROUP BY dataset_id, version_id
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE EXCEPTION
+            'Cannot add managed-dataset integrity constraints: duplicate (dataset_id, version_id) labels exist.';
+    END IF;
+
+    IF EXISTS (
         SELECT 1 FROM dataset_columns
         WHERE version_pk IS NOT NULL
         GROUP BY version_pk, column_name
@@ -51,6 +60,16 @@ END $$;
 
 DO $$
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_dataset_version_label'
+          AND conrelid = 'dataset_versions'::regclass
+    ) THEN
+        ALTER TABLE dataset_versions
+            ADD CONSTRAINT uq_dataset_version_label
+            UNIQUE (dataset_id, version_id);
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'uq_dataset_version_number'
