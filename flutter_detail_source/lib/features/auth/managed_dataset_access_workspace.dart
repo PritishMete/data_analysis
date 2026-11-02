@@ -272,8 +272,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           : <String, dynamic>{};
       if (!mounted) return;
       final selectedDatasetId = selected?['dataset_id']?.toString();
-      final selectedStillAuthorized = selectedDatasetId == null ||
-          ds.any((item) => item['dataset_id']?.toString() == selectedDatasetId);
+      final refreshedSelected = selectedDatasetId == null
+          ? null
+          : ds.where((item) => item['dataset_id']?.toString() == selectedDatasetId)
+              .cast<Map<String, dynamic>?>().firstOrNull;
+      final selectedStillAuthorized = selectedDatasetId == null || refreshedSelected != null;
+      final selectedVersionChanged = selected != null &&
+          refreshedSelected != null &&
+          selected?['current_version']?.toString() != refreshedSelected['current_version']?.toString();
       setState(() {
         datasets = ds;
         if (!selectedStillAuthorized) {
@@ -281,6 +287,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           profile = null;
           rows = [];
           offset = 0;
+        } else if (refreshedSelected != null) {
+          selected = refreshedSelected;
+          if (selectedVersionChanged) {
+            // Do not keep a preview from an older version attached to the
+            // refreshed catalogue record.
+            profile = null;
+            rows = [];
+            rowsError = null;
+            offset = 0;
+          }
         }
         members = (mg['members'] as List? ?? const [])
             .whereType<Map>()
@@ -1451,7 +1467,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12),
       _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(filtered.length.toString() + (filtered.length == 1 ? ' managed resource' : ' managed resources'), style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 8),
-        if (filtered.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(q.isEmpty ? 'No managed resources are available in this scope yet.' : 'No resources match your search. Clear the search or try another term.', textAlign: TextAlign.center, style: const TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4))),
+        if (filtered.isEmpty) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            datasets.isEmpty && q.isEmpty && _statusFilter == 'all' && _locationFilter == 'all'
+                ? 'No managed resources are available in this authorized scope yet.'
+                : 'No resources match the current search and filters. Clear a filter or try another term.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4),
+          ),
+        ),
         ...filtered.map((d) {
           final sel = d['dataset_id']?.toString() == selected?['dataset_id']?.toString();
           return Padding(padding: const EdgeInsets.only(bottom: 6), child: GlassContainer(useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass, shape: const LiquidRoundedSuperellipse(borderRadius: 13), padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9), child: InkWell(onTap: () => _select(d), borderRadius: BorderRadius.circular(13), child: Row(children: [
