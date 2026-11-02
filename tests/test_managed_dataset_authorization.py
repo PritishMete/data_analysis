@@ -774,3 +774,99 @@ def test_manager_reaches_explicit_grant_scope_for_original_upload(monkeypatch):
     assert seen == [("workspace-owner", "branch-1")]
     assert result["upload_role_id"] == "manager"
     assert result["location_id"] == "branch-1"
+
+
+def test_unassigned_working_copy_creator_cannot_bypass_employee_assignment(monkeypatch):
+    class WorkingCopySession:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            self.calls.append(sql)
+            if "FROM working_copy_authorization wc" in sql:
+                return _Result(row={
+                    "source_dataset_id": "dataset-owner",
+                    "source_version": "version-1",
+                    "version": 1,
+                    "created_by_principal_id": "team-lead",
+                    "location_id": "branch-1",
+                })
+            if "FROM working_copy_assignments" in sql:
+                return _Result(scalar=None)
+            if "FROM organizational_assignments oa" in sql:
+                return _Result(scalar=1)
+            if "FROM resource_grants" in sql:
+                # A creator grant must not substitute for an explicit assignment.
+                return _Result(scalar=["working_copy.view", "working_copy.modify"])
+            return _Result()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    session = WorkingCopySession()
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: {
+            **_copy_only_context("team_lead"),
+            "permissions": ["working_copy.view", "working_copy.modify"],
+        },
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="explicit active assignment to this employee",
+    ):
+        supabase_provider.authorize_working_copy(
+            {"uid": "team-lead", "sub": "team-lead", "provider": "supabase"},
+            "workspace-owner",
+            "working-copy-unassigned",
+            "working_copy.view",
+        )
+
+
+def test_stale_upload_recovery_query_is_limited_to_requested_branch(monkeypatch):
+    from dataset_storage import service as managed_service
+
+    class _Dialect:
+        name = "postgresql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+    class _Db:
+        bind = _Bind()
+
+        def __init__(self):
+            self.statement = None
+
+        def execute(self, statement):
+            self.statement = statement
+            return self
+
+        def all(self):
+            return []
+
+        def rollback(self):
+            return None
+
+    db = _Db()
+
+    class _Repo:
+        def __init__(self):
+            self.db = db
+
+    recovered = managed_service._recover_stale_processing_uploads(
+        _Repo(), "org-owner", location_id="branch-1"
+    )
+
+    assert recovered == 0
+    sql = str(db.statement)
+    assert "dataset_authorization" in sql
+    assert "recovery_location_id" in sql
+    assert db.statement.compile().params["recovery_location_id"] == "branch-1"
