@@ -210,32 +210,16 @@ class _CompanyRegistrationScreenState
   }
 
   Future<void> _register() async {
+    if (_busy) return;
+
     final phone = _phoneE164();
     if (!_profileValid() || phone == null) {
       _fail('Complete the Branch Head profile, including a valid phone number, before registering.');
       return;
     }
 
-    final session = await InsightFlowSupabaseAuthService.ensureSession(
-      timeout: const Duration(seconds: 8),
-    );
-    final user = session == null
-        ? null
-        : InsightFlowSupabaseAuthService.currentSupabaseUser;
-    if (session == null || user == null) {
-      _fail('Your authenticated Supabase session could not be restored.');
-      return;
-    }
-
-    final authoritative =
-        await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
-    if (authoritative == null ||
-        authoritative.id != user.id ||
-        authoritative.emailConfirmedAt == null) {
-      _fail('Your authenticated email is not confirmed. Sign in again.');
-      return;
-    }
-
+    // Lock the entire registration operation, including session and identity
+    // preflight, so repeated taps cannot race into duplicate registrations.
     setState(() {
       _busy = true;
       _error = false;
@@ -243,6 +227,25 @@ class _CompanyRegistrationScreenState
     });
 
     try {
+      final session = await InsightFlowSupabaseAuthService.ensureSession(
+        timeout: const Duration(seconds: 8),
+      );
+      final user = session == null
+          ? null
+          : InsightFlowSupabaseAuthService.currentSupabaseUser;
+      if (session == null || user == null) {
+        throw StateError('Your authenticated Supabase session could not be restored.');
+      }
+
+      final authoritative =
+          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+      if (authoritative == null || authoritative.id != user.id) {
+        throw StateError('Your authenticated Supabase session could not be verified.');
+      }
+      if (authoritative.emailConfirmedAt == null) {
+        throw StateError('Your authenticated email is not confirmed. Sign in again.');
+      }
+
       final request = await organizationServiceRequest(
         method: 'POST',
         path: '/v1/authz/organizations/register',

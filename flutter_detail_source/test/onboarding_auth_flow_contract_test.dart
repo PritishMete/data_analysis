@@ -74,6 +74,26 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(http, contains('_AuthenticationRequiredFailure()'));
   });
 
+  test('company registration locks before session preflight and catches the whole operation', () {
+    final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
+    final start = company.indexOf('Future<void> _register() async {');
+    final end = company.indexOf('Widget _field(', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final registration = company.substring(start, end);
+    expect(registration, contains('if (_busy) return;'));
+    expect(
+      registration.indexOf('_busy = true;'),
+      lessThan(registration.indexOf('ensureSession(')),
+    );
+    expect(
+      registration.indexOf('try {'),
+      lessThan(registration.indexOf('ensureSession(')),
+    );
+    expect(registration, contains('organizationServiceRequest('));
+    expect(registration, contains('on OrganizationServiceRequestException'));
+  });
+
   test('signup prevents duplicate submissions and onboarding controllers are disposed', () {
     final signup = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
     final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
