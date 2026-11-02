@@ -11,7 +11,6 @@ import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
 import '../dashboard/navigation_tabs.dart' show kInsightFlowNavigationGlassSettings;
-import 'authorization_management_screen.dart';
 import 'managed_dataset_access_workspace.dart';
 
 enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }
@@ -2051,50 +2050,10 @@ class _ManagementShellState extends State<ManagementShell> {
   }
   Widget _detailLine(String label,String value)=>Padding(padding:const EdgeInsets.symmetric(vertical:5),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[SizedBox(width:112,child:Text(label,style:const TextStyle(color:TechColors.textMuted,fontSize:11))),Expanded(child:SelectableText(value,style:const TextStyle(color:TechColors.textPrimary,fontSize:12)))]));
 
-  Widget legacyView(String title, String text, {String actionLabel = 'OPEN LEGACY TOOLS'}) => surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _eyebrow(title), const SizedBox(height: 7),
-    Text(text, style: const TextStyle(color: TechColors.textMuted, height: 1.45)),
-    const SizedBox(height: 14),
-    _actionChip(
-      actionLabel,
-      Icons.open_in_new,
-      () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => AuthorizationManagementScreen(
-            onStartWorking: (datasetId) async {
-              final headers = await supabaseAuthHeaders();
-              final response = await http.post(
-                Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/working-copies'),
-                headers: {
-                  ...headers,
-                  if (insightFlowWorkspaceId.isNotEmpty)
-                    'X-InsightFlow-Workspace-ID': insightFlowWorkspaceId,
-                },
-              );
-              if (response.statusCode < 200 || response.statusCode >= 300) {
-                throw StateError('Unable to create a managed dataset working copy.');
-              }
-              if (!mounted) return;
-              final decoded = jsonDecode(response.body);
-              final workingCopy = decoded is Map && decoded['working_copy'] is Map
-                  ? Map<String, dynamic>.from(decoded['working_copy'] as Map)
-                  : <String, dynamic>{};
-              Navigator.of(context).pop();
-              openInsightFlowAnalysis(
-                context,
-                managedDatasetId: datasetId,
-                managedVersionId: workingCopy['structured_version_id']?.toString() ??
-                    workingCopy['source_version']?.toString(),
-                managedWorkingCopyId: workingCopy['working_copy_id']?.toString(),
-              );
-            },
-          ),
-        ),
-      ),
-      accent: true,
-    ),
-  ]));
-
+  // Dataset and access management have one authoritative entry point: the
+  // Branch Data & Access section rendered by ManagedDatasetAccessWorkspace.
+  // The former legacy route duplicated grants and passed original dataset IDs
+  // into analysis, so keep it out of the Management Cell navigation surface.
 
   Map<String, dynamic>? _invitationPerson(Map<String, dynamic> invitation) {
     final employeeId = invitation['employee_id']?.toString().trim() ?? '';
