@@ -267,11 +267,11 @@ def list_authorized_datasets(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Return a complete, authorized catalogue window with truthful pagination metadata.
+    """Return an authorized catalogue page without running lifecycle recovery.
 
-    Scan database windows until exhausted before slicing the authorized result.
-    This prevents unauthorized rows from consuming the visible page and hiding
-    authorized datasets that occur later in the organization-wide ordering.
+    Catalogue reads must be side-effect free. Stale upload recovery can publish
+    or retire records, so it belongs to the upload/maintenance lifecycle and
+    must never be triggered by a Branch Head merely viewing their own branch.
     """
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
@@ -285,22 +285,72 @@ def list_authorized_datasets(
 
     repo = DatasetRepository(SessionLocal())
     try:
-        _recover_stale_processing_uploads(repo, organization_id)
+        # Branch-scoped roles should not scan every dataset in the organization.
+        # Resolve their active operational assignments once and push the branch
+        # filter into the catalogue query; per-resource authorization remains
+        # mandatory below.
+        location_ids: list[str] | None = None
+        scoped_role = "branch_head" if "branch_head" in roles else (
+            "manager" if "manager" in roles else None
+        )
+        if scoped_role:
+            assignments = repo.db.execute(
+                text("""
+                    SELECT DISTINCT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id
+                     AND m.principal_id=oa.principal_id
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id
+                    WHERE oa.organization_id=:organization_id
+                      AND oa.principal_id=:principal_id
+                      AND oa.role_id=:role_id
+                      AND oa.status='active'
+                      AND oa.location_id IS NOT NULL
+                      AND m.workspace_id=:workspace_id
+                      AND m.status='active'
+                      AND l.status='active'
+                """),
+                {
+                    "organization_id": organization_id,
+                    "principal_id": str(context["principal_id"]),
+                    "role_id": scoped_role,
+                    "workspace_id": str(context["workspace_id"]),
+                },
+            ).scalars().all()
+            location_ids = sorted({str(value) for value in assignments if value})
+            if scoped_role == "branch_head" and len(location_ids) != 1:
+                raise AuthzError(
+                    "A Branch Head must have exactly one active branch assignment to access original datasets."
+                )
+            if not location_ids:
+                return {
+                    "datasets": [],
+                    "pagination": {
+                        "offset": page_offset,
+                        "limit": page_limit,
+                        "total": 0,
+                        "has_more": False,
+                    },
+                }
+
         authorized: list[tuple[Any, dict[str, Any]]] = []
         scan_offset = 0
         scan_size = 250
         while True:
             batch = repo.list_by_organization(
-                organization_id, limit=scan_size, offset=scan_offset
+                organization_id,
+                limit=scan_size,
+                offset=scan_offset,
+                location_ids=location_ids,
             )
             if not batch:
                 break
             for dataset in batch:
-                if dataset.status == "deleted":
+                if dataset.status in {"deleted", "deleting"}:
                     continue
-                # Failed records remain visible to privileged managers so they
-                # can distinguish a failed import from an empty catalogue.
-                # Copy-only users must never be offered an unusable source.
                 if dataset.status == "failed" and not privileged:
                     continue
                 try:
@@ -309,9 +359,6 @@ def list_authorized_datasets(
                     )
                 except AuthzError:
                     continue
-                # Keep database work bounded to the requested page. Building
-                # version summaries for every row on every page caused N+1
-                # queries and made large catalogues increasingly expensive.
                 authorized.append((dataset, scope))
             scan_offset += len(batch)
             if len(batch) < scan_size:
@@ -336,8 +383,6 @@ def list_authorized_datasets(
                     or item["location_id"]
                 )
             else:
-                # Copy-only roles receive only metadata needed to request
-                # an authorized source. Original versions and schema stay private.
                 display_name = (
                     dataset.dataset_name
                     or dataset.original_filename
