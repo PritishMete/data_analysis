@@ -313,3 +313,34 @@ def test_workspace_http_errors_are_preserved_by_route_error_mapper():
 
     assert _map_error(forbidden) is forbidden
     assert _map_error(conflict) is conflict
+
+
+
+def test_dataset_catalogue_read_does_not_run_stale_upload_recovery():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    start = source.index("def list_authorized_datasets(")
+    end = source.index("def get_managed_dataset(", start)
+    listing = source[start:end]
+    assert "_recover_stale_processing_uploads" not in listing
+
+
+def test_branch_scoped_catalogue_filters_before_authorizing_each_dataset():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    start = source.index("def list_authorized_datasets(")
+    end = source.index("def get_managed_dataset(", start)
+    listing = source[start:end]
+    assert 'scoped_role = "branch_head"' in listing
+    assert 'raise AuthzError(' in listing
+    assert "location_ids=location_ids" in listing
+
+    repository = Path("datasets/repository.py").read_text()
+    start = repository.index("def list_by_organization(")
+    end = repository.index("def get_columns(", start)
+    method = repository[start:end]
+    assert "location_ids: list[str] | None = None" in method
+    assert "dataset_authorization.location_id IN :auth_locations" in method
+    assert "dataset_authorization.protected_original IS TRUE" in method
