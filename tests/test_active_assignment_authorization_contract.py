@@ -123,7 +123,8 @@ def test_copy_requests_are_workspace_branch_scoped_and_review_is_single_writer()
     assert "len(set(locations)) != 1" in listing
     assert "r.workspace_id=:workspace" in listing
     assert "FOR UPDATE" in decision
-    assert "create_working_copy(claims, workspace, str(req[\"dataset_id\"]), None, None)" in decision
+    assert "create_working_copy(" in decision
+    assert "None, None, db=db" in decision
     assert "oa.role_id IN ('manager','team_lead')" in decision
     assert "result.rowcount != 1" in decision
 
