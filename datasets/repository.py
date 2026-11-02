@@ -251,15 +251,19 @@ class DatasetRepository:
         )
         return self.db.execute(stmt).scalars().first()
 
-    def list_by_organization(self, organization_id: str, limit: int = 50) -> list[Dataset]:
+    def list_by_organization(
+        self, organization_id: str, limit: int = 50, offset: int = 0
+    ) -> list[Dataset]:
+        """List an ordered window of organization datasets for catalogue pagination."""
         stmt = (
             select(Dataset)
             .where(
                 Dataset.organization_id == organization_id,
                 Dataset.status != "deleted",
             )
-            .order_by(Dataset.created_at.desc())
-            .limit(limit)
+            .order_by(Dataset.created_at.desc(), Dataset.dataset_id.asc())
+            .offset(max(0, offset))
+            .limit(max(1, min(limit, 500)))
         )
         return list(self.db.execute(stmt).scalars().all())
 
