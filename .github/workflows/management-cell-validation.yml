@@ -1,0 +1,64 @@
+name: Management Cell Validation
+
+on:
+  push:
+    branches:
+      - feature/employee-management-cell
+  pull_request:
+    branches:
+      - main
+      - feature/employee-management-cell
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: management-cell-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Compile authorization and dataset modules
+        run: python -m compileall -q dataset_storage firebase_authz datasets
+      - name: Run backend regression suite
+        run: python -m pytest -q
+
+  flutter:
+    name: Flutter tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_detail_source
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            flutter_detail_source
+            .github
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: stable
+          cache: true
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+      - name: Run Flutter tests
+        run: flutter test
