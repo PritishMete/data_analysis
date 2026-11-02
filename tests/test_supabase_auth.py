@@ -42,8 +42,24 @@ def test_supabase_claims_are_normalized(monkeypatch):
 
 
 def test_supabase_invalid_token_is_rejected(monkeypatch):
+    import urllib.error
+
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(supabase_auth, "_jwks_client", lambda _: (_ for _ in ()).throw(RuntimeError("bad key")))
+    monkeypatch.setenv("INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY", "publishable-test-key")
+    monkeypatch.setattr(
+        supabase_auth, "_jwks_client",
+        lambda _: (_ for _ in ()).throw(RuntimeError("unsupported signing key")),
+    )
+    monkeypatch.setattr(
+        supabase_auth.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            urllib.error.HTTPError(
+                "https://example.supabase.co/auth/v1/user", 401,
+                "invalid token", {}, None
+            )
+        ),
+    )
     with pytest.raises(supabase_auth.AuthenticationRequired):
         supabase_auth.verify_supabase_access_token("bad.token.value")
 
@@ -150,12 +166,57 @@ def test_supabase_user_subject_mismatch_is_rejected(monkeypatch):
         supabase_auth.verify_supabase_access_token("token")
 
 
-def test_supabase_auth_api_failure_is_rejected(monkeypatch):
+def test_supabase_auth_api_network_failure_is_temporary(monkeypatch):
     _verified_jwt_setup(monkeypatch, {"id": "supabase-user"})
     monkeypatch.setattr(
         supabase_auth.urllib.request,
         "urlopen",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unavailable")),
     )
-    with pytest.raises(supabase_auth.AuthenticationRequired):
+    with pytest.raises(supabase_auth.SupabaseAuthUnavailable):
         supabase_auth.verify_supabase_access_token("token")
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, supabase_auth.AuthenticationRequired),
+        (403, supabase_auth.AuthenticationRequired),
+        (429, supabase_auth.SupabaseAuthUnavailable),
+        (503, supabase_auth.SupabaseAuthUnavailable),
+    ],
+)
+def test_supabase_auth_http_errors_distinguish_credentials_from_outages(
+    monkeypatch, status, expected
+):
+    import urllib.error
+
+    _verified_jwt_setup(monkeypatch, {"id": "supabase-user"})
+    monkeypatch.setattr(
+        supabase_auth.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            urllib.error.HTTPError(
+                "https://example.supabase.co/auth/v1/user", status,
+                "upstream", {}, None
+            )
+        ),
+    )
+    with pytest.raises(expected):
+        supabase_auth.verify_supabase_access_token("token")
+
+
+def test_authz_me_returns_503_when_supabase_auth_is_unavailable(monkeypatch):
+    from fastapi import HTTPException
+    from firebase_authz import routes
+
+    monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
+    monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+
+    def unavailable(_token):
+        raise supabase_auth.SupabaseAuthUnavailable("Supabase Auth unavailable")
+
+    monkeypatch.setattr(routes, "verify_id_token", unavailable)
+    with pytest.raises(HTTPException) as error:
+        routes.me("Bearer valid-shaped-token")
+    assert error.value.status_code == 503

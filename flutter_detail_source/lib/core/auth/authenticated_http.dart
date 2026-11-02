@@ -103,7 +103,10 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
         headers: await supabaseAuthHeaders(),
       )
       .timeout(const Duration(seconds: 8));
-  if (response.statusCode == 401 || response.statusCode == 403) {
+  if (response.statusCode == 401) {
+    throw _AuthenticationRequiredFailure();
+  }
+  if (response.statusCode == 403) {
     throw _AuthoritativeAuthorizationFailure();
   }
   if (response.statusCode != 200) {
@@ -118,6 +121,8 @@ Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
       .map((item) => Map<String, dynamic>.from(item))
       .toList();
 }
+
+class _AuthenticationRequiredFailure implements Exception {}
 
 class _AuthoritativeAuthorizationFailure implements Exception {}
 
@@ -173,8 +178,20 @@ Future<InsightFlowOnboardingResolution>
         )
         .timeout(const Duration(seconds: 8));
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
+    if (response.statusCode == 401) {
+      // A 401 means the bearer token itself is no longer accepted.
       await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    }
+    if (response.statusCode == 403) {
+      // A 403 is an authorization decision, not a logout instruction.
+      // Keep the valid Supabase identity so the user can retry or contact an
+      // administrator without having to authenticate again.
       insightFlowWorkspaceId = '';
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('insightflow.workspace.$uid');
@@ -270,8 +287,16 @@ Future<InsightFlowOnboardingResolution>
       return const InsightFlowOnboardingResolution(
         InsightFlowOnboardingState.noMembership,
       );
-    } on _AuthoritativeAuthorizationFailure {
+    } on _AuthenticationRequiredFailure {
       await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    } on _AuthoritativeAuthorizationFailure {
+      // The identity is valid, but invitation authorization was denied.
       insightFlowWorkspaceId = '';
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('insightflow.workspace.$uid');
@@ -301,16 +326,11 @@ Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
   if (resolution.state == InsightFlowOnboardingState.noMembership ||
       resolution.state == InsightFlowOnboardingState.pendingInvitation) {
     final prefs = await SharedPreferences.getInstance();
-    final hadCachedWorkspace =
-        (prefs.getString('insightflow.workspace.$uid')?.trim().isNotEmpty ??
-            false) ||
-        insightFlowWorkspaceId.trim().isNotEmpty;
     insightFlowWorkspaceId = '';
     await prefs.remove('insightflow.workspace.$uid');
-    if (hadCachedWorkspace) {
-      await InsightFlowSupabaseAuthService.signOut();
-      return false;
-    }
+    // Losing workspace membership removes workspace access, not the user's
+    // Supabase identity. Keep the login available for another invitation or
+    // an administrator-assisted membership repair.
     return false;
   }
   return null;

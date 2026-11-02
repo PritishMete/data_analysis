@@ -38,6 +38,69 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
       source,
       contains("Cached workspace data cannot restore access."),
     );
+    expect(
+      source,
+      contains("Your InsightFlow identity is still signed in"),
+    );
+  });
+
+  test('authoritative user lookup refreshes an expired session before getUser', () {
+    final auth = File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
+    final start = auth.indexOf('static Future<User?> fetchAuthoritativeUser');
+    final end = auth.indexOf('static String userFacingAuthError', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lookup = auth.substring(start, end);
+    expect(lookup, contains('ensureSession(timeout: timeout)'));
+    expect(lookup, contains('client.auth.getUser(session.accessToken)'));
+    expect(
+      lookup.indexOf('ensureSession(timeout: timeout)'),
+      lessThan(lookup.indexOf('client.auth.getUser(session.accessToken)')),
+    );
+  });
+
+  test('authorization denial does not terminate a valid Supabase login', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final meStart = http.indexOf(
+      '// A 403 is an authorization decision, not a logout instruction.',
+    );
+    final meEnd = http.indexOf('if (response.statusCode != 200)', meStart);
+    expect(meStart, greaterThanOrEqualTo(0));
+    expect(meEnd, greaterThan(meStart));
+    final forbiddenBlock = http.substring(meStart, meEnd);
+    expect(forbiddenBlock, contains('InsightFlowOnboardingState.authoritativeDenial'));
+    expect(forbiddenBlock, isNot(contains('signOut()')));
+    expect(http, contains('if (response.statusCode == 401)'));
+    expect(http, contains('_AuthenticationRequiredFailure()'));
+  });
+
+  test('company registration locks before session preflight and catches the whole operation', () {
+    final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
+    final start = company.indexOf('Future<void> _register() async {');
+    final end = company.indexOf('Widget _field(', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final registration = company.substring(start, end);
+    expect(registration, contains('if (_busy) return;'));
+    expect(
+      registration.indexOf('_busy = true;'),
+      lessThan(registration.indexOf('ensureSession(')),
+    );
+    expect(
+      registration.indexOf('try {'),
+      lessThan(registration.indexOf('ensureSession(')),
+    );
+    expect(registration, contains('organizationServiceRequest('));
+    expect(registration, contains('on OrganizationServiceRequestException'));
+  });
+
+  test('signup prevents duplicate submissions and onboarding controllers are disposed', () {
+    final signup = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
+    final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
+    final employee = File('lib/features/auth/employee_profile_onboarding_screen.dart').readAsStringSync();
+    expect(signup, contains('Future<void> _signUp() async {\n    if (_loading) return;'));
+    expect(company, contains('_proofNumber,\n    ])'));
+    expect(employee, contains('_proofNumber,\n    ])'));
   });
 
   test('pending invitation lookup and acceptance use Supabase authentication', () {
