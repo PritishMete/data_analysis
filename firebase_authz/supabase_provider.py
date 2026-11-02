@@ -2996,13 +2996,7 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
               AND principal_id=:principal AND status='active'
         """), {"org": organization_id, "copy": working_copy_id,
                 "principal": principal_id}).scalar_one_or_none()
-        grant = db.execute(text("""
-            SELECT permissions FROM resource_grants
-            WHERE organization_id=:org AND resource_id=:copy AND principal_id=:principal
-        """), {"org": organization_id, "copy": working_copy_id,
-                "principal": principal_id}).scalar_one_or_none()
     assigned = assignment is not None
-    granted = set(grant or [])
     source_location = str(row["location_id"] or "")
 
     # Working-copy endpoints do not pass through authorize_dataset(), so
@@ -3079,8 +3073,12 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
             organization_id, resolved_workspace_id, principal_id, source_location
         ):
             raise AuthzError("Working-copy access requires an active assignment to the source branch.")
-        if not assigned and action not in granted:
-            raise AuthzError("This working copy is assigned to another user or was not shared with you.")
+        # Lower-level roles must have an active assignment row. A resource
+        # grant (including the creator's default grant) is not a substitute for
+        # explicit employee assignment, otherwise an unassigned copy can be
+        # accessed by its creator and violate employee isolation.
+        if not assigned:
+            raise AuthzError("Working-copy access requires an explicit active assignment to this employee.")
 
     return {
         **context, "authorized": True, "organization_id": organization_id,
