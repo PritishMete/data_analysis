@@ -261,7 +261,7 @@ class DatasetRepository:
                 Dataset.organization_id == organization_id,
                 Dataset.status != "deleted",
             )
-            .order_by(Dataset.created_at.desc(), Dataset.dataset_id.asc())
+            .order_by(Dataset.created_at.desc().nullslast(), Dataset.dataset_id.asc())
             .offset(max(0, offset))
             .limit(max(1, min(limit, 500)))
         )
