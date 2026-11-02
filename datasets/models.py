@@ -46,6 +46,12 @@ def _utcnow() -> datetime:
 
 class Dataset(Base):
     __tablename__ = "datasets"
+    __table_args__ = (
+        CheckConstraint(
+            "row_count >= 0 AND column_count >= 0",
+            name="ck_dataset_counts_nonnegative",
+        ),
+    )
 
     dataset_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
