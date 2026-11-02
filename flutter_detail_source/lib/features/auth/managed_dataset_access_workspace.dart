@@ -56,6 +56,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   List<String> roles = [];
   List<Map<String,dynamic>> proposals = [];
   List<Map<String,dynamic>> managerUploadGrants = [];
+  String? managerUploadGrantsError;
   String? proposalsError;
   Map<String,dynamic>? selected, profile;
   int offset = 0;
@@ -391,6 +392,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           rows = [];
           offset = 0;
           managerUploadGrants = [];
+          managerUploadGrantsError = null;
           proposals = [];
           catalogError = null;
           requestsError = null;
@@ -403,7 +405,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     final expectedGeneration = generation ?? _loadGeneration;
     if (expectedGeneration != _loadGeneration || !mounted) return;
     if (!roles.contains('manager') || widget.readOnly) {
-      if (mounted && expectedGeneration == _loadGeneration) setState(() { managerUploadGrants = []; });
+      if (mounted && expectedGeneration == _loadGeneration) {
+        setState(() {
+          managerUploadGrants = [];
+          managerUploadGrantsError = null;
+        });
+      }
       return;
     }
     try {
@@ -411,9 +418,18 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final items = ((result as Map?)?['grants'] as List? ?? const [])
           .whereType<Map>().map((e) => Map<String,dynamic>.from(e))
           .where((e) => e['status']?.toString() == 'active').toList();
-      if (mounted && expectedGeneration == _loadGeneration) setState(() { managerUploadGrants = items; });
-    } catch (_) {
-      if (mounted && expectedGeneration == _loadGeneration) setState(() { managerUploadGrants = []; });
+      if (mounted && expectedGeneration == _loadGeneration) setState(() {
+        managerUploadGrants = items;
+        managerUploadGrantsError = null;
+      });
+    } catch (e) {
+      if (mounted && expectedGeneration == _loadGeneration) setState(() {
+        // Fail closed: an unavailable grant endpoint must not leave upload
+        // controls enabled from stale permissions or look like a valid empty
+        // grant list. The backend independently rechecks every upload.
+        managerUploadGrants = [];
+        managerUploadGrantsError = _errorMessage(e);
+      });
     }
   }
 
@@ -1492,6 +1508,18 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           const SizedBox(width: 9),
           const Expanded(child: Text(
             'The latest refresh could not be completed. Showing the last successfully loaded data; retry to sync again.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4),
+          )),
+          _action('RETRY', Icons.refresh, _load, active: true),
+        ])),
+        const SizedBox(height: 10),
+      ],
+      if (managerUploadGrantsError != null && roles.contains('manager')) ...[
+        _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          const Icon(Icons.shield_outlined, color: Color(0xFFFFB454), size: 18),
+          const SizedBox(width: 9),
+          const Expanded(child: Text(
+            'Manager upload permissions could not be verified. Upload is disabled until permissions refresh successfully.',
             style: TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4),
           )),
           _action('RETRY', Icons.refresh, _load, active: true),
