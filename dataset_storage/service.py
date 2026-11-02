@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import os
 import re
 import uuid
@@ -32,6 +33,8 @@ from schema_intelligence.repository import RelationshipRepository
 from schema_intelligence.service import SchemaIntelligenceService
 
 from .provider import SupabaseDatasetStorageProvider, archive_original_enabled
+
+logger = logging.getLogger(__name__)
 
 MAX_DATASET_BYTES = int(
     os.getenv("INSIGHTFLOW_DATASET_MAX_BYTES", str(100 * 1024 * 1024))
@@ -203,8 +206,17 @@ def _audit_safely(
         audit_dataset_event(
             workspace_id, actor_uid, action, outcome, metadata=payload
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Audit persistence must never fail silently. The business operation may
+        # already be committed, so preserve its result while emitting a
+        # structured, non-sensitive diagnostic for operators.
+        logger.error(
+            "dataset_audit_write_failed action=%s outcome=%s resource_id_present=%s error_type=%s",
+            action,
+            outcome,
+            bool(resource_id),
+            type(exc).__name__,
+        )
 
 
 def _structured_summary(dataset, version_count: int) -> dict[str, Any]:
