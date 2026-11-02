@@ -1021,6 +1021,8 @@ def _physical_upload_is_complete(
 def _recover_stale_processing_uploads(
     repo: DatasetRepository,
     organization_id: str,
+    *,
+    location_id: str | None = None,
 ) -> int:
     """Recover complete abandoned uploads; clean only versions proven incomplete."""
     if repo.db.bind.dialect.name != "postgresql":
@@ -1029,7 +1031,7 @@ def _recover_stale_processing_uploads(
     cutoff = datetime.now(timezone.utc) - timedelta(
         seconds=STALE_MANAGED_DATASET_PROCESSING_SECONDS
     )
-    candidates = repo.db.execute(
+    candidate_query = (
         select(
             DatasetVersion.version_pk,
             DatasetVersion.dataset_id,
@@ -1053,8 +1055,25 @@ def _recover_stale_processing_uploads(
                 .where(text("dataset_change_proposals.status = 'pending'"))
             ),
         )
-        .order_by(DatasetVersion.created_at.asc())
-        .limit(100)
+    )
+    # Never let a branch-scoped upload or duplicate check recover another
+    # branch's abandoned uploads as a side effect.
+    if location_id is not None:
+        normalized_location_id = str(location_id).strip()
+        if not normalized_location_id:
+            return 0
+        candidate_query = candidate_query.where(text("""
+            EXISTS (
+                SELECT 1 FROM dataset_authorization da
+                WHERE da.organization_id = datasets.organization_id
+                  AND da.dataset_id = datasets.dataset_id
+                  AND da.location_id = :recovery_location_id
+                  AND da.status = 'active'
+                  AND da.protected_original IS TRUE
+            )
+        """)).params(recovery_location_id=normalized_location_id)
+    candidates = repo.db.execute(
+        candidate_query.order_by(DatasetVersion.created_at.asc()).limit(100)
     ).all()
     repo.db.rollback()
 
@@ -1497,7 +1516,9 @@ def check_managed_dataset_duplicates(
     from core.db import SessionLocal
     repo = DatasetRepository(SessionLocal())
     try:
-        _recover_stale_processing_uploads(repo, organization_id)
+        _recover_stale_processing_uploads(
+            repo, organization_id, location_id=str(context.get("location_id") or "")
+        )
         conflicts = _find_managed_dataset_upload_conflicts(
             repo,
             organization_id=organization_id,
@@ -1556,7 +1577,9 @@ def upload_managed_dataset_stream(
     upload_lock_connection = None
     upload_lock_keys: list[str] = []
     try:
-        _recover_stale_processing_uploads(repo, organization_id)
+        _recover_stale_processing_uploads(
+            repo, organization_id, location_id=str(context.get("location_id") or "")
+        )
 
         if requested_new_dataset:
             # Hold a PostgreSQL session lock across conflict checking, row
