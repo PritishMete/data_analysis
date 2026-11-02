@@ -38,6 +38,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool loading = true, rowsLoading = false;
   bool _uploading = false;
   bool _cancelUploadRequested = false;
+  bool _deletingDataset = false;
+  bool _openingWorkingCopy = false;
+  int _loadGeneration = 0;
+  int _selectionGeneration = 0;
+  int _rowsGeneration = 0;
+  final Set<String> _pendingAccessOperations = <String>{};
   double _uploadProgress = 0;
   http.Client? _activeUploadClient;
   bool _hasLoadedCoreSnapshot = false;
@@ -63,6 +69,23 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     return h;
   }
 
+  String _httpFailureMessage(int statusCode, dynamic decoded, {String fallback = 'Managed dataset request failed.'}) {
+    final detail = decoded is Map ? decoded['detail']?.toString().trim() : null;
+    if (detail != null && detail.isNotEmpty) return detail;
+    switch (statusCode) {
+      case 400: return 'The request is invalid. Check the selected dataset and try again.';
+      case 401: return 'Your session has expired. Sign in again and retry.';
+      case 403: return 'You do not have permission to perform this action in the current branch.';
+      case 404: return 'This resource is no longer available in your authorized scope. Refresh the list.';
+      case 409: return 'This resource changed or conflicts with another operation. Refresh and try again.';
+      case 422: return 'The submitted data did not pass validation. Check the input and try again.';
+      case 429: return 'Too many requests. Wait a moment and retry.';
+      default:
+        if (statusCode >= 500) return 'The service is temporarily unavailable. Your change was not confirmed; refresh before retrying.';
+        return fallback;
+    }
+  }
+
   Future<dynamic> _get(String path) async {
     final headers = await _headers();
     const retryableStatuses = {429, 500, 502, 503, 504};
@@ -86,9 +109,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw _ManagedDatasetRequestException(
           response.statusCode,
-          decoded is Map && decoded['detail'] != null
-              ? decoded['detail'].toString()
-              : 'Managed dataset request failed.',
+          _httpFailureMessage(response.statusCode, decoded),
         );
       }
       return decoded;
@@ -231,11 +252,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     dynamic d;
     try { d = jsonDecode(r.body); } catch (_) {}
     if (r.statusCode < 200 || r.statusCode >= 300) {
-      throw StateError(
-        d is Map && d['detail'] != null
-            ? d['detail'].toString()
-            : 'Authorization change was rejected.',
-      );
+      throw StateError(_httpFailureMessage(
+        r.statusCode,
+        d,
+        fallback: 'The authorization change was rejected. Refresh the page and retry.',
+      ));
     }
     return d;
   }
@@ -243,6 +264,8 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   @override void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final generation = ++_loadGeneration;
     final hadCoreSnapshot = _hasLoadedCoreSnapshot;
     setState(() {
       loading = !hadCoreSnapshot;
@@ -270,7 +293,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final mg = values[1] is Map
           ? Map<String, dynamic>.from(values[1] as Map)
           : <String, dynamic>{};
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       final selectedDatasetId = selected?['dataset_id']?.toString();
       Map<String, dynamic>? refreshedSelected;
       if (selectedDatasetId != null) {
@@ -628,57 +651,99 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _select(Map<String,dynamic> d) async {
     final id = d['dataset_id']?.toString();
-    if (id == null) return;
-    setState(() { selected = d; profile = null; rows = []; offset = 0; rowsLoading = canViewOriginal; rowsError = null; });
+    if (id == null || id.isEmpty || !mounted) return;
+    final selectionGeneration = ++_selectionGeneration;
+    setState(() {
+      selected = d;
+      profile = null;
+      rows = [];
+      offset = 0;
+      rowsLoading = canViewOriginal;
+      rowsError = null;
+    });
     if (!canViewOriginal) return;
     try {
-      final p = await _get('/v1/managed-datasets/' + id + '/profile?preview_limit=5');
-      profile = p is Map ? Map<String,dynamic>.from(p) : <String,dynamic>{};
+      final response = await _get('/v1/managed-datasets/' + Uri.encodeComponent(id) + '/profile?preview_limit=5');
+      if (!mounted || selectionGeneration != _selectionGeneration || selected?['dataset_id']?.toString() != id) return;
+      final loadedProfile = response is Map ? Map<String,dynamic>.from(response) : <String,dynamic>{};
+      setState(() { profile = loadedProfile; });
       await _loadRows();
     } catch (e) {
-      if (mounted) setState(() { rowsLoading = false; rowsError = e.toString().replaceFirst('Bad state: ', ''); });
+      if (mounted && selectionGeneration == _selectionGeneration && selected?['dataset_id']?.toString() == id) {
+        setState(() { rowsLoading = false; rowsError = _errorMessage(e); });
+      }
     }
   }
 
   Future<void> _loadRows() async {
     final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
+    if (id == null || id.isEmpty || !mounted) return;
+    final generation = ++_rowsGeneration;
+    final versionId = profile?['version_id']?.toString();
     setState(() { rowsLoading = true; rowsError = null; });
     try {
-      final v = profile?['version_id']?.toString();
       final q = 'limit=' + pageSize.toString() + '&offset=' + offset.toString() +
-          ((v == null || v.isEmpty) ? '' : '&version_id=' + Uri.encodeQueryComponent(v));
-      final d = await _get('/v1/managed-datasets/' + id + '/rows?' + q);
+          ((versionId == null || versionId.isEmpty) ? '' : '&version_id=' + Uri.encodeQueryComponent(versionId));
+      final d = await _get('/v1/managed-datasets/' + Uri.encodeComponent(id) + '/rows?' + q);
       final loaded = ((d as Map?)?['rows'] as List? ?? const []).whereType<Map>().map((e) => Map<String,dynamic>.from(e)).toList();
-      if (mounted) setState(() { rows = loaded; rowsLoading = false; });
+      if (mounted && generation == _rowsGeneration && selected?['dataset_id']?.toString() == id && profile?['version_id']?.toString() == versionId) {
+        setState(() { rows = loaded; rowsLoading = false; });
+      }
     } catch (e) {
-      if (mounted) setState(() { rowsLoading = false; rowsError = e.toString().replaceFirst('Bad state: ', ''); });
+      if (mounted && generation == _rowsGeneration && selected?['dataset_id']?.toString() == id) {
+        setState(() { rowsLoading = false; rowsError = _errorMessage(e); });
+      }
     }
   }
 
   Future<void> _requestCopy(String datasetId) async {
+    final operation = 'copy-request:$datasetId';
+    if (!_pendingAccessOperations.add(operation)) return;
+    if (mounted) setState(() {});
     try {
       await _post('/v1/authz/management/data-access/requests?dataset_id=' + Uri.encodeQueryComponent(datasetId), {});
-      _snack('Copy request submitted to the Branch Head.');
       await _load();
-    } catch (e) { _snack(e); }
+      _snack('Copy request submitted to the Branch Head.');
+    } catch (e) {
+      _snack(e);
+    } finally {
+      _pendingAccessOperations.remove(operation);
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _decideRequest(String requestId, bool approve) async {
+    final operation = 'copy-decision:$requestId';
+    if (!_pendingAccessOperations.add(operation)) return;
+    if (mounted) setState(() {});
     try {
       await _post('/v1/authz/management/data-access/requests/' + Uri.encodeQueryComponent(requestId) + '/decision?approve=' + approve.toString(), {});
-      _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
       await _load();
-    } catch (e) { _snack(e); }
+      _snack(approve ? 'Copy request approved and assigned.' : 'Copy request rejected.');
+    } catch (e) {
+      _snack(e);
+    } finally {
+      _pendingAccessOperations.remove(operation);
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _grant(String uid, List<String> permissions) async {
     final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
+    if (id == null || id.isEmpty) return;
+    final operation = 'grant:$id:$uid';
+    if (!_pendingAccessOperations.add(operation)) return;
+    if (mounted) setState(() {});
     try {
       await _post('/v1/authz/datasets/grants', {'workspace_id': insightFlowWorkspaceId, 'dataset_id': id, 'target_uid': uid, 'permissions': permissions});
+      await _load();
       _snack(permissions.isEmpty ? 'Dataset access revoked.' : 'Dataset access updated.');
-    } catch (e) { _snack(e); }
+    } catch (e) {
+      _snack(e);
+    } finally {
+      _pendingAccessOperations.remove(operation);
+      if (mounted) setState(() {});
+    }
   }
 
   // Backend authorization remains the source of truth; download surfaces its safe HTTP detail.
@@ -977,6 +1042,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (locations.isEmpty) {
           throw StateError('No branch is authorized for original dataset uploads.');
         }
+        if (roles.contains('branch_head') && !roles.contains('organization_owner') && locations.length != 1) {
+          throw StateError('Your Branch Head account must resolve to exactly one assigned branch. Upload is blocked until the branch assignment is corrected.');
+        }
         if (locations.length == 1) {
           uploadLocationId = locations.single['location_id']?.toString();
         } else {
@@ -1242,22 +1310,37 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
 
   Future<void> _deleteDataset() async {
     final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
+    if (id == null || id.isEmpty || _deletingDataset || !mounted) return;
+    setState(() { _deletingDataset = true; });
     try {
-      final response = await http.delete(Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + id), headers: await _headers()).timeout(const Duration(seconds: 45));
-      if (response.statusCode < 200 || response.statusCode >= 300) throw StateError('Dataset deletion was rejected.');
-      setState(() { selected = null; profile = null; rows = []; });
+      final response = await http.delete(
+        Uri.parse(insightFlowBackendBaseUrl + '/v1/managed-datasets/' + Uri.encodeComponent(id)),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 45));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        dynamic decoded;
+        try { decoded = jsonDecode(response.body); } catch (_) {}
+        throw StateError(_httpFailureMessage(response.statusCode, decoded, fallback: 'Dataset deletion was rejected.'));
+      }
+      if (!mounted) return;
+      setState(() { selected = null; profile = null; rows = []; offset = 0; });
       await _load();
-    } catch (e) { _snack(e); }
+      _snack('Dataset deleted.');
+    } catch (e) {
+      _snack(e);
+    } finally {
+      if (mounted) setState(() { _deletingDataset = false; });
+    }
   }
 
   Future<void> _startWorking() async {
     final id = selected?['dataset_id']?.toString();
-    if (id == null) return;
+    if (id == null || id.isEmpty || _openingWorkingCopy || !mounted) return;
+    setState(() { _openingWorkingCopy = true; });
     try {
-      final d = await _post('/v1/managed-datasets/' + id + '/working-copies', {});
+      final d = await _post('/v1/managed-datasets/' + Uri.encodeComponent(id) + '/working-copies', {});
       final w = d is Map && d['working_copy'] is Map ? Map<String,dynamic>.from(d['working_copy']) : <String,dynamic>{};
-      if (!mounted) return;
+      if (!mounted || selected?['dataset_id']?.toString() != id) return;
       final workingCopyId = w['working_copy_id']?.toString();
       if (workingCopyId == null || workingCopyId.isEmpty) {
         throw StateError('The backend did not return an authorized working-copy ID.');
@@ -1265,7 +1348,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       // Never pass the original dataset ID into the analysis screen. The
       // backend resolves the pinned source version using this copy capability.
       openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId, initialView: "AI_ANALYTICS");
-    } catch (e) { _snack(e); }
+    } catch (e) {
+      _snack(e);
+    } finally {
+      if (mounted) setState(() { _openingWorkingCopy = false; });
+    }
   }
 
   void _snack(Object e) {
@@ -1418,7 +1505,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
-        SizedBox(width: 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
+        LayoutBuilder(builder: (context, constraints) => SizedBox(width: constraints.maxWidth < 350 ? constraints.maxWidth : 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
         SizedBox(width: 150, child: DropdownButtonFormField<String>(
           value: _sortBy,
           isExpanded: true,
