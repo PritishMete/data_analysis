@@ -255,7 +255,7 @@ def list_authorized_datasets(
     repo = DatasetRepository(SessionLocal())
     try:
         _recover_stale_processing_uploads(repo, organization_id)
-        authorized: list[dict[str, Any]] = []
+        authorized: list[tuple[Any, dict[str, Any]]] = []
         scan_offset = 0
         scan_size = 250
         while True:
@@ -278,62 +278,70 @@ def list_authorized_datasets(
                     )
                 except AuthzError:
                     continue
-                if privileged:
-                    item = _structured_summary(
-                        dataset, len(repo.list_versions(dataset.dataset_id))
-                    )
-                    item["location_id"] = (
-                        str(scope.get("location_id"))
-                        if scope.get("location_id") is not None
-                        else None
-                    )
-                    item["location_name"] = (
-                        scope.get("location_name")
-                        or scope.get("branch_name")
-                        or item["location_id"]
-                    )
-                else:
-                    # Copy-only roles receive only metadata needed to request
-                    # an authorized source. Original versions and schema stay private.
-                    display_name = (
-                        dataset.dataset_name
-                        or dataset.original_filename
-                        or dataset.dataset_id
-                    )
-                    item = {
-                        "dataset_id": dataset.dataset_id,
-                        "display_name": display_name,
-                        "dataset_name": display_name,
-                        "location_id": (
-                            str(scope.get("location_id"))
-                            if scope.get("location_id") is not None
-                            else None
-                        ),
-                        "location_name": (
-                            scope.get("location_name")
-                            or scope.get("branch_name")
-                            or (
-                                str(scope.get("location_id"))
-                                if scope.get("location_id") is not None
-                                else None
-                            )
-                        ),
-                        "status": dataset.status,
-                        "created_at": (
-                            dataset.created_at.isoformat()
-                            if dataset.created_at
-                            else None
-                        ),
-                        "access_mode": "copy_only",
-                    }
-                authorized.append(item)
+                # Keep database work bounded to the requested page. Building
+                # version summaries for every row on every page caused N+1
+                # queries and made large catalogues increasingly expensive.
+                authorized.append((dataset, scope))
             scan_offset += len(batch)
             if len(batch) < scan_size:
                 break
 
         total = len(authorized)
+        page = authorized[page_offset : page_offset + page_limit]
+        items: list[dict[str, Any]] = []
+        for dataset, scope in page:
+            if privileged:
+                item = _structured_summary(
+                    dataset, len(repo.list_versions(dataset.dataset_id))
+                )
+                item["location_id"] = (
+                    str(scope.get("location_id"))
+                    if scope.get("location_id") is not None
+                    else None
+                )
+                item["location_name"] = (
+                    scope.get("location_name")
+                    or scope.get("branch_name")
+                    or item["location_id"]
+                )
+            else:
+                # Copy-only roles receive only metadata needed to request
+                # an authorized source. Original versions and schema stay private.
+                display_name = (
+                    dataset.dataset_name
+                    or dataset.original_filename
+                    or dataset.dataset_id
+                )
+                item = {
+                    "dataset_id": dataset.dataset_id,
+                    "display_name": display_name,
+                    "dataset_name": display_name,
+                    "location_id": (
+                        str(scope.get("location_id"))
+                        if scope.get("location_id") is not None
+                        else None
+                    ),
+                    "location_name": (
+                        scope.get("location_name")
+                        or scope.get("branch_name")
+                        or (
+                            str(scope.get("location_id"))
+                            if scope.get("location_id") is not None
+                            else None
+                        )
+                    ),
+                    "status": dataset.status,
+                    "created_at": (
+                        dataset.created_at.isoformat()
+                        if dataset.created_at
+                        else None
+                    ),
+                    "access_mode": "copy_only",
+                }
+            items.append(item)
+
         return {
-            "datasets": authorized[page_offset : page_offset + page_limit],
+            "datasets": items,
             "pagination": {
                 "offset": page_offset,
                 "limit": page_limit,
