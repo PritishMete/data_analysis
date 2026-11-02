@@ -2329,7 +2329,7 @@ def audit_dataset_event(
                 workspace_id,
             )
             if not context.get("workspace_authorized"):
-                return
+                raise AuthzError("Cannot record an audit event without an active workspace membership.")
             organization_id = str(context["organization_id"])
             principal_id = str(context["principal_id"])
         else:
@@ -2339,14 +2339,36 @@ def audit_dataset_event(
                 workspace_id,
             )
             if not actor:
-                return
+                raise AuthzError("Cannot record an audit event without an authorized actor.")
             organization_id = str(workspace_id)
             principal_id = str(actor["principal_id"])
+
+        # The Management Cell's Branch Head audit view is scoped by
+        # audit_events.metadata.location_id. Dataset events historically did
+        # not consistently include that field, making uploads/downloads/
+        # deletions invisible to the assigned Branch Head. Resolve the
+        # authoritative branch from active assignments, never from a client
+        # supplied metadata value alone.
+        audit_metadata = dict(metadata or {})
+        if not str(audit_metadata.get("location_id") or "").strip():
+            active_locations = db.execute(text("""
+                SELECT DISTINCT location_id
+                FROM organizational_assignments
+                WHERE organization_id=:org AND principal_id=:principal
+                  AND status='active' AND location_id IS NOT NULL
+                  AND role_id IN ('branch_head', 'manager', 'team_lead')
+            """), {"org": organization_id, "principal": principal_id}).scalars().all()
+            normalized_locations = {str(value).strip() for value in active_locations if str(value or "").strip()}
+            if len(normalized_locations) == 1:
+                audit_metadata["location_id"] = next(iter(normalized_locations))
+        audit_metadata.setdefault("organization_id", organization_id)
+        audit_metadata.setdefault("workspace_id", str(workspace_id))
+
         db.execute(text("""INSERT INTO audit_events
             (event_id, organization_id, actor_principal_id, action, outcome, metadata)
             VALUES (:event,:org,:principal,:action,:outcome,CAST(:metadata AS jsonb))"""),
             {"event": _id("evt"), "org": organization_id, "principal": principal_id,
-             "action": action, "outcome": outcome, "metadata": json.dumps(metadata or {})})
+             "action": action, "outcome": outcome, "metadata": json.dumps(audit_metadata)})
 
 
 def _organization_id_for_workspace(db, workspace_id: str) -> str:
