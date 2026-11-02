@@ -230,41 +230,87 @@ def _structured_summary(dataset, version_count: int) -> dict[str, Any]:
 
 
 def list_authorized_datasets(
-    *, workspace_id: str, token: str
-) -> list[dict[str, Any]]:
+    *,
+    workspace_id: str,
+    token: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Return a complete, authorized catalogue window with truthful pagination metadata.
+
+    Scan database windows until exhausted before slicing the authorized result.
+    This prevents unauthorized rows from consuming the visible page and hiding
+    authorized datasets that occur later in the organization-wide ordering.
+    """
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
     organization_id = str(context["organization_id"])
     roles = set(context.get("role_ids", []))
     privileged = bool(roles.intersection({"organization_owner", "branch_head", "manager", "external_viewer"}))
     action = "dataset.view_original" if privileged else "dataset.create_working_copy"
+    page_limit = max(1, min(int(limit), 100))
+    page_offset = max(0, int(offset))
     from core.db import SessionLocal
 
     repo = DatasetRepository(SessionLocal())
     try:
         _recover_stale_processing_uploads(repo, organization_id)
-        result = []
-        for dataset in repo.list_by_organization(organization_id, limit=100):
-            if dataset.status in {"deleted", "failed"}:
-                continue
-            try:
-                scope = _authorize_dataset(claims, workspace_id, dataset.dataset_id, action)
-            except AuthzError:
-                continue
-            if privileged:
-                result.append(_structured_summary(dataset, len(repo.list_versions(dataset.dataset_id))))
-            else:
-                # Lower roles see only enough metadata to select a specific
-                # authorized copy source. Never expose original version IDs,
-                # row previews, schema, or version counts in their source list.
-                result.append({
-                    "dataset_id": dataset.dataset_id,
-                    "display_name": dataset.dataset_name or dataset.original_filename or dataset.dataset_id,
-                    "dataset_name": dataset.dataset_name or dataset.original_filename or dataset.dataset_id,
-                    "location_id": str(scope.get("location_id")) if scope.get("location_id") is not None else None,
-                    "access_mode": "copy_only",
-                })
-        return result
+        authorized: list[dict[str, Any]] = []
+        scan_offset = 0
+        scan_size = 250
+        while True:
+            batch = repo.list_by_organization(
+                organization_id, limit=scan_size, offset=scan_offset
+            )
+            if not batch:
+                break
+            for dataset in batch:
+                if dataset.status in {"deleted", "failed"}:
+                    continue
+                try:
+                    scope = _authorize_dataset(
+                        claims, workspace_id, dataset.dataset_id, action
+                    )
+                except AuthzError:
+                    continue
+                if privileged:
+                    item = _structured_summary(
+                        dataset, len(repo.list_versions(dataset.dataset_id))
+                    )
+                else:
+                    # Copy-only roles receive only metadata needed to request
+                    # an authorized source. Original versions and schema stay private.
+                    display_name = (
+                        dataset.dataset_name
+                        or dataset.original_filename
+                        or dataset.dataset_id
+                    )
+                    item = {
+                        "dataset_id": dataset.dataset_id,
+                        "display_name": display_name,
+                        "dataset_name": display_name,
+                        "location_id": (
+                            str(scope.get("location_id"))
+                            if scope.get("location_id") is not None
+                            else None
+                        ),
+                        "access_mode": "copy_only",
+                    }
+                authorized.append(item)
+            scan_offset += len(batch)
+            if len(batch) < scan_size:
+                break
+
+        total = len(authorized)
+        return {
+            "datasets": authorized[page_offset : page_offset + page_limit],
+            "pagination": {
+                "offset": page_offset,
+                "limit": page_limit,
+                "total": total,
+                "has_more": page_offset + page_limit < total,
+            },
+        }
     finally:
         repo.db.close()
 
