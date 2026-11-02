@@ -121234,10 +121234,21 @@ s=1
 break
 case 1:return A.w(q,r)}})
 return A.x($async$mu,r)},
-O6(a,b,c){var s,r
-if(t.f.b(b)){s=J.k(b,"detail")
-r=s==null?null:B.d.F(J.l(s))}else r=null
-if(r!=null&&r.length!==0)return r
+O6(a,b,c){var s,r,q,p=t.f,o=p.b(b)?J.k(b,"detail"):null
+if(typeof o=="string")s=B.d.F(o)
+else if(p.b(o)){p=J.W(o)
+r=p.h(o,"message")
+p=r==null?p.h(o,"error"):r
+p=p==null?null:B.d.F(J.l(p))
+s=p}else s=null
+p=s==null
+r=p?"":s
+q=r.toLowerCase()
+if(a===403)r=B.d.m(q,"authorization context")||B.d.m(q,"active branch assignment")||B.d.m(q,"workspace authorization")
+else r=!1
+if(r)return"InsightFlow could not verify your active branch access. Refresh the page and sign in again. If the problem continues, ask your Organization Owner to verify your branch assignment. No change was confirmed."
+if(a>=500)return"The service is temporarily unavailable. Your change was not confirmed; refresh the dataset list before retrying."
+if(!p&&s.length!==0)return s
 switch(a){case 400:return"The request is invalid. Check the selected dataset and try again."
 case 401:return"Your session has expired. Sign in again and retry."
 case 403:return"You do not have permission to perform this action in the current branch."
@@ -121245,8 +121256,7 @@ case 404:return"This resource is no longer available in your authorized scope. R
 case 409:return"This resource changed or conflicts with another operation. Refresh and try again."
 case 422:return"The submitted data did not pass validation. Check the input and try again."
 case 429:return"Too many requests. Wait a moment and retry."
-default:if(a>=500)return"The service is temporarily unavailable. Your change was not confirmed; refresh before retrying."
-return c}},
+default:return c}},
 aur(a,b){return this.O6(a,b,"Managed dataset request failed.")},
 i6(a,b){return this.apD(0,b)},
 apD(a,b){var s=0,r=A.y(t.z),q,p=this,o,n,m,l,k,j,i,h,g
