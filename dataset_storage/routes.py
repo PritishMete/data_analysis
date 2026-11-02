@@ -89,7 +89,15 @@ def _workspace(value: str | None, authorization: str | None = None) -> str:
 def _map_error(exc: Exception) -> HTTPException:
     # Keep client responses sanitized, but retain unexpected failure details in
     # server logs so CSV-import failures can be diagnosed from their traceback.
-    if not isinstance(exc, (AuthenticationRequired, PermissionDenied, AuthzError, FileNotFoundError, ValueError, DatasetUploadConflict)):
+    if isinstance(exc, (AuthenticationRequired, PermissionDenied, AuthzError)):
+        # Log denied attempts without bearer tokens, request bodies, dataset
+        # contents, or potentially sensitive exception messages.
+        logger.warning(
+            "managed_dataset_access_denied error_type=%s status_code=%s",
+            type(exc).__name__,
+            401 if isinstance(exc, AuthenticationRequired) else 403,
+        )
+    elif not isinstance(exc, (FileNotFoundError, ValueError, DatasetUploadConflict)):
         logger.exception("managed_dataset_operation_failed", exc_info=exc)
     if isinstance(exc, AuthenticationRequired):
         return HTTPException(401, str(exc))
