@@ -259,7 +259,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
               _get('/v1/authz/me'),
             ])
           : await Future.wait([
-              _get('/v1/managed-datasets'),
+              _loadAllAuthorizedDatasets(),
               _get('/v1/authz/management'),
             ]);
       final ds = ((values[0] as Map?)?['datasets'] as List? ?? const [])
