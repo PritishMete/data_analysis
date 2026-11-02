@@ -22,7 +22,9 @@ class FakeRepository:
         self.db = self
         self.closed = False
 
-    def list_by_organization(self, organization_id, limit=50, offset=0):
+    def list_by_organization(self, organization_id, limit=50, offset=0, location_ids=None):
+        # These catalogue unit fixtures model a single authorized branch; the
+        # production repository applies location_ids in SQL before pagination.
         return self.datasets[offset : offset + limit]
 
     def list_versions(self, dataset_id):
