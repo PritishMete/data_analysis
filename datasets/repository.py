@@ -267,32 +267,42 @@ class DatasetRepository:
         if location_ids is not None:
             if not location_ids:
                 return []
-            # Restrict branch-scoped scans before per-dataset authorization. The
-            # authorization service still rechecks each resource after retrieval.
+            from sqlalchemy import bindparam
+
             authorization_ids = (
                 select(text("dataset_authorization.dataset_id"))
                 .select_from(text("dataset_authorization"))
                 .where(text("dataset_authorization.organization_id = :auth_org"))
                 .where(text("dataset_authorization.status = 'active'"))
                 .where(text("dataset_authorization.protected_original IS TRUE"))
-                .where(text("dataset_authorization.location_id IN :auth_locations"))
+                .where(text("dataset_authorization.dataset_id = datasets.dataset_id"))
+                .where(
+                    text("dataset_authorization.location_id IN :auth_locations")
+                )
+                .params(auth_org=organization_id)
+                .correlate(Dataset)
             )
-            from sqlalchemy import bindparam
-            authorization_ids = authorization_ids.params(auth_org=organization_id)
             authorization_ids = authorization_ids.where(
-                text("dataset_authorization.dataset_id = datasets.dataset_id")
-            )
+                text("1 = 1")
+            ).params(auth_locations=tuple(location_ids))
             authorization_ids = authorization_ids.where(
                 text("dataset_authorization.location_id IN :auth_locations")
             ).params(auth_locations=tuple(location_ids))
-            authorization_ids = authorization_ids.correlate(Dataset)
+            # SQLAlchemy must expand the location tuple into bound parameters;
+            # never interpolate branch identifiers into SQL text.
+            authorization_ids = authorization_ids.params(auth_locations=tuple(location_ids))
             stmt = stmt.where(Dataset.dataset_id.in_(authorization_ids))
         stmt = (
             stmt.order_by(Dataset.created_at.desc().nullslast(), Dataset.dataset_id.asc())
             .offset(max(0, offset))
             .limit(max(1, min(limit, 500)))
         )
-        return list(self.db.execute(stmt, {"auth_org": organization_id, "auth_locations": tuple(location_ids or [])}).scalars().all())
+        return list(
+            self.db.execute(
+                stmt,
+                {"auth_org": organization_id, "auth_locations": tuple(location_ids or [])},
+            ).scalars().all()
+        )
 
     def get_columns(self, dataset_id: str) -> list[DatasetColumn]:
         stmt = select(DatasetColumn).where(DatasetColumn.dataset_id == dataset_id).order_by(DatasetColumn.id.asc())
