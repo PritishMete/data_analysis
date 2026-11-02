@@ -2170,7 +2170,7 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                 WHERE organization_id=:org AND request_id=:request AND status='pending'
                   AND workspace_id=:workspace
             """), {"org": org, "workspace": workspace,
-                    "reviewer": actor, "request": request_id})
+                    "reviewer": context["principal_id"], "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
 
         # Keep the request row lock while the copy is created in its own
