@@ -87,6 +87,13 @@ def _workspace(value: str | None, authorization: str | None = None) -> str:
 
 
 def _map_error(exc: Exception) -> HTTPException:
+    # Preserve deliberate FastAPI responses raised by workspace/context helpers.
+    # Route handlers catch broad exceptions to normalize service errors; without
+    # this guard, a deliberate 403/409 from _workspace is incorrectly rewritten
+    # as a generic 500, hiding the actionable authorization state from the client.
+    if isinstance(exc, HTTPException):
+        return exc
+
     # Keep client responses sanitized, but retain unexpected failure details in
     # server logs so CSV-import failures can be diagnosed from their traceback.
     if isinstance(exc, (AuthenticationRequired, PermissionDenied, AuthzError)):
