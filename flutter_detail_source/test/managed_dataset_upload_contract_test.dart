@@ -68,7 +68,8 @@ void main() {
     expect(loadEnd, greaterThan(loadStart));
     final coreLoad = source.substring(loadStart, loadEnd);
 
-    expect(coreLoad, contains("_get('/v1/managed-datasets')"));
+    expect(coreLoad, contains('_loadAllAuthorizedDatasets()'));
+    expect(coreLoad, isNot(contains("_get('/v1/managed-datasets')")));
     expect(coreLoad, contains("_get('/v1/authz/management')"));
     expect(coreLoad, isNot(contains("data-access/catalog")));
     expect(coreLoad, isNot(contains("data-access/requests")));
