@@ -164,8 +164,27 @@ def _authorize_dataset(
     # Do not short-circuit owners/managers through workspace-only permission
     # checks: the managed dataset is the resource boundary for profile, rows,
     # download, and working-copy operations.
-    _authorization_context(claims, workspace_id)
-    return authorize_dataset(claims, workspace_id, dataset_id, action)
+    context = _authorization_context(claims, workspace_id)
+    scope = authorize_dataset(claims, workspace_id, dataset_id, action)
+
+    # Authorization grants can be temporarily stale while deletion is being
+    # finalized. Treat the database lifecycle state as authoritative too, so a
+    # retained or accidentally stale ACL can never make a tombstoned dataset
+    # readable or writable again.
+    from core.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        dataset = db.get(Dataset, dataset_id)
+        if (
+            dataset is None
+            or dataset.organization_id != str(context["organization_id"])
+            or dataset.status in {"deleted", "deleting"}
+        ):
+            raise FileNotFoundError("Dataset not found.")
+    finally:
+        db.close()
+    return scope
 
 
 def _audit_safely(
@@ -1736,14 +1755,94 @@ def delete_managed_dataset(
         if dataset is None or dataset.organization_id != organization_id:
             raise FileNotFoundError("Dataset not found.")
         versions = repo.list_versions(dataset_id)
+
+        # Supabase Storage is outside the SQL transaction. Remove optional
+        # archived originals first; if a storage delete fails, keep the live
+        # structured dataset and its database records intact.
         for version in versions:
             if version.storage_provider == "supabase_storage":
-                provider.delete(organization_id=organization_id, dataset_id=dataset_id, version_id=version.version_id)
+                provider.delete(
+                    organization_id=organization_id,
+                    dataset_id=dataset_id,
+                    version_id=version.version_id,
+                )
+
         revoke_dataset_working_copies(workspace_id, dataset_id)
-        repo.delete_dataset(dataset_id)
+
+        # Soft-delete the logical dataset while removing analytical row data.
+        # Keep version and column metadata as a durable history/tombstone, but
+        # drop each physical table and its JSON-row fallback in the same SQL
+        # transaction. This avoids orphaned physical tables and preserves
+        # version hashes, filenames, sizes, counts, and timestamps for audit.
+        try:
+            locked_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == dataset_id,
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if locked_dataset is None:
+                raise FileNotFoundError("Dataset not found.")
+
+            locked_versions = repo.list_versions(dataset_id)
+            for version in locked_versions:
+                if version.data_table_name:
+                    from datasets.physical_table import drop_physical_table
+
+                    drop_physical_table(repo.db.connection(), version.data_table_name)
+                    version.data_table_name = None
+                repo.db.execute(
+                    delete(DatasetRow).where(
+                        DatasetRow.version_pk == version.version_pk
+                    )
+                )
+                version.status = "deleted"
+
+            # Pending proposals may not publish a version after the source is
+            # deleted. Keep the proposal record but mark it stale for audit.
+            from sqlalchemy import inspect as sqlalchemy_inspect
+
+            if sqlalchemy_inspect(repo.db.bind).has_table("dataset_change_proposals"):
+                repo.db.execute(
+                    text(
+                        "UPDATE dataset_change_proposals "
+                        "SET status = 'stale', reviewed_at = now(), "
+                        "decision_note = COALESCE(decision_note, 'Source dataset deleted') "
+                        "WHERE dataset_id = :dataset_id AND status = 'pending'"
+                    ),
+                    {"dataset_id": dataset_id},
+                )
+
+            locked_dataset.status = "deleted"
+            locked_dataset.current_version_id = None
+            locked_dataset.row_count = 0
+            locked_dataset.column_count = 0
+            locked_dataset.schema_hash = ""
+            repo.db.flush()
+            repo.db.commit()
+        except Exception:
+            repo.db.rollback()
+            raise
+
+        # A stale authorization record cannot restore access because
+        # _authorize_dataset also checks the persisted lifecycle status.
         _unregister_authorization(workspace_id, dataset_id)
-        _audit_safely(workspace_id, str(claims["uid"]), "dataset.delete", "succeeded", resource_id=dataset_id)
-        return {"dataset_id": dataset_id, "status": "deleted"}
+        _audit_safely(
+            workspace_id,
+            str(claims["uid"]),
+            "dataset.delete",
+            "succeeded",
+            resource_id=dataset_id,
+            metadata={"version_count": len(versions), "history_preserved": True},
+        )
+        return {
+            "dataset_id": dataset_id,
+            "status": "deleted",
+            "version_history_preserved": True,
+        }
     finally:
         repo.db.close()
 
