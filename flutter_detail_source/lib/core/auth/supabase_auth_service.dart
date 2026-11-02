@@ -100,7 +100,13 @@ class InsightFlowSupabaseAuthService {
   }) async {
     // This is an authoritative check, but it must never freeze AuthGate when
     // the browser/network is temporarily unavailable.
-    final response = await client.auth.getUser().timeout(timeout);
+    // getUser() sends the current access token as-is; it does not refresh an
+    // expired session. Restore/refresh first so returning after a long idle
+    // period does not turn an otherwise refreshable login into a false logout.
+    final session = await ensureSession(timeout: timeout);
+    if (session == null || session.accessToken.isEmpty) return null;
+    final response =
+        await client.auth.getUser(session.accessToken).timeout(timeout);
     return response.user;
   }
 

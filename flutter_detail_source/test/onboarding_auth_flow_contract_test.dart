@@ -44,6 +44,21 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     );
   });
 
+  test('authoritative user lookup refreshes an expired session before getUser', () {
+    final auth = File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
+    final start = auth.indexOf('static Future<User?> fetchAuthoritativeUser');
+    final end = auth.indexOf('static String userFacingAuthError', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final lookup = auth.substring(start, end);
+    expect(lookup, contains('ensureSession(timeout: timeout)'));
+    expect(lookup, contains('client.auth.getUser(session.accessToken)'));
+    expect(
+      lookup.indexOf('ensureSession(timeout: timeout)'),
+      lessThan(lookup.indexOf('client.auth.getUser(session.accessToken)')),
+    );
+  });
+
   test('authorization denial does not terminate a valid Supabase login', () {
     final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
     final meStart = http.indexOf(
