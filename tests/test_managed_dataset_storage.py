@@ -224,3 +224,65 @@ def test_csv_validation_rejects_inconsistent_row_width():
     payload = b"id,name\n1,valid\n2,extra,column\n"
     with pytest.raises(ValueError, match="row 3 has 3 fields; expected 2"):
         service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
+
+
+
+def test_managed_dataset_schema_enforces_version_and_column_uniqueness():
+    from datasets.models import DatasetColumn, DatasetVersion
+    from sqlalchemy import UniqueConstraint
+
+    version_unique_pairs = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in DatasetVersion.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("dataset_id", "version_number") in version_unique_pairs
+
+    column_indexes = {
+        index.name: index
+        for index in DatasetColumn.__table__.indexes
+    }
+    assert "uq_dataset_columns_version_name" in column_indexes
+    assert column_indexes["uq_dataset_columns_version_name"].unique is True
+
+
+def test_managed_dataset_integrity_migration_guards_references_and_duplicates():
+    from pathlib import Path
+
+    migration = Path("migrations/0035_managed_dataset_integrity.sql").read_text()
+    assert "uq_dataset_version_number" in migration
+    assert "uq_dataset_columns_version_name" in migration
+    assert "fk_dataset_current_version" in migration
+    assert "fk_dataset_column_version_owner" in migration
+    assert "HAVING COUNT(*) > 1" in migration
+    assert "Cannot add managed-dataset integrity constraints" in migration
+
+
+def test_managed_dataset_deletion_preserves_version_metadata_and_removes_rows():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    delete_start = source.index("def delete_managed_dataset(")
+    delete_end = source.index("def create_managed_working_copy(", delete_start)
+    deletion = source[delete_start:delete_end]
+
+    assert 'version.status = "deleted"' in deletion
+    assert "delete(DatasetRow)" in deletion
+    assert "drop_physical_table" in deletion
+    assert 'locked_dataset.status = "deleted"' in deletion
+    assert 'locked_dataset.current_version_id = None' in deletion
+    assert "repo.delete_dataset(dataset_id)" not in deletion
+    assert '"history_preserved": True' in deletion
+    assert "status = 'stale'" in deletion
+
+
+def test_deleted_managed_dataset_is_denied_even_if_an_acl_is_stale():
+    from pathlib import Path
+
+    source = Path("dataset_storage/service.py").read_text()
+    start = source.index("def _authorize_dataset(")
+    end = source.index("def _audit_safely(", start)
+    helper = source[start:end]
+
+    assert 'dataset.status in {"deleted", "deleting"}' in helper
+    assert 'raise FileNotFoundError("Dataset not found.")' in helper
