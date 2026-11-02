@@ -347,7 +347,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       await _loadManagerUploadGrants(generation);
       await _loadProposals(generation);
     } catch (e) {
-      if (!mounted || expectedGeneration != _loadGeneration) return;
+      if (!mounted || generation != _loadGeneration) return;
       final keepLastSnapshot =
           _hasLoadedCoreSnapshot && _isTransientRefreshFailure(e);
       setState(() {
