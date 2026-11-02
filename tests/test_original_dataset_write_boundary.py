@@ -35,7 +35,7 @@ def test_copy_request_rejection_uses_only_bound_sql_parameters_and_pending_state
     rejection = decision.split("if not approve:", 1)[1].split("return {\"request_id\": request_id, \"status\": \"rejected\"}", 1)[0]
     assert "WHERE organization_id=:org AND request_id=:request AND status='pending'" in rejection
     assert '"org": org' in rejection
-    assert '"reviewer": context["principal_id"]' in rejection
+    assert '"reviewer": actor' in rejection
     assert '"request": request_id' in rejection
     assert '"requester": request_id' not in rejection
 
