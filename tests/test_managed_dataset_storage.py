@@ -302,3 +302,14 @@ def test_csv_validation_preserves_reserved_row_number_header_as_source_data():
     columns = service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
     assert columns == ["source_row_number", "name"]
 
+
+
+def test_workspace_http_errors_are_preserved_by_route_error_mapper():
+    from fastapi import HTTPException
+    from dataset_storage.routes import _map_error
+
+    forbidden = HTTPException(status_code=403, detail="Workspace authorization context required.")
+    conflict = HTTPException(status_code=409, detail="Select a workspace.")
+
+    assert _map_error(forbidden) is forbidden
+    assert _map_error(conflict) is conflict
