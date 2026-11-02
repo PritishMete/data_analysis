@@ -295,7 +295,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       final mg = values[1] is Map
           ? Map<String, dynamic>.from(values[1] as Map)
           : <String, dynamic>{};
-      if (!mounted || expectedGeneration != _loadGeneration) return;
+      if (!mounted || generation != _loadGeneration) return;
       final selectedDatasetId = selected?['dataset_id']?.toString();
       Map<String, dynamic>? refreshedSelected;
       if (selectedDatasetId != null) {
