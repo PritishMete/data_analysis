@@ -1962,74 +1962,148 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
 
 
 def request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: str, note: str | None = None) -> dict[str, Any]:
+    """Request a copy only when the requester has an active assignment to its exact branch."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
     if not roles.intersection({"manager", "team_lead"}):
         raise AuthzError("Only Managers and Team Leads can request a dataset copy.")
+
     org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
     with SessionLocal.begin() as db:
-        dataset = db.execute(text("""SELECT da.location_id FROM dataset_authorization da
-            WHERE da.organization_id=:org AND da.dataset_id=:dataset AND da.status='active'"""),
-            {"org": org, "dataset": dataset_id}).mappings().first()
-        if not dataset:
-            raise AuthzError("Dataset is not available for copy authorization.")
-        location = db.execute(text("""SELECT location_id FROM organizational_assignments
-            WHERE organization_id=:org AND principal_id=:principal
-              AND role_id IN ('manager','team_lead') AND status='active'
-            ORDER BY CASE WHEN location_id = :dataset_location THEN 0 ELSE 1 END
-            LIMIT 1"""), {"org": org, "principal": context["principal_id"], "dataset_location": dataset["location_id"]}).scalar_one_or_none()
-        if dataset["location_id"] and location != dataset["location_id"]:
-            raise AuthzError("The dataset belongs to a different branch.")
-        existing = db.execute(text("""SELECT request_id FROM authorization_requests
-            WHERE organization_id=:org AND dataset_id=:dataset
-              AND requester_principal_id=:principal AND status='pending'"""),
-            {"org": org, "dataset": dataset_id, "principal": context["principal_id"]}).scalar_one_or_none()
+        dataset = db.execute(text("""
+            SELECT da.location_id
+            FROM dataset_authorization da
+            JOIN locations l
+              ON l.organization_id=da.organization_id
+             AND l.location_id=da.location_id AND l.status='active'
+            WHERE da.organization_id=:org AND da.dataset_id=:dataset
+              AND da.status='active' AND da.protected_original IS TRUE
+        """), {"org": org, "dataset": dataset_id}).mappings().first()
+        if not dataset or not dataset["location_id"]:
+            raise AuthzError("A branch-scoped original dataset is required for a copy request.")
+
+        location_id = str(dataset["location_id"])
+        active_assignment = db.execute(text("""
+            SELECT 1
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id
+             AND m.principal_id=oa.principal_id
+             AND m.workspace_id=:workspace AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id
+             AND mr.principal_id=oa.principal_id
+             AND mr.role_id=oa.role_id
+            JOIN locations l
+              ON l.organization_id=oa.organization_id
+             AND l.location_id=oa.location_id AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.location_id=:location
+              AND oa.role_id IN ('manager','team_lead')
+              AND oa.status='active'
+            LIMIT 1
+        """), {"org": org, "workspace": workspace, "principal": principal,
+                "location": location_id}).scalar_one_or_none()
+        if not active_assignment:
+            raise AuthzError("An active Manager or Team Lead assignment to the dataset's branch is required.")
+
+        existing = db.execute(text("""
+            SELECT request_id FROM authorization_requests
+            WHERE organization_id=:org AND workspace_id=:workspace
+              AND dataset_id=:dataset AND requester_principal_id=:principal
+              AND status='pending'
+            LIMIT 1
+        """), {"org": org, "workspace": workspace, "dataset": dataset_id,
+                "principal": principal}).scalar_one_or_none()
         if existing:
-            return {"request_id": existing, "status": "pending"}
+            return {"request_id": str(existing), "status": "pending"}
+
         rid = _id("req")
-        db.execute(text("""INSERT INTO authorization_requests
-            (request_id, organization_id, workspace_id, requester_principal_id, dataset_id, location_id, note)
-            VALUES (:id,:org,:workspace,:requester,:dataset,:location,:note)"""),
-            {"id": rid, "org": org, "workspace": context["workspace_id"], "requester": context["principal_id"],
-             "dataset": dataset_id, "location": dataset["location_id"], "note": str(note or "")[:1000]})
+        db.execute(text("""
+            INSERT INTO authorization_requests
+                (request_id, organization_id, workspace_id, requester_principal_id,
+                 dataset_id, location_id, note)
+            VALUES (:id,:org,:workspace,:requester,:dataset,:location,:note)
+        """), {"id": rid, "org": org, "workspace": workspace, "requester": principal,
+                "dataset": dataset_id, "location": location_id,
+                "note": str(note or "")[:1000]})
         return {"request_id": rid, "status": "pending", "dataset_id": dataset_id}
 
 
 def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
+    """List requests only for organization owners and Branch Heads within their scope."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner","branch_head","manager","team_lead"}):
-        raise AuthzError("Authorization requests are not available to this role.")
+    if not roles.intersection({"organization_owner", "branch_head"}):
+        raise AuthzError("Only an Organization Owner or Branch Head can review copy requests.")
+
     org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
+    orgwide = "organization_owner" in roles
+
     with SessionLocal() as db:
-        rows = db.execute(text("""SELECT r.request_id, r.dataset_id, r.status, r.note, r.created_at,
-                r.reviewed_at, r.resulting_working_copy_id, r.location_id,
-                requester.employee_id, profile.full_name AS requester_name
+        locations = []
+        if not orgwide:
+            locations = [
+                str(value) for value in db.execute(text("""
+                    SELECT DISTINCT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id
+                     AND m.principal_id=oa.principal_id
+                     AND m.workspace_id=:workspace AND m.status='active'
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id
+                     AND mr.principal_id=oa.principal_id
+                     AND mr.role_id='branch_head'
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id AND l.status='active'
+                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
+                      AND oa.role_id='branch_head' AND oa.status='active'
+                      AND oa.location_id IS NOT NULL
+                """), {"org": org, "workspace": workspace,
+                        "principal": principal}).scalars().all()
+            ]
+            if len(set(locations)) != 1:
+                raise AuthzError("A Branch Head must have exactly one active branch assignment to review copy requests.")
+
+        rows = db.execute(text("""
+            SELECT r.request_id, r.dataset_id, r.status, r.note, r.created_at,
+                   r.reviewed_at, r.resulting_working_copy_id, r.location_id,
+                   requester.employee_id, profile.full_name AS requester_name
             FROM authorization_requests r
-            JOIN organization_members requester ON requester.organization_id=r.organization_id
-              AND requester.principal_id=r.requester_principal_id
-            LEFT JOIN organization_member_profiles profile ON profile.organization_id=r.organization_id
-              AND profile.principal_id=r.requester_principal_id
-            WHERE r.organization_id=:org
+            JOIN organization_members requester
+              ON requester.organization_id=r.organization_id
+             AND requester.principal_id=r.requester_principal_id
+             AND requester.workspace_id=r.workspace_id
+            LEFT JOIN organization_member_profiles profile
+              ON profile.organization_id=r.organization_id
+             AND profile.principal_id=r.requester_principal_id
+            WHERE r.organization_id=:org AND r.workspace_id=:workspace
               AND (:orgwide OR r.location_id = ANY(:locations))
-            ORDER BY r.created_at DESC"""),
-            {"org": org, "orgwide": "organization_owner" in roles,
-             "locations": list(db.execute(text("""SELECT location_id FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:principal AND status='active' AND location_id IS NOT NULL"""),
-                {"org": org,"principal":context["principal_id"]}).scalars().all())}).mappings().all()
+            ORDER BY r.created_at DESC
+        """), {"org": org, "workspace": workspace, "orgwide": orgwide,
+                "locations": locations}).mappings().all()
         return [dict(row) for row in rows]
 
 
-
 def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: str, approve: bool) -> dict[str, Any]:
+    """Decide a copy request under a row lock so concurrent approvals cannot duplicate copies."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
-        raise AuthzError("Only an Owner, Branch Head, or Manager can review copy requests.")
-    org, workspace, actor = (
-        str(context["organization_id"]), str(context["workspace_id"]),
-        str(context["principal_id"]),
-    )
+    if not roles.intersection({"organization_owner", "branch_head"}):
+        raise AuthzError("Only an Organization Owner or Branch Head can review copy requests.")
+
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    actor = str(context["principal_id"])
+
+    # Keep the pending request row locked through copy creation, assignment and
+    # final status update. A second approver waits, then sees a non-pending row.
     with SessionLocal.begin() as db:
         req = db.execute(text("""
             SELECT * FROM authorization_requests
@@ -2039,52 +2113,69 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
         """), {"org": org, "workspace": workspace, "request": request_id}).mappings().first()
         if not req:
             raise AuthzError("Pending copy request not found.")
+
         if "organization_owner" not in roles:
-            issuer_role = "branch_head" if "branch_head" in roles else "manager"
-            issuer = db.execute(text("""
-                SELECT 1 FROM organizational_assignments oa
-                JOIN organization_members m
-                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                JOIN member_roles mr
-                  ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
-                 AND mr.role_id=oa.role_id
-                JOIN locations l ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
-                WHERE oa.organization_id=:org AND oa.principal_id=:actor
-                  AND oa.location_id=:location AND oa.role_id=:role
-                  AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
-                  AND l.status='active'
-                LIMIT 1
-            """), {"org": org, "workspace": workspace, "actor": actor,
-                    "location": req["location_id"], "role": issuer_role}).scalar_one_or_none()
-            if not issuer:
-                raise AuthzError("This request belongs to a branch outside your scope.")
+            branch_locations = {
+                str(value) for value in db.execute(text("""
+                    SELECT DISTINCT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id
+                     AND m.principal_id=oa.principal_id
+                     AND m.workspace_id=:workspace AND m.status='active'
+                    JOIN member_roles mr
+                      ON mr.organization_id=oa.organization_id
+                     AND mr.principal_id=oa.principal_id
+                     AND mr.role_id='branch_head'
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id AND l.status='active'
+                    WHERE oa.organization_id=:org AND oa.principal_id=:actor
+                      AND oa.role_id='branch_head' AND oa.status='active'
+                      AND oa.location_id IS NOT NULL
+                """), {"org": org, "workspace": workspace,
+                        "actor": actor}).scalars().all()
+            }
+            if len(branch_locations) != 1 or str(req["location_id"] or "") not in branch_locations:
+                raise AuthzError("This request belongs to a branch outside your active Branch Head scope.")
 
         requester = db.execute(text("""
             SELECT 1
             FROM organization_members m
             JOIN organizational_assignments oa
-              ON oa.organization_id=m.organization_id AND oa.principal_id=m.principal_id
-            JOIN locations l ON l.organization_id=oa.organization_id AND l.location_id=oa.location_id
+              ON oa.organization_id=m.organization_id
+             AND oa.principal_id=m.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id
+             AND mr.principal_id=oa.principal_id AND mr.role_id=oa.role_id
+            JOIN locations l
+              ON l.organization_id=oa.organization_id
+             AND l.location_id=oa.location_id AND l.status='active'
             WHERE m.organization_id=:org AND m.workspace_id=:workspace
               AND m.principal_id=:requester AND m.status='active'
-              AND oa.location_id=:location AND oa.status='active' AND l.status='active'
+              AND oa.location_id=:location AND oa.status='active'
+              AND oa.role_id IN ('manager','team_lead')
             LIMIT 1
         """), {"org": org, "workspace": workspace,
-                "requester": req["requester_principal_id"], "location": req["location_id"]}).scalar_one_or_none()
+                "requester": req["requester_principal_id"],
+                "location": req["location_id"]}).scalar_one_or_none()
         if not requester:
-            raise AuthzError("The requester is no longer actively assigned to this branch.")
+            raise AuthzError("The requester no longer has an active Manager or Team Lead assignment to this branch.")
 
         if not approve:
             db.execute(text("""
                 UPDATE authorization_requests
                 SET status='rejected', reviewed_by_principal_id=:reviewer,
                     reviewed_at=now(), updated_at=now()
-                WHERE organization_id=:org AND request_id=:request AND status='pending'
-            """), {"org": org, "reviewer": context["principal_id"], "request": request_id})
+                WHERE organization_id=:org AND workspace_id=:workspace
+                  AND request_id=:request AND status='pending'
+            """), {"org": org, "workspace": workspace,
+                    "reviewer": actor, "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
 
-    copy = create_working_copy(claims, workspace, str(req["dataset_id"]), None, None)
-    with SessionLocal.begin() as db:
+        # Keep the request row lock while the copy is created in its own
+        # transaction; assignment and request status are committed together.
+        copy = create_working_copy(claims, workspace, str(req["dataset_id"]), None, None)
         db.execute(text("""
             INSERT INTO working_copy_assignments
                 (working_copy_id, organization_id, principal_id, assigned_by_principal_id)
@@ -2094,14 +2185,17 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                           status='active', updated_at=now()
         """), {"copy": copy["working_copy_id"], "org": org,
                 "principal": req["requester_principal_id"], "assigner": actor})
-        db.execute(text("""
+        result = db.execute(text("""
             UPDATE authorization_requests
-            SET status='approved', reviewed_by_principal_id=:reviewer, reviewed_at=now(),
-                resulting_working_copy_id=:copy, updated_at=now()
-            WHERE organization_id=:org AND request_id=:request AND status='pending'
-        """), {"org": org, "reviewer": actor, "copy": copy["working_copy_id"], "request": request_id})
-    return {"request_id": request_id, "status": "approved", "working_copy": copy}
-
+            SET status='approved', reviewed_by_principal_id=:reviewer,
+                reviewed_at=now(), resulting_working_copy_id=:copy, updated_at=now()
+            WHERE organization_id=:org AND workspace_id=:workspace
+              AND request_id=:request AND status='pending'
+        """), {"org": org, "workspace": workspace, "reviewer": actor,
+                "copy": copy["working_copy_id"], "request": request_id})
+        if result.rowcount != 1:
+            raise AuthzError("The copy request changed while it was being approved.")
+        return {"request_id": request_id, "status": "approved", "working_copy": copy}
 
 def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_id: str, target_uid: str) -> dict[str, Any]:
     context = authorization_context(claims, workspace_id)
