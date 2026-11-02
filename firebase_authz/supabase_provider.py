@@ -2350,17 +2350,23 @@ def audit_dataset_event(
         # authoritative branch from active assignments, never from a client
         # supplied metadata value alone.
         audit_metadata = dict(metadata or {})
-        if not str(audit_metadata.get("location_id") or "").strip():
-            active_locations = db.execute(text("""
-                SELECT DISTINCT location_id
-                FROM organizational_assignments
-                WHERE organization_id=:org AND principal_id=:principal
-                  AND status='active' AND location_id IS NOT NULL
-                  AND role_id IN ('branch_head', 'manager', 'team_lead')
-            """), {"org": organization_id, "principal": principal_id}).scalars().all()
-            normalized_locations = {str(value).strip() for value in active_locations if str(value or "").strip()}
-            if len(normalized_locations) == 1:
-                audit_metadata["location_id"] = next(iter(normalized_locations))
+        active_locations = db.execute(text("""
+            SELECT DISTINCT location_id
+            FROM organizational_assignments
+            WHERE organization_id=:org AND principal_id=:principal
+              AND status='active' AND location_id IS NOT NULL
+              AND role_id IN ('branch_head', 'manager', 'team_lead')
+        """), {"org": organization_id, "principal": principal_id}).scalars().all()
+        normalized_locations = {str(value).strip() for value in active_locations if str(value or "").strip()}
+        if len(normalized_locations) == 1:
+            # A unique active branch assignment is authoritative and overrides
+            # any stale or caller-supplied location in the event metadata.
+            audit_metadata["location_id"] = next(iter(normalized_locations))
+        elif normalized_locations and str(audit_metadata.get("location_id") or "").strip() not in normalized_locations:
+            # Never attribute an event to a branch outside the actor's active
+            # assignments. Without a valid branch, branch-scoped viewers won't
+            # see the event rather than receiving a false branch attribution.
+            audit_metadata.pop("location_id", None)
         audit_metadata.setdefault("organization_id", organization_id)
         audit_metadata.setdefault("workspace_id", str(workspace_id))
 
