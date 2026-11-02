@@ -264,6 +264,7 @@ class DatasetRepository:
             Dataset.organization_id == organization_id,
             Dataset.status != "deleted",
         )
+        params: dict[str, object] = {}
         if location_ids is not None:
             if not location_ids:
                 return []
@@ -277,32 +278,23 @@ class DatasetRepository:
                 .where(text("dataset_authorization.protected_original IS TRUE"))
                 .where(text("dataset_authorization.dataset_id = datasets.dataset_id"))
                 .where(
-                    text("dataset_authorization.location_id IN :auth_locations")
+                    text("dataset_authorization.location_id IN :auth_locations").bindparams(
+                        bindparam("auth_locations", expanding=True)
+                    )
                 )
-                .params(auth_org=organization_id)
                 .correlate(Dataset)
             )
-            authorization_ids = authorization_ids.where(
-                text("1 = 1")
-            ).params(auth_locations=tuple(location_ids))
-            authorization_ids = authorization_ids.where(
-                text("dataset_authorization.location_id IN :auth_locations")
-            ).params(auth_locations=tuple(location_ids))
-            # SQLAlchemy must expand the location tuple into bound parameters;
-            # never interpolate branch identifiers into SQL text.
-            authorization_ids = authorization_ids.params(auth_locations=tuple(location_ids))
             stmt = stmt.where(Dataset.dataset_id.in_(authorization_ids))
+            params = {
+                "auth_org": organization_id,
+                "auth_locations": location_ids,
+            }
         stmt = (
             stmt.order_by(Dataset.created_at.desc().nullslast(), Dataset.dataset_id.asc())
             .offset(max(0, offset))
             .limit(max(1, min(limit, 500)))
         )
-        return list(
-            self.db.execute(
-                stmt,
-                {"auth_org": organization_id, "auth_locations": tuple(location_ids or [])},
-            ).scalars().all()
-        )
+        return list(self.db.execute(stmt, params).scalars().all())
 
     def get_columns(self, dataset_id: str) -> list[DatasetColumn]:
         stmt = select(DatasetColumn).where(DatasetColumn.dataset_id == dataset_id).order_by(DatasetColumn.id.asc())
