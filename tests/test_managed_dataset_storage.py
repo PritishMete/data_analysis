@@ -286,3 +286,19 @@ def test_deleted_managed_dataset_is_denied_even_if_an_acl_is_stale():
 
     assert 'dataset.status in {"deleted", "deleting"}' in helper
     assert 'raise FileNotFoundError("Dataset not found.")' in helper
+
+def test_csv_validation_rejects_headers_that_collide_after_normalization():
+    import io
+
+    payload = b"Name,name,other\n1,2,3\n"
+    with pytest.raises(ValueError, match="ambiguous duplicate column names"):
+        service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
+
+
+def test_csv_validation_preserves_reserved_row_number_header_as_source_data():
+    import io
+
+    payload = b"__ row_number,name\n42,example\n"
+    columns = service.DatasetRegistryService._validate_csv_structure(io.BytesIO(payload))
+    assert columns == ["source_row_number", "name"]
+
