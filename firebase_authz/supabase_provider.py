@@ -2167,8 +2167,8 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
                 UPDATE authorization_requests
                 SET status='rejected', reviewed_by_principal_id=:reviewer,
                     reviewed_at=now(), updated_at=now()
-                WHERE organization_id=:org AND workspace_id=:workspace
-                  AND request_id=:request AND status='pending'
+                WHERE organization_id=:org AND request_id=:request AND status='pending'
+                  AND workspace_id=:workspace
             """), {"org": org, "workspace": workspace,
                     "reviewer": actor, "request": request_id})
             return {"request_id": request_id, "status": "rejected"}
