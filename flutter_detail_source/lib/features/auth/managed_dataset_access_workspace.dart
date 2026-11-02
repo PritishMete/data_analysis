@@ -1505,7 +1505,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         Wrap(spacing: 10, runSpacing: 9, crossAxisAlignment: WrapCrossAlignment.center, children: [
         const SizedBox(height: 10),
         _eye('RESOURCE SEARCH'),
-        LayoutBuilder(builder: (context, constraints) => SizedBox(width: constraints.maxWidth < 350 ? constraints.maxWidth : 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16))))),
+        LayoutBuilder(builder: (context, constraints) => SizedBox(width: constraints.maxWidth < 350 ? constraints.maxWidth : 320, child: TextField(onChanged: (v) => setState(() => search = v), style: const TextStyle(color: TechColors.textPrimary, fontSize: 12), decoration: InputDecoration(hintText: 'Search managed resources', prefixIcon: const Icon(Icons.search, size: 16), isDense: true, suffixIcon: (search ?? '').isEmpty ? null : IconButton(tooltip: 'Clear search', onPressed: () => setState(() => search = ''), icon: const Icon(Icons.close, size: 16)))))),
         SizedBox(width: 150, child: DropdownButtonFormField<String>(
           value: _sortBy,
           isExpanded: true,
