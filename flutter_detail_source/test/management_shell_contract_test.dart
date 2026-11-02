@@ -88,8 +88,10 @@ void main() {
     expect(source, contains('assignmentList()'));
     expect(source, contains('actions()'));
 
-    expect(source, contains('openInsightFlowAnalysis('));
-    expect(source, contains('managedDatasetId: datasetId'));
+    // Dataset access must use the canonical Branch Data & Access workspace;
+    // the legacy screen passed original dataset IDs into analysis.
+    expect(source, contains('case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();'));
+    expect(source, isNot(contains('AuthorizationManagementScreen(')));
     // The analysis route is deliberately kept in the shared navigation helper;
     // verify the real route target rather than only checking the caller name.
     expect(
@@ -120,8 +122,6 @@ void main() {
     expect(source, isNot(contains('_managementAnalysisNavChip')));
     expect(source, contains('kInsightFlowNavigationGlassSettings'));
     expect(source, contains('management_navigation.dart'));
-    expect(source, contains('AuthorizationManagementScreen('));
-    expect(source, contains('onStartWorking:'));
     expect(source, contains("'/overview'"));
     expect(source, contains("'/locations'"));
     expect(source, contains("'/sections'"));
