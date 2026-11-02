@@ -136,7 +136,7 @@ def test_failed_uploads_are_not_returned_as_copyable_datasets():
 
     # Privileged roles can see failed records for diagnostics, but copy-only
     # roles must not be offered a source that cannot be opened.
-    assert 'if dataset.status == "deleted":' in service
+    assert 'if dataset.status in {"deleted", "deleting"}:' in service
     assert 'if dataset.status == "failed" and not privileged:' in service
     assert '"status": dataset.status' in service
 
