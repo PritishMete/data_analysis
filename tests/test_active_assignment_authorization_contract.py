@@ -126,3 +126,16 @@ def test_copy_requests_are_workspace_branch_scoped_and_review_is_single_writer()
     assert "create_working_copy(claims, workspace, str(req[\"dataset_id\"]), None, None)" in decision
     assert "oa.role_id IN ('manager','team_lead')" in decision
     assert "result.rowcount != 1" in decision
+
+
+
+def test_copy_access_grants_require_acl_capability_and_revoke_the_grant():
+    provider = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
+    grant = provider.split("def set_dataset_grant(", 1)[1].split("\ndef create_working_copy", 1)[0]
+
+    assert 'actor_roles.intersection({"organization_owner", "branch_head"})' in grant
+    assert '"dataset.manage_acl" not in set(context.get("permissions", []))' in grant
+    assert "if grant_permissions:" in grant
+    assert "DELETE FROM resource_grants" in grant
+    assert "'operation':" not in grant
+    assert '"operation": "grant" if grant_permissions else "revoke"' in grant

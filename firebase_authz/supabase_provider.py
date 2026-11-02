@@ -2752,8 +2752,10 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
     actor_roles = set(context.get("role_ids", []))
-    if not actor_roles.intersection({"organization_owner", "branch_head", "manager"}):
-        raise AuthzError("Only an Organization Owner, Branch Head, or Manager can authorize dataset copies.")
+    if not actor_roles.intersection({"organization_owner", "branch_head"}):
+        raise AuthzError("Only an Organization Owner or Branch Head can manage dataset copy access.")
+    if "dataset.manage_acl" not in set(context.get("permissions", [])):
+        raise AuthzError("The active role lacks dataset.manage_acl permission.")
 
     org, workspace, actor = (
         str(context["organization_id"]), str(context["workspace_id"]),
@@ -2819,13 +2821,19 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
         if grant_permissions and not any(str(item.get("location_id") or "") == location for item in assigned):
             raise AuthzError("The copy recipient must be assigned to the dataset's branch.")
 
-        db.execute(text("""
-            INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
-            VALUES (:org, :dataset, :target, CAST(:permissions AS jsonb))
-            ON CONFLICT (organization_id, resource_id, principal_id)
-            DO UPDATE SET permissions=EXCLUDED.permissions
-        """), {"org": org, "dataset": dataset_id, "target": str(target),
-                "permissions": json.dumps(grant_permissions)})
+        if grant_permissions:
+            db.execute(text("""
+                INSERT INTO resource_grants(organization_id, resource_id, principal_id, permissions)
+                VALUES (:org, :dataset, :target, CAST(:permissions AS jsonb))
+                ON CONFLICT (organization_id, resource_id, principal_id)
+                DO UPDATE SET permissions=EXCLUDED.permissions
+            """), {"org": org, "dataset": dataset_id, "target": str(target),
+                    "permissions": json.dumps(grant_permissions)})
+        else:
+            db.execute(text("""
+                DELETE FROM resource_grants
+                WHERE organization_id=:org AND resource_id=:dataset AND principal_id=:target
+            """), {"org": org, "dataset": dataset_id, "target": str(target)})
         db.execute(text("""
             INSERT INTO audit_events
               (event_id, organization_id, actor_principal_id, action, outcome, metadata)
