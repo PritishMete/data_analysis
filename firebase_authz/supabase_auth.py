@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import urllib.error
 import urllib.request
 from functools import lru_cache
 from typing import Any
@@ -13,6 +14,12 @@ from .service import AuthenticationRequired
 from . import registration_diagnostics
 
 JWT_CLOCK_SKEW_LEEWAY_SECONDS = 10
+
+
+class SupabaseAuthUnavailable(Exception):
+    """Supabase Auth could not be reached or returned a transient failure."""
+
+
 
 def _setting(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
@@ -51,7 +58,7 @@ def _fetch_supabase_user(token: str, subject: str | None = None) -> dict[str, An
     registration_diagnostics.stage("SUPABASE_USER_LOOKUP_START")
     key = _publishable_key()
     if not key:
-        raise AuthenticationRequired("Supabase authentication is not configured.")
+        raise SupabaseAuthUnavailable("Supabase authentication is not configured.")
     request = urllib.request.Request(
         f"{_project_url()}/auth/v1/user",
         headers={
@@ -63,8 +70,19 @@ def _fetch_supabase_user(token: str, subject: str | None = None) -> dict[str, An
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             user = json.loads(response.read())
-    except Exception as exc:
-        raise AuthenticationRequired("Supabase user state could not be verified.") from exc
+    except urllib.error.HTTPError as exc:
+        # Invalid/revoked credentials are genuine authentication failures.
+        # Rate limits and upstream 5xx responses are temporary service failures.
+        if exc.code in (400, 401, 403):
+            raise AuthenticationRequired("Supabase authentication failed.") from exc
+        raise SupabaseAuthUnavailable(
+            "Supabase Auth is temporarily unavailable."
+        ) from exc
+    except (urllib.error.URLError, TimeoutError, OSError, ConnectionError,
+            json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise SupabaseAuthUnavailable(
+            "Supabase Auth is temporarily unavailable."
+        ) from exc
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
     if not user_id or (subject is not None and user_id != subject):
         raise AuthenticationRequired("Supabase user identity does not match the token.")
@@ -83,7 +101,7 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
         raise AuthenticationRequired("Supabase authentication required.")
     issuer = _issuer()
     if not issuer or not _project_url():
-        raise AuthenticationRequired("Supabase authentication is not configured.")
+        raise SupabaseAuthUnavailable("Supabase authentication is not configured.")
     try:
         signing_key = _jwks_client(
             f"{_project_url()}/auth/v1/.well-known/jwks.json"
@@ -108,10 +126,12 @@ def verify_supabase_access_token(token: str, require_email_verified: bool = True
                 "aud": "authenticated",
             }
             registration_diagnostics.stage("SUPABASE_AUTH_SERVER_FALLBACK_COMPLETE")
-        except AuthenticationRequired:
+        except (AuthenticationRequired, SupabaseAuthUnavailable):
             raise
         except Exception as fallback_exc:
-            raise AuthenticationRequired("Supabase authentication failed.") from fallback_exc
+            raise SupabaseAuthUnavailable(
+                "Supabase Auth is temporarily unavailable."
+            ) from fallback_exc
     else:
         try:
             claims = jwt.decode(

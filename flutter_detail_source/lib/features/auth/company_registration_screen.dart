@@ -67,6 +67,7 @@ class _CompanyRegistrationScreenState
       _address1,
       _address2,
       _postal,
+      _proofNumber,
     ]) {
       controller.dispose();
     }

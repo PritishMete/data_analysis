@@ -504,7 +504,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
           children: [
             const AuthGlassMessage(
               text:
-                  'The organization service rejected this session. Cached workspace data cannot restore access. Sign in again to continue.',
+                  'Your InsightFlow identity is still signed in, but organization access was denied. Cached workspace data cannot restore access. Retry later or contact your organization administrator. You can sign out manually below.',
               error: true,
             ),
             const SizedBox(height: 12),

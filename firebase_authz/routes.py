@@ -7,6 +7,7 @@ from .service import AuthzError, AuthenticationRequired, BootstrapDenied, bootst
 from . import registration_diagnostics
 from .profile_domain import get_my_profile, upsert_my_profile
 from .supabase_admin import SupabaseAdminConfigurationError, SupabaseAdminOperationError
+from .supabase_auth import SupabaseAuthUnavailable
 
 router=APIRouter(prefix="/v1/authz",tags=["authorization"])
 logger = logging.getLogger(__name__)
@@ -94,8 +95,9 @@ def my_profile(
                 "Profile onboarding is available only for the configured Supabase authentication provider."
             )
         return get_my_profile(claims, workspace_id.strip())
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -133,8 +135,9 @@ def my_profile_update(
             id_proof_type=req.id_proof_type,
             id_proof_number=req.id_proof_number,
         )
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -146,8 +149,9 @@ def provider_diagnostics(authorization: str = Header(default=None)):
     """Return minimal authenticated runtime information for provider diagnosis."""
     try:
         verify_id_token(_token(authorization))
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "firebase").strip().lower()
     return {
         "provider": provider,
@@ -183,8 +187,9 @@ def me(
             "identity": identity,
             **context,
         }
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
 
@@ -201,6 +206,7 @@ def management(
             from .supabase_provider import management_snapshot as provider_management_snapshot
             return provider_management_snapshot(claims, workspace_id.strip())
         return management_snapshot(str(claims["uid"]), workspace_id.strip(), claims)
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
@@ -214,8 +220,9 @@ def pending_invitations(authorization: str = Header(default=None)):
             return {"invitations": pending_invitations(claims)}
         from .service import pending_invitations_for_email
         return {"invitations": pending_invitations_for_email(str(claims.get("email") or ""))}
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
 
@@ -257,8 +264,9 @@ def membership(
                 [],
             ),
         }
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -272,8 +280,9 @@ def bootstrap(req: BootstrapRequest, authorization: str = Header(default=None)):
             from .supabase_provider import register_organization
             return register_organization(require_email_verified(verify_id_token(_token(authorization))), req.organization_name)
         return bootstrap_owner(_token(authorization), req.organization_name)
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except BootstrapDenied as exc:
@@ -365,8 +374,9 @@ def founder_organization_register(
         result = bootstrap_owner(claims, req.organization_name, allow_any_authenticated=False)
         registration_diagnostics.stage("REGISTRATION_COMPLETE")
         return result
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except (BootstrapDenied, AuthzError) as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -393,8 +403,9 @@ def authorization_check(req: AuthorizationCheck, authorization: str = Header(def
                 uid, req.workspace_id, req.action, req.resource_id
             )
         return authorize_workspace(uid, req.workspace_id, req.action, req.resource_id)
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -407,7 +418,8 @@ def role_mutation(req:RoleMutation,authorization: str=Header(default=None)):
             from .supabase_provider import mutate_role as provider_mutate_role
             return {"success": provider_mutate_role(verify_id_token(_token(authorization)), req.workspace_id, req.target_uid, req.role_id, req.enabled)}
         return {"success":mutate_role(req.target_uid,req.role_id,req.enabled,_token(authorization),req.workspace_id)}
-    except AuthenticationRequired as exc: raise HTTPException(401,str(exc))
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403,str(exc))
 
 
@@ -457,6 +469,7 @@ def invitation_create(req: InvitationRequest, authorization: str = Header(defaul
             req.workspace_id, req.email, req.role_id,
             _token(authorization), req.expires_at
         )
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except (SupabaseAdminConfigurationError, SupabaseAdminOperationError) as exc:
         logger.error("invitation_admin_failure_safe_response error=%s", str(exc))
@@ -482,6 +495,8 @@ def invitation_accept(req: InvitationAcceptRequest, authorization: str = Header(
             result = accept_invitation(req.workspace_id, req.invitation_id, _token(authorization))
         logger.info("invitation_acceptance_response status_code=200")
         return result
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc:
         logger.warning("invitation_acceptance_response status_code=401 error_class=%s", exc.__class__.__name__)
         raise HTTPException(401, str(exc))
@@ -506,6 +521,7 @@ def invitation_password_setup_complete(
             from .supabase_provider import mark_invitation_password_setup as provider_mark_password_setup
             return provider_mark_password_setup(claims, req.invitation_id)
         raise AuthzError("Employee invitation password setup is available only for Supabase authentication.")
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
 
@@ -518,6 +534,7 @@ def membership_status(req: MembershipStatusRequest, authorization: str = Header(
         return {"success": set_membership_status(
             req.workspace_id, req.target_uid, req.status, _token(authorization)
         )}
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
@@ -541,8 +558,9 @@ def working_copy_create(req: WorkingCopyRequest, authorization: str = Header(def
             req.working_copy_id,
             req.source_version,
         )
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -573,8 +591,9 @@ def approved_employee(req: ApprovedEmployee, authorization: str = Header(default
         return {"success": set_approved_employee(
             req.workspace_id, req.target_uid, req.employee_id, _token(authorization)
         )}
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -599,8 +618,9 @@ def delegation(req: DelegationRequest, authorization: str = Header(default=None)
             req.expires_at,
             _token(authorization),
         )
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -631,8 +651,9 @@ def dataset_register(req: DatasetRegistration, authorization: str = Header(defau
             _token(authorization),
             req.protected_original,
         )
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -651,8 +672,9 @@ def dataset_grant(req: DatasetGrant, authorization: str = Header(default=None)):
             req.permissions,
             _token(authorization),
         )}
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:
@@ -671,6 +693,7 @@ def role_upsert(req: RoleUpsert, authorization: str=Header(default=None)):
             from .supabase_provider import upsert_role as provider_upsert_role
             return {"success": provider_upsert_role(verify_id_token(_token(authorization)), req.workspace_id, req.role_id, req.name, req.permissions)}
         return {"success": upsert_role(req.workspace_id, req.role_id, req.name, req.permissions, _token(authorization))}
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
@@ -682,6 +705,7 @@ def resource_grant(req: ResourceGrant, authorization: str=Header(default=None)):
             from .supabase_provider import set_resource_grant
             return {"success": set_resource_grant(verify_id_token(_token(authorization)), req.workspace_id, req.resource_id, req.target_uid, req.permissions)}
         return {"success": set_resource_grant(req.workspace_id, req.resource_id, req.target_uid, req.permissions, _token(authorization))}
+    except SupabaseAuthUnavailable as exc: raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
     except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc: raise HTTPException(403, str(exc))
     except ValueError as exc: raise HTTPException(400, str(exc))
@@ -704,8 +728,9 @@ def account_cleanup(req: AccountCleanupRequest, authorization: str = Header(defa
             delete_user(req.uid)
             return {"deleted": True, **result}
         return cleanup_account(req.uid, _token(authorization))
-    except AuthenticationRequired as exc:
-        raise HTTPException(401, str(exc))
+    except SupabaseAuthUnavailable as exc:
+        raise HTTPException(503, "Supabase authentication is temporarily unavailable.") from exc
+    except AuthenticationRequired as exc: raise HTTPException(401, str(exc))
     except AuthzError as exc:
         raise HTTPException(403, str(exc))
     except ValueError as exc:

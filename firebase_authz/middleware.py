@@ -14,6 +14,7 @@ from .service import (
     verify_id_token,
 )
 from .schema import validate_id
+from .supabase_auth import SupabaseAuthUnavailable
 
 
 PUBLIC_PATHS = {
@@ -239,6 +240,11 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             request.state.resource_id = resource_id or None
             request.state.authorization = decision
             return await call_next(request)
+        except SupabaseAuthUnavailable:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Authentication service temporarily unavailable."},
+            )
         except (AuthenticationRequired, PermissionDenied, ValueError):
             return JSONResponse(
                 status_code=403,

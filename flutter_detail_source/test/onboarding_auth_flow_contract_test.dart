@@ -38,6 +38,32 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
       source,
       contains("Cached workspace data cannot restore access."),
     );
+    expect(
+      source,
+      contains("Your InsightFlow identity is still signed in"),
+    );
+  });
+
+  test('authorization denial does not terminate a valid Supabase login', () {
+    final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    final meStart = http.indexOf('if (response.statusCode == 403) {');
+    final meEnd = http.indexOf('if (response.statusCode != 200)', meStart);
+    expect(meStart, greaterThanOrEqualTo(0));
+    expect(meEnd, greaterThan(meStart));
+    final forbiddenBlock = http.substring(meStart, meEnd);
+    expect(forbiddenBlock, contains('InsightFlowOnboardingState.authoritativeDenial'));
+    expect(forbiddenBlock, isNot(contains('signOut()')));
+    expect(http, contains('if (response.statusCode == 401)'));
+    expect(http, contains('_AuthenticationRequiredFailure()'));
+  });
+
+  test('signup prevents duplicate submissions and onboarding controllers are disposed', () {
+    final signup = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
+    final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
+    final employee = File('lib/features/auth/employee_profile_onboarding_screen.dart').readAsStringSync();
+    expect(signup, contains('Future<void> _signUp() async {\n    if (_loading) return;'));
+    expect(company, contains('_proofNumber,\n    ])'));
+    expect(employee, contains('_proofNumber,\n    ])'));
   });
 
   test('pending invitation lookup and acceptance use Supabase authentication', () {
