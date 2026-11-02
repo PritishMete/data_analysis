@@ -46,7 +46,9 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
 
   test('authorization denial does not terminate a valid Supabase login', () {
     final http = File('lib/core/auth/authenticated_http.dart').readAsStringSync();
-    final meStart = http.indexOf('if (response.statusCode == 403) {');
+    final meStart = http.indexOf(
+      '// A 403 is an authorization decision, not a logout instruction.',
+    );
     final meEnd = http.indexOf('if (response.statusCode != 200)', meStart);
     expect(meStart, greaterThanOrEqualTo(0));
     expect(meEnd, greaterThan(meStart));

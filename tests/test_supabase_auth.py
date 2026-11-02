@@ -42,8 +42,24 @@ def test_supabase_claims_are_normalized(monkeypatch):
 
 
 def test_supabase_invalid_token_is_rejected(monkeypatch):
+    import urllib.error
+
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setattr(supabase_auth, "_jwks_client", lambda _: (_ for _ in ()).throw(RuntimeError("bad key")))
+    monkeypatch.setenv("INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY", "publishable-test-key")
+    monkeypatch.setattr(
+        supabase_auth, "_jwks_client",
+        lambda _: (_ for _ in ()).throw(RuntimeError("unsupported signing key")),
+    )
+    monkeypatch.setattr(
+        supabase_auth.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            urllib.error.HTTPError(
+                "https://example.supabase.co/auth/v1/user", 401,
+                "invalid token", {}, None
+            )
+        ),
+    )
     with pytest.raises(supabase_auth.AuthenticationRequired):
         supabase_auth.verify_supabase_access_token("bad.token.value")
 
