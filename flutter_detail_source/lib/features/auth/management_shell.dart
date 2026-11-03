@@ -679,7 +679,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> assignTeamLead() async {
     final active = people.where((p) => p['status'] == 'active').toList();
-    final managerRequest = _managementRole() == 'manager';
+    final managerRequest = _canUi('team_lead.request') && !_canUi('team_lead.assign');
     if (locations.isEmpty || sections.isEmpty || active.isEmpty) { feedback(StateError('An active location, section, and person are required.')); return; }
     var location = selectedLocation ?? locations.first['location_id'].toString();
     var sectionId = selectedSection ?? sections.first['section_id'].toString();
