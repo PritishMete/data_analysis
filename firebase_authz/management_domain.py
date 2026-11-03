@@ -442,6 +442,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             ],
             "capabilities": [
                 "organization.structure.manage",
+                "location.update",
                 "organization.section.create",
                 "manager.assign",
                 "manager.replace",
@@ -468,6 +469,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "location.update",
                 "organization.section.create",
                 "dataset.view_original",
                 "dataset.upload",
@@ -676,6 +678,62 @@ def create_location(claims: dict[str, Any], workspace_id: str, name: str,
             "location_id": location_id, "branch_identifier": branch_identifier,
         })
         return _location_summary(db, org, location_id)
+
+
+def update_location(
+    claims: dict[str, Any],
+    workspace_id: str,
+    location_id: str,
+    name: str,
+) -> dict[str, Any]:
+    """Update ordinary branch metadata while keeping its primary identity fixed."""
+    name = str(name or "").strip()
+    if not 1 <= len(name) <= 160 or any(ord(char) < 32 or ord(char) == 127 for char in name):
+        raise ValueError("Location name must be between 1 and 160 characters.")
+    location_id = str(location_id or "").strip()
+    if not location_id:
+        raise ValueError("Location identity is required.")
+
+    with SessionLocal.begin() as db:
+        actor = _actor(db, claims, workspace_id)
+        _require_location_manage(db, actor, location_id)
+        organization_id = actor["organization_id"]
+        current = db.execute(text("""
+            SELECT location_id, status
+            FROM locations
+            WHERE organization_id=:org AND location_id=:location
+            FOR UPDATE
+        """), {"org": organization_id, "location": location_id}).mappings().first()
+        if not current:
+            raise AuthzError("Location was not found in your authorized organization scope.")
+
+        duplicate = db.execute(text("""
+            SELECT 1
+            FROM locations
+            WHERE organization_id=:org
+              AND location_id<>:location
+              AND status='active'
+              AND lower(name)=lower(:name)
+            LIMIT 1
+        """), {
+            "org": organization_id,
+            "location": location_id,
+            "name": name,
+        }).scalar_one_or_none()
+        if duplicate and current["status"] == "active":
+            raise ManagementConflict("An active location with this name already exists.")
+
+        # location_id and branch_identifier are immutable primary branch identity.
+        db.execute(text("""
+            UPDATE locations
+            SET name=:name, updated_at=now()
+            WHERE organization_id=:org AND location_id=:location
+        """), {"org": organization_id, "location": location_id, "name": name})
+        _audit(db, organization_id, actor["principal_id"], "management.location.updated", "succeeded", {
+            "location_id": location_id,
+            "changed_fields": ["name"],
+        })
+        return _location_summary(db, organization_id, location_id)
 
 
 def list_sections(claims: dict[str, Any], workspace_id: str,
