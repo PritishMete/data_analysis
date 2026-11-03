@@ -504,6 +504,44 @@ def test_organization_owner_cannot_grant_or_revoke_dataset_copy_access(monkeypat
     assert db.calls == []
 
 
+@pytest.mark.parametrize(
+    "operation",
+    ["list_copy_requests", "approve_copy_request"],
+)
+def test_organization_owner_cannot_review_branch_copy_requests(monkeypatch, operation):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["dataset.view_original"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the active Branch Head assigned to a branch",
+    ):
+        if operation == "list_copy_requests":
+            supabase_provider.list_copy_requests(
+                {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+                "workspace-1",
+            )
+        else:
+            supabase_provider.approve_copy_request(
+                {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+                "workspace-1", "request-1", True,
+            )
+
+    assert db.calls == []
+
+
 def test_branch_head_cannot_delegate_original_write_authority(monkeypatch):
     db = _GrantDb()
     context = _grantor_context()
