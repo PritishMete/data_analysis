@@ -75,12 +75,15 @@ void main() {
     expect(workflow, isNot(contains('  push:')));
   });
 
-  test('external viewer workspace hides mutation controls', () {
+  test('external viewer workspace hides mutation controls through read-only capability policy', () {
     final source = File(
       'lib/features/auth/managed_dataset_access_workspace.dart',
     ).readAsStringSync();
     expect(source, contains('this.readOnly = false'));
-    expect(source, contains('!widget.readOnly && roles.contains'));
-    expect(source, contains('if (!widget.readOnly) ...['));
+    expect(source, contains("final showUpload = !readOnly && capabilities.contains('dataset.upload.direct')"));
+    expect(source, contains('final showProposalQueue = !readOnly &&'));
+    expect(source, contains('final showAccessManagement = !readOnly &&'));
+    expect(source, contains('capabilities.contains(\'dataset.copy.request\')'));
+    expect(source, contains('if (!widget.readOnly) {'));
   });
 }
