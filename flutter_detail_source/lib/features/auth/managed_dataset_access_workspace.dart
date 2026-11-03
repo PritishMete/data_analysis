@@ -1685,7 +1685,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      if (!widget.readOnly) ...[
+      if (!widget.readOnly && !roles.contains('organization_owner')) ...[
         const SizedBox(height: 12),
         _accessPanel(),
         const SizedBox(height: 12),
@@ -1738,7 +1738,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 5),
-    const Text('The Organization Owner and assigned Branch Head can publish permanent original changes within their scope. Managers can publish only when they hold an active explicit upload grant for the exact branch. Team Leads and employees work only on individually authorized copies; they cannot modify the original dataset.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const Text('The assigned Branch Head manages the trusted branch original. Managers may publish only when they hold an active explicit upload grant for the exact branch; otherwise changes remain proposals. Organization Owners have organization-wide read and oversight access, not branch master-data write authority. Team Leads and employees work only on individually authorized copies.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
     if (roles.contains('manager') || roles.contains('team_lead')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
@@ -1765,7 +1765,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ),
       )),
     ],
-    if (roles.contains('organization_owner') || roles.contains('branch_head')) ...[
+    if (roles.contains('branch_head') && !roles.contains('organization_owner')) ...[
       const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
       if (requestsError != null)
