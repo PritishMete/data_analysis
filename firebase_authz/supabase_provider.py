@@ -2799,7 +2799,9 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
     elif action == "dataset.create_working_copy":
         if "organization_owner" in roles:
-            pass
+            raise AuthzError(
+                "Organization Owners have read-only oversight and cannot create working copies."
+            )
         elif "branch_head" in roles or "manager" in roles:
             if not dataset_location or dataset_location not in scoped_locations:
                 if "branch_head" in roles:
@@ -2855,8 +2857,11 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
     actor_roles = set(context.get("role_ids", []))
-    if not actor_roles.intersection({"organization_owner", "branch_head"}):
-        raise AuthzError("Only an Organization Owner or Branch Head can manage dataset copy access.")
+    if "organization_owner" in actor_roles or "branch_head" not in actor_roles:
+        raise AuthzError(
+            "Only the active Branch Head assigned to this branch can manage dataset copy access; "
+            "Organization Owners have read-only oversight."
+        )
     if "dataset.manage_acl" not in set(context.get("permissions", [])):
         raise AuthzError("The active role lacks dataset.manage_acl permission.")
 
@@ -2907,20 +2912,18 @@ def set_dataset_grant(claims: dict[str, Any], workspace_id: str, dataset_id: str
             raise AuthzError("Copy-only grants can be issued only to Team Leads and ordinary employees.")
 
         location = str(dataset["location_id"])
-        if "organization_owner" not in actor_roles:
-            issuer_role = "branch_head" if "branch_head" in actor_roles else "manager"
-            actor_locations = {
-                str(item["location_id"]) for item in _active_assigned_role_rows_for_scope(
-                    db, org, workspace, actor
-                )
-                if item["role_id"] == issuer_role and item.get("location_id") is not None
-            }
-            if len(actor_locations) != 1:
-                raise AuthzError(
-                    "A Branch Head must have exactly one active branch assignment to manage dataset copy access."
-                )
-            if location not in actor_locations:
-                raise AuthzError("The dataset is outside your branch scope.")
+        actor_locations = {
+            str(item["location_id"]) for item in _active_assigned_role_rows_for_scope(
+                db, org, workspace, actor
+            )
+            if item["role_id"] == "branch_head" and item.get("location_id") is not None
+        }
+        if len(actor_locations) != 1:
+            raise AuthzError(
+                "A Branch Head must have exactly one active branch assignment to manage dataset copy access."
+            )
+        if location not in actor_locations:
+            raise AuthzError("The dataset is outside your branch scope.")
         if grant_permissions and not any(str(item.get("location_id") or "") == location for item in assigned):
             raise AuthzError("The copy recipient must be assigned to the dataset's branch.")
 
