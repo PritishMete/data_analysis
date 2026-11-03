@@ -151,6 +151,12 @@ class _EmployeeInvitationPasswordSetupScreenState
     } catch (error, stackTrace) {
       debugPrint('invitation_lifecycle failure error_class=${error.runtimeType}');
       debugPrintStack(stackTrace: stackTrace);
+      // If acceptance committed but its response was lost, refresh AuthGate
+      // before showing an error. The invitation list remains available when
+      // activation did not complete.
+      try {
+        await widget.onCompleted().timeout(const Duration(seconds: 10));
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _busy = false;
