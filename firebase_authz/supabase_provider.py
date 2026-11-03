@@ -1762,6 +1762,13 @@ def set_resource_grant(claims: dict[str, Any], workspace_id: str, resource_id: s
         """), {"org": organization_id, "resource": resource_id}).mappings().first()
         if not resource:
             raise AuthzError("Resource is not accessible.")
+        if resource["resource_type"] in {"dataset", "working_copy"} and (
+            "organization_owner" in actor_roles or "branch_head" not in actor_roles
+        ):
+            raise AuthzError(
+                "Only the assigned Branch Head can grant access to branch datasets or working copies; "
+                "Organization Owners have read-only oversight."
+            )
 
         target_assignments = _active_assigned_role_rows_for_scope(
             db, organization_id, resolved_workspace_id, str(target["principal_id"])
@@ -2289,8 +2296,10 @@ def assign_working_copy(claims: dict[str, Any], workspace_id: str, working_copy_
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head"}):
-        raise AuthzError("Only a Branch Head or Organization Owner can assign working copies.")
+    if "organization_owner" in roles or "branch_head" not in roles:
+        raise AuthzError(
+            "Only the assigned Branch Head can assign working copies; Organization Owners have read-only oversight."
+        )
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -3055,6 +3064,15 @@ def authorize_working_copy(claims: dict[str, Any], workspace_id: str, working_co
     resolved_workspace_id = str(context["workspace_id"])
     principal_id = str(context["principal_id"])
     roles = set(context.get("role_ids", []))
+    if "organization_owner" in roles and action != "working_copy.view":
+        raise AuthzError(
+            "Organization Owners have read-only oversight and cannot modify, delete, or assign working copies."
+        )
+    if action == "working_copy.assign" and (
+        "organization_owner" in roles or "branch_head" not in roles
+    ):
+        raise AuthzError("Only the assigned Branch Head can assign working copies.")
+
     with SessionLocal() as db:
         row = db.execute(text("""
             SELECT wc.source_dataset_id, wc.source_version, wc.version,
