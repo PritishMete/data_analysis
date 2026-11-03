@@ -14,7 +14,6 @@ import 'auth_glass_widgets.dart';
 import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'employee_profile_onboarding_screen.dart';
-import 'employee_invitation_password_setup_screen.dart';
 import 'sign_in_screen.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
@@ -145,13 +144,16 @@ class _SupabaseEmailVerificationScreenState
       _message = null;
     });
     try {
+      // Refresh the persisted Supabase session so the local User and JWT
+      // carry the newly confirmed email state. getUser() alone can return an
+      // authoritative user without updating the session watched by AuthGate.
       final authoritativeUser =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+          await InsightFlowSupabaseAuthService.refreshAuthenticatedUser();
       final verified = authoritativeUser?.emailConfirmedAt != null;
       if (!mounted) return;
       setState(() {
         _message = verified
-            ? 'Email verified. Continuing…'
+            ? 'Email verified. Refreshing your InsightFlow session…'
             : 'Your email is still unverified. Open the latest verification email and try again.';
         _error = !verified;
       });
@@ -452,26 +454,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
         break;
       case InsightFlowOnboardingState.pendingInvitation:
-        final passwordInvitation = _pendingInvitations.firstWhere(
-          (item) => item['password_setup_at'] == null &&
-              item['email_delivery_status'] == 'initiated',
-          orElse: () => <String, dynamic>{},
+        // Keep invitation selection in one place. Users with multiple
+        // invitations must explicitly choose the organization before password
+        // setup or acceptance can begin.
+        authenticatedChild = OrganizationOnboardingScreen(
+          state: {'pending_invitations': _pendingInvitations},
+          onCompleted: () async {
+            await _refresh(showLoading: false);
+          },
         );
-        if (passwordInvitation.isNotEmpty) {
-          authenticatedChild = EmployeeInvitationPasswordSetupScreen(
-            invitation: passwordInvitation,
-            onCompleted: () async {
-              await _refresh(showLoading: false);
-            },
-          );
-        } else {
-          authenticatedChild = OrganizationOnboardingScreen(
-            state: {'pending_invitations': _pendingInvitations},
-            onCompleted: () async {
-              await _refresh(showLoading: false);
-            },
-          );
-        }
         break;
       case InsightFlowOnboardingState.noMembership:
         authenticatedChild = CompanyRegistrationScreen(

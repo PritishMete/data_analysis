@@ -43,6 +43,16 @@ class _EmployeeInvitationPasswordSetupScreenState
   }
 
   Future<void> _complete() async {
+    if (_busy) return;
+    final invitationId =
+        widget.invitation['invitation_id']?.toString().trim() ?? '';
+    if (invitationId.isEmpty) {
+      setState(() {
+        _error = true;
+        _message = 'This invitation is incomplete. Please request a new invitation.';
+      });
+      return;
+    }
     final password = _password.text;
     final confirm = _confirm.text;
     if (password.length < 8) {
@@ -110,11 +120,7 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Password setup could not be completed.',
         );
       }
-      final invitationId = widget.invitation['invitation_id']?.toString() ?? '';
-      if (invitationId.isEmpty) {
-        throw StateError('This invitation is incomplete. Please request a new invitation.');
-      }
-      debugPrint('invitation_lifecycle pending_invitation_loaded=true');
+            debugPrint('invitation_lifecycle pending_invitation_loaded=true');
       debugPrint('invitation_lifecycle invitation_acceptance_started');
       final acceptResponse = await http
           .post(
@@ -145,6 +151,12 @@ class _EmployeeInvitationPasswordSetupScreenState
     } catch (error, stackTrace) {
       debugPrint('invitation_lifecycle failure error_class=${error.runtimeType}');
       debugPrintStack(stackTrace: stackTrace);
+      // If acceptance committed but its response was lost, refresh AuthGate
+      // before showing an error. The invitation list remains available when
+      // activation did not complete.
+      try {
+        await widget.onCompleted().timeout(const Duration(seconds: 10));
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -222,6 +234,11 @@ class _EmployeeInvitationPasswordSetupScreenState
           ),
         ),
         const SizedBox(height: 8),
+        if (Navigator.of(context).canPop())
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Back to invitations'),
+          ),
         TextButton(
           onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
           child: const Text('Sign out'),

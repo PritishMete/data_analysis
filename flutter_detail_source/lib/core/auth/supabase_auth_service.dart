@@ -9,6 +9,10 @@ class InsightFlowSupabaseConfig {
   static const publishableKey = String.fromEnvironment(
     'INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY',
   );
+  static const authRedirectUrl = String.fromEnvironment(
+    'INSIGHTFLOW_AUTH_REDIRECT_URL',
+    defaultValue: 'https://pritishmete.github.io/data_analysis/',
+  );
 
   static bool get isConfigured => url.isNotEmpty && publishableKey.isNotEmpty;
 }
@@ -95,6 +99,14 @@ class InsightFlowSupabaseAuthService {
   /// Fetch the user from Supabase Auth instead of trusting a possibly stale
   /// locally-restored session object. This is used at the authorization
   /// boundary before organization/workspace access is allowed.
+  static Future<User?> refreshAuthenticatedUser({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    if (!isInitialized) return null;
+    final response = await client.auth.refreshSession().timeout(timeout);
+    return response.user ?? response.session?.user ?? currentSupabaseUser;
+  }
+
   static Future<User?> fetchAuthoritativeUser({
     Duration timeout = const Duration(seconds: 5),
   }) async {
@@ -225,7 +237,7 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signUp(
       email: email,
       password: password,
-      emailRedirectTo: 'https://pritishmete.github.io/data_analysis/',
+      emailRedirectTo: InsightFlowSupabaseConfig.authRedirectUrl,
       data: displayName == null ? null : {'display_name': displayName},
     );
   }
@@ -239,7 +251,10 @@ class InsightFlowSupabaseAuthService {
   }
 
   static Future<void> resetPassword(String email, {String? redirectTo}) {
-    return client.auth.resetPasswordForEmail(email, redirectTo: redirectTo);
+    return client.auth.resetPasswordForEmail(
+      email,
+      redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,
+    );
   }
 
   static Future<bool> signInWithOAuth(

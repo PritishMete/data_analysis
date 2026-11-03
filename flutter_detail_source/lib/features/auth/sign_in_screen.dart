@@ -81,11 +81,20 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
-      await InsightFlowSupabaseAuthService.setRememberDevice(email, _rememberDevice);
       await InsightFlowSupabaseAuthService.signInWithPassword(
         email: email,
         password: password,
       );
+      try {
+        await InsightFlowSupabaseAuthService.setRememberDevice(
+          email,
+          _rememberDevice,
+        );
+      } catch (_) {
+        // A local preference failure must not turn a successful login into
+        // an authentication failure. Session-only mode is still enforced in
+        // memory for this running application instance.
+      }
       if (!_rememberDevice) {
         InsightFlowSupabaseAuthService.markSessionOnlyLogin(email);
       }
@@ -121,9 +130,9 @@ class _SignInScreenState extends State<SignInScreen> {
       });
       return;
     }
-    if (password.length < 6) {
+    if (password.length < 8) {
       setState(() {
-        _error = 'Password must be at least 6 characters.';
+        _error = 'Password must be at least 8 characters.';
         _messageIsError = true;
       });
       return;
@@ -168,6 +177,7 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _resetPassword() async {
+    if (_loading || _transitioning) return;
     final email = _emailController.text.trim();
 
     if (email.isEmpty) {
@@ -178,6 +188,11 @@ class _SignInScreenState extends State<SignInScreen> {
       return;
     }
 
+    setState(() {
+      _loading = true;
+      _error = null;
+      _messageIsError = false;
+    });
     try {
       await InsightFlowSupabaseAuthService.resetPassword(email);
       if (!mounted) return;
@@ -191,6 +206,8 @@ class _SignInScreenState extends State<SignInScreen> {
         _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
         _messageIsError = true;
       });
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
