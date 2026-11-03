@@ -38,3 +38,71 @@ void main() {
     }
   });
 }
+
+
+  testWidgets('read-only skeleton never suggests management actions',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ManagedDatasetAccessSkeleton(
+              readOnly: true,
+              capabilities: <String>{'dataset.view_original'},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('dataset-upload-skeleton')), findsNothing);
+    expect(find.byKey(const ValueKey('dataset-proposal-skeleton')), findsNothing);
+    expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsNothing);
+  });
+
+  testWidgets('Branch Head skeleton reflects authorized dataset workflows',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ManagedDatasetAccessSkeleton(
+              capabilities: <String>{
+                'dataset.upload.direct',
+                'dataset.proposal.review',
+                'dataset.copy_requests.review',
+                'dataset.upload_grants.manage',
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('dataset-upload-skeleton')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dataset-proposal-skeleton')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsOneWidget);
+  });
+
+  testWidgets('Manager skeleton shows proposals but not direct original upload',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ManagedDatasetAccessSkeleton(
+              capabilities: <String>{
+                'dataset.upload',
+                'dataset.proposal.submit',
+                'dataset.copy.request',
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('dataset-upload-skeleton')), findsNothing);
+    expect(find.byKey(const ValueKey('dataset-proposal-skeleton')), findsOneWidget);
+    expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsOneWidget);
+  });
