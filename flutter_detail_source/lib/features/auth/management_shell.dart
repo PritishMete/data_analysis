@@ -620,6 +620,70 @@ class _ManagementShellState extends State<ManagementShell> {
     name.dispose(); id.dispose();
   }
 
+  Future<void> editLocation(Map<String, dynamic> location) async {
+    final locationId = location['location_id']?.toString() ?? '';
+    if (locationId.isEmpty || !_canUi('location.update')) return;
+    final name = TextEditingController(text: location['name']?.toString() ?? '');
+    final identifier = TextEditingController(
+      text: location['branch_identifier']?.toString() ?? locationId,
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _ManagementGlassDialog(
+        title: const Text('Edit branch details'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: name,
+            decoration: input('Branch name'),
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: identifier,
+            readOnly: true,
+            decoration: input('Primary branch identifier (immutable)'),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'The primary branch identifier and location ID cannot be changed.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 10),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              name.text.trim().isNotEmpty,
+            ),
+            child: const Text('Save changes'),
+          ),
+        ],
+      ),
+    ) ?? false;
+    if (!ok) {
+      name.dispose();
+      identifier.dispose();
+      return;
+    }
+    try {
+      await request(
+        '/locations/$locationId',
+        method: 'PATCH',
+        body: {'name': name.text.trim()},
+      );
+      feedback('Branch details updated. Its primary identity was preserved.');
+      await loadAll();
+    } catch (e) {
+      feedback(e);
+    }
+    name.dispose();
+    identifier.dispose();
+  }
+
   Future<void> createSection() async {
     if (locations.isEmpty) { feedback(StateError('Create a location first.')); return; }
     final name = TextEditingController();
@@ -1915,6 +1979,18 @@ class _ManagementShellState extends State<ManagementShell> {
                         ),
                       ),
                     _statusDot(l['status']?.toString() ?? 'active'),
+                    if (_canUi('location.update'))
+                      IconButton(
+                        tooltip: 'Edit branch name (primary identity is immutable)',
+                        onPressed: () => editLocation(
+                          Map<String, dynamic>.from(l),
+                        ),
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: 17,
+                          color: TechColors.borderActive,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
