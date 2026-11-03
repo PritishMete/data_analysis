@@ -98,13 +98,13 @@ def test_team_lead_and_employee_cannot_write_original_datasets():
     )[1].split("\ndef register_dataset", 1)[0]
 
     assert 'if action in {"dataset.upload", "dataset.upload_original"}' in dataset_authz
-    assert '{"organization_owner", "branch_head", "manager"} & roles' in dataset_authz
-    assert "Only an Organization Owner or the active Branch Head" in dataset_authz
+    assert '"organization_owner" in roles or not ({"branch_head", "manager"} & roles)' in dataset_authz
+    assert "Only the assigned Branch Head or an explicitly authorized Manager" in dataset_authz
     assert 'allowed_permissions = {"dataset.view_original", "dataset.create_working_copy"}' in grant_policy
     assert "Dataset grants may only provide explicit read access or copy creation." in grant_policy
     # Original-dataset writes are limited to the explicitly authorized roles;
     # the upload service must still call backend authorization for each request.
-    assert 'if not ({"organization_owner", "branch_head", "manager"} & roles)' in dataset_authz
+    assert 'if "organization_owner" in roles or not ({"branch_head", "manager"} & roles)' in dataset_authz
     assert 'def _authorize_upload(' in storage
 
 
