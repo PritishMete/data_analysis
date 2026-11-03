@@ -483,6 +483,9 @@ void main() {
     expect(access, contains("widget.canRunAnalysis && !canViewOriginal"));
     expect(access, contains("_can('dataset.upload_grants.manage')"));
     expect(access, contains("_can('dataset.copy_requests.review')"));
+    expect(access, contains("_can('dataset.proposal.review')"));
+    expect(access, contains('AWAITING BRANCH HEAD APPROVAL'));
+    expect(access, isNot(contains("roles.contains(")));
     expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
 
 
