@@ -7,6 +7,12 @@ on:
     paths:
       - 'flutter_detail_source/**'
       - '.github/workflows/management-cell-responsive-ci.yml'
+  pull_request:
+    branches:
+      - feature/employee-management-cell
+    paths:
+      - 'flutter_detail_source/**'
+      - '.github/workflows/management-cell-responsive-ci.yml'
   workflow_dispatch:
 
 permissions:
