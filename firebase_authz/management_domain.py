@@ -442,6 +442,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             ],
             "capabilities": [
                 "organization.structure.manage",
+                "organization.section.create",
                 "manager.assign",
                 "manager.replace",
                 "team_lead.assign",
@@ -461,13 +462,13 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "dataAccess", "invitations", "audit",
             ],
             "capabilities": [
-                "organization.structure.manage",
                 "manager.assign",
                 "manager.replace",
                 "team_lead.assign",
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "organization.section.create",
                 "dataset.view_original",
                 "dataset.upload",
                 "dataset.upload.direct",
