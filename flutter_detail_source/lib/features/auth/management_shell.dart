@@ -105,6 +105,8 @@ class ManagementShell extends StatefulWidget {
 class _ManagementShellState extends State<ManagementShell> {
   ManagementSection section = ManagementSection.overview;
   bool loading = true;
+  String _loadingManagementTier = '';
+  bool _loadingReadOnlyWorkspace = false;
   String? error;
   Map<String, dynamic> overview = const {};
   List<Map<String, dynamic>> locations = [];
@@ -228,12 +230,15 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> _loadAll() async {
     if (mounted) {
+      final previousPolicy = _uiPolicy();
       setState(() {
         loading = true;
         error = null;
-        // Clear the last known policy while refreshing. If the new response
-        // is invalid or the request fails, stale permissions must not keep
-        // the previous menu visible.
+        // Retain only presentation metadata for the loading placeholder.
+        // It never authorizes navigation or actions; the actual policy is
+        // cleared and all controls remain unavailable until the new response.
+        _loadingManagementTier = previousPolicy['management_tier']?.toString() ?? '';
+        _loadingReadOnlyWorkspace = previousPolicy['read_only'] == true;
         overview = const {};
       });
     }
@@ -256,6 +261,8 @@ class _ManagementShellState extends State<ManagementShell> {
       if (!mounted) return;
       setState(() {
         overview = r[0];
+        _loadingManagementTier = _uiPolicy()['management_tier']?.toString() ?? '';
+        _loadingReadOnlyWorkspace = _uiPolicy()['read_only'] == true;
         locations = maps(r[1]['locations']);
         sections = maps(r[2]['sections']);
         people = maps(r[3]['people']);
@@ -2538,7 +2545,87 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Widget _dataAccessSkeleton() => const ManagedDatasetAccessSkeleton();
 
+  Widget _roleOverviewSkeleton({
+    required bool teamWorkspace,
+    required bool readOnly,
+  }) {
+    Widget metric() => _sectionSkeletonPanel(child: Row(children: [
+      _sectionSkeletonBlock(width: 34, height: 34, radius: 10),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 68, height: 20),
+        const SizedBox(height: 6),
+        _sectionSkeletonBlock(width: 104, height: 9),
+      ])),
+    ]));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _sectionSkeletonPanel(padding: const EdgeInsets.all(20), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionSkeletonBlock(width: 125, height: 10),
+          const SizedBox(height: 10),
+          _sectionSkeletonBlock(width: 215, height: 24),
+          const SizedBox(height: 8),
+          _sectionSkeletonBlock(width: 300, height: 11),
+          const SizedBox(height: 15),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _sectionSkeletonBlock(width: 150, height: 36, radius: 9),
+            if (!readOnly) _sectionSkeletonBlock(width: 132, height: 36, radius: 9),
+            if (teamWorkspace) _sectionSkeletonBlock(width: 110, height: 36, radius: 9),
+          ]),
+        ],
+      )),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 1 : 3;
+        const gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(3, (_) =>
+          SizedBox(width: width, child: metric()),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: Row(children: [
+        _sectionSkeletonBlock(width: 20, height: 20, radius: 10),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionSkeletonBlock(height: 10),
+          const SizedBox(height: 6),
+          _sectionSkeletonBlock(width: 220, height: 10),
+        ])),
+      ])),
+      if (teamWorkspace) ...[
+        const SizedBox(height: 13),
+        _sectionSkeletonPanel(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionSkeletonBlock(width: 135, height: 14),
+            const SizedBox(height: 12),
+            ...List.generate(5, (_) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                _sectionSkeletonBlock(width: 32, height: 32, radius: 18),
+                const SizedBox(width: 10),
+                Expanded(child: _sectionSkeletonBlock(height: 11)),
+                const SizedBox(width: 12),
+                _sectionSkeletonBlock(width: 72, height: 10),
+              ]),
+            )),
+          ],
+        )),
+      ],
+    ]);
+  }
+
   Widget _sectionLoadingSkeleton() => switch (section) {
+    ManagementSection.overview when _loadingManagementTier == 'team' ||
+        _loadingManagementTier == 'section' ||
+        _loadingManagementTier == 'member' =>
+      _roleOverviewSkeleton(
+        teamWorkspace: _loadingManagementTier == 'team' ||
+            _loadingManagementTier == 'section',
+        readOnly: _loadingReadOnlyWorkspace,
+      ),
     ManagementSection.overview => _overviewSkeleton(),
     ManagementSection.organization => _organizationSkeleton(),
     ManagementSection.people => _peopleSkeleton(),
