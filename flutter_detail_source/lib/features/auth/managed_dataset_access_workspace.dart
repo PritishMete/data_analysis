@@ -1430,13 +1430,13 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }.contains(role));
   // Managers can publish permanent original changes only with a current explicit
   // branch grant. Team Leads and other copy-only roles never import originals.
-  bool get canUpload => !widget.readOnly && (
-      roles.contains('organization_owner') ||
-      roles.contains('branch_head') ||
-      (roles.contains('manager') && managerUploadGrants.isNotEmpty)
-  );
+  bool get canUpload => !widget.readOnly &&
+      !roles.contains('organization_owner') &&
+      (roles.contains('branch_head') ||
+       (roles.contains('manager') && managerUploadGrants.isNotEmpty));
   bool get canDelete => !widget.readOnly &&
-      (roles.contains('organization_owner') || roles.contains('branch_head'));
+      !roles.contains('organization_owner') &&
+      roles.contains('branch_head');
   bool get canCopy => !widget.readOnly && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
@@ -1460,7 +1460,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
+    final canManage = !widget.readOnly &&
+        !roles.contains('organization_owner') &&
+        roles.contains('branch_head');
     final locationOptions = <String, String>{};
     for (final dataset in datasets) {
       final id = dataset['location_id']?.toString() ?? '';
