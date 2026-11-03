@@ -315,6 +315,7 @@ void main() {
     expect(accessSource, contains("stat('Access requests'"));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_overviewSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
     expect(source, contains("Widget peopleView()"));
     expect(source, contains("_eyebrow('PEOPLE DIRECTORY')"));
     expect(source, contains("A clear view of your team, roles, and branch assignments."));
