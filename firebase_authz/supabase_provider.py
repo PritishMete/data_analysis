@@ -2577,28 +2577,7 @@ def authorize_dataset_upload_scope(
     principal = str(context["principal_id"])
     provider, subject = _identity(claims)
     with SessionLocal() as db:
-        if upload_role == "organization_owner":
-            query = """
-                SELECT DISTINCT l.location_id
-                FROM locations l
-                JOIN organizational_assignments oa
-                  ON oa.organization_id=l.organization_id
-                 AND oa.principal_id=:principal
-                 AND oa.role_id='organization_owner' AND oa.status='active'
-                JOIN organization_members m
-                  ON m.organization_id=oa.organization_id
-                 AND m.principal_id=oa.principal_id
-                 AND m.workspace_id=:workspace AND m.status='active'
-                JOIN member_roles mr
-                  ON mr.organization_id=m.organization_id
-                 AND mr.principal_id=m.principal_id
-                 AND mr.role_id='organization_owner'
-                JOIN role_permissions rp
-                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                WHERE l.organization_id=:org AND l.status='active'
-            """
-            params = {"org": org, "principal": principal, "workspace": workspace}
-        elif upload_role == "branch_head":
+        if upload_role == "branch_head":
             query = """
                 SELECT DISTINCT oa.location_id
                 FROM organizational_assignments oa
