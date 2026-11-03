@@ -212,6 +212,59 @@ def test_organization_owner_cannot_write_original_dataset(monkeypatch):
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
+def test_organization_owner_cannot_delete_branch_original(monkeypatch):
+    db = _Db(["organization_owner"], owner_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["organization_owner"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.delete",
+        )
+
+
+def test_branch_head_cannot_delete_original_from_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Branch Head scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1", "dataset-from-branch-a", "dataset.delete",
+        )
+
+
+def test_branch_head_can_delete_original_within_its_assigned_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-a"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+        "workspace-1", "dataset-from-branch-a", "dataset.delete",
+    )
+
+    assert result["authorized"] is True
+    assert result["location_id"] == "branch-a"
+
+
 def test_organization_owner_cannot_manage_branch_original_acl(monkeypatch):
     db = _Db(["organization_owner"], owner_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
