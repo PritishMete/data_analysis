@@ -212,6 +212,27 @@ def test_organization_owner_cannot_write_original_dataset(monkeypatch):
             "workspace-1", "dataset-1", "dataset.upload",
         )
 
+def test_organization_owner_cannot_manage_branch_original_acl(monkeypatch):
+    db = _Db(["organization_owner"], owner_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(["organization_owner"]),
+            "permissions": ["dataset.manage_acl"],
+        },
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have read-only oversight",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.manage_acl",
+        )
+
+
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
     db = _Db(["branch_head"], branch_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
