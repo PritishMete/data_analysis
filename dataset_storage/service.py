@@ -139,17 +139,18 @@ def _authorize_upload(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Authorize original writes for Owner/BH or a Manager with a live branch grant.
+    """Authorize Branch Head writes or a Manager with a live branch grant.
 
-    The shared scope check validates the current Manager grant, exact branch
-    assignment and active membership. A per-dataset ACL cannot grant upload.
+    Organization Owners have organization-wide read/oversight access, not
+    authority to modify a branch's trusted master dataset. The shared scope
+    check validates the exact branch assignment and active Manager grant.
     """
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head", "manager"}):
+    if "organization_owner" in roles or not roles.intersection({"branch_head", "manager"}):
         raise AuthzError(
-            "Only an Organization Owner, assigned Branch Head, or explicitly "
-            "authorized Manager may write an original dataset."
+            "Only the assigned Branch Head or an explicitly authorized Manager "
+            "may write an original dataset. Organization Owners are read-only."
         )
     return authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
@@ -1843,13 +1844,16 @@ def delete_managed_dataset(
     claims = _claims(token)
     context = _authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if "branch_head" not in set(context.get("role_ids", [])) and "organization_owner" not in set(context.get("role_ids", [])):
-        raise PermissionDenied("Only an Organization Owner or Branch Head may delete an original dataset.")
+    if "organization_owner" in roles or "branch_head" not in roles:
+        raise PermissionDenied(
+            "Only the assigned Branch Head may delete an original dataset. "
+            "Organization Owners have read-only oversight."
+        )
     dataset_scope = _authorize_dataset(claims, workspace_id, dataset_id, "dataset.delete")
     location_id = str(dataset_scope.get("location_id") or "")
     if not location_id:
         raise PermissionDenied("Original dataset deletion requires an active branch assignment.")
-    # Owner is organization-wide; Branch Head remains constrained to the branch.
+    # Deletion requires the exact active Branch Head assignment for this dataset.
     authorize_dataset_upload_scope(claims, workspace_id, location_id=location_id)
     organization_id = str(context["organization_id"])
     from core.db import SessionLocal
