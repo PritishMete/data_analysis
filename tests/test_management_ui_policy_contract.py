@@ -9,6 +9,8 @@ def test_organization_owner_policy_is_organization_scoped_and_read_only_for_bran
 
     assert policy["management_tier"] == "organization"
     assert "organization" in policy["sections"]
+    assert "organization.structure.manage" in policy["capabilities"]
+    assert "organization.section.create" in policy["capabilities"]
     assert "dataAccess" in policy["sections"]
     assert "audit" in policy["sections"]
     assert "dataset.view_original" in policy["capabilities"]
@@ -23,6 +25,8 @@ def test_branch_head_policy_retains_assigned_branch_dataset_management_capabilit
     assert policy["management_tier"] == "branch"
     assert "dataAccess" in policy["sections"]
     assert "dataset.view_original" in policy["capabilities"]
+    assert "organization.structure.manage" not in policy["capabilities"]
+    assert "organization.section.create" in policy["capabilities"]
     assert "dataset.upload" in policy["capabilities"]
     assert "dataset.upload.direct" in policy["capabilities"]
     assert "dataset.delete" in policy["capabilities"]
