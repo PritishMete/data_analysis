@@ -231,6 +231,47 @@ Future<InsightFlowOnboardingResolution>
       );
     }
 
+    if (membershipStatus != 'active' && membershipStatus != 'none') {
+      // Only an explicit no-membership result may enter company registration.
+      // Existing approved memberships remain in onboarding; suspended,
+      // removed, inactive, ambiguous, and unknown states fail closed.
+      if (membershipStatus == 'approved' || membershipStatus == 'invited') {
+        try {
+          final invitations = await fetchInsightFlowPendingInvitations();
+          return InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.pendingInvitation,
+            pendingInvitations: invitations,
+          );
+        } on _AuthenticationRequiredFailure {
+          await InsightFlowSupabaseAuthService.signOut();
+          insightFlowWorkspaceId = '';
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('insightflow.workspace.$uid');
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.authoritativeDenial,
+          );
+        } on _AuthoritativeAuthorizationFailure {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.authoritativeDenial,
+          );
+        } on _TransientAuthorizationFailure {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.transientFailure,
+          );
+        } catch (_) {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.transientFailure,
+          );
+        }
+      }
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    }
+
     if (membershipStatus == 'active') {
       if (authoritativeWorkspaceId.isEmpty) {
         return const InsightFlowOnboardingResolution(
