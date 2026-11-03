@@ -1225,7 +1225,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (locations.isEmpty) {
           throw StateError('No branch is authorized for original dataset uploads.');
         }
-        if (_can('dataset.upload.grants.manage') && locations.length != 1) {
+        if (_can('dataset.upload.direct') && locations.length != 1) {
           throw StateError('Your Branch Head account must resolve to exactly one assigned branch. Upload is blocked until the branch assignment is corrected.');
         }
         if (locations.length == 1) {
