@@ -212,6 +212,28 @@ class _CompanyRegistrationScreenState
     });
   }
 
+  Future<bool> _recoverRegistrationIfCommitted() async {
+    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return false;
+    try {
+      final resolution = await reconcileInsightFlowOnboardingWithRetry(
+        resolve: () => resolveInsightFlowOnboardingStateFromBackend(uid),
+      );
+      if (resolution == null ||
+          (resolution.state != InsightFlowOnboardingState.activeMember &&
+              resolution.state != InsightFlowOnboardingState.profileIncomplete)) {
+        return false;
+      }
+      // A request timeout can happen after the database transaction commits.
+      // Reconcile from the backend instead of asking the user to register a
+      // second time and receiving a misleading duplicate-registration error.
+      await widget.onCompleted();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _register() async {
     if (_busy) return;
 
@@ -350,8 +372,10 @@ class _CompanyRegistrationScreenState
       await widget.onCompleted();
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
+      if (await _recoverRegistrationIfCommitted()) return;
       _fail('InsightFlow couldn’t reach the organization service.');
     } catch (error) {
+      if (await _recoverRegistrationIfCommitted()) return;
       _fail(
         error is StateError
             ? error.message
