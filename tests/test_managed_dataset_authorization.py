@@ -470,7 +470,10 @@ def test_known_supabase_owner_identity_resolves_to_expected_context(monkeypatch)
                     "name": "TCS",
                     "workspace_id": "org_869423bba8814fa0a2ddf6ebb546194e",
                     "employee_id": "owner",
-                    "status": "active",
+                    "membership_status": "active",
+                    "identity_status": "active",
+                    "organization_status": "active",
+                    "workspace_status": "active",
                 }])
             if "FROM organization_member_profiles" in sql:
                 return Result(rows=[])
