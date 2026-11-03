@@ -2551,16 +2551,22 @@ def authorize_dataset_upload_scope(
         raise AuthzError("Workspace authorization denied.")
 
     roles = set(context.get("role_ids", []))
+    # Organization-wide visibility is not branch master-data authority.
+    # An Owner must never inherit an upload grant merely from the Owner role.
     if "organization_owner" in roles:
-        upload_role = "organization_owner"
-    elif "branch_head" in roles:
+        raise AuthzError(
+            "Organization Owners have organization-wide read and oversight access; "
+            "only the assigned Branch Head or an explicitly authorized Manager may "
+            "write a branch original dataset."
+        )
+    if "branch_head" in roles:
         upload_role = "branch_head"
     elif "manager" in roles:
         upload_role = "manager"
     else:
         raise AuthzError(
-            "Only an Organization Owner, assigned Branch Head, or Manager "
-            "with an explicit branch upload grant may write an original dataset."
+            "Only the assigned Branch Head or a Manager with an explicit "
+            "branch upload grant may write an original dataset."
         )
 
     if upload_role != "manager" and "dataset.upload" not in set(context.get("permissions", [])):
@@ -2791,8 +2797,11 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
 
     grant_permissions = set(grants or [])
     if action in {"dataset.upload", "dataset.upload_original"}:
-        if not ({"organization_owner", "branch_head", "manager"} & roles):
-            raise AuthzError("Only an Organization Owner, assigned Branch Head, or explicitly authorized Manager may modify an original dataset.")
+        if "organization_owner" in roles or not ({"branch_head", "manager"} & roles):
+            raise AuthzError(
+                "Only the assigned Branch Head or an explicitly authorized Manager "
+                "may modify an original dataset; Organization Owners are read-only."
+            )
         if not row["protected_original"] or not dataset_location:
             raise AuthzError("Only a published, branch-scoped original dataset can be modified.")
         upload_context = authorize_dataset_upload_scope(
@@ -2821,12 +2830,12 @@ def authorize_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str
             raise AuthzError("This role cannot access an original dataset; Only a Manager, Branch Head, Organization Owner, or explicitly shared External Viewer can view it.")
 
     elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:
-        actor_roles = roles
-        if "organization_owner" in actor_roles:
-            pass
-        elif "branch_head" not in actor_roles:
-            raise AuthzError("Only an Organization Owner or the active Branch Head for this branch can manage an original dataset.")
-        elif not dataset_location or dataset_location not in scoped_locations:
+        if "organization_owner" in roles or "branch_head" not in roles:
+            raise AuthzError(
+                "Only the active Branch Head assigned to this branch can manage "
+                "an original dataset; Organization Owners have read-only oversight."
+            )
+        if not dataset_location or dataset_location not in scoped_locations:
             raise AuthzError("The dataset belongs to a branch outside your Branch Head scope.")
 
     elif action == "dataset.create_working_copy":
