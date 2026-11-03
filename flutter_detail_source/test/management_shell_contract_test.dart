@@ -315,7 +315,8 @@ void main() {
     expect(source, contains('Text(_uiRoleLabel(),'));
     expect(source, contains('actorName,'));
     expect(source, contains('audit.take(5)'));
-    expect(source, contains('section == ManagementSection.audit'));
+    expect(source, contains('ManagementSection.audit => _auditSkeleton()'));
+    expect(source, contains('ManagementSection.invitations => _invitationSkeleton()'));
     expect(source, contains('ManagementSection.organization'));
     expect(source, contains('ManagementSection.people'));
     expect(source, contains('ManagementSection.invitations'));
