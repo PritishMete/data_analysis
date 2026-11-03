@@ -448,6 +448,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "dataset.view_original",
             ],
         }
     if role == "branch_head":
@@ -467,8 +468,14 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "dataset.view_original",
                 "dataset.upload",
+                "dataset.upload.direct",
+                "dataset.delete",
                 "dataset.authorize_copy",
+                "dataset.upload_grants.manage",
+                "dataset.proposal.review",
+                "dataset.copy_requests.review",
             ],
         }
     if role == "manager":
@@ -480,7 +487,10 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "capabilities": [
                 "organization.section.create",
                 "team_lead.request",
+                "dataset.view_original",
                 "dataset.upload",
+                "dataset.proposal.submit",
+                "dataset.copy.request",
             ],
         }
     if role == "team_lead":
@@ -489,7 +499,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "role_label": "Team Lead",
             "scope_label": "Section",
             "sections": ["overview", "people", "dataAccess"],
-            "capabilities": [],
+            "capabilities": ["dataset.copy.request"],
         }
     policy = {
         "management_tier": "member",
@@ -503,6 +513,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
     }
     if role == "external_viewer":
         policy["sections"].append("dataAccess")
+        policy["capabilities"].append("dataset.view_original")
         policy["read_only"] = True
     return policy
 
@@ -540,6 +551,14 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
         # Analytics and employee dataset workspaces are exposed only when the
         # active backend permission set supports them. Professional titles do
         # not independently grant management authority.
+        for permission, capability in (
+            ("dataset.view_original", "dataset.view_original"),
+            ("dataset.create_working_copy", "dataset.create_working_copy"),
+        ):
+            if permission in active_permissions and capability not in ui_policy["capabilities"]:
+                ui_policy["capabilities"].append(capability)
+        if "dataset.create_working_copy" in active_permissions and "dataset.copy.request" not in ui_policy["capabilities"]:
+            ui_policy["capabilities"].append("dataset.copy.request")
         if "analysis.run" in active_permissions:
             ui_policy["capabilities"].append("analysis.run")
         if scope["role_id"] == "external_viewer":
