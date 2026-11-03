@@ -1042,6 +1042,29 @@ class _ManagementShellState extends State<ManagementShell> {
     ]);
   }
 
+  String _professionalWorkspaceSubtitle() {
+    final designation = _uiRoleLabel().toLowerCase();
+    if (designation.contains('data analyst')) {
+      return 'Explore authorized datasets, investigate trends and build KPI reports from your assigned data.';
+    }
+    if (designation.contains('data scientist')) {
+      return 'Use authorized datasets for statistical exploration, experimentation and model development.';
+    }
+    if (designation.contains('data engineer')) {
+      return 'Prepare authorized data sources, inspect quality and work with approved pipeline inputs.';
+    }
+    if (designation.contains('bi developer')) {
+      return 'Build reporting views and dashboards from the datasets and metrics assigned to your account.';
+    }
+    if (designation.contains('data quality')) {
+      return 'Focus on validation, consistency checks and quality monitoring across your authorized data.';
+    }
+    if (designation.contains('business analyst')) {
+      return 'Translate authorized business data into clear metrics, trends and actionable reporting.';
+    }
+    return 'Start from your authorized datasets, recent analysis and the tools available to your assigned professional role.';
+  }
+
   Widget _roleWorkspaceOverview({
     required String title,
     required String subtitle,
@@ -1228,7 +1251,7 @@ class _ManagementShellState extends State<ManagementShell> {
     if (tier == 'member') {
       return _roleWorkspaceOverview(
         title: 'Analytical workspace',
-        subtitle: 'Start from your authorized datasets, recent analysis and the tools available to your assigned professional role.',
+        subtitle: _professionalWorkspaceSubtitle(),
         notice: 'Your professional designation does not grant management authority. Dataset access and analytical actions remain controlled by backend permissions and resource grants.',
         readOnly: false,
         teamWorkspace: false,
