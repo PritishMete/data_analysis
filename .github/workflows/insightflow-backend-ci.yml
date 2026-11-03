@@ -164,7 +164,6 @@ jobs:
           lib/features/auth/management_shell.dart
           lib/features/auth/management_navigation.dart
           lib/features/auth/managed_dataset_access_workspace.dart
-          lib/features/auth/management_navigation.dart
           lib/features/dashboard/data_screen.dart
           lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
