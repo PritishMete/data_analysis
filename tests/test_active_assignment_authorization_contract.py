@@ -98,13 +98,13 @@ def test_team_lead_and_employee_cannot_write_original_datasets():
     )[1].split("\ndef register_dataset", 1)[0]
 
     assert 'if action in {"dataset.upload", "dataset.upload_original"}' in dataset_authz
-    assert '{"organization_owner", "branch_head", "manager"} & roles' in dataset_authz
-    assert "Only an Organization Owner or the active Branch Head" in dataset_authz
+    assert '"organization_owner" in roles or not ({"branch_head", "manager"} & roles)' in dataset_authz
+    assert "Only the assigned Branch Head or an explicitly authorized Manager" in dataset_authz
     assert 'allowed_permissions = {"dataset.view_original", "dataset.create_working_copy"}' in grant_policy
     assert "Dataset grants may only provide explicit read access or copy creation." in grant_policy
     # Original-dataset writes are limited to the explicitly authorized roles;
     # the upload service must still call backend authorization for each request.
-    assert 'if not ({"organization_owner", "branch_head", "manager"} & roles)' in dataset_authz
+    assert 'if "organization_owner" in roles or not ({"branch_head", "manager"} & roles)' in dataset_authz
     assert 'def _authorize_upload(' in storage
 
 
@@ -119,9 +119,12 @@ def test_copy_requests_are_workspace_branch_scoped_and_review_is_single_writer()
     assert "mr.role_id=oa.role_id" in request
     assert "oa.location_id=:location" in request
     assert "da.protected_original IS TRUE" in request
-    assert 'roles.intersection({"organization_owner", "branch_head"})' in listing
+    assert '"organization_owner" in roles or "branch_head" not in roles' in listing
     assert "len(set(locations)) != 1" in listing
     assert "r.workspace_id=:workspace" in listing
+    decision = provider.split("def approve_copy_request(", 1)[1].split("\\ndef assign_working_copy", 1)[0]
+    assert '"organization_owner" in roles or "branch_head" not in roles' in decision
+    assert "len(branch_locations) != 1" in decision
     assert "FOR UPDATE" in decision
     assert "create_working_copy(" in decision
     assert "None, None, db=db" in decision
@@ -134,7 +137,8 @@ def test_copy_access_grants_require_acl_capability_and_revoke_the_grant():
     provider = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
     grant = provider.split("def set_dataset_grant(", 1)[1].split("\ndef create_working_copy", 1)[0]
 
-    assert 'actor_roles.intersection({"organization_owner", "branch_head"})' in grant
+    assert '"organization_owner" in actor_roles or "branch_head" not in actor_roles' in grant
+    assert 'item["role_id"] == "branch_head"' in grant
     assert '"dataset.manage_acl" not in set(context.get("permissions", []))' in grant
     assert "if grant_permissions:" in grant
     assert "DELETE FROM resource_grants" in grant

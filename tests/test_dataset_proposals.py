@@ -471,7 +471,7 @@ def test_manager_cannot_delete_original_dataset_directly():
     start = source.index("def delete_managed_dataset(")
     end = source.index("\ndef create_managed_working_copy(", start)
     delete_service = source[start:end]
-    assert '"branch_head" not in set(context.get("role_ids", []))' in delete_service
+    assert '"organization_owner" in roles or "branch_head" not in roles' in delete_service
     assert "authorize_dataset_upload_scope" in delete_service
 
 

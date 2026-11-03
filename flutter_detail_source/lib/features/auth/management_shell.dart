@@ -105,6 +105,11 @@ class ManagementShell extends StatefulWidget {
 class _ManagementShellState extends State<ManagementShell> {
   ManagementSection section = ManagementSection.overview;
   bool loading = true;
+  bool _showLoadingSkeleton = false;
+  int _loadGeneration = 0;
+  String _loadingManagementTier = '';
+  bool _loadingReadOnlyWorkspace = false;
+  Set<String> _loadingCapabilities = const <String>{};
   String? error;
   Map<String, dynamic> overview = const {};
   List<Map<String, dynamic>> locations = [];
@@ -227,15 +232,34 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Future<void> _loadAll() async {
+    final generation = ++_loadGeneration;
     if (mounted) {
+      final previousPolicy = _uiPolicy();
+      final previousCapabilities = _uiCapabilities();
       setState(() {
         loading = true;
+        _showLoadingSkeleton = false;
         error = null;
-        // Clear the last known policy while refreshing. If the new response
-        // is invalid or the request fails, stale permissions must not keep
-        // the previous menu visible.
+        // A refresh may resolve to a different role. Never render the previous
+        // role's selected section while the new backend policy is unknown.
+        section = ManagementSection.overview;
+        // Retain only presentation metadata for the loading placeholder.
+        // It never authorizes navigation or actions; the actual policy is
+        // cleared and all controls remain unavailable until the new response.
+        _loadingManagementTier = previousPolicy['management_tier']?.toString() ?? '';
+        _loadingReadOnlyWorkspace = previousPolicy['read_only'] == true;
+        _loadingCapabilities = previousCapabilities;
         overview = const {};
       });
+      // Delay the full skeleton briefly so fast authorization responses do not
+      // flash a placeholder. The generation guard prevents an old timer from
+      // changing the loading state of a newer request.
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 180), () {
+        if (mounted && loading && generation == _loadGeneration &&
+            !_showLoadingSkeleton) {
+          setState(() => _showLoadingSkeleton = true);
+        }
+      }));
     }
     try {
       final r = await Future.wait([
@@ -256,6 +280,9 @@ class _ManagementShellState extends State<ManagementShell> {
       if (!mounted) return;
       setState(() {
         overview = r[0];
+        _loadingManagementTier = _uiPolicy()['management_tier']?.toString() ?? '';
+        _loadingReadOnlyWorkspace = _uiPolicy()['read_only'] == true;
+        _loadingCapabilities = _uiCapabilities();
         locations = maps(r[1]['locations']);
         sections = maps(r[2]['sections']);
         people = maps(r[3]['people']);
@@ -263,6 +290,7 @@ class _ManagementShellState extends State<ManagementShell> {
         audit = maps(r[5]['audit']);
         invitations = maps(r[5]['invitations']);
         loading = false;
+        _showLoadingSkeleton = false;
         if (!_sectionAllowed(section)) {
           section = ManagementSection.overview;
         }
@@ -271,6 +299,7 @@ class _ManagementShellState extends State<ManagementShell> {
       if (mounted) {
         setState(() {
           loading = false;
+          _showLoadingSkeleton = false;
           error = e.toString().replaceFirst('Bad state: ', '');
         });
       }
@@ -289,11 +318,13 @@ class _ManagementShellState extends State<ManagementShell> {
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
   }
 
-  bool _canUi(String capability) {
-    final capabilities = _uiPolicy()['capabilities'];
-    return capabilities is List &&
-        capabilities.map((value) => value.toString()).contains(capability);
+  Set<String> _uiCapabilities() {
+    final raw = _uiPolicy()['capabilities'];
+    if (raw is! List) return const <String>{};
+    return raw.map((value) => value.toString()).toSet();
   }
+
+  bool _canUi(String capability) => _uiCapabilities().contains(capability);
 
   String _uiRoleLabel() {
     final actor = overview['actor'];
@@ -608,6 +639,73 @@ class _ManagementShellState extends State<ManagementShell> {
     name.dispose(); id.dispose();
   }
 
+  Future<void> editLocation(Map<String, dynamic> location) async {
+    final locationId = location['location_id']?.toString() ?? '';
+    if (locationId.isEmpty || !_canUi('location.update')) return;
+    final name = TextEditingController(text: location['name']?.toString() ?? '');
+    final identifier = TextEditingController(
+      text: location['branch_identifier']?.toString() ?? locationId,
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _ManagementGlassDialog(
+        title: const Text('Edit branch name'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: name,
+            decoration: input('Branch name'),
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: identifier,
+            readOnly: true,
+            decoration: input('Primary branch identifier (immutable)'),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'The primary branch identifier and location ID cannot be changed.',
+            style: TextStyle(color: TechColors.textMuted, fontSize: 10),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              name.text.trim().isNotEmpty,
+            ),
+            child: const Text('Save changes'),
+          ),
+        ],
+      ),
+    ) ?? false;
+    if (!ok) {
+      name.dispose();
+      identifier.dispose();
+      return;
+    }
+    try {
+      await request(
+        '/locations/$locationId',
+        method: 'PATCH',
+        body: {'name': name.text.trim()},
+      );
+      feedback('Branch details updated. Its primary identity was preserved.');
+      await loadAll();
+      if (mounted && _sectionAllowed(ManagementSection.organization)) {
+        setState(() => section = ManagementSection.organization);
+      }
+    } catch (e) {
+      feedback(e);
+    }
+    name.dispose();
+    identifier.dispose();
+  }
+
   Future<void> createSection() async {
     if (locations.isEmpty) { feedback(StateError('Create a location first.')); return; }
     final name = TextEditingController();
@@ -670,7 +768,7 @@ class _ManagementShellState extends State<ManagementShell> {
 
   Future<void> assignTeamLead() async {
     final active = people.where((p) => p['status'] == 'active').toList();
-    final managerRequest = _managementRole() == 'manager';
+    final managerRequest = _canUi('team_lead.request') && !_canUi('team_lead.assign');
     if (locations.isEmpty || sections.isEmpty || active.isEmpty) { feedback(StateError('An active location, section, and person are required.')); return; }
     var location = selectedLocation ?? locations.first['location_id'].toString();
     var sectionId = selectedSection ?? sections.first['section_id'].toString();
@@ -1030,11 +1128,225 @@ class _ManagementShellState extends State<ManagementShell> {
     ]);
   }
 
+  String _professionalWorkspaceSubtitle() {
+    final designation = _uiRoleLabel().toLowerCase();
+    if (designation.contains('data analyst')) {
+      return 'Explore authorized datasets, investigate trends and build KPI reports from your assigned data.';
+    }
+    if (designation.contains('data scientist')) {
+      return 'Use authorized datasets for statistical exploration, experimentation and model development.';
+    }
+    if (designation.contains('data engineer')) {
+      return 'Prepare authorized data sources, inspect quality and work with approved pipeline inputs.';
+    }
+    if (designation.contains('bi developer')) {
+      return 'Build reporting views and dashboards from the datasets and metrics assigned to your account.';
+    }
+    if (designation.contains('data quality')) {
+      return 'Focus on validation, consistency checks and quality monitoring across your authorized data.';
+    }
+    if (designation.contains('business analyst')) {
+      return 'Translate authorized business data into clear metrics, trends and actionable reporting.';
+    }
+    return 'Start from your authorized datasets and the analysis tools available to your assigned professional role.';
+  }
+
+  Widget _roleWorkspaceOverview({
+    required String title,
+    required String subtitle,
+    required String notice,
+    required bool readOnly,
+    required bool teamWorkspace,
+  }) {
+    final activePeople = people.where((person) =>
+        (person['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final activeAssignments = assignments.where((item) =>
+        (item['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final metrics = <(String, String, IconData)>[
+      if (teamWorkspace) ...[
+        ('Assigned people', people.length.toString(), Icons.groups_outlined),
+        ('Active people', activePeople.toString(), Icons.verified_user_outlined),
+        ('Active assignments', activeAssignments.toString(), Icons.assignment_turned_in_outlined),
+      ] else ...[
+        (readOnly ? 'Dataset access' : 'Professional role',
+          readOnly ? 'Read only' : _uiRoleLabel(),
+          readOnly ? Icons.visibility_outlined : Icons.badge_outlined),
+        ('Analytics access', _canUi('analysis.run') ? 'Available' : 'Not granted',
+          Icons.auto_awesome_outlined),
+        ('Dataset workspace', _sectionAllowed(ManagementSection.dataAccess) ? 'Available' : 'Not assigned',
+          Icons.dataset_outlined),
+      ],
+    ];
+    final actions = <Widget>[];
+    if (_sectionAllowed(ManagementSection.dataAccess)) {
+      actions.add(_dashboardAction(
+        readOnly ? 'VIEW AUTHORIZED DATASETS' : 'OPEN DATA & ACCESS',
+        Icons.dataset_outlined,
+        () => setState(() => section = ManagementSection.dataAccess),
+        primary: true,
+      ));
+    }
+    if (_canUi('analysis.run') && !readOnly) {
+      actions.add(_dashboardAction(
+        'OPEN AI ANALYTICS',
+        Icons.auto_awesome,
+        () => openInsightFlowAnalysis(context, authorized: _canUi('analysis.run'), initialView: 'AI_ANALYTICS'),
+      ));
+    }
+    if (teamWorkspace && _sectionAllowed(ManagementSection.people)) {
+      actions.add(_dashboardAction(
+        'MANAGE TEAM',
+        Icons.people_outline,
+        () => setState(() => section = ManagementSection.people),
+      ));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xE8113551), Color(0xB8051727)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF1374A2).withValues(alpha: .75)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _eyebrow(readOnly ? 'READ-ONLY WORKSPACE' : _uiRoleLabel().toUpperCase()),
+          const SizedBox(height: 9),
+          Text(title, style: const TextStyle(
+            color: Colors.white, fontSize: 23, fontWeight: FontWeight.w800,
+          )),
+          const SizedBox(height: 7),
+          Text(subtitle, style: const TextStyle(
+            color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45,
+          )),
+          const SizedBox(height: 15),
+          Wrap(spacing: 8, runSpacing: 8, children: actions),
+        ]),
+      ),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 1 : 3;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: metrics.map((metric) =>
+          SizedBox(width: width, child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xB8051727),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x5539BFEF)),
+            ),
+            child: Row(children: [
+              Icon(metric.$3, color: const Color(0xFF43C8F3), size: 22),
+              const SizedBox(width: 11),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(metric.$2, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: metric.$2.length > 13 ? 14 : 22,
+                    fontWeight: FontWeight.w800,
+                  )),
+                const SizedBox(height: 3),
+                Text(metric.$1, style: const TextStyle(
+                  color: Color(0xFF9DBDDC), fontSize: 10,
+                )),
+              ])),
+            ]),
+          )),
+        ).toList());
+      }),
+      const SizedBox(height: 13),
+      _glassRow(
+        padding: const EdgeInsets.all(15),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(readOnly ? Icons.visibility_outlined : Icons.info_outline,
+            color: const Color(0xFF43C8F3), size: 19),
+          const SizedBox(width: 10),
+          Expanded(child: Text(notice, style: const TextStyle(
+            color: Color(0xFFB8D5EF), fontSize: 11, height: 1.45,
+          ))),
+        ]),
+      ),
+      if (teamWorkspace) ...[
+        const SizedBox(height: 13),
+        _sectionSkeletonPanel(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(readOnly ? 'Authorized people' : 'Team members',
+              style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 9),
+            if (people.isEmpty)
+              const Text('No people are currently available in this authorized scope.',
+                style: TextStyle(color: TechColors.textMuted, fontSize: 11))
+            else
+              ...people.take(6).map((person) {
+                final name = person['full_name']?.toString().trim().isNotEmpty == true
+                    ? person['full_name'].toString()
+                    : (person['employee_id']?.toString() ?? 'Profile incomplete');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Icon(Icons.person_outline, color: Color(0xFF43C8F3), size: 17),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
+                    Text(_roleLabel(person['role_id']?.toString() ?? ''),
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 9)),
+                  ]),
+                );
+              }),
+          ],
+        )),
+      ],
+    ]);
+  }
+
   Widget overviewView() {
+    final tier = _uiPolicy()['management_tier']?.toString() ?? '';
+    final readOnly = _uiPolicy()['read_only'] == true;
+    if (tier == 'team') {
+      return _roleWorkspaceOverview(
+        title: 'Team management',
+        subtitle: 'Coordinate your assigned employees, workload and authorized datasets from one focused workspace.',
+        notice: 'Changes to trusted branch data remain proposals for Branch Head review unless the backend has granted an explicit, current upload permission for this branch.',
+        readOnly: false,
+        teamWorkspace: true,
+      );
+    }
+    if (tier == 'section') {
+      return _roleWorkspaceOverview(
+        title: 'Team operations',
+        subtitle: 'Coordinate assigned employees, distribute only authorized dataset copies and track operational access.',
+        notice: 'Dataset distribution is limited to resources authorized for your assigned section. Escalate broader access needs to your Manager or Branch Head.',
+        readOnly: false,
+        teamWorkspace: true,
+      );
+    }
+    if (tier == 'member' && readOnly) {
+      return _roleWorkspaceOverview(
+        title: 'Read-only workspace',
+        subtitle: 'Review only the datasets and reports explicitly shared with your account.',
+        notice: 'This workspace is read-only. Upload, replacement, editing, assignment and invitation controls are unavailable.',
+        readOnly: true,
+        teamWorkspace: false,
+      );
+    }
+    if (tier == 'member') {
+      return _roleWorkspaceOverview(
+        title: 'Analytical workspace',
+        subtitle: _professionalWorkspaceSubtitle(),
+        notice: 'Your professional designation does not grant management authority. Dataset access and analytical actions remain controlled by backend permissions and resource grants.',
+        readOnly: false,
+        teamWorkspace: false,
+      );
+    }
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : <String, dynamic>{};
-    final peopleCount = _overviewCount(summary['people_count'], people.length);
+    final peopleCount = _overviewCount(summary['total_people'], people.length);
     final locationCount = _overviewCount(summary['location_count'], locations.length);
     final sectionCount = _overviewCount(summary['section_count'], sections.length);
     final activeCount = assignments
@@ -1047,9 +1359,17 @@ class _ManagementShellState extends State<ManagementShell> {
       (item) => item?['location_id']?.toString() == selectedLocation,
       orElse: () => locations.isEmpty ? null : locations.first,
     );
-    final branchName = branch?['name']?.toString().trim().isNotEmpty == true
-        ? branch!['name'].toString()
-        : _uiScopeLabel();
+    final organizationInfo = overview['organization'] is Map
+        ? Map<String, dynamic>.from(overview['organization'] as Map)
+        : <String, dynamic>{};
+    final organizationName = organizationInfo['name']?.toString().trim().isNotEmpty == true
+        ? organizationInfo['name'].toString()
+        : 'Your organization';
+    final branchName = _isOrganizationOwner
+        ? organizationName
+        : branch?['name']?.toString().trim().isNotEmpty == true
+            ? branch!['name'].toString()
+            : _uiScopeLabel();
     final actor = overview['actor'];
     // A greeting should address the person, never fall back to their role or
     // email address when a profile name is unavailable.
@@ -1211,22 +1531,32 @@ class _ManagementShellState extends State<ManagementShell> {
     );
 
     final branchPanel = panel(
-      'Branch Info',
-      Icons.apartment_rounded,
+      _isOrganizationOwner ? 'Organization Overview' : 'Branch Info',
+      _isOrganizationOwner ? Icons.corporate_fare_outlined : Icons.apartment_rounded,
       Column(children: [
-        _overviewDetailLine('Branch Name', branchName),
-        _overviewDetailLine('Locations', locationCount.toString()),
-        _overviewDetailLine('Sections', sectionCount.toString()),
-        _overviewDetailLine('Total Members', peopleCount.toString()),
-        _overviewDetailLine('Active Access', activeCount.toString()),
-        _overviewDetailLine('Pending Invitations', pendingCount.toString()),
+        if (_isOrganizationOwner) ...[
+          _overviewDetailLine('Organization', organizationName),
+          _overviewDetailLine('Organization Status', organizationInfo['status']?.toString() ?? 'Unknown'),
+          _overviewDetailLine('Branches', locationCount.toString()),
+          _overviewDetailLine('Total Workforce', peopleCount.toString()),
+          _overviewDetailLine('Branch Heads', _overviewCount(summary['branch_head_count'], 0).toString()),
+          _overviewDetailLine('Managers', _overviewCount(summary['manager_count'], 0).toString()),
+        ] else ...[
+          _overviewDetailLine('Branch Name', branchName),
+          _overviewDetailLine('Sections', sectionCount.toString()),
+          _overviewDetailLine('Team Members', peopleCount.toString()),
+          _overviewDetailLine('Active Access', activeCount.toString()),
+          _overviewDetailLine('Pending Invitations', pendingCount.toString()),
+        ],
         const SizedBox(height: 8),
         SizedBox(width: double.infinity, child: OutlinedButton.icon(
           onPressed: _sectionAllowed(ManagementSection.organization)
               ? () => setState(() => section = ManagementSection.organization)
               : null,
           icon: const Icon(Icons.settings_outlined, size: 16),
-          label: const Text('Edit Branch Settings'),
+          label: Text(_isOrganizationOwner
+              ? 'Manage Organization Structure'
+              : 'Manage Branch Structure'),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFD4E9FF),
             side: const BorderSide(color: Color(0xFF2376A7)),
@@ -1240,7 +1570,7 @@ class _ManagementShellState extends State<ManagementShell> {
       'Quick Actions',
       Icons.bolt_rounded,
       Column(children: [
-        if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('manager.assign') || _managementRole() == 'branch_head' || _managementRole() == 'organization_owner')
+        if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('invitation.manage'))
           _dashboardAction('Invite Team Member', Icons.person_add_alt_1_rounded, _inviteEmployee, primary: true),
         const SizedBox(height: 8),
         if (_sectionAllowed(ManagementSection.people))
@@ -1273,14 +1603,22 @@ class _ManagementShellState extends State<ManagementShell> {
     );
 
     final hierarchyPanel = panel(
-      'Organization Hierarchy',
+      _isOrganizationOwner ? 'Organization Structure' : 'Branch Structure',
       Icons.account_tree_outlined,
       Column(children: [
-        _overviewStructureStep('Organization Owner', 'Organization-wide access', Icons.workspace_premium_outlined),
-        _overviewStructureConnector(),
-        _overviewStructureStep(_uiRoleLabel(), branchName, Icons.hub_outlined),
-        _overviewStructureConnector(),
-        _overviewStructureStep('Team Members', '$peopleCount members in authorized scope', Icons.groups_outlined),
+        if (_isOrganizationOwner) ...[
+          _overviewStructureStep('Organization Owner', 'Organization-wide oversight', Icons.workspace_premium_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Branches', '$locationCount active locations', Icons.hub_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Workforce', '$peopleCount people across the organization', Icons.groups_outlined),
+        ] else ...[
+          _overviewStructureStep('Assigned Branch', branchName, Icons.hub_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Sections', '$sectionCount sections in this branch', Icons.account_tree_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Team Members', '$peopleCount people in your authorized scope', Icons.groups_outlined),
+        ],
       ]),
     );
 
@@ -1301,8 +1639,10 @@ class _ManagementShellState extends State<ManagementShell> {
                   letterSpacing: -.5,
                 )),
               const SizedBox(height: 5),
-              const Text("Here's what's happening in your branch.",
-                style: TextStyle(color: Color(0xFFAED2F4), fontSize: 13)),
+              Text(_isOrganizationOwner
+                  ? "Here's what's happening across your organization."
+                  : "Here's what's happening in your assigned branch.",
+                style: const TextStyle(color: Color(0xFFAED2F4), fontSize: 13)),
             ],
           );
           final filters = Wrap(
@@ -1661,6 +2001,18 @@ class _ManagementShellState extends State<ManagementShell> {
                         ),
                       ),
                     _statusDot(l['status']?.toString() ?? 'active'),
+                    if (_canUi('location.update'))
+                      IconButton(
+                        tooltip: 'Edit branch name (primary identity is immutable)',
+                        onPressed: () => editLocation(
+                          Map<String, dynamic>.from(l),
+                        ),
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          size: 17,
+                          color: TechColors.borderActive,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -2108,6 +2460,307 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+
+  Widget _sectionSkeletonBlock({double height = 12, double? width, double radius = 7}) =>
+      Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: TechColors.textMuted.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: TechColors.textMuted.withValues(alpha: .07)),
+        ),
+      );
+
+  Widget _sectionSkeletonPanel({required Widget child, EdgeInsets padding = const EdgeInsets.all(14)}) =>
+      Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: const Color(0xB8051727),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFF164564).withValues(alpha: .9)),
+        ),
+        child: child,
+      );
+
+  Widget _organizationSkeleton() {
+    Widget header() => _sectionSkeletonPanel(
+      padding: const EdgeInsets.all(20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 145, height: 10),
+        const SizedBox(height: 10),
+        _sectionSkeletonBlock(width: 235, height: 24),
+        const SizedBox(height: 8),
+        _sectionSkeletonBlock(width: 310, height: 12),
+        const SizedBox(height: 16),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 126, height: 34, radius: 10),
+          _sectionSkeletonBlock(width: 118, height: 34, radius: 10),
+          _sectionSkeletonBlock(width: 82, height: 34, radius: 10),
+        ]),
+      ]),
+    );
+    Widget branchCard() => _sectionSkeletonPanel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          _sectionSkeletonBlock(width: 36, height: 36, radius: 10),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionSkeletonBlock(width: 145, height: 13),
+            const SizedBox(height: 7),
+            _sectionSkeletonBlock(width: 92, height: 10),
+          ])),
+          _sectionSkeletonBlock(width: 62, height: 20, radius: 20),
+        ]),
+        const SizedBox(height: 14),
+        ...List.generate(3, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: Row(children: [
+            Expanded(child: _sectionSkeletonBlock(height: 10)),
+            const SizedBox(width: 14),
+            _sectionSkeletonBlock(width: 48, height: 10),
+          ]),
+        )),
+      ]),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      header(),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 500 ? 2 : 4;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _sectionSkeletonPanel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 82, height: 10),
+              const SizedBox(height: 9),
+              _sectionSkeletonBlock(width: 48, height: 23),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 112, height: 9),
+            ]),
+          )),
+        ));
+      }),
+      const SizedBox(height: 13),
+      Row(children: [
+        Expanded(child: _sectionSkeletonBlock(width: 160, height: 15)),
+        const Spacer(),
+        _sectionSkeletonBlock(width: 76, height: 11),
+      ]),
+      const SizedBox(height: 9),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 760 ? 1 : 2;
+        final gap = 12.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: branchCard()),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 154, height: 14),
+        const SizedBox(height: 13),
+        ...List.generate(3, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(children: [
+            _sectionSkeletonBlock(width: 32, height: 32, radius: 18),
+            const SizedBox(width: 10),
+            Expanded(child: _sectionSkeletonBlock(height: 11)),
+            const SizedBox(width: 12),
+            _sectionSkeletonBlock(width: 88, height: 30, radius: 8),
+          ]),
+        )),
+      ])),
+    ]);
+  }
+
+  Widget _peopleSkeleton() {
+    Widget hero() => _sectionSkeletonPanel(
+      padding: const EdgeInsets.all(19),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 118, height: 10),
+        const SizedBox(height: 9),
+        _sectionSkeletonBlock(width: 190, height: 24),
+        const SizedBox(height: 8),
+        _sectionSkeletonBlock(width: 285, height: 11),
+      ]),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      hero(),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _sectionSkeletonPanel(child: Row(children: [
+            _sectionSkeletonBlock(width: 34, height: 34, radius: 10),
+            const SizedBox(width: 9),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 42, height: 20),
+              const SizedBox(height: 6),
+              _sectionSkeletonBlock(width: 76, height: 9),
+            ])),
+          ]))),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+        final search = _sectionSkeletonBlock(height: 44);
+        final filters = Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+        ]);
+        return constraints.maxWidth < 680
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              search, const SizedBox(height: 10), filters,
+            ])
+          : Row(children: [
+              Expanded(flex: 3, child: search),
+              const SizedBox(width: 12),
+              Expanded(flex: 4, child: filters),
+            ]);
+      })),
+      const SizedBox(height: 13),
+      Row(children: [
+        _sectionSkeletonBlock(width: 145, height: 15),
+        const Spacer(),
+        _sectionSkeletonBlock(width: 78, height: 10),
+      ]),
+      const SizedBox(height: 9),
+      ...List.generate(5, (_) => Padding(
+        padding: const EdgeInsets.only(bottom: 9),
+        child: _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+          final identity = Row(children: [
+            _sectionSkeletonBlock(width: 40, height: 40, radius: 20),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 155, height: 12),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 195, height: 10),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 90, height: 17, radius: 20),
+            ])),
+          ]);
+          final metadata = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionSkeletonBlock(width: 105, height: 10),
+            const SizedBox(height: 7),
+            _sectionSkeletonBlock(width: 125, height: 10),
+          ]);
+          final action = _sectionSkeletonBlock(width: 92, height: 32, radius: 8);
+          return constraints.maxWidth < 620
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                identity, const SizedBox(height: 12), metadata,
+                const SizedBox(height: 10), Align(alignment: Alignment.centerLeft, child: action),
+              ])
+            : Row(children: [
+                Expanded(flex: 5, child: identity),
+                const SizedBox(width: 14),
+                Expanded(flex: 3, child: metadata),
+                const SizedBox(width: 10),
+                action,
+              ]);
+        })),
+      )),
+    ]);
+  }
+
+  Widget _dataAccessSkeleton() => ManagedDatasetAccessSkeleton(
+    capabilities: _loadingCapabilities,
+    readOnly: _loadingReadOnlyWorkspace,
+  );
+
+  Widget _roleOverviewSkeleton({
+    required bool teamWorkspace,
+    required bool readOnly,
+  }) {
+    Widget metric() => _sectionSkeletonPanel(child: Row(children: [
+      _sectionSkeletonBlock(width: 34, height: 34, radius: 10),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 68, height: 20),
+        const SizedBox(height: 6),
+        _sectionSkeletonBlock(width: 104, height: 9),
+      ])),
+    ]));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _sectionSkeletonPanel(padding: const EdgeInsets.all(20), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionSkeletonBlock(width: 125, height: 10),
+          const SizedBox(height: 10),
+          _sectionSkeletonBlock(width: 215, height: 24),
+          const SizedBox(height: 8),
+          _sectionSkeletonBlock(width: 300, height: 11),
+          const SizedBox(height: 15),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _sectionSkeletonBlock(width: 150, height: 36, radius: 9),
+            if (!readOnly) _sectionSkeletonBlock(width: 132, height: 36, radius: 9),
+            if (teamWorkspace) _sectionSkeletonBlock(width: 110, height: 36, radius: 9),
+          ]),
+        ],
+      )),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 1 : 3;
+        const gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(3, (_) =>
+          SizedBox(width: width, child: metric()),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: Row(children: [
+        _sectionSkeletonBlock(width: 20, height: 20, radius: 10),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionSkeletonBlock(height: 10),
+          const SizedBox(height: 6),
+          _sectionSkeletonBlock(width: 220, height: 10),
+        ])),
+      ])),
+      if (teamWorkspace) ...[
+        const SizedBox(height: 13),
+        _sectionSkeletonPanel(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionSkeletonBlock(width: 135, height: 14),
+            const SizedBox(height: 12),
+            ...List.generate(5, (_) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                _sectionSkeletonBlock(width: 32, height: 32, radius: 18),
+                const SizedBox(width: 10),
+                Expanded(child: _sectionSkeletonBlock(height: 11)),
+                const SizedBox(width: 12),
+                _sectionSkeletonBlock(width: 72, height: 10),
+              ]),
+            )),
+          ],
+        )),
+      ],
+    ]);
+  }
+
+  Widget _sectionLoadingSkeleton() => switch (section) {
+    ManagementSection.overview when _loadingManagementTier == 'team' ||
+        _loadingManagementTier == 'section' ||
+        _loadingManagementTier == 'member' =>
+      _roleOverviewSkeleton(
+        teamWorkspace: _loadingManagementTier == 'team' ||
+            _loadingManagementTier == 'section',
+        readOnly: _loadingReadOnlyWorkspace,
+      ),
+    ManagementSection.overview => _overviewSkeleton(),
+    ManagementSection.organization => _organizationSkeleton(),
+    ManagementSection.people => _peopleSkeleton(),
+    ManagementSection.dataAccess => _dataAccessSkeleton(),
+    ManagementSection.invitations => _invitationSkeleton(),
+    ManagementSection.audit => _auditSkeleton(),
+  };
+
     Widget _invitationSkeleton() {
     Widget block({double height = 12, double? width, double radius = 7}) => Container(
       height: height, width: width,
@@ -2332,7 +2985,11 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
       case ManagementSection.invitations: return invitationView();
-      case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
+      case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace(
+        readOnly: _uiPolicy()['read_only'] == true,
+        canRunAnalysis: _canUi('analysis.run'),
+        capabilities: _uiCapabilities(),
+      );
       case ManagementSection.audit: return auditView();
     }
   }
@@ -3522,10 +4179,10 @@ class _ManagementShellState extends State<ManagementShell> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            itemCount: tabs.length + 1,
+            itemCount: tabs.length + (_canUi('analysis.run') ? 1 : 0),
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              if (index == tabs.length) {
+              if (_canUi('analysis.run') && index == tabs.length) {
                 return GlassChip(
                   label: 'AI ANALYTICS',
                   selected: false,
@@ -3539,6 +4196,7 @@ class _ManagementShellState extends State<ManagementShell> {
                   ),
                   onTap: () => openInsightFlowAnalysis(
                     context,
+                    authorized: _canUi('analysis.run'),
                     initialView: 'AI_ANALYTICS',
                   ),
                 );
@@ -3649,11 +4307,12 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                   ),
                 ),
-            Padding(
+            if (_canUi('analysis.run'))
+              Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(9),
-                onTap: () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+                onTap: () => openInsightFlowAnalysis(context, authorized: _canUi('analysis.run'), initialView: 'AI_ANALYTICS'),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
@@ -3775,8 +4434,21 @@ class _ManagementShellState extends State<ManagementShell> {
               child: Center(child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1500),
                 child: loading
-                  ? (section == ManagementSection.invitations ? _invitationSkeleton()
-                    : section == ManagementSection.audit ? _auditSkeleton() : _overviewSkeleton())
+                  ? (_showLoadingSkeleton
+                      ? _sectionLoadingSkeleton()
+                      : const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF35C8F2),
+                              ),
+                            ),
+                          ),
+                        ))
                   : error != null
                     ? Container(
                         padding: const EdgeInsets.all(18),

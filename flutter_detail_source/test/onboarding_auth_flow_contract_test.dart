@@ -275,6 +275,10 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
 
     expect(navigation, contains('DataScreen('));
     expect(navigation, contains('const ManagementShell()'));
+    expect(navigation, contains('required bool authorized'));
+    expect(navigation, contains('if (!authorized)'));
+    expect(dataScreen, contains('analysisAuthorized = false'));
+    expect(dataScreen, contains('if (!widget.analysisAuthorized)'));
     expect(dataScreen, contains('openInsightFlowManagement(context)'));
   });
 

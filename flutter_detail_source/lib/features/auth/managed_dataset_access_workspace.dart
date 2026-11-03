@@ -16,12 +16,183 @@ import 'management_navigation.dart';
 String _managedDatasetSha256(Uint8List bytes) => sha256.convert(bytes).toString();
 
 class ManagedDatasetAccessWorkspace extends StatefulWidget {
-  const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false});
+  const ManagedDatasetAccessWorkspace({
+    super.key,
+    this.readOnly = false,
+    this.canRunAnalysis = false,
+    this.capabilities = const <String>{},
+  });
 
   /// External viewers can inspect explicitly authorized resources only.
   final bool readOnly;
+  final bool canRunAnalysis;
+  final Set<String> capabilities;
   @override
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
+}
+
+class ManagedDatasetAccessSkeleton extends StatelessWidget {
+  const ManagedDatasetAccessSkeleton({
+    super.key,
+    this.capabilities = const <String>{},
+    this.readOnly = false,
+  });
+
+  final Set<String> capabilities;
+  final bool readOnly;
+
+  Widget _block({double height = 12, double? width, double radius = 8}) =>
+      Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: TechColors.textMuted.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: TechColors.textMuted.withValues(alpha: .07)),
+        ),
+      );
+
+  Widget _panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(14)}) =>
+      Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: const Color(0xB8051727),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFF164564).withValues(alpha: .9)),
+        ),
+        child: child,
+      );
+
+  Widget _datasetRow() => _panel(
+    child: LayoutBuilder(builder: (context, constraints) {
+      final identity = Row(children: [
+        _block(width: 38, height: 38, radius: 10),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _block(width: 165, height: 12),
+          const SizedBox(height: 7),
+          _block(width: 115, height: 9),
+        ])),
+      ]);
+      final metadata = Wrap(spacing: 10, runSpacing: 7, children: [
+        _block(width: 54, height: 18, radius: 20),
+        _block(width: 65, height: 18, radius: 20),
+      ]);
+      return constraints.maxWidth < 560
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              identity, const SizedBox(height: 10), metadata,
+              const SizedBox(height: 10), _block(width: 130, height: 32, radius: 8),
+            ])
+          : Row(children: [
+              Expanded(flex: 4, child: identity),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: metadata),
+              const SizedBox(width: 12),
+              _block(width: 130, height: 32, radius: 8),
+            ]);
+    }),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final showProposalQueue = !readOnly &&
+        (capabilities.contains('dataset.proposal.submit') ||
+            capabilities.contains('dataset.proposal.review'));
+    final showAccessManagement = !readOnly &&
+        (capabilities.contains('dataset.copy.request') ||
+            capabilities.contains('dataset.copy_requests.review') ||
+            capabilities.contains('dataset.upload_grants.manage'));
+    final showUpload = !readOnly && capabilities.contains('dataset.upload.direct');
+    return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _panel(padding: const EdgeInsets.all(18), child: Row(children: [
+        _block(width: 42, height: 42, radius: 11),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _block(width: 145, height: 10),
+          const SizedBox(height: 9),
+          _block(width: 235, height: 22),
+          const SizedBox(height: 7),
+          _block(width: 295, height: 10),
+        ])),
+      ])),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        const gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _panel(child: Row(children: [
+            _block(width: 36, height: 36, radius: 10),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _block(width: 54, height: 21),
+              const SizedBox(height: 6),
+              _block(width: 92, height: 9),
+            ])),
+          ]))),
+        ));
+      }),
+      const SizedBox(height: 12),
+      _panel(child: LayoutBuilder(builder: (context, constraints) {
+        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
+          _block(width: 190, height: 38, radius: 9),
+          _block(width: 116, height: 38, radius: 9),
+          _block(width: 116, height: 38, radius: 9),
+        ]);
+        final actions = Wrap(spacing: 8, runSpacing: 8, children: [
+          if (showUpload)
+            KeyedSubtree(
+              key: const ValueKey('dataset-upload-skeleton'),
+              child: _block(width: 142, height: 36, radius: 9),
+            ),
+          _block(width: 90, height: 36, radius: 9),
+        ]);
+        return constraints.maxWidth < 760
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                controls, const SizedBox(height: 10), actions,
+              ])
+            : Row(children: [
+                Expanded(child: controls), const SizedBox(width: 12), actions,
+              ]);
+      })),
+      const SizedBox(height: 12),
+      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _block(width: 150, height: 14),
+        const SizedBox(height: 10),
+        ...List.generate(4, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: _datasetRow(),
+        )),
+      ])),
+      if (showProposalQueue) ...[
+        const SizedBox(height: 12),
+        KeyedSubtree(
+          key: const ValueKey('dataset-proposal-skeleton'),
+          child: _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _block(width: 185, height: 14),
+            const SizedBox(height: 8),
+            _block(width: 265, height: 10),
+            const SizedBox(height: 12),
+            ...List.generate(2, (_) => _datasetRow()),
+          ])),
+        ),
+      ],
+      if (showAccessManagement) ...[
+        const SizedBox(height: 12),
+        KeyedSubtree(
+          key: const ValueKey('dataset-access-skeleton'),
+          child: _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _block(width: 165, height: 14),
+            const SizedBox(height: 12),
+            ...List.generate(3, (_) => _datasetRow()),
+          ])),
+        ),
+      ],
+    ],
+    );
+  }
 }
 
 class _ManagedDatasetRequestException implements Exception {
@@ -53,7 +224,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _locationFilter = 'all';
   String? catalogError, requestsError;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
-  List<String> roles = [];
   List<Map<String,dynamic>> proposals = [];
   List<Map<String,dynamic>> managerUploadGrants = [];
   String? managerUploadGrantsError;
@@ -350,9 +520,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
-        roles = (mg['role_ids'] as List? ?? const [])
-            .map((item) => item.toString())
-            .toList();
         loading = false;
         error = null;
         refreshError = null;
@@ -360,10 +527,15 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       });
 
       if (!widget.readOnly) {
-        await Future.wait([_loadCatalog(generation), _loadCopyRequests(generation)]);
+        final optionalLoads = <Future<void>>[];
+        if (_can('dataset.copy.request')) optionalLoads.add(_loadCatalog(generation));
+        if (_can('dataset.copy_requests.review')) optionalLoads.add(_loadCopyRequests(generation));
+        await Future.wait(optionalLoads);
       }
-      await _loadManagerUploadGrants(generation);
-      await _loadProposals(generation);
+      if (_requiresManagerUploadGrant) await _loadManagerUploadGrants(generation);
+      if (_can('dataset.proposal.submit') || _can('dataset.proposal.review')) {
+        await _loadProposals(generation);
+      }
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
       final keepLastSnapshot =
@@ -386,7 +558,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           catalog = [];
           members = [];
           requests = [];
-          roles = [];
           selected = null;
           profile = null;
           rows = [];
@@ -404,7 +575,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _loadManagerUploadGrants([int? generation]) async {
     final expectedGeneration = generation ?? _loadGeneration;
     if (expectedGeneration != _loadGeneration || !mounted) return;
-    if (!roles.contains('manager') || widget.readOnly) {
+    if (!_requiresManagerUploadGrant || widget.readOnly) {
       if (mounted && expectedGeneration == _loadGeneration) {
         setState(() {
           managerUploadGrants = [];
@@ -434,7 +605,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   bool _managerHasUploadGrantFor(Map<String,dynamic>? dataset) {
-    if (!roles.contains('manager')) return false;
+    if (!_requiresManagerUploadGrant) return false;
     if (dataset == null) return managerUploadGrants.isNotEmpty;
     final locationId = dataset['location_id']?.toString();
     return locationId != null && managerUploadGrants.any(
@@ -443,7 +614,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _grantManagerUpload() async {
-    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    if (widget.readOnly || !_can('dataset.upload_grants.manage')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
@@ -514,7 +685,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _revokeManagerUpload() async {
-    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    if (widget.readOnly || !_can('dataset.upload_grants.manage')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
@@ -605,7 +776,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _loadProposals([int? generation]) async {
     final expectedGeneration = generation ?? _loadGeneration;
     if (expectedGeneration != _loadGeneration || !mounted) return;
-    if (!roles.any((role) => role == 'manager' || role == 'branch_head')) {
+    if (!_can('dataset.proposal.submit') && !_can('dataset.proposal.review')) {
       setState(() { proposals = []; proposalsError = null; });
       return;
     }
@@ -1084,7 +1255,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (locations.isEmpty) {
           throw StateError('No branch is authorized for original dataset uploads.');
         }
-        if (roles.contains('branch_head') && !roles.contains('organization_owner') && locations.length != 1) {
+        if (_can('dataset.upload.direct') && locations.length != 1) {
           throw StateError('Your Branch Head account must resolve to exactly one assigned branch. Upload is blocked until the branch assignment is corrected.');
         }
         if (locations.length == 1) {
@@ -1126,7 +1297,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           );
           if (uploadLocationId == null) return;
         }
-      } else if (roles.contains('manager') &&
+      } else if (_requiresManagerUploadGrant &&
           !_managerHasUploadGrantFor(selected)) {
         throw StateError(
           'A current upload grant for this exact branch is required.',
@@ -1389,7 +1560,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       }
       // Never pass the original dataset ID into the analysis screen. The
       // backend resolves the pinned source version using this copy capability.
-      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId, initialView: "AI_ANALYTICS");
+      openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId, initialView: "AI_ANALYTICS", authorized: widget.canRunAnalysis && !widget.readOnly);
     } catch (e) {
       _snack(e);
     } finally {
@@ -1425,34 +1596,28 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canViewOriginal => roles.any((role) => {
-    'organization_owner', 'branch_head', 'manager', 'external_viewer'
-  }.contains(role));
-  // Managers can publish permanent original changes only with a current explicit
-  // branch grant. Team Leads and other copy-only roles never import originals.
-  bool get canUpload => !widget.readOnly && (
-      roles.contains('organization_owner') ||
-      roles.contains('branch_head') ||
-      (roles.contains('manager') && managerUploadGrants.isNotEmpty)
-  );
-  bool get canDelete => !widget.readOnly &&
-      (roles.contains('organization_owner') || roles.contains('branch_head'));
-  bool get canCopy => !widget.readOnly && !canViewOriginal;
+  bool _can(String capability) => widget.capabilities.contains(capability);
+
+  bool get canViewOriginal => _can('dataset.view_original');
+
+  // A Branch Head has direct branch authority. A Manager needs a current
+  // explicit grant for the exact branch before the upload control is shown.
+  bool get _requiresManagerUploadGrant =>
+      _can('dataset.upload') && !_can('dataset.upload.direct');
+  bool get canUpload => !widget.readOnly &&
+      (_can('dataset.upload.direct') ||
+       (_requiresManagerUploadGrant && managerUploadGrants.isNotEmpty));
+  bool get canDelete => !widget.readOnly && _can('dataset.delete');
+  bool get canCopy => !widget.readOnly &&
+      widget.canRunAnalysis && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   @override Widget build(BuildContext context) {
-    if (loading) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(height: 22, width: 150, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-        const SizedBox(height: 10),
-        Container(height: 13, width: 270, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-      ])),
-      const SizedBox(height: 12),
-      _surface(Column(children: [
-        for (var i = 0; i < 3; i++) Padding(padding: const EdgeInsets.only(bottom: 9), child: Container(height: 48, decoration: BoxDecoration(color: TechColors.panelBg.withValues(alpha: .6), borderRadius: BorderRadius.circular(12)))),
-      ])),
-    ]);
+    if (loading) return ManagedDatasetAccessSkeleton(
+      capabilities: widget.capabilities,
+      readOnly: widget.readOnly,
+    );
     if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Access is temporarily unavailable', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
       const SizedBox(height: 7),
@@ -1460,7 +1625,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = roles.contains('organization_owner') || roles.contains('branch_head');
+    final canManage = !widget.readOnly && _can('dataset.upload_grants.manage');
     final locationOptions = <String, String>{};
     for (final dataset in datasets) {
       final id = dataset['location_id']?.toString() ?? '';
@@ -1514,7 +1679,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ])),
         const SizedBox(height: 10),
       ],
-      if (managerUploadGrantsError != null && roles.contains('manager')) ...[
+      if (managerUploadGrantsError != null && _requiresManagerUploadGrant) ...[
         _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           const Icon(Icons.shield_outlined, color: Color(0xFFFFB454), size: 18),
           const SizedBox(width: 9),
@@ -1596,9 +1761,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             ],
             onChanged: (value) => setState(() => _locationFilter = value ?? 'all'),
           )),
-        _action('OPEN AI ANALYTICS', Icons.auto_awesome,
-          () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
-          active: true),
+        if (!widget.readOnly && widget.canRunAnalysis)
+          _action('OPEN AI ANALYTICS', Icons.auto_awesome,
+            () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS', authorized: widget.canRunAnalysis && !widget.readOnly),
+            active: true),
         if (canManage) _action('MANAGER UPLOAD GRANTS', Icons.admin_panel_settings_outlined, _grantManagerUpload),
         if (canManage) _action('REVOKE MANAGER UPLOAD', Icons.remove_moderator_outlined, _revokeManagerUpload),
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true),
@@ -1606,7 +1772,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ]),
       ])),
       if (!widget.readOnly &&
-          roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
+          (_can('dataset.proposal.submit') || _can('dataset.proposal.review'))) ...[
         const SizedBox(height: 12),
         _proposalPanel(),
       ],
@@ -1651,12 +1817,12 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', _displayStatus(d)),
         if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
-          if (!widget.readOnly)
+          if (!widget.readOnly && widget.canRunAnalysis)
             _action('OPEN AI ANALYTICS', Icons.auto_awesome, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
-          if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
+          if (canUpload && (!_requiresManagerUploadGrant || _managerHasUploadGrantFor(d)))
             _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (!widget.readOnly && roles.contains('manager') && _managerHasUploadGrantFor(d))
+          if (!widget.readOnly && _requiresManagerUploadGrant && _managerHasUploadGrantFor(d))
             _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
@@ -1683,14 +1849,19 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      if (!widget.readOnly) ...[
+      if (!widget.readOnly && (_can('dataset.copy.request') ||
+          _can('dataset.copy_requests.review') ||
+          _can('dataset.upload_grants.manage'))) ...[
         const SizedBox(height: 12),
         _accessPanel(),
         const SizedBox(height: 12),
       ],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
-        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
+        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() {
+          selected = null;
+          profile = null;
+          rows = [];
+        })),
       ])),
     ]);
   }
@@ -1698,14 +1869,22 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _proposalPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Original dataset proposals', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 4),
-    Text(roles.contains('branch_head') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
+    Text(_can('dataset.proposal.review') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
     const SizedBox(height: 9),
     if (proposalsError != null) Text(proposalsError!, style: const TextStyle(color: TechColors.statusRed, fontSize: 10)),
     if (proposals.isEmpty && proposalsError == null) const Text('No proposals in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
     ...proposals.map((p) {
-      final status = p['status']?.toString() ?? 'pending';
-      final pending = status == 'pending';
-      final canReview = roles.contains('branch_head') && pending;
+      final status = (p['status']?.toString() ?? 'pending').toLowerCase();
+      final pending = status == 'pending' || status == 'submitted';
+      final statusLabel = switch (status) {
+        'draft' => 'DRAFT',
+        'submitted' => 'SUBMITTED',
+        'pending' => 'AWAITING BRANCH HEAD APPROVAL',
+        'approved' => 'APPROVED',
+        'rejected' => 'REJECTED',
+        _ => status.replaceAll('_', ' ').toUpperCase(),
+      };
+      final canReview = _can('dataset.proposal.review') && pending;
       final rejection = p['decision_note']?.toString();
       return Padding(padding: const EdgeInsets.only(bottom: 7), child: GlassContainer(
         useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
@@ -1716,7 +1895,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text((p['original_filename'] ?? p['dataset_id'] ?? 'Dataset proposal').toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
               const SizedBox(height: 3),
-              Text('STATUS: ' + status.toUpperCase() + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+              Text('STATUS: ' + statusLabel + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
             ])),
             if (canReview) ...[
               _action('APPROVE', Icons.check, () => _decideProposal(p['proposal_id'].toString(), true), active: true),
@@ -1736,9 +1915,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _accessPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Dataset authorization workflow', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 5),
-    const Text('The Organization Owner and assigned Branch Head can publish permanent original changes within their scope. Managers can publish only when they hold an active explicit upload grant for the exact branch. Team Leads and employees work only on individually authorized copies; they cannot modify the original dataset.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
+    const Text('The assigned Branch Head manages the trusted branch original. Managers may publish only when they hold an active explicit upload grant for the exact branch; otherwise changes remain proposals. Organization Owners have organization-wide read and oversight access, not branch master-data write authority. Team Leads and employees work only on individually authorized copies.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
-    if (roles.contains('manager') || roles.contains('team_lead')) ...[
+    if (_can('dataset.copy.request')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
       if (catalogError != null)
@@ -1763,7 +1942,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ),
       )),
     ],
-    if (roles.contains('organization_owner') || roles.contains('branch_head')) ...[
+    if (_can('dataset.copy_requests.review')) ...[
       const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
       if (requestsError != null)

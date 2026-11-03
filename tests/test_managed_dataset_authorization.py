@@ -107,6 +107,18 @@ def _context():
         ],
     }
 
+def _branch_head_context():
+    return {
+        **_context(),
+        "role_ids": ["branch_head"],
+        "permissions": [
+            "dataset.view_original",
+            "dataset.create_working_copy",
+            "dataset.manage_acl",
+            "dataset.upload",
+        ],
+    }
+
 
 def test_owner_dataset_authorization_uses_resolved_organization_and_grant(monkeypatch):
     session = _AuthzSession(
@@ -179,10 +191,10 @@ def test_revoked_dataset_grant_is_rejected(monkeypatch):
         )
 
 
-def test_register_dataset_stores_resource_under_resolved_organization(monkeypatch):
-    session = _AuthzSession(owner="principal-owner")
+def test_branch_head_registration_stores_resource_under_resolved_organization(monkeypatch):
+    session = _AuthzSession(owner="principal-owner", protected=None)
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
-    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _context())
+    monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _branch_head_context())
 
     result = supabase_provider.register_dataset(
         {"uid": "owner", "sub": "owner", "provider": "supabase"},
@@ -710,6 +722,30 @@ def test_manager_original_version_write_uses_explicit_grant_scope(monkeypatch):
     assert result["authorized"] is True
     assert result["upload_role_id"] == "manager"
 
+def test_organization_owner_cannot_register_original_dataset(monkeypatch):
+    session = _AuthzSession(owner="principal-owner")
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(),
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have organization-wide read and oversight access",
+    ):
+        supabase_provider.register_dataset(
+            {"uid": "owner", "sub": "owner", "provider": "supabase"},
+            "workspace-owner",
+            "dataset-owner",
+            "owner",
+            True,
+            location_id="branch-1",
+        )
+
+    assert not any("INSERT INTO authorization_resources" in sql for sql, _ in session.calls)
+
+
 def test_dataset_registration_cannot_overwrite_existing_original_acl(monkeypatch):
     session = _AuthzSession(
         resource={"resource_type": "dataset", "owner_principal_id": "principal-owner"},
@@ -719,7 +755,7 @@ def test_dataset_registration_cannot_overwrite_existing_original_acl(monkeypatch
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
-        lambda claims, workspace_id: _context(),
+        lambda claims, workspace_id: _branch_head_context(),
     )
 
     with pytest.raises(supabase_provider.AuthzError, match="cannot overwrite"):
@@ -738,7 +774,7 @@ def test_dataset_registration_cannot_register_for_another_member(monkeypatch):
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
     monkeypatch.setattr(
         supabase_provider, "authorization_context",
-        lambda claims, workspace_id: _context(),
+        lambda claims, workspace_id: _branch_head_context(),
     )
 
     with pytest.raises(supabase_provider.AuthzError, match="authenticated uploader"):

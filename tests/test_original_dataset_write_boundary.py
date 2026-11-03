@@ -7,7 +7,9 @@ def test_manager_original_writes_require_explicit_active_branch_grant():
     gate = service.split("def _authorize_upload(", 1)[1].split("\n\ndef _authorize_delete", 1)[0]
     upload_scope = provider.split("def authorize_dataset_upload_scope(", 1)[1].split("\n\ndef _has_active_branch_assignment", 1)[0]
     publication_lock = service.split("def _lock_active_upload_assignment(", 1)[1].split("\n\ndef upload_managed_dataset_stream", 1)[0]
-    assert '"organization_owner", "branch_head", "manager"' in gate
+    assert '"organization_owner" in roles' in gate
+    assert 'roles.intersection({"branch_head", "manager"})' in gate
+    assert "authorize_dataset_upload_scope(" in gate
     assert "manager_dataset_upload_grants g" in upload_scope
     assert "g.revoked_at IS NULL" in upload_scope
     assert "oa.location_id=g.location_id" in upload_scope
@@ -26,8 +28,10 @@ def test_original_write_grants_are_not_delegable():
 def test_original_write_and_delete_require_branch_head_scope():
     source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
     auth_fn = source.split("def authorize_dataset(", 1)[1].split("\n\ndef set_dataset_grant", 1)[0]
-    assert 'if "branch_head" not in actor_roles:' in auth_fn
+    assert 'if "organization_owner" in roles or "branch_head" not in roles:' in auth_fn
+    assert "dataset_location not in scoped_locations" in auth_fn
     assert 'elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:' in auth_fn
+    assert 'scope_role = "branch_head" if "branch_head" in roles else "manager"' in auth_fn
 
 def test_copy_request_rejection_uses_only_bound_sql_parameters_and_pending_state():
     source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")

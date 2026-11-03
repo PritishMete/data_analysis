@@ -8,7 +8,14 @@ void openInsightFlowAnalysis(
   String? managedVersionId,
   String? managedWorkingCopyId,
   String initialView = "ALL_SYSTEMS",
+  required bool authorized,
 }) {
+  if (!authorized) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('AI Analytics is not available for this account.')),
+    );
+    return;
+  }
   Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => DataScreen(
@@ -16,6 +23,7 @@ void openInsightFlowAnalysis(
         managedVersionId: managedVersionId,
         managedWorkingCopyId: managedWorkingCopyId,
         initialView: initialView,
+        analysisAuthorized: authorized,
       ),
     ),
   );

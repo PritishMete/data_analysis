@@ -193,7 +193,7 @@ def test_manager_cannot_upload_into_an_unprotected_dataset_record(monkeypatch):
         )
 
 
-def test_organization_owner_can_write_original_dataset(monkeypatch):
+def test_organization_owner_cannot_write_original_dataset(monkeypatch):
     db = _Db(["organization_owner"], owner_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
     monkeypatch.setattr(
@@ -203,12 +203,107 @@ def test_organization_owner_can_write_original_dataset(monkeypatch):
             "permissions": ["dataset.upload", "dataset.manage_acl"],
         },
     )
-    result = supabase_provider.authorize_dataset(
-        {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
-        "workspace-1", "dataset-1", "dataset.upload",
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners are read-only",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.upload",
+        )
+
+def test_organization_owner_cannot_delete_branch_original(monkeypatch):
+    db = _Db(["organization_owner"], owner_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["organization_owner"]),
     )
+
+    with pytest.raises(supabase_provider.AuthzError, match="Only the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.delete",
+        )
+
+
+def test_branch_head_cannot_delete_original_from_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Branch Head scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1", "dataset-from-branch-a", "dataset.delete",
+        )
+
+
+def test_branch_head_can_delete_original_within_its_assigned_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-a"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    result = supabase_provider.authorize_dataset(
+        {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+        "workspace-1", "dataset-from-branch-a", "dataset.delete",
+    )
+
     assert result["authorized"] is True
-    assert result["location_id"] == "branch-1"
+    assert result["location_id"] == "branch-a"
+
+
+def test_organization_owner_cannot_manage_branch_original_acl(monkeypatch):
+    db = _Db(["organization_owner"], owner_locations=["branch-1"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: {
+            **_context(["organization_owner"]),
+            "permissions": ["dataset.manage_acl"],
+        },
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the active Branch Head",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.manage_acl",
+        )
+
+
+def test_branch_head_cannot_upload_original_into_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="selected branch"):
+        supabase_provider.authorize_dataset_upload_scope(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1",
+            location_id="branch-a",
+        )
+
 
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
     db = _Db(["branch_head"], branch_locations=["branch-1"])
@@ -243,7 +338,7 @@ def test_non_manager_roles_cannot_upload(monkeypatch, role):
         lambda claims, workspace_id: _context([role]),
     )
 
-    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner"):
+    with pytest.raises(supabase_provider.AuthzError, match="Only the assigned Branch Head"):
         supabase_provider.authorize_dataset(
             {"uid": "member-1", "sub": "member-1", "provider": "supabase"},
             "workspace-1",
@@ -283,6 +378,27 @@ def test_member_without_copy_grant_cannot_create_copy(monkeypatch):
     with pytest.raises(supabase_provider.AuthzError, match="has not been authorized for copying"):
         supabase_provider.authorize_dataset(
             {"uid": "lead-1", "sub": "lead-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.create_working_copy",
+        )
+
+
+def test_organization_owner_cannot_create_working_copy_even_with_resource_grant(monkeypatch):
+    db = _Db(["organization_owner"], grant=["dataset.create_working_copy"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["organization_owner"]),
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have read-only oversight",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
             "workspace-1",
             "dataset-1",
             "dataset.create_working_copy",
@@ -348,6 +464,30 @@ class _GrantDb:
         raise AssertionError(f"Unexpected grant query: {sql}")
 
 
+class _ResourceGrantDb:
+    def __init__(self, resource_type):
+        self.resource_type = resource_type
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def begin(self):
+        return self
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        self.calls.append((sql, params or {}))
+        if "FROM identity_bindings b" in sql and "JOIN organization_members m" in sql:
+            return _Result(row={"principal_id": "target-principal", "employee_id": "E-1"})
+        if "SELECT resource_type FROM authorization_resources" in sql:
+            return _Result(row={"resource_type": self.resource_type})
+        raise AssertionError(f"Unexpected resource grant query: {sql}")
+
+
 def _grantor_context(role="branch_head"):
     return {
         "workspace_authorized": True,
@@ -357,6 +497,167 @@ def _grantor_context(role="branch_head"):
         "role_ids": [role],
         "permissions": ["dataset.manage_acl"] if role in {"branch_head", "organization_owner"} else ["dataset.upload"],
     }
+
+
+@pytest.mark.parametrize("permissions", [[], ["dataset.create_working_copy"]])
+def test_organization_owner_cannot_grant_or_revoke_dataset_copy_access(monkeypatch, permissions):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["dataset.manage_acl"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the active Branch Head assigned to this branch",
+    ):
+        supabase_provider.set_dataset_grant(
+            {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+            "workspace-1", "dataset-1", "employee-uid", permissions,
+        )
+
+    assert db.calls == []
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["list_copy_requests", "approve_copy_request"],
+)
+def test_organization_owner_cannot_review_branch_copy_requests(monkeypatch, operation):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["dataset.view_original"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the active Branch Head assigned to a branch",
+    ):
+        if operation == "list_copy_requests":
+            supabase_provider.list_copy_requests(
+                {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+                "workspace-1",
+            )
+        else:
+            supabase_provider.approve_copy_request(
+                {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+                "workspace-1", "request-1", True,
+            )
+
+    assert db.calls == []
+
+
+@pytest.mark.parametrize("resource_type", ["dataset", "working_copy"])
+def test_organization_owner_cannot_use_generic_resource_grants_for_dataset_access(
+    monkeypatch, resource_type
+):
+    db = _ResourceGrantDb(resource_type)
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["users.manage"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the assigned Branch Head can grant access",
+    ):
+        supabase_provider.set_resource_grant(
+            {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+            "workspace-1", "resource-1", "employee-uid",
+            ["dataset.create_working_copy"] if resource_type == "dataset"
+            else ["working_copy.view"],
+            required_permission="users.manage",
+        )
+
+    assert not any("INSERT INTO resource_grants" in sql for sql, _ in db.calls)
+
+
+def test_organization_owner_cannot_assign_working_copies(monkeypatch):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["users.manage"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the assigned Branch Head can assign working copies",
+    ):
+        supabase_provider.assign_working_copy(
+            {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+            "workspace-1", "copy-1", "employee-uid",
+        )
+
+    assert db.calls == []
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["working_copy.modify", "working_copy.delete", "working_copy.assign"],
+)
+def test_organization_owner_cannot_mutate_or_assign_working_copies(monkeypatch, action):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["working_copy.modify", "working_copy.delete", "working_copy.assign"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have read-only oversight",
+    ):
+        supabase_provider.authorize_working_copy(
+            {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+            "workspace-1", "copy-1", action,
+        )
+
+    assert db.calls == []
 
 
 def test_branch_head_cannot_delegate_original_write_authority(monkeypatch):

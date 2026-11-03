@@ -132,6 +132,21 @@ def test_inactive_membership_is_denied_before_assignment_lookup(monkeypatch):
 
 
 
+def test_organization_owner_cannot_upload_branch_original(monkeypatch):
+    _install_scope(
+        monkeypatch, role="organization_owner",
+        assignments={"organization_owner": ["branch-a"]},
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have organization-wide read and oversight access",
+    ):
+        supabase_provider.authorize_dataset_upload_scope(
+            _claims(), "workspace-1", location_id="branch-a"
+        )
+
+
 def test_branch_head_with_ambiguous_assignment_fails_closed(monkeypatch):
     _install_scope(
         monkeypatch, role="branch_head",
@@ -174,7 +189,6 @@ def test_branch_head_without_dataset_upload_capability_is_denied(monkeypatch):
 
 
 def test_protected_original_upload_uses_upload_capability_before_registry(monkeypatch):
-    context = _context("manager")
     seen = []
 
     def deny_protected_replacement(claims, workspace_id, target_id, action):

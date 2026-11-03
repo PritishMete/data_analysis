@@ -19,6 +19,7 @@ from .management_domain import (
     assign_manager,
     assign_team_lead,
     create_location,
+    update_location,
     create_section,
     list_assignments,
     get_assignment_profile,
@@ -70,6 +71,11 @@ class LocationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str
     branch_identifier: str
+
+
+class LocationUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
 
 
 class SectionCreateRequest(BaseModel):
@@ -142,6 +148,22 @@ def location_create(
     workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     return _dispatch(create_location, _claims(authorization), _workspace(workspace_id), req.name, req.branch_identifier)
+
+
+@router.patch("/locations/{location_id}")
+def location_update(
+    location_id: str,
+    req: LocationUpdateRequest,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    return _dispatch(
+        update_location,
+        _claims(authorization),
+        _workspace(workspace_id),
+        location_id,
+        req.name,
+    )
 
 
 @router.get("/sections")

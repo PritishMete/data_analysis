@@ -442,14 +442,15 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             ],
             "capabilities": [
                 "organization.structure.manage",
+                "location.update",
+                "organization.section.create",
                 "manager.assign",
                 "manager.replace",
                 "team_lead.assign",
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
-                "dataset.upload",
-                "dataset.authorize_copy",
+                "dataset.view_original",
             ],
         }
     if role == "branch_head":
@@ -462,15 +463,22 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
                 "dataAccess", "invitations", "audit",
             ],
             "capabilities": [
-                "organization.structure.manage",
                 "manager.assign",
                 "manager.replace",
                 "team_lead.assign",
                 "team_lead.approve",
                 "invitation.manage",
                 "audit.view",
+                "location.update",
+                "organization.section.create",
+                "dataset.view_original",
                 "dataset.upload",
+                "dataset.upload.direct",
+                "dataset.delete",
                 "dataset.authorize_copy",
+                "dataset.upload_grants.manage",
+                "dataset.proposal.review",
+                "dataset.copy_requests.review",
             ],
         }
     if role == "manager":
@@ -482,7 +490,10 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "capabilities": [
                 "organization.section.create",
                 "team_lead.request",
+                "dataset.view_original",
                 "dataset.upload",
+                "dataset.proposal.submit",
+                "dataset.copy.request",
             ],
         }
     if role == "team_lead":
@@ -491,9 +502,9 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "role_label": "Team Lead",
             "scope_label": "Section",
             "sections": ["overview", "people", "dataAccess"],
-            "capabilities": [],
+            "capabilities": ["dataset.copy.request"],
         }
-    return {
+    policy = {
         "management_tier": "member",
         "role_label": (
             "External Viewer" if role == "external_viewer"
@@ -503,6 +514,47 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
         "sections": ["overview"],
         "capabilities": [],
     }
+    if role == "external_viewer":
+        policy["sections"].append("dataAccess")
+        policy["capabilities"].append("dataset.view_original")
+        policy["read_only"] = True
+    return policy
+
+
+def _management_ui_policy_for_permissions(
+    role_id: str | None,
+    permissions: set[str] | list[str] | tuple[str, ...],
+) -> dict[str, Any]:
+    """Add only capabilities supported by the active backend permission set."""
+    active_permissions = set(permissions or [])
+    policy = _management_ui_policy(role_id)
+    for permission, capability in (
+        ("dataset.view_original", "dataset.view_original"),
+        ("dataset.create_working_copy", "dataset.create_working_copy"),
+    ):
+        if permission in active_permissions and capability not in policy["capabilities"]:
+            policy["capabilities"].append(capability)
+    if (
+        str(role_id or "").strip() not in {"organization_owner", "branch_head"}
+        and "dataset.create_working_copy" in active_permissions
+        and "dataset.copy.request" not in policy["capabilities"]
+    ):
+        policy["capabilities"].append("dataset.copy.request")
+    if "analysis.run" in active_permissions:
+        policy["capabilities"].append("analysis.run")
+    if str(role_id or "").strip() == "external_viewer":
+        policy["read_only"] = True
+    elif (
+        str(role_id or "").strip() not in {
+            "organization_owner", "branch_head", "manager", "team_lead"
+        }
+        and active_permissions.intersection({
+            "analysis.run", "dataset.view_original", "dataset.create_working_copy"
+        })
+        and "dataAccess" not in policy["sections"]
+    ):
+        policy["sections"].append("dataAccess")
+    return policy
 
 
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
@@ -533,6 +585,13 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                     GROUP BY oa.role_id
                 """), {"org": org, "locations": scoped_locations}).all()
                 counts = {str(row.role_id): int(row.count) for row in rows}
+        active_permissions = _permissions(db, org, actor["principal_id"])
+        # Analytics and employee dataset workspaces are exposed only when the
+        # active backend permission set supports them. Professional titles do
+        # not independently grant management authority.
+        ui_policy = _management_ui_policy_for_permissions(
+            scope["role_id"], active_permissions
+        )
         return {
             "organization": {
                 "organization_id": org,
@@ -550,7 +609,7 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "section_id": scope["section_id"],
                 "organization_wide": scope["organization_wide"],
             },
-            "ui_policy": _management_ui_policy(scope["role_id"]),
+            "ui_policy": ui_policy,
             "summary": {
                 "location_count": len(locations),
                 "total_people": sum(counts.values()),
@@ -619,6 +678,62 @@ def create_location(claims: dict[str, Any], workspace_id: str, name: str,
             "location_id": location_id, "branch_identifier": branch_identifier,
         })
         return _location_summary(db, org, location_id)
+
+
+def update_location(
+    claims: dict[str, Any],
+    workspace_id: str,
+    location_id: str,
+    name: str,
+) -> dict[str, Any]:
+    """Update ordinary branch metadata while keeping its primary identity fixed."""
+    name = str(name or "").strip()
+    if not 1 <= len(name) <= 160 or any(ord(char) < 32 or ord(char) == 127 for char in name):
+        raise ValueError("Location name must be between 1 and 160 characters.")
+    location_id = str(location_id or "").strip()
+    if not location_id:
+        raise ValueError("Location identity is required.")
+
+    with SessionLocal.begin() as db:
+        actor = _actor(db, claims, workspace_id)
+        _require_location_manage(db, actor, location_id)
+        organization_id = actor["organization_id"]
+        current = db.execute(text("""
+            SELECT location_id, status
+            FROM locations
+            WHERE organization_id=:org AND location_id=:location
+            FOR UPDATE
+        """), {"org": organization_id, "location": location_id}).mappings().first()
+        if not current:
+            raise AuthzError("Location was not found in your authorized organization scope.")
+
+        duplicate = db.execute(text("""
+            SELECT 1
+            FROM locations
+            WHERE organization_id=:org
+              AND location_id<>:location
+              AND status='active'
+              AND lower(name)=lower(:name)
+            LIMIT 1
+        """), {
+            "org": organization_id,
+            "location": location_id,
+            "name": name,
+        }).scalar_one_or_none()
+        if duplicate and current["status"] == "active":
+            raise ManagementConflict("An active location with this name already exists.")
+
+        # location_id and branch_identifier are immutable primary branch identity.
+        db.execute(text("""
+            UPDATE locations
+            SET name=:name, updated_at=now()
+            WHERE organization_id=:org AND location_id=:location
+        """), {"org": organization_id, "location": location_id, "name": name})
+        _audit(db, organization_id, actor["principal_id"], "management.location.updated", "succeeded", {
+            "location_id": location_id,
+            "changed_fields": ["name"],
+        })
+        return _location_summary(db, organization_id, location_id)
 
 
 def list_sections(claims: dict[str, Any], workspace_id: str,

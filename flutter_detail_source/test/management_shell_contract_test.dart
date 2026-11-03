@@ -90,7 +90,8 @@ void main() {
 
     // Dataset access must use the canonical Branch Data & Access workspace;
     // the legacy screen passed original dataset IDs into analysis.
-    expect(source, contains('case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();'));
+    expect(source, contains('case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace('));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
     expect(source, isNot(contains('AuthorizationManagementScreen(')));
     // The analysis route is deliberately kept in the shared navigation helper;
     // verify the real route target rather than only checking the caller name.
@@ -269,6 +270,31 @@ void main() {
     expect(source, contains('Widget _overviewActivityItem('));
     expect(source, contains('Widget _overviewStructureStep('));
     expect(source, contains('Widget _overviewSkeleton()'));
+    expect(source, contains('Widget _organizationSkeleton()'));
+    expect(source, contains('Widget _peopleSkeleton()'));
+    expect(source, contains('Widget _dataAccessSkeleton()'));
+    expect(source, contains('ManagedDatasetAccessSkeleton'));
+    expect(source, contains("title: 'Team management'"));
+    expect(source, contains("title: 'Team operations'"));
+    expect(source, contains("title: 'Analytical workspace'"));
+    expect(source, contains("title: 'Read-only workspace'"));
+    expect(source, contains("Organization Overview"));
+    expect(source, contains("Branch Info"));
+    expect(source, contains("Future<void> editLocation(Map<String, dynamic> location)"));
+    expect(source, contains("readOnly: true"));
+    expect(source, contains("Primary branch identifier (immutable)"));
+    expect(source, contains("body: {'name': name.text.trim()}"));
+    expect(source, contains("_canUi('location.update')"));
+    expect(source, contains('Widget _invitationSkeleton()'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
+    expect(source, contains('_showLoadingSkeleton'));
+    expect(source, contains('_loadGeneration'));
+    expect(source, contains('Duration(milliseconds: 180)'));
+    expect(source, contains("itemCount: tabs.length + (_canUi('analysis.run') ? 1 : 0)"));
+    expect(source, contains("if (_canUi('analysis.run'))"));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
+    expect(source, contains("readOnly: _uiPolicy()['read_only'] == true"));
     for (final label in [
       r'Welcome back, $actorName!',
       'Team Members',
@@ -279,12 +305,14 @@ void main() {
       'Branch Info',
       'Quick Actions',
       'Recent Activity',
-      'Organization Hierarchy',
+      'Organization Structure',
+      'Branch Structure',
       'Invite Team Member',
       'Manage People',
       'Manage Permissions',
       'Review Audit Activity',
-      'Edit Branch Settings',
+      'Manage Organization Structure',
+      'Manage Branch Structure',
     ]) {
       expect(source, contains(label));
     }
@@ -295,7 +323,8 @@ void main() {
     expect(source, contains('Text(_uiRoleLabel(),'));
     expect(source, contains('actorName,'));
     expect(source, contains('audit.take(5)'));
-    expect(source, contains('section == ManagementSection.audit'));
+    expect(source, contains('ManagementSection.audit => _auditSkeleton()'));
+    expect(source, contains('ManagementSection.invitations => _invitationSkeleton()'));
     expect(source, contains('ManagementSection.organization'));
     expect(source, contains('ManagementSection.people'));
     expect(source, contains('ManagementSection.invitations'));
@@ -309,6 +338,7 @@ void main() {
     expect(accessSource, contains("stat('Access requests'"));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_overviewSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
     expect(source, contains("Widget peopleView()"));
     expect(source, contains("_eyebrow('PEOPLE DIRECTORY')"));
     expect(source, contains("A clear view of your team, roles, and branch assignments."));
@@ -365,7 +395,7 @@ void main() {
     expect(source, contains('Color(0xE8113551)'));
     expect(source, contains('BorderRadius.circular(16)'));
     expect(source, contains('BorderRadius.circular(14)'));
-    expect(source, contains("section == ManagementSection.invitations"));
+    expect(source, contains("ManagementSection.invitations => _invitationSkeleton()"));
     expect(source, contains('Invitation details'));
     expect(source, contains("item['invitation_id']"));
     expect(source, contains("item['expires_at']"));
@@ -451,21 +481,20 @@ void main() {
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
 
-    // Match the actual managed-dataset UI policy: original viewing, upload,
-    // deletion, and working-copy access are role-gated in this widget.
-    expect(
-      access,
-      contains(
-        "bool get canViewOriginal => roles.any((role) => {",
-      ),
-    );
+    // Dataset actions consume the backend-provided capability contract;
+    // role names are not used as a Flutter authorization boundary.
+    expect(access, contains("bool _can(String capability) => widget.capabilities.contains(capability);"));
+    expect(access, contains("bool get canViewOriginal => _can('dataset.view_original');"));
     expect(access, contains("bool get canUpload => !widget.readOnly &&"));
-    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
-    expect(access, contains("bool get canDelete => !widget.readOnly &&"));
-    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
-    expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
-    expect(access, contains("'external_viewer'"));
-    expect(access, contains('if (!widget.readOnly) ...['));
+    expect(access, contains("_can('dataset.upload.direct')"));
+    expect(access, contains("bool get canDelete => !widget.readOnly && _can('dataset.delete');"));
+    expect(access, contains('bool get canCopy => !widget.readOnly &&'));
+    expect(access, contains("widget.canRunAnalysis && !canViewOriginal"));
+    expect(access, contains("_can('dataset.upload_grants.manage')"));
+    expect(access, contains("_can('dataset.copy_requests.review')"));
+    expect(access, contains("_can('dataset.proposal.review')"));
+    expect(access, contains('AWAITING BRANCH HEAD APPROVAL'));
+    expect(access, isNot(contains("roles.contains(")));
     expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
 
 
