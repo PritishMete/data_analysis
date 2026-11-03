@@ -1599,7 +1599,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             ],
             onChanged: (value) => setState(() => _locationFilter = value ?? 'all'),
           )),
-        if (widget.canRunAnalysis)
+        if (!widget.readOnly && widget.canRunAnalysis)
           _action('OPEN AI ANALYTICS', Icons.auto_awesome,
             () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
             active: true),
