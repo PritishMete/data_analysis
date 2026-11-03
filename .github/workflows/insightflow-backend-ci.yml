@@ -84,6 +84,7 @@ jobs:
             tests/test_managed_dataset_role_policy.py tests/test_dataset_upload_scope_authorization.py \
             tests/test_management_ui_policy_contract.py tests/integration/test_postgres_manager_grant_races.py \
             tools/run_authz_migrations.py
+          ruff check --select E4,E7,E9,F --ignore E701,E702 firebase_authz/management_domain.py
 
       - name: Verify authorization migration runner
         run: |
