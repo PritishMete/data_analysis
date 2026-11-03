@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/features/auth/managed_dataset_access_workspace.dart';
+import 'package:liquid_glass_widgets/features/auth/managed_dataset_access_workspace.dart';
 
 void main() {
   testWidgets('Branch Data & Access skeleton adapts across supported widths',
