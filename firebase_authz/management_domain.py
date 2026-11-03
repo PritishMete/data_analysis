@@ -531,6 +531,11 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                     GROUP BY oa.role_id
                 """), {"org": org, "locations": scoped_locations}).all()
                 counts = {str(row.role_id): int(row.count) for row in rows}
+        ui_policy = _management_ui_policy(scope["role_id"])
+        # Analytics visibility is derived from the active backend permission
+        # set, never from a display label or professional designation.
+        if "analysis.run" in _permissions(db, org, actor["principal_id"]):
+            ui_policy["capabilities"].append("analysis.run")
         return {
             "organization": {
                 "organization_id": org,
@@ -548,7 +553,7 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 "section_id": scope["section_id"],
                 "organization_wide": scope["organization_wide"],
             },
-            "ui_policy": _management_ui_policy(scope["role_id"]),
+            "ui_policy": ui_policy,
             "summary": {
                 "location_count": len(locations),
                 "total_people": sum(counts.values()),
