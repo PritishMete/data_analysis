@@ -234,6 +234,9 @@ class _ManagementShellState extends State<ManagementShell> {
       setState(() {
         loading = true;
         error = null;
+        // A refresh may resolve to a different role. Never render the previous
+        // role's selected section while the new backend policy is unknown.
+        section = ManagementSection.overview;
         // Retain only presentation metadata for the loading placeholder.
         // It never authorizes navigation or actions; the actual policy is
         // cleared and all controls remain unavailable until the new response.
