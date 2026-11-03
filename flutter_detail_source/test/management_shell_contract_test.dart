@@ -392,7 +392,7 @@ void main() {
     expect(source, contains('Color(0xE8113551)'));
     expect(source, contains('BorderRadius.circular(16)'));
     expect(source, contains('BorderRadius.circular(14)'));
-    expect(source, contains("section == ManagementSection.invitations"));
+    expect(source, contains("ManagementSection.invitations => _invitationSkeleton()"));
     expect(source, contains('Invitation details'));
     expect(source, contains("item['invitation_id']"));
     expect(source, contains("item['expires_at']"));
