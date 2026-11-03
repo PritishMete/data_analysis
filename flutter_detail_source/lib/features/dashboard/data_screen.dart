@@ -164,12 +164,14 @@ class DataScreen extends StatefulWidget {
     this.managedVersionId,
     this.managedWorkingCopyId,
     this.initialView = "ALL_SYSTEMS",
+    this.analysisAuthorized = false,
   });
 
   final String? managedDatasetId;
   final String? managedVersionId;
   final String? managedWorkingCopyId;
   final String initialView;
+  final bool analysisAuthorized;
 
   @override
   State<DataScreen> createState() => DataScreenState();
@@ -6375,6 +6377,39 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.analysisAuthorized) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF020D18),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, color: Color(0xFFFFB65E), size: 34),
+                const SizedBox(height: 12),
+                const Text(
+                  'AI Analytics access is not authorized',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'The backend has not granted the analysis.run capability for this account. Return to your Management Cell workspace or contact your administrator.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFFB6D3EC), fontSize: 12, height: 1.45),
+                ),
+                const SizedBox(height: 14),
+                TextButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text('Return to workspace'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     if (kIsWeb) {
       SecureExcelLocalService.registerDialogContext(() => context);
     }
