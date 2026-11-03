@@ -105,6 +105,8 @@ class ManagementShell extends StatefulWidget {
 class _ManagementShellState extends State<ManagementShell> {
   ManagementSection section = ManagementSection.overview;
   bool loading = true;
+  bool _showLoadingSkeleton = false;
+  int _loadGeneration = 0;
   String _loadingManagementTier = '';
   bool _loadingReadOnlyWorkspace = false;
   String? error;
@@ -229,10 +231,12 @@ class _ManagementShellState extends State<ManagementShell> {
   }
 
   Future<void> _loadAll() async {
+    final generation = ++_loadGeneration;
     if (mounted) {
       final previousPolicy = _uiPolicy();
       setState(() {
         loading = true;
+        _showLoadingSkeleton = false;
         error = null;
         // A refresh may resolve to a different role. Never render the previous
         // role's selected section while the new backend policy is unknown.
@@ -243,6 +247,15 @@ class _ManagementShellState extends State<ManagementShell> {
         _loadingManagementTier = previousPolicy['management_tier']?.toString() ?? '';
         _loadingReadOnlyWorkspace = previousPolicy['read_only'] == true;
         overview = const {};
+      });
+      // Delay the full skeleton briefly so fast authorization responses do not
+      // flash a placeholder. The generation guard prevents an old timer from
+      // changing the loading state of a newer request.
+      Future<void>.delayed(const Duration(milliseconds: 180), () {
+        if (mounted && loading && generation == _loadGeneration &&
+            !_showLoadingSkeleton) {
+          setState(() => _showLoadingSkeleton = true);
+        }
       });
     }
     try {
@@ -273,6 +286,7 @@ class _ManagementShellState extends State<ManagementShell> {
         audit = maps(r[5]['audit']);
         invitations = maps(r[5]['invitations']);
         loading = false;
+        _showLoadingSkeleton = false;
         if (!_sectionAllowed(section)) {
           section = ManagementSection.overview;
         }
@@ -281,6 +295,7 @@ class _ManagementShellState extends State<ManagementShell> {
       if (mounted) {
         setState(() {
           loading = false;
+          _showLoadingSkeleton = false;
           error = e.toString().replaceFirst('Bad state: ', '');
         });
       }
@@ -4412,7 +4427,21 @@ class _ManagementShellState extends State<ManagementShell> {
               child: Center(child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1500),
                 child: loading
-                  ? _sectionLoadingSkeleton()
+                  ? (_showLoadingSkeleton
+                      ? _sectionLoadingSkeleton()
+                      : const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF35C8F2),
+                              ),
+                            ),
+                          ),
+                        ))
                   : error != null
                     ? Container(
                         padding: const EdgeInsets.all(18),
