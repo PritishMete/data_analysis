@@ -2097,40 +2097,39 @@ def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[s
     """List requests only for organization owners and Branch Heads within their scope."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head"}):
-        raise AuthzError("Only an Organization Owner or Branch Head can review copy requests.")
+    if "organization_owner" in roles or "branch_head" not in roles:
+        raise AuthzError(
+            "Only the active Branch Head assigned to a branch can review dataset copy requests."
+        )
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
     principal = str(context["principal_id"])
-    orgwide = "organization_owner" in roles
 
     with SessionLocal() as db:
-        locations = []
-        if not orgwide:
-            locations = [
-                str(value) for value in db.execute(text("""
-                    SELECT DISTINCT oa.location_id
-                    FROM organizational_assignments oa
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id
-                     AND m.principal_id=oa.principal_id
-                     AND m.workspace_id=:workspace AND m.status='active'
-                    JOIN member_roles mr
-                      ON mr.organization_id=oa.organization_id
-                     AND mr.principal_id=oa.principal_id
-                     AND mr.role_id='branch_head'
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id
-                     AND l.location_id=oa.location_id AND l.status='active'
-                    WHERE oa.organization_id=:org AND oa.principal_id=:principal
-                      AND oa.role_id='branch_head' AND oa.status='active'
-                      AND oa.location_id IS NOT NULL
-                """), {"org": org, "workspace": workspace,
-                        "principal": principal}).scalars().all()
-            ]
-            if len(set(locations)) != 1:
-                raise AuthzError("A Branch Head must have exactly one active branch assignment to review copy requests.")
+        locations = [
+            str(value) for value in db.execute(text("""
+                SELECT DISTINCT oa.location_id
+                FROM organizational_assignments oa
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id
+                 AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=:workspace AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=oa.organization_id
+                 AND mr.principal_id=oa.principal_id
+                 AND mr.role_id='branch_head'
+                JOIN locations l
+                  ON l.organization_id=oa.organization_id
+                 AND l.location_id=oa.location_id AND l.status='active'
+                WHERE oa.organization_id=:org AND oa.principal_id=:principal
+                  AND oa.role_id='branch_head' AND oa.status='active'
+                  AND oa.location_id IS NOT NULL
+            """), {"org": org, "workspace": workspace,
+                    "principal": principal}).scalars().all()
+        ]
+        if len(set(locations)) != 1:
+            raise AuthzError("A Branch Head must have exactly one active branch assignment to review copy requests.")
 
         rows = db.execute(text("""
             SELECT r.request_id, r.dataset_id, r.status, r.note, r.created_at,
@@ -2156,8 +2155,10 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
     """Decide a copy request under a row lock so concurrent approvals cannot duplicate copies."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
-    if not roles.intersection({"organization_owner", "branch_head"}):
-        raise AuthzError("Only an Organization Owner or Branch Head can review copy requests.")
+    if "organization_owner" in roles or "branch_head" not in roles:
+        raise AuthzError(
+            "Only the active Branch Head assigned to a branch can review dataset copy requests."
+        )
 
     org = str(context["organization_id"])
     workspace = str(context["workspace_id"])
@@ -2175,30 +2176,29 @@ def approve_copy_request(claims: dict[str, Any], workspace_id: str, request_id: 
         if not req:
             raise AuthzError("Pending copy request not found.")
 
-        if "organization_owner" not in roles:
-            branch_locations = {
-                str(value) for value in db.execute(text("""
-                    SELECT DISTINCT oa.location_id
-                    FROM organizational_assignments oa
-                    JOIN organization_members m
-                      ON m.organization_id=oa.organization_id
-                     AND m.principal_id=oa.principal_id
-                     AND m.workspace_id=:workspace AND m.status='active'
-                    JOIN member_roles mr
-                      ON mr.organization_id=oa.organization_id
-                     AND mr.principal_id=oa.principal_id
-                     AND mr.role_id='branch_head'
-                    JOIN locations l
-                      ON l.organization_id=oa.organization_id
-                     AND l.location_id=oa.location_id AND l.status='active'
-                    WHERE oa.organization_id=:org AND oa.principal_id=:actor
-                      AND oa.role_id='branch_head' AND oa.status='active'
-                      AND oa.location_id IS NOT NULL
-                """), {"org": org, "workspace": workspace,
-                        "actor": actor}).scalars().all()
-            }
-            if len(branch_locations) != 1 or str(req["location_id"] or "") not in branch_locations:
-                raise AuthzError("This request belongs to a branch outside your active Branch Head scope.")
+        branch_locations = {
+            str(value) for value in db.execute(text("""
+                SELECT DISTINCT oa.location_id
+                FROM organizational_assignments oa
+                JOIN organization_members m
+                  ON m.organization_id=oa.organization_id
+                 AND m.principal_id=oa.principal_id
+                 AND m.workspace_id=:workspace AND m.status='active'
+                JOIN member_roles mr
+                  ON mr.organization_id=oa.organization_id
+                 AND mr.principal_id=oa.principal_id
+                 AND mr.role_id='branch_head'
+                JOIN locations l
+                  ON l.organization_id=oa.organization_id
+                 AND l.location_id=oa.location_id AND l.status='active'
+                WHERE oa.organization_id=:org AND oa.principal_id=:actor
+                  AND oa.role_id='branch_head' AND oa.status='active'
+                  AND oa.location_id IS NOT NULL
+            """), {"org": org, "workspace": workspace,
+                    "actor": actor}).scalars().all()
+        }
+        if len(branch_locations) != 1 or str(req["location_id"] or "") not in branch_locations:
+            raise AuthzError("This request belongs to a branch outside your active Branch Head scope.")
 
         requester = db.execute(text("""
             SELECT 1
