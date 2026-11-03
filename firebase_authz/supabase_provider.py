@@ -1891,7 +1891,7 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
         raise ValueError("A persisted dataset ID is required.")
     provider, subject = _identity(claims)
 
-    # The shared upload policy enforces Owner/Branch Head authority or an
+    # The shared upload policy enforces assigned Branch Head authority or an
     # explicit Manager grant for the exact branch.
     upload_context = authorize_dataset_upload_scope(
         claims, workspace_id, location_id=location_id
@@ -2545,7 +2545,7 @@ def authorize_dataset_upload_scope(
     *,
     location_id: str | None = None,
 ) -> dict[str, Any]:
-    """Authorize Owner/Branch Head uploads or an explicit Manager branch grant."""
+    """Authorize assigned Branch Head uploads or an explicit Manager branch grant."""
     context = authorization_context(claims, workspace_id)
     if not context.get("workspace_authorized"):
         raise AuthzError("Workspace authorization denied.")
