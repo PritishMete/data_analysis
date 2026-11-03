@@ -251,7 +251,28 @@ class _EmployeeProfileOnboardingScreenState
       _proofType != null &&
       _proofNumber.text.trim().isNotEmpty;
 
+  Future<bool> _recoverCompletedProfile() async {
+    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return false;
+    try {
+      final resolution = await reconcileInsightFlowOnboardingWithRetry(
+        resolve: () => resolveInsightFlowOnboardingStateFromBackend(uid),
+      );
+      if (resolution?.state != InsightFlowOnboardingState.activeMember) {
+        return false;
+      }
+      // The profile write may have committed even if its HTTP response was
+      // lost. Trust the refreshed backend authorization state, not the
+      // ambiguous client-side timeout.
+      await widget.onCompleted();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _complete() async {
+    if (_busy) return;
     if (!_profileValid()) {
       _fail('Complete every required profile field. Address Line 2 is optional.');
       return;
@@ -309,6 +330,7 @@ class _EmployeeProfileOnboardingScreenState
 
       await widget.onCompleted();
     } catch (error) {
+      if (await _recoverCompletedProfile()) return;
       _fail(
         error is StateError ? error.message : 'Profile could not be saved.',
       );
