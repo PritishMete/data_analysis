@@ -677,6 +677,9 @@ class _ManagementShellState extends State<ManagementShell> {
       );
       feedback('Branch details updated. Its primary identity was preserved.');
       await loadAll();
+      if (mounted && _sectionAllowed(ManagementSection.organization)) {
+        setState(() => section = ManagementSection.organization);
+      }
     } catch (e) {
       feedback(e);
     }
