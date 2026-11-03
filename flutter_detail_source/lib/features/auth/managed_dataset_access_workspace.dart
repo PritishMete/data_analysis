@@ -1838,8 +1838,16 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     if (proposalsError != null) Text(proposalsError!, style: const TextStyle(color: TechColors.statusRed, fontSize: 10)),
     if (proposals.isEmpty && proposalsError == null) const Text('No proposals in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
     ...proposals.map((p) {
-      final status = p['status']?.toString() ?? 'pending';
-      final pending = status == 'pending';
+      final status = (p['status']?.toString() ?? 'pending').toLowerCase();
+      final pending = status == 'pending' || status == 'submitted';
+      final statusLabel = switch (status) {
+        'draft' => 'DRAFT',
+        'submitted' => 'SUBMITTED',
+        'pending' => 'AWAITING BRANCH HEAD APPROVAL',
+        'approved' => 'APPROVED',
+        'rejected' => 'REJECTED',
+        _ => status.replaceAll('_', ' ').toUpperCase(),
+      };
       final canReview = _can('dataset.proposal.review') && pending;
       final rejection = p['decision_note']?.toString();
       return Padding(padding: const EdgeInsets.only(bottom: 7), child: GlassContainer(
@@ -1851,7 +1859,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text((p['original_filename'] ?? p['dataset_id'] ?? 'Dataset proposal').toString(), style: const TextStyle(color: TechColors.textPrimary, fontSize: 10, fontWeight: FontWeight.w700)),
               const SizedBox(height: 3),
-              Text('STATUS: ' + status.toUpperCase() + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
+              Text('STATUS: ' + statusLabel + ' · BASE: ' + (p['base_version_id'] ?? '—').toString(), style: const TextStyle(color: TechColors.textMuted, fontSize: 8, fontFamily: 'monospace')),
             ])),
             if (canReview) ...[
               _action('APPROVE', Icons.check, () => _decideProposal(p['proposal_id'].toString(), true), active: true),
