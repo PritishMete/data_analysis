@@ -1824,8 +1824,11 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         const SizedBox(height: 12),
       ],
       _surface(Wrap(spacing: 8, runSpacing: 8, children: [
-        _action(canCopy ? 'COPY DATASET' : 'OPEN ANALYSIS', canCopy ? Icons.copy_outlined : Icons.bar_chart, _startWorking, active: true),
-        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() { selected = null; profile = null; rows = []; })),
+        _action('BACK TO DATASETS', Icons.arrow_back, () => setState(() {
+          selected = null;
+          profile = null;
+          rows = [];
+        })),
       ])),
     ]);
   }
