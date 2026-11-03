@@ -1037,17 +1037,24 @@ class _ManagementShellState extends State<ManagementShell> {
     required bool readOnly,
     required bool teamWorkspace,
   }) {
-    final summary = overview['summary'] is Map
-        ? Map<String, dynamic>.from(overview['summary'] as Map)
-        : <String, dynamic>{};
     final activePeople = people.where((person) =>
         (person['status']?.toString().toLowerCase() ?? '') == 'active').length;
     final activeAssignments = assignments.where((item) =>
         (item['status']?.toString().toLowerCase() ?? '') == 'active').length;
     final metrics = <(String, String, IconData)>[
-      ('Assigned people', people.length.toString(), Icons.groups_outlined),
-      ('Active people', activePeople.toString(), Icons.verified_user_outlined),
-      ('Active assignments', activeAssignments.toString(), Icons.assignment_turned_in_outlined),
+      if (teamWorkspace) ...[
+        ('Assigned people', people.length.toString(), Icons.groups_outlined),
+        ('Active people', activePeople.toString(), Icons.verified_user_outlined),
+        ('Active assignments', activeAssignments.toString(), Icons.assignment_turned_in_outlined),
+      ] else ...[
+        (readOnly ? 'Dataset access' : 'Professional role',
+          readOnly ? 'Read only' : _uiRoleLabel(),
+          readOnly ? Icons.visibility_outlined : Icons.badge_outlined),
+        ('Analytics access', _canUi('analysis.run') ? 'Available' : 'Not granted',
+          Icons.auto_awesome_outlined),
+        ('Dataset workspace', _sectionAllowed(ManagementSection.dataAccess) ? 'Available' : 'Not assigned',
+          Icons.dataset_outlined),
+      ],
     ];
     final actions = <Widget>[];
     if (_sectionAllowed(ManagementSection.dataAccess)) {
@@ -1115,9 +1122,12 @@ class _ManagementShellState extends State<ManagementShell> {
               Icon(metric.$3, color: const Color(0xFF43C8F3), size: 22),
               const SizedBox(width: 11),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(metric.$2, style: const TextStyle(
-                  color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800,
-                )),
+                Text(metric.$2, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: metric.$2.length > 13 ? 14 : 22,
+                    fontWeight: FontWeight.w800,
+                  )),
                 const SizedBox(height: 3),
                 Text(metric.$1, style: const TextStyle(
                   color: Color(0xFF9DBDDC), fontSize: 10,
