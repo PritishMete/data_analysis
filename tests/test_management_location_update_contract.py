@@ -1,3 +1,5 @@
+import inspect
+
 from firebase_authz.management_domain import (
     _management_ui_policy,
     update_location,
@@ -10,7 +12,7 @@ def test_location_edit_request_only_accepts_the_ordinary_name_field():
 
 
 def test_location_update_uses_assigned_scope_and_preserves_primary_identity():
-    source = __import__("inspect").getsource(update_location)
+    source = inspect.getsource(update_location)
 
     assert "_require_location_manage(db, actor, location_id)" in source
     assert "UPDATE locations" in source
