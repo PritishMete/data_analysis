@@ -145,13 +145,16 @@ class _SupabaseEmailVerificationScreenState
       _message = null;
     });
     try {
+      // Refresh the persisted Supabase session so the local User and JWT
+      // carry the newly confirmed email state. getUser() alone can return an
+      // authoritative user without updating the session watched by AuthGate.
       final authoritativeUser =
-          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+          await InsightFlowSupabaseAuthService.refreshAuthenticatedUser();
       final verified = authoritativeUser?.emailConfirmedAt != null;
       if (!mounted) return;
       setState(() {
         _message = verified
-            ? 'Email verified. Continuing…'
+            ? 'Email verified. Refreshing your InsightFlow session…'
             : 'Your email is still unverified. Open the latest verification email and try again.';
         _error = !verified;
       });
@@ -452,12 +455,18 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
         break;
       case InsightFlowOnboardingState.pendingInvitation:
-        final passwordInvitation = _pendingInvitations.firstWhere(
-          (item) => item['password_setup_at'] == null &&
-              item['email_delivery_status'] == 'initiated',
-          orElse: () => <String, dynamic>{},
-        );
-        if (passwordInvitation.isNotEmpty) {
+        final passwordInvitations = _pendingInvitations
+            .where(
+              (item) =>
+                  item['password_setup_at'] == null &&
+                  item['email_delivery_status'] == 'initiated',
+            )
+            .toList(growable: false);
+        // Only auto-route when there is exactly one invitation. With multiple
+        // invitations, the user must choose the intended organization first.
+        if (_pendingInvitations.length == 1 &&
+            passwordInvitations.length == 1) {
+          final passwordInvitation = passwordInvitations.single;
           authenticatedChild = EmployeeInvitationPasswordSetupScreen(
             invitation: passwordInvitation,
             onCompleted: () async {
