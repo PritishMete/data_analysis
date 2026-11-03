@@ -43,6 +43,16 @@ class _EmployeeInvitationPasswordSetupScreenState
   }
 
   Future<void> _complete() async {
+    if (_busy) return;
+    final invitationId =
+        widget.invitation['invitation_id']?.toString().trim() ?? '';
+    if (invitationId.isEmpty) {
+      setState(() {
+        _error = true;
+        _message = 'This invitation is incomplete. Please request a new invitation.';
+      });
+      return;
+    }
     final password = _password.text;
     final confirm = _confirm.text;
     if (password.length < 8) {
@@ -110,11 +120,7 @@ class _EmployeeInvitationPasswordSetupScreenState
               : 'Password setup could not be completed.',
         );
       }
-      final invitationId = widget.invitation['invitation_id']?.toString() ?? '';
-      if (invitationId.isEmpty) {
-        throw StateError('This invitation is incomplete. Please request a new invitation.');
-      }
-      debugPrint('invitation_lifecycle pending_invitation_loaded=true');
+            debugPrint('invitation_lifecycle pending_invitation_loaded=true');
       debugPrint('invitation_lifecycle invitation_acceptance_started');
       final acceptResponse = await http
           .post(
@@ -222,6 +228,11 @@ class _EmployeeInvitationPasswordSetupScreenState
           ),
         ),
         const SizedBox(height: 8),
+        if (Navigator.of(context).canPop())
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Back to invitations'),
+          ),
         TextButton(
           onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
           child: const Text('Sign out'),
