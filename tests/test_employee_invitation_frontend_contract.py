@@ -29,16 +29,19 @@ def test_session_refresh_is_bounded():
     assert "static Future<Session?> ensureSession" in source
 
 
-def test_invitation_onboarding_uses_authoritative_org_name_only():
+def test_invitation_onboarding_lists_each_authoritative_organization_choice():
     password = PASSWORD.read_text(encoding="utf-8")
     onboarding = ONBOARDING.read_text(encoding="utf-8")
 
     assert "widget.invitation['organization_name']" in password
     assert "text: \"You’re joining $displayOrganization." in password
-    assert "primary?['organization_name']" in onboarding
-    assert "text: \"Your invitation to $displayOrganization is ready." in onboarding
-    assert "final displayOrganization = organization.isEmpty ? 'your organization' : organization;" in password
-    assert "final displayOrganization = organization.isEmpty ? 'your organization' : organization;" in onboarding
+    assert "invitation['organization_name']" in onboarding
+    assert "for (var index = 0; index < invitations.length; index++)" in onboarding
+    assert "invitations.length > 1" in onboarding
+    assert "Your invitation to $displayOrganization is ready." in onboarding
+    assert "Choose the organization invitation you want to accept." in onboarding
+    assert "organization.isEmpty ? 'your organization' : organization" in password
+    assert "organization.isEmpty ? 'your organization' : organization" in onboarding
 
 
 def test_pending_invitation_backend_exposes_org_name_without_user_facing_id_fallback():
