@@ -1462,16 +1462,19 @@ def cleanup_account(claims: dict[str, Any], uid: str) -> dict[str, Any]:
 
 
 def authorization_context(claims: dict[str, Any], workspace_id: str | None = None) -> dict[str, Any]:
-    """Resolve identity -> principal -> active membership -> organization/workspace.
+    """Resolve the identity and preserve non-active membership states.
 
     A supplied workspace is only a selector. It can never create or override
-    membership context. When no selector is supplied, return every active
-    workspace so callers can deterministically recover a unique context.
+    membership context. Inactive memberships must not be reported as "none",
+    because that would incorrectly route suspended or removed users into
+    organization registration.
     """
     provider, subject = _identity(claims)
     with SessionLocal() as db:
         rows = db.execute(text("""SELECT p.principal_id, o.organization_id, o.name,
-                    w.workspace_id, m.employee_id, m.status
+                    w.workspace_id, m.employee_id, m.status AS membership_status,
+                    b.status AS identity_status, o.status AS organization_status,
+                    w.status AS workspace_status
                 FROM identity_bindings b
                 JOIN principals p ON p.principal_id = b.principal_id
                 JOIN organization_members m ON m.principal_id = p.principal_id
@@ -1479,30 +1482,102 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
                 JOIN workspaces w ON w.workspace_id = m.workspace_id
                 WHERE b.provider=:provider AND b.provider_subject=:subject
                   AND (CAST(:workspace AS TEXT) IS NULL OR w.workspace_id=CAST(:workspace AS TEXT))
-                  AND b.status='active' AND m.status='active'
-                  AND o.status='active' AND w.status='active'
-                ORDER BY w.workspace_id"""),
+                ORDER BY
+                  CASE WHEN b.status='active' AND m.status='active'
+                              AND o.status='active' AND w.status='active'
+                       THEN 0 ELSE 1 END,
+                  CASE m.status
+                    WHEN 'suspended' THEN 0
+                    WHEN 'removed' THEN 1
+                    WHEN 'approved' THEN 2
+                    WHEN 'invited' THEN 3
+                    ELSE 4
+                  END,
+                  w.workspace_id"""),
                          {"provider": provider, "subject": subject, "workspace": workspace_id}).mappings().all()
+
         if not rows:
             return {"membership_status": "none", "workspace_authorized": False,
                     "authorization_state": "no_organization_access", "principal_id": None,
                     "organization_id": None, "workspace_id": workspace_id,
                     "employee_id": None, "workspaces": [], "role_ids": [], "permissions": []}
 
-        # A selected workspace must resolve to exactly one active membership.
-        if workspace_id is not None and len(rows) != 1:
-            return {"membership_status": "none", "workspace_authorized": False,
-                    "authorization_state": "workspace_not_authorized", "principal_id": str(rows[0]["principal_id"]),
-                    "organization_id": None, "workspace_id": workspace_id,
-                    "employee_id": None, "workspaces": [
-                        {"workspace_id": str(row["workspace_id"]),
-                         "organization_id": str(row["organization_id"]),
-                         "employee_id": row["employee_id"],
-                         "membership_status": "active"}
-                        for row in rows
-                    ], "role_ids": [], "permissions": []}
+        active_rows = [
+            row for row in rows
+            if str(row["identity_status"] or "").lower() == "active"
+            and str(row["membership_status"] or "").lower() == "active"
+            and str(row["organization_status"] or "").lower() == "active"
+            and str(row["workspace_status"] or "").lower() == "active"
+        ]
 
-        selected = rows[0]
+        if not active_rows:
+            inactive = rows[0]
+            membership_status = str(inactive["membership_status"] or "inactive").strip().lower()
+            if str(inactive["identity_status"] or "").strip().lower() != "active":
+                membership_status = "removed"
+            elif membership_status not in {"approved", "invited", "suspended", "removed"}:
+                membership_status = "inactive"
+            if (str(inactive["organization_status"] or "").strip().lower() != "active"
+                    or str(inactive["workspace_status"] or "").strip().lower() != "active"):
+                membership_status = "inactive"
+            authorization_state = {
+                "approved": "approved_employee_pending_link",
+                "invited": "pending_invitation",
+                "suspended": "suspended",
+                "removed": "removed",
+            }.get(membership_status, "membership_inactive")
+            return {
+                "membership_status": membership_status,
+                "workspace_authorized": False,
+                "authorization_state": authorization_state,
+                "principal_id": str(inactive["principal_id"]),
+                "organization_id": str(inactive["organization_id"]),
+                "workspace_id": str(inactive["workspace_id"]),
+                "employee_id": inactive["employee_id"],
+                "workspaces": [],
+                "role_ids": [],
+                "permissions": [],
+            }
+
+        # Do not silently choose the first workspace if an identity has more
+        # than one active membership and no explicit workspace selector.
+        if workspace_id is None and len(active_rows) > 1:
+            return {
+                "membership_status": "multiple",
+                "workspace_authorized": False,
+                "authorization_state": "multiple_active_memberships",
+                "principal_id": str(active_rows[0]["principal_id"]),
+                "organization_id": None,
+                "workspace_id": None,
+                "employee_id": None,
+                "workspaces": [
+                    {
+                        "workspace_id": str(row["workspace_id"]),
+                        "organization_id": str(row["organization_id"]),
+                        "employee_id": row["employee_id"],
+                        "membership_status": "active",
+                    }
+                    for row in active_rows
+                ],
+                "role_ids": [],
+                "permissions": [],
+            }
+
+        if len(active_rows) != 1:
+            return {
+                "membership_status": "multiple",
+                "workspace_authorized": False,
+                "authorization_state": "ambiguous_workspace",
+                "principal_id": str(active_rows[0]["principal_id"]),
+                "organization_id": None,
+                "workspace_id": workspace_id,
+                "employee_id": None,
+                "workspaces": [],
+                "role_ids": [],
+                "permissions": [],
+            }
+
+        selected = active_rows[0]
         profile_row = db.execute(text("""
             SELECT full_name, email, email_verified_at, phone_e164, phone_verified_at,
                    address_line1, state, country, postal_code, id_proof_type, id_proof_number
@@ -1574,18 +1649,14 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
         permissions = db.execute(text("""SELECT DISTINCT rp.permission_id FROM role_permissions rp
             WHERE rp.role_id = ANY(:roles)"""), {"roles": list(roles)}).scalars().all() if roles else []
 
-        workspaces = []
-        for row in rows:
-            workspaces.append({
-                "workspace_id": str(row["workspace_id"]),
-                "organization_id": str(row["organization_id"]),
-                "employee_id": row["employee_id"],
-                "membership_status": "active",
-                "profile_complete": profile_complete
-                if row["organization_id"] == selected["organization_id"]
-                else False,
-                "role_ids": list(roles) if row["organization_id"] == selected["organization_id"] else [],
-            })
+        workspaces = [{
+            "workspace_id": str(selected["workspace_id"]),
+            "organization_id": str(selected["organization_id"]),
+            "employee_id": selected["employee_id"],
+            "membership_status": "active",
+            "profile_complete": profile_complete,
+            "role_ids": list(roles),
+        }]
 
     return {"membership_status": "active", "workspace_authorized": True,
             "authorization_state": "active_identity", "principal_id": selected["principal_id"],
@@ -1594,7 +1665,6 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             "permissions": list(permissions), "organization_name": selected["name"],
             "profile_complete": profile_complete,
             "workspaces": workspaces}
-
 
 def authorize(claims: dict[str, Any], workspace_id: str, action: str, resource_id: str | None = None) -> dict[str, Any]:
     # A request without a dataset ID is a new original upload. Apply the same
