@@ -140,7 +140,11 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
           _block(width: 116, height: 38, radius: 9),
         ]);
         final actions = Wrap(spacing: 8, runSpacing: 8, children: [
-          if (showUpload) _block(width: 142, height: 36, radius: 9),
+          if (showUpload)
+            KeyedSubtree(
+              key: const ValueKey('dataset-upload-skeleton'),
+              child: _block(width: 142, height: 36, radius: 9),
+            ),
           _block(width: 90, height: 36, radius: 9),
           if (!readOnly) _block(width: 82, height: 36, radius: 9),
         ]);
@@ -186,8 +190,9 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
         ),
       ],
     ],
-  );
+    );
   }
+}
 
 class _ManagedDatasetRequestException implements Exception {
   const _ManagedDatasetRequestException(this.statusCode, this.message);
