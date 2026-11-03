@@ -1939,7 +1939,7 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
 
         # Revalidate the upload authority while holding transaction locks so a
         # branch reassignment or grant revocation cannot race registration.
-        elif upload_role == "branch_head":
+        if upload_role == "branch_head":
             active_authority = db.execute(text("""
                 SELECT oa.assignment_id
                 FROM organizational_assignments oa
