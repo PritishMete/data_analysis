@@ -109,6 +109,7 @@ class _ManagementShellState extends State<ManagementShell> {
   int _loadGeneration = 0;
   String _loadingManagementTier = '';
   bool _loadingReadOnlyWorkspace = false;
+  Set<String> _loadingCapabilities = const <String>{};
   String? error;
   Map<String, dynamic> overview = const {};
   List<Map<String, dynamic>> locations = [];
@@ -234,6 +235,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final generation = ++_loadGeneration;
     if (mounted) {
       final previousPolicy = _uiPolicy();
+      final previousCapabilities = _uiCapabilities();
       setState(() {
         loading = true;
         _showLoadingSkeleton = false;
@@ -246,6 +248,7 @@ class _ManagementShellState extends State<ManagementShell> {
         // cleared and all controls remain unavailable until the new response.
         _loadingManagementTier = previousPolicy['management_tier']?.toString() ?? '';
         _loadingReadOnlyWorkspace = previousPolicy['read_only'] == true;
+        _loadingCapabilities = previousCapabilities;
         overview = const {};
       });
       // Delay the full skeleton briefly so fast authorization responses do not
@@ -279,6 +282,7 @@ class _ManagementShellState extends State<ManagementShell> {
         overview = r[0];
         _loadingManagementTier = _uiPolicy()['management_tier']?.toString() ?? '';
         _loadingReadOnlyWorkspace = _uiPolicy()['read_only'] == true;
+        _loadingCapabilities = _uiCapabilities();
         locations = maps(r[1]['locations']);
         sections = maps(r[2]['sections']);
         people = maps(r[3]['people']);
@@ -2663,7 +2667,10 @@ class _ManagementShellState extends State<ManagementShell> {
     ]);
   }
 
-  Widget _dataAccessSkeleton() => const ManagedDatasetAccessSkeleton();
+  Widget _dataAccessSkeleton() => ManagedDatasetAccessSkeleton(
+    capabilities: _loadingCapabilities,
+    readOnly: _loadingReadOnlyWorkspace,
+  );
 
   Widget _roleOverviewSkeleton({
     required bool teamWorkspace,
