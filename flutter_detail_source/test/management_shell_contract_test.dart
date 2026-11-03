@@ -475,9 +475,9 @@ void main() {
     expect(access, contains("roles.contains('branch_head')"));
     expect(access, contains("bool get canDelete => !widget.readOnly &&"));
     expect(access, contains("roles.contains('branch_head')"));
-    expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
+    expect(access, contains('bool get canCopy => !widget.readOnly && widget.canRunAnalysis && !canViewOriginal;'));
     expect(access, contains("'external_viewer'"));
-    expect(access, contains('if (!widget.readOnly) ...['));
+    expect(access, contains('if (!widget.readOnly && !roles.contains(\'organization_owner\')) ...['));
     expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
 
 
