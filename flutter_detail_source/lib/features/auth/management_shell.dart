@@ -1104,7 +1104,7 @@ class _ManagementShellState extends State<ManagementShell> {
       actions.add(_dashboardAction(
         'OPEN AI ANALYTICS',
         Icons.auto_awesome,
-        () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+        () => openInsightFlowAnalysis(context, authorized: _canUi('analysis.run'), initialView: 'AI_ANALYTICS'),
       ));
     }
     if (teamWorkspace && _sectionAllowed(ManagementSection.people)) {
@@ -4095,6 +4095,7 @@ class _ManagementShellState extends State<ManagementShell> {
                   ),
                   onTap: () => openInsightFlowAnalysis(
                     context,
+                    authorized: _canUi('analysis.run'),
                     initialView: 'AI_ANALYTICS',
                   ),
                 );
@@ -4210,7 +4211,7 @@ class _ManagementShellState extends State<ManagementShell> {
               padding: const EdgeInsets.only(top: 8, bottom: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(9),
-                onTap: () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+                onTap: () => openInsightFlowAnalysis(context, authorized: _canUi('analysis.run'), initialView: 'AI_ANALYTICS'),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
