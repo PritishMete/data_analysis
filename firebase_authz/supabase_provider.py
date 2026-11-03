@@ -16,10 +16,10 @@ from typing import Any
 from sqlalchemy import text
 
 from core.db import SessionLocal
-from .service import AuthzError
+from .service import AuthzError, PermissionDenied
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
-from .profile_validation import normalize_phone_submission, validate_profile_fields
+from .profile_validation import validate_profile_fields
 from .supabase_admin import (
     SupabaseAdminConfigurationError,
     SupabaseAdminOperationError,
