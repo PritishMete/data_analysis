@@ -50,7 +50,14 @@ def connect():
         database_url = "postgresql+psycopg://" + database_url[len("postgresql://"):]
     elif database_url.startswith("postgres://"):
         database_url = "postgresql+psycopg://" + database_url[len("postgres://"):]
-    return create_engine(database_url, future=True, pool_pre_ping=True)
+    # A dead/unreachable Supabase endpoint must fail promptly rather than
+    # blocking FastAPI startup until the hosting platform kills the process.
+    return create_engine(
+        database_url,
+        future=True,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10},
+    )
 
 
 def inspect_database(engine) -> tuple[set[str], set[str]]:
