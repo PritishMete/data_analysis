@@ -90,7 +90,8 @@ void main() {
 
     // Dataset access must use the canonical Branch Data & Access workspace;
     // the legacy screen passed original dataset IDs into analysis.
-    expect(source, contains('case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();'));
+    expect(source, contains('case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace('));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
     expect(source, isNot(contains('AuthorizationManagementScreen(')));
     // The analysis route is deliberately kept in the shared navigation helper;
     // verify the real route target rather than only checking the caller name.
