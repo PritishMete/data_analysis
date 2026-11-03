@@ -189,7 +189,7 @@ def test_branch_head_without_dataset_upload_capability_is_denied(monkeypatch):
 
 
 def test_protected_original_upload_uses_upload_capability_before_registry(monkeypatch):
-    context = _context("manager")
+    _context("manager")
     seen = []
 
     def deny_protected_replacement(claims, workspace_id, target_id, action):
