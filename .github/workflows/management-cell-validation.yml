@@ -49,7 +49,10 @@ jobs:
             tests/test_managed_dataset_storage.py \
             tests/test_managed_dataset_structured_storage.py \
             tests/test_dataset_proposals.py \
-            tests/test_active_assignment_authorization_contract.py
+            tests/test_active_assignment_authorization_contract.py \
+            tests/test_managed_dataset_role_policy.py \
+            tests/test_dataset_upload_scope_authorization.py \
+            tests/test_management_ui_policy_contract.py
 
   flutter:
     name: Management Cell Flutter regression tests
@@ -73,6 +76,7 @@ jobs:
           flutter test \
             test/management_responsive_filter_contract_test.dart \
             test/management_shell_contract_test.dart \
+            test/management_skeleton_responsive_test.dart \
             test/managed_dataset_file_picker_performance_test.dart \
             test/managed_dataset_upload_contract_test.dart
       - name: Build Flutter web
