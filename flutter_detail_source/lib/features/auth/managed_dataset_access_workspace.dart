@@ -1584,7 +1584,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
        (_requiresManagerUploadGrant && managerUploadGrants.isNotEmpty));
   bool get canDelete => !widget.readOnly && _can('dataset.delete');
   bool get canCopy => !widget.readOnly &&
-      _can('dataset.create_working_copy') && !canViewOriginal;
+      widget.canRunAnalysis && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
