@@ -531,11 +531,25 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                     GROUP BY oa.role_id
                 """), {"org": org, "locations": scoped_locations}).all()
                 counts = {str(row.role_id): int(row.count) for row in rows}
+        active_permissions = _permissions(db, org, actor["principal_id"])
         ui_policy = _management_ui_policy(scope["role_id"])
-        # Analytics visibility is derived from the active backend permission
-        # set, never from a display label or professional designation.
-        if "analysis.run" in _permissions(db, org, actor["principal_id"]):
+        # Analytics and employee dataset workspaces are exposed only when the
+        # active backend permission set supports them. Professional titles do
+        # not independently grant management authority.
+        if "analysis.run" in active_permissions:
             ui_policy["capabilities"].append("analysis.run")
+        if scope["role_id"] == "external_viewer":
+            ui_policy["sections"].append("dataAccess")
+            ui_policy["read_only"] = True
+        elif (
+            scope["role_id"] not in {
+                "organization_owner", "branch_head", "manager", "team_lead"
+            }
+            and active_permissions.intersection({
+                "analysis.run", "dataset.view_original", "dataset.create_working_copy"
+            })
+        ):
+            ui_policy["sections"].append("dataAccess")
         return {
             "organization": {
                 "organization_id": org,
