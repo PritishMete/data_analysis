@@ -491,7 +491,7 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
             "sections": ["overview", "people", "dataAccess"],
             "capabilities": [],
         }
-    return {
+    policy = {
         "management_tier": "member",
         "role_label": (
             "External Viewer" if role == "external_viewer"
@@ -501,6 +501,10 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
         "sections": ["overview"],
         "capabilities": [],
     }
+    if role == "external_viewer":
+        policy["sections"].append("dataAccess")
+        policy["read_only"] = True
+    return policy
 
 
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
@@ -539,7 +543,6 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
         if "analysis.run" in active_permissions:
             ui_policy["capabilities"].append("analysis.run")
         if scope["role_id"] == "external_viewer":
-            ui_policy["sections"].append("dataAccess")
             ui_policy["read_only"] = True
         elif (
             scope["role_id"] not in {
