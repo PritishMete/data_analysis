@@ -45,7 +45,13 @@ def _database_url() -> str:
 
 DATABASE_URL = _database_url()
 
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+# Bound PostgreSQL connection establishment so a database/network outage
+# cannot hold the ASGI startup lifecycle until Render's port-scan timeout.
+_connect_args = (
+    {"check_same_thread": False}
+    if DATABASE_URL.startswith("sqlite")
+    else {"connect_timeout": 10}
+)
 
 _engine_pool_options = {}
 if not DATABASE_URL.startswith("sqlite"):
