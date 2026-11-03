@@ -1030,7 +1030,188 @@ class _ManagementShellState extends State<ManagementShell> {
     ]);
   }
 
+  Widget _roleWorkspaceOverview({
+    required String title,
+    required String subtitle,
+    required String notice,
+    required bool readOnly,
+    required bool teamWorkspace,
+  }) {
+    final summary = overview['summary'] is Map
+        ? Map<String, dynamic>.from(overview['summary'] as Map)
+        : <String, dynamic>{};
+    final activePeople = people.where((person) =>
+        (person['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final activeAssignments = assignments.where((item) =>
+        (item['status']?.toString().toLowerCase() ?? '') == 'active').length;
+    final metrics = <(String, String, IconData)>[
+      ('Assigned people', people.length.toString(), Icons.groups_outlined),
+      ('Active people', activePeople.toString(), Icons.verified_user_outlined),
+      ('Active assignments', activeAssignments.toString(), Icons.assignment_turned_in_outlined),
+    ];
+    final actions = <Widget>[];
+    if (_sectionAllowed(ManagementSection.dataAccess)) {
+      actions.add(_dashboardAction(
+        readOnly ? 'VIEW AUTHORIZED DATASETS' : 'OPEN DATA & ACCESS',
+        Icons.dataset_outlined,
+        () => setState(() => section = ManagementSection.dataAccess),
+        primary: true,
+      ));
+    }
+    if (_canUi('analysis.run')) {
+      actions.add(_dashboardAction(
+        'OPEN AI ANALYTICS',
+        Icons.auto_awesome,
+        () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+      ));
+    }
+    if (teamWorkspace && _sectionAllowed(ManagementSection.people)) {
+      actions.add(_dashboardAction(
+        'MANAGE TEAM',
+        Icons.people_outline,
+        () => setState(() => section = ManagementSection.people),
+      ));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xE8113551), Color(0xB8051727)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF1374A2).withValues(alpha: .75)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _eyebrow(readOnly ? 'READ-ONLY WORKSPACE' : _uiRoleLabel().toUpperCase()),
+          const SizedBox(height: 9),
+          Text(title, style: const TextStyle(
+            color: Colors.white, fontSize: 23, fontWeight: FontWeight.w800,
+          )),
+          const SizedBox(height: 7),
+          Text(subtitle, style: const TextStyle(
+            color: Color(0xFF9DBDDC), fontSize: 12, height: 1.45,
+          )),
+          const SizedBox(height: 15),
+          Wrap(spacing: 8, runSpacing: 8, children: actions),
+        ]),
+      ),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 1 : 3;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: metrics.map((metric) =>
+          SizedBox(width: width, child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xB8051727),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x5539BFEF)),
+            ),
+            child: Row(children: [
+              Icon(metric.$3, color: const Color(0xFF43C8F3), size: 22),
+              const SizedBox(width: 11),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(metric.$2, style: const TextStyle(
+                  color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800,
+                )),
+                const SizedBox(height: 3),
+                Text(metric.$1, style: const TextStyle(
+                  color: Color(0xFF9DBDDC), fontSize: 10,
+                )),
+              ])),
+            ]),
+          )),
+        ).toList());
+      }),
+      const SizedBox(height: 13),
+      _glassRow(
+        padding: const EdgeInsets.all(15),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(readOnly ? Icons.visibility_outlined : Icons.info_outline,
+            color: const Color(0xFF43C8F3), size: 19),
+          const SizedBox(width: 10),
+          Expanded(child: Text(notice, style: const TextStyle(
+            color: Color(0xFFB8D5EF), fontSize: 11, height: 1.45,
+          ))),
+        ]),
+      ),
+      if (teamWorkspace) ...[
+        const SizedBox(height: 13),
+        _sectionSkeletonPanel(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(readOnly ? 'Authorized people' : 'Team members',
+              style: const TextStyle(color: TechColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 9),
+            if (people.isEmpty)
+              const Text('No people are currently available in this authorized scope.',
+                style: TextStyle(color: TechColors.textMuted, fontSize: 11))
+            else
+              ...people.take(6).map((person) {
+                final name = person['full_name']?.toString().trim().isNotEmpty == true
+                    ? person['full_name'].toString()
+                    : (person['employee_id']?.toString() ?? 'Profile incomplete');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Icon(Icons.person_outline, color: Color(0xFF43C8F3), size: 17),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFFD9ECFF), fontSize: 11))),
+                    Text(_roleLabel(person['role_id']?.toString() ?? ''),
+                      style: const TextStyle(color: TechColors.textMuted, fontSize: 9)),
+                  ]),
+                );
+              }),
+          ],
+        )),
+      ],
+    ]);
+  }
+
   Widget overviewView() {
+    final tier = _uiPolicy()['management_tier']?.toString() ?? '';
+    final readOnly = _uiPolicy()['read_only'] == true;
+    if (tier == 'team') {
+      return _roleWorkspaceOverview(
+        title: 'Team management',
+        subtitle: 'Coordinate your assigned employees, workload and authorized datasets from one focused workspace.',
+        notice: 'Changes to trusted branch data remain proposals for Branch Head review unless the backend has granted an explicit, current upload permission for this branch.',
+        readOnly: false,
+        teamWorkspace: true,
+      );
+    }
+    if (tier == 'section') {
+      return _roleWorkspaceOverview(
+        title: 'Team operations',
+        subtitle: 'Coordinate assigned employees, distribute only authorized dataset copies and track operational access.',
+        notice: 'Dataset distribution is limited to resources authorized for your assigned section. Escalate broader access needs to your Manager or Branch Head.',
+        readOnly: false,
+        teamWorkspace: true,
+      );
+    }
+    if (tier == 'member' && readOnly) {
+      return _roleWorkspaceOverview(
+        title: 'Read-only workspace',
+        subtitle: 'Review only the datasets and reports explicitly shared with your account.',
+        notice: 'This workspace is read-only. Upload, replacement, editing, assignment and invitation controls are unavailable.',
+        readOnly: true,
+        teamWorkspace: false,
+      );
+    }
+    if (tier == 'member') {
+      return _roleWorkspaceOverview(
+        title: 'Analytical workspace',
+        subtitle: 'Start from your authorized datasets, recent analysis and the tools available to your assigned professional role.',
+        notice: 'Your professional designation does not grant management authority. Dataset access and analytical actions remain controlled by backend permissions and resource grants.',
+        readOnly: false,
+        teamWorkspace: false,
+      );
+    }
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : <String, dynamic>{};
@@ -2652,7 +2833,10 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
       case ManagementSection.invitations: return invitationView();
-      case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace(canRunAnalysis: _canUi('analysis.run'));
+      case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace(
+        readOnly: _uiPolicy()['read_only'] == true,
+        canRunAnalysis: _canUi('analysis.run'),
+      );
       case ManagementSection.audit: return auditView();
     }
   }
