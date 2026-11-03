@@ -289,11 +289,13 @@ class _ManagementShellState extends State<ManagementShell> {
     return raw is Map ? Map<String, dynamic>.from(raw) : const {};
   }
 
-  bool _canUi(String capability) {
-    final capabilities = _uiPolicy()['capabilities'];
-    return capabilities is List &&
-        capabilities.map((value) => value.toString()).contains(capability);
+  Set<String> _uiCapabilities() {
+    final raw = _uiPolicy()['capabilities'];
+    if (raw is! List) return const <String>{};
+    return raw.map((value) => value.toString()).toSet();
   }
+
+  bool _canUi(String capability) => _uiCapabilities().contains(capability);
 
   String _uiRoleLabel() {
     final actor = overview['actor'];
@@ -1431,7 +1433,7 @@ class _ManagementShellState extends State<ManagementShell> {
       'Quick Actions',
       Icons.bolt_rounded,
       Column(children: [
-        if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('manager.assign') || _managementRole() == 'branch_head' || _managementRole() == 'organization_owner')
+        if (_canUi('invitation.create') || _canUi('people.invite') || _canUi('invitation.manage'))
           _dashboardAction('Invite Team Member', Icons.person_add_alt_1_rounded, _inviteEmployee, primary: true),
         const SizedBox(height: 8),
         if (_sectionAllowed(ManagementSection.people))
@@ -2744,6 +2746,7 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace(
         readOnly: _uiPolicy()['read_only'] == true,
         canRunAnalysis: _canUi('analysis.run'),
+        capabilities: _uiCapabilities(),
       );
       case ManagementSection.audit: return auditView();
     }
