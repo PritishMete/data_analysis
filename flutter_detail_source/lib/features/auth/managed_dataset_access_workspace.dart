@@ -16,10 +16,11 @@ import 'management_navigation.dart';
 String _managedDatasetSha256(Uint8List bytes) => sha256.convert(bytes).toString();
 
 class ManagedDatasetAccessWorkspace extends StatefulWidget {
-  const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false});
+  const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false, this.canRunAnalysis = false});
 
   /// External viewers can inspect explicitly authorized resources only.
   final bool readOnly;
+  final bool canRunAnalysis;
   @override
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
 }
@@ -1437,7 +1438,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   bool get canDelete => !widget.readOnly &&
       !roles.contains('organization_owner') &&
       roles.contains('branch_head');
-  bool get canCopy => !widget.readOnly && !canViewOriginal;
+  bool get canCopy => !widget.readOnly && widget.canRunAnalysis && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -1598,9 +1599,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             ],
             onChanged: (value) => setState(() => _locationFilter = value ?? 'all'),
           )),
-        _action('OPEN AI ANALYTICS', Icons.auto_awesome,
-          () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
-          active: true),
+        if (widget.canRunAnalysis)
+          _action('OPEN AI ANALYTICS', Icons.auto_awesome,
+            () => openInsightFlowAnalysis(context, initialView: 'AI_ANALYTICS'),
+            active: true),
         if (canManage) _action('MANAGER UPLOAD GRANTS', Icons.admin_panel_settings_outlined, _grantManagerUpload),
         if (canManage) _action('REVOKE MANAGER UPLOAD', Icons.remove_moderator_outlined, _revokeManagerUpload),
         if (canUpload) _action('IMPORT CSV', Icons.file_upload_outlined, () => _upload(), active: true),
@@ -1653,7 +1655,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         _stat('ROWS', (d['row_count'] ?? '—').toString()), _stat('COLUMNS', (d['column_count'] ?? '—').toString()), _stat('VERSION', (d['current_version'] ?? '—').toString()), _stat('STATUS', _displayStatus(d)),
         if (canCopy) _action('COPY DATASET', Icons.copy_outlined, _startWorking, active: true),
         if (canViewOriginal) ...[
-          if (!widget.readOnly)
+          if (!widget.readOnly && widget.canRunAnalysis)
             _action('OPEN AI ANALYTICS', Icons.auto_awesome, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
           if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
