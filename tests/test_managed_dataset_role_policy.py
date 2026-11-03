@@ -225,7 +225,7 @@ def test_organization_owner_cannot_manage_branch_original_acl(monkeypatch):
 
     with pytest.raises(
         supabase_provider.AuthzError,
-        match="Organization Owners have read-only oversight",
+        match="Only the active Branch Head",
     ):
         supabase_provider.authorize_dataset(
             {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
