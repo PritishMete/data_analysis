@@ -119,9 +119,12 @@ def test_copy_requests_are_workspace_branch_scoped_and_review_is_single_writer()
     assert "mr.role_id=oa.role_id" in request
     assert "oa.location_id=:location" in request
     assert "da.protected_original IS TRUE" in request
-    assert 'roles.intersection({"organization_owner", "branch_head"})' in listing
+    assert '"organization_owner" in roles or "branch_head" not in roles' in listing
     assert "len(set(locations)) != 1" in listing
     assert "r.workspace_id=:workspace" in listing
+    decision = provider.split("def approve_copy_request(", 1)[1].split("\\ndef assign_working_copy", 1)[0]
+    assert '"organization_owner" in roles or "branch_head" not in roles' in decision
+    assert "len(branch_locations) != 1" in decision
     assert "FOR UPDATE" in decision
     assert "create_working_copy(" in decision
     assert "None, None, db=db" in decision
