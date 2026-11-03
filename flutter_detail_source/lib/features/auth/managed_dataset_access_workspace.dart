@@ -146,7 +146,6 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
               child: _block(width: 142, height: 36, radius: 9),
             ),
           _block(width: 90, height: 36, radius: 9),
-          if (!readOnly) _block(width: 82, height: 36, radius: 9),
         ]);
         return constraints.maxWidth < 760
             ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
