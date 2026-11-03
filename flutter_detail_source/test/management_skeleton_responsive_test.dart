@@ -87,6 +87,25 @@ void main() {
     expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsOneWidget);
   });
 
+  testWidgets('Team Lead skeleton shows authorized copy access only',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ManagedDatasetAccessSkeleton(
+              capabilities: <String>{'dataset.copy.request'},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('dataset-upload-skeleton')), findsNothing);
+    expect(find.byKey(const ValueKey('dataset-proposal-skeleton')), findsNothing);
+    expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsOneWidget);
+  });
+
   testWidgets('Manager skeleton shows proposals but not direct original upload',
       (tester) async {
     await tester.pumpWidget(
