@@ -341,6 +341,7 @@ def _run_production_authz_migrations() -> None:
     try:
         from tools.run_authz_migrations import run_migrations
 
+        logger.info("[startup] Beginning authorization migration verification.")
         run_migrations()
         logger.info("[authz] Production authorization migrations verified successfully.")
     except Exception:
@@ -358,9 +359,15 @@ def _initialize_production_database() -> None:
     """Fail closed until required schema verification and DB initialization finish."""
     global _PRODUCTION_READY
     _PRODUCTION_READY = False
+    startup_started = time.monotonic()
+    logger.info("[startup] Beginning required production database initialization.")
     _run_production_authz_migrations()
+    logger.info("[startup] Authorization schema verification finished in %.2fs.", time.monotonic() - startup_started)
+    logger.info("[startup] Beginning application model/table initialization.")
     init_db()
+    logger.info("[startup] Application model/table initialization finished in %.2fs.", time.monotonic() - startup_started)
     _PRODUCTION_READY = True
+    logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)
 
 
 app.add_event_handler("startup", _initialize_production_database)
