@@ -303,7 +303,8 @@ void main() {
       'Manage People',
       'Manage Permissions',
       'Review Audit Activity',
-      'Edit Branch Settings',
+      'Manage Organization Structure',
+      'Manage Branch Structure',
     ]) {
       expect(source, contains(label));
     }
