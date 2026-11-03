@@ -192,7 +192,7 @@ def test_revoked_dataset_grant_is_rejected(monkeypatch):
 
 
 def test_branch_head_registration_stores_resource_under_resolved_organization(monkeypatch):
-    session = _AuthzSession(owner="principal-owner")
+    session = _AuthzSession(owner="principal-owner", protected=None)
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(session))
     monkeypatch.setattr(supabase_provider, "authorization_context", lambda claims, workspace_id: _branch_head_context())
 
