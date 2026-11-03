@@ -194,7 +194,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   String _locationFilter = 'all';
   String? catalogError, requestsError;
   List<Map<String,dynamic>> datasets = [], catalog = [], members = [], requests = [], rows = [];
-  List<String> roles = [];
   List<Map<String,dynamic>> proposals = [];
   List<Map<String,dynamic>> managerUploadGrants = [];
   String? managerUploadGrantsError;
@@ -491,9 +490,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
-        roles = (mg['role_ids'] as List? ?? const [])
-            .map((item) => item.toString())
-            .toList();
         loading = false;
         error = null;
         refreshError = null;
@@ -532,7 +528,6 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           catalog = [];
           members = [];
           requests = [];
-          roles = [];
           selected = null;
           profile = null;
           rows = [];
@@ -1744,7 +1739,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ]),
       ])),
       if (!widget.readOnly &&
-          roles.any((role) => role == 'manager' || role == 'branch_head')) ...[
+          (_can('dataset.proposal.submit') || _can('dataset.proposal.review'))) ...[
         const SizedBox(height: 12),
         _proposalPanel(),
       ],
