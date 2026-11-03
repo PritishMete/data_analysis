@@ -52,7 +52,8 @@ jobs:
             tests/test_active_assignment_authorization_contract.py \
             tests/test_managed_dataset_role_policy.py \
             tests/test_dataset_upload_scope_authorization.py \
-            tests/test_management_ui_policy_contract.py
+            tests/test_management_ui_policy_contract.py \
+            tests/test_management_location_update_contract.py
 
   flutter:
     name: Management Cell Flutter regression tests
