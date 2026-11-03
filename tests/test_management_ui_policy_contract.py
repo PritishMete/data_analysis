@@ -46,8 +46,9 @@ def test_professional_designation_does_not_create_management_capabilities():
     policy = _management_ui_policy("data_analyst")
 
     assert policy["management_tier"] == "member"
-    assert policy["sections"] == ["overview"]
+    assert policy["sections"] == ["overview", "dataAccess"]
     assert policy["capabilities"] == []
+    assert policy["read_only"] is True
 
 
 def test_external_viewer_policy_is_member_scoped_and_read_only():
