@@ -1144,7 +1144,7 @@ class _ManagementShellState extends State<ManagementShell> {
     if (designation.contains('business analyst')) {
       return 'Translate authorized business data into clear metrics, trends and actionable reporting.';
     }
-    return 'Start from your authorized datasets, recent analysis and the tools available to your assigned professional role.';
+    return 'Start from your authorized datasets and the analysis tools available to your assigned professional role.';
   }
 
   Widget _roleWorkspaceOverview({
