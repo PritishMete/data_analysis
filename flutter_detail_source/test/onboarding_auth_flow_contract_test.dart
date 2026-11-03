@@ -20,7 +20,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
 
     expect(source, contains('resolveInsightFlowOnboardingStateFromBackend'));
     expect(source, contains('OrganizationOnboardingScreen('));
-    expect(source, contains('CompanyRegistrationScreen()'));
+    expect(source, contains('CompanyRegistrationScreen('));
+    expect(source, contains('onCompleted: () => _refresh(showLoading: false)'));
     expect(source, contains('ManagementShell()'));
     expect(
       source,
@@ -261,7 +262,9 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(source, isNot(contains("'employee_id':")));
     expect(source, contains("decoded['employee_id']"));
     expect(source, contains('Special characters are allowed.'));
-    expect(source, contains('ManagementShell'));
+    expect(source, contains('widget.onCompleted()'));
+    expect(source, isNot(contains('ManagementShell')));
+    expect(source, isNot(contains('Navigator.of(context).pushReplacement')));
   });
 
   test('management analysis route uses the existing DataScreen and returns to ManagementShell', () {

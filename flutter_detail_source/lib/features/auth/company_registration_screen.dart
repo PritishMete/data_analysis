@@ -13,10 +13,13 @@ import '../../core/auth/supabase_auth_service.dart';
 import '../../core/profile/profile_form_widgets.dart';
 import '../../core/profile/profile_geo_data.dart';
 import 'auth_glass_widgets.dart';
-import 'management_shell.dart';
 
 class CompanyRegistrationScreen extends StatefulWidget {
-  const CompanyRegistrationScreen({super.key});
+  const CompanyRegistrationScreen({super.key, required this.onCompleted});
+
+  /// Called after the backend confirms registration so AuthGate can resolve
+  /// the new membership and role before granting workspace access.
+  final Future<void> Function() onCompleted;
 
   @override
   State<CompanyRegistrationScreen> createState() =>
@@ -340,9 +343,11 @@ class _CompanyRegistrationScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Your Employee ID is $assignedEmployeeId')),
       );
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const ManagementShell()),
-      );
+
+      // Do not choose a landing screen from the registration response or a
+      // cached workspace ID. Re-run AuthGate's backend-authoritative
+      // membership/role resolution before showing any authenticated area.
+      await widget.onCompleted();
     } on OrganizationServiceRequestException catch (error) {
       _organizationDiagnostic = error.diagnostic;
       _fail('InsightFlow couldn’t reach the organization service.');

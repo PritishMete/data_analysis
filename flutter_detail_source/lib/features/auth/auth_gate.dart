@@ -474,7 +474,9 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
         break;
       case InsightFlowOnboardingState.noMembership:
-        authenticatedChild = const CompanyRegistrationScreen();
+        authenticatedChild = CompanyRegistrationScreen(
+          onCompleted: () => _refresh(showLoading: false),
+        );
         break;
       case InsightFlowOnboardingState.transientFailure:
         authenticatedChild = AuthGlassScaffold(
