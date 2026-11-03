@@ -465,9 +465,15 @@ def test_supabase_authorization_context_preserves_suspended_membership():
         )
         accept_invitation(member, result["workspace_id"], invitation["invitation_id"])
         assert set_membership_status(
+            owner, result["workspace_id"], member_uid, "approved"
+        ) is True
+        approved_context = authorization_context(member)
+        assert approved_context["membership_status"] == "approved"
+        assert approved_context["workspace_authorized"] is False
+
+        assert set_membership_status(
             owner, result["workspace_id"], member_uid, "suspended"
         ) is True
-
         context = authorization_context(member)
         assert context["membership_status"] == "suspended"
         assert context["authorization_state"] == "suspended"
