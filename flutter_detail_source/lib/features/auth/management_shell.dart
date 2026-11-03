@@ -1240,9 +1240,17 @@ class _ManagementShellState extends State<ManagementShell> {
       (item) => item?['location_id']?.toString() == selectedLocation,
       orElse: () => locations.isEmpty ? null : locations.first,
     );
-    final branchName = branch?['name']?.toString().trim().isNotEmpty == true
-        ? branch!['name'].toString()
-        : _uiScopeLabel();
+    final organizationInfo = overview['organization'] is Map
+        ? Map<String, dynamic>.from(overview['organization'] as Map)
+        : <String, dynamic>{};
+    final organizationName = organizationInfo['name']?.toString().trim().isNotEmpty == true
+        ? organizationInfo['name'].toString()
+        : 'Your organization';
+    final branchName = _isOrganizationOwner
+        ? organizationName
+        : branch?['name']?.toString().trim().isNotEmpty == true
+            ? branch!['name'].toString()
+            : _uiScopeLabel();
     final actor = overview['actor'];
     // A greeting should address the person, never fall back to their role or
     // email address when a profile name is unavailable.
@@ -1404,22 +1412,32 @@ class _ManagementShellState extends State<ManagementShell> {
     );
 
     final branchPanel = panel(
-      'Branch Info',
-      Icons.apartment_rounded,
+      _isOrganizationOwner ? 'Organization Overview' : 'Branch Info',
+      _isOrganizationOwner ? Icons.corporate_fare_outlined : Icons.apartment_rounded,
       Column(children: [
-        _overviewDetailLine('Branch Name', branchName),
-        _overviewDetailLine('Locations', locationCount.toString()),
-        _overviewDetailLine('Sections', sectionCount.toString()),
-        _overviewDetailLine('Total Members', peopleCount.toString()),
-        _overviewDetailLine('Active Access', activeCount.toString()),
-        _overviewDetailLine('Pending Invitations', pendingCount.toString()),
+        if (_isOrganizationOwner) ...[
+          _overviewDetailLine('Organization', organizationName),
+          _overviewDetailLine('Organization Status', organizationInfo['status']?.toString() ?? 'Unknown'),
+          _overviewDetailLine('Branches', locationCount.toString()),
+          _overviewDetailLine('Total Workforce', peopleCount.toString()),
+          _overviewDetailLine('Branch Heads', _overviewCount(summary['branch_head_count'], 0).toString()),
+          _overviewDetailLine('Managers', _overviewCount(summary['manager_count'], 0).toString()),
+        ] else ...[
+          _overviewDetailLine('Branch Name', branchName),
+          _overviewDetailLine('Sections', sectionCount.toString()),
+          _overviewDetailLine('Team Members', peopleCount.toString()),
+          _overviewDetailLine('Active Access', activeCount.toString()),
+          _overviewDetailLine('Pending Invitations', pendingCount.toString()),
+        ],
         const SizedBox(height: 8),
         SizedBox(width: double.infinity, child: OutlinedButton.icon(
           onPressed: _sectionAllowed(ManagementSection.organization)
               ? () => setState(() => section = ManagementSection.organization)
               : null,
           icon: const Icon(Icons.settings_outlined, size: 16),
-          label: const Text('Edit Branch Settings'),
+          label: Text(_isOrganizationOwner
+              ? 'Manage Organization Structure'
+              : 'Manage Branch Structure'),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFD4E9FF),
             side: const BorderSide(color: Color(0xFF2376A7)),
@@ -1466,14 +1484,22 @@ class _ManagementShellState extends State<ManagementShell> {
     );
 
     final hierarchyPanel = panel(
-      'Organization Hierarchy',
+      _isOrganizationOwner ? 'Organization Structure' : 'Branch Structure',
       Icons.account_tree_outlined,
       Column(children: [
-        _overviewStructureStep('Organization Owner', 'Organization-wide access', Icons.workspace_premium_outlined),
-        _overviewStructureConnector(),
-        _overviewStructureStep(_uiRoleLabel(), branchName, Icons.hub_outlined),
-        _overviewStructureConnector(),
-        _overviewStructureStep('Team Members', '$peopleCount members in authorized scope', Icons.groups_outlined),
+        if (_isOrganizationOwner) ...[
+          _overviewStructureStep('Organization Owner', 'Organization-wide oversight', Icons.workspace_premium_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Branches', '$locationCount active locations', Icons.hub_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Workforce', '$peopleCount people across the organization', Icons.groups_outlined),
+        ] else ...[
+          _overviewStructureStep('Assigned Branch', branchName, Icons.hub_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Sections', '$sectionCount sections in this branch', Icons.account_tree_outlined),
+          _overviewStructureConnector(),
+          _overviewStructureStep('Team Members', '$peopleCount people in your authorized scope', Icons.groups_outlined),
+        ],
       ]),
     );
 
@@ -1494,8 +1520,10 @@ class _ManagementShellState extends State<ManagementShell> {
                   letterSpacing: -.5,
                 )),
               const SizedBox(height: 5),
-              const Text("Here's what's happening in your branch.",
-                style: TextStyle(color: Color(0xFFAED2F4), fontSize: 13)),
+              Text(_isOrganizationOwner
+                  ? "Here's what's happening across your organization."
+                  : "Here's what's happening in your assigned branch.",
+                style: const TextStyle(color: Color(0xFFAED2F4), fontSize: 13)),
             ],
           );
           final filters = Wrap(
