@@ -630,7 +630,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => _ManagementGlassDialog(
-        title: const Text('Edit branch details'),
+        title: const Text('Edit branch name'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: name,
