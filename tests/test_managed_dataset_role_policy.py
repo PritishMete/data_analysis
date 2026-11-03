@@ -384,6 +384,27 @@ def test_member_without_copy_grant_cannot_create_copy(monkeypatch):
         )
 
 
+def test_organization_owner_cannot_create_working_copy_even_with_resource_grant(monkeypatch):
+    db = _Db(["organization_owner"], grant=["dataset.create_working_copy"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider,
+        "authorization_context",
+        lambda claims, workspace_id: _context(["organization_owner"]),
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Organization Owners have read-only oversight",
+    ):
+        supabase_provider.authorize_dataset(
+            {"uid": "owner-1", "sub": "owner-1", "provider": "supabase"},
+            "workspace-1",
+            "dataset-1",
+            "dataset.create_working_copy",
+        )
+
+
 class _GrantDb:
     def __init__(self, *, actor_location="branch-1", target_principal="manager-principal",
                  target_manager_active=True):
