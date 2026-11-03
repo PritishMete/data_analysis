@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from typing import Any, BinaryIO, Iterator
 
-from sqlalchemy import and_, delete, exists, func, or_, select, text
+from sqlalchemy import delete, exists, func, select, text
 
-from firebase_authz.service import AuthenticationRequired, AuthzError, PermissionDenied, require_email_verified, verify_id_token
+from firebase_authz.service import AuthzError, PermissionDenied, require_email_verified, verify_id_token
 from firebase_authz.supabase_provider import (
     audit_dataset_event,
     authorization_context,
