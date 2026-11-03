@@ -463,22 +463,17 @@ void main() {
     expect(access, contains('Access is temporarily unavailable'));
     expect(access, contains("_action('RETRY'"));
 
-    // Match the actual managed-dataset UI policy: original viewing, upload,
-    // deletion, and working-copy access are role-gated in this widget.
-    expect(
-      access,
-      contains(
-        "bool get canViewOriginal => roles.any((role) => {",
-      ),
-    );
+    // Dataset actions consume the backend-provided capability contract;
+    // role names are not used as a Flutter authorization boundary.
+    expect(access, contains("bool _can(String capability) => widget.capabilities.contains(capability);"));
+    expect(access, contains("bool get canViewOriginal => _can('dataset.view_original');"));
     expect(access, contains("bool get canUpload => !widget.readOnly &&"));
-    expect(access, contains("!roles.contains('organization_owner')"));
-    expect(access, contains("roles.contains('branch_head')"));
-    expect(access, contains("bool get canDelete => !widget.readOnly &&"));
-    expect(access, contains("roles.contains('branch_head')"));
-    expect(access, contains('bool get canCopy => !widget.readOnly && widget.canRunAnalysis && !canViewOriginal;'));
-    expect(access, contains("'external_viewer'"));
-    expect(access, contains('if (!widget.readOnly && !roles.contains(\'organization_owner\')) ...['));
+    expect(access, contains("_can('dataset.upload.direct')"));
+    expect(access, contains("bool get canDelete => !widget.readOnly && _can('dataset.delete');"));
+    expect(access, contains('bool get canCopy => !widget.readOnly &&'));
+    expect(access, contains("widget.canRunAnalysis && !canViewOriginal"));
+    expect(access, contains("_can('dataset.upload_grants.manage')"));
+    expect(access, contains("_can('dataset.copy_requests.review')"));
     expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
 
 
