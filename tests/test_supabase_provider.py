@@ -427,9 +427,63 @@ def test_supabase_legacy_registration_alias_uses_transactional_provider():
             session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
 
 
+
+
+
+def test_supabase_authorization_context_preserves_suspended_membership():
+    import uuid
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        authorization_context,
+        create_invitation,
+        register_organization,
+        set_membership_status,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"authz-owner-{suffix}"
+    member_uid = f"authz-suspended-{suffix}"
+    owner = {
+        "uid": owner_uid,
+        "sub": owner_uid,
+        "email": f"{owner_uid}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
+    }
+    member = {
+        "uid": member_uid,
+        "sub": member_uid,
+        "email": f"{member_uid}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [member_uid]}},
+    }
+    result = register_organization(
+        owner, f"Suspended Membership {suffix}", "Main Branch", f"SUSPENDED-{suffix}"
+    )
+    try:
+        invitation = create_invitation(
+            owner, result["workspace_id"], member["email"], "employee"
+        )
+        accept_invitation(member, result["workspace_id"], invitation["invitation_id"])
+        assert set_membership_status(
+            owner, result["workspace_id"], member_uid, "suspended"
+        ) is True
+
+        context = authorization_context(member)
+        assert context["membership_status"] == "suspended"
+        assert context["authorization_state"] == "suspended"
+        assert context["workspace_authorized"] is False
+        assert context["workspace_id"] == result["workspace_id"]
+        assert context["role_ids"] == []
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
 def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally():
     from firebase_authz.service import AuthzError
-    from firebase_authz.supabase_provider import accept_invitation, cleanup_account, create_invitation, register_organization
+    from firebase_authz.supabase_provider import accept_invitation, authorization_context, cleanup_account, create_invitation, register_organization
     from core.db import SessionLocal
 
     suffix = __import__("uuid").uuid4().hex
@@ -451,6 +505,9 @@ def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally
                                   {"org": result["organization_id"], "uid": uid}).one()
         assert row.status == "removed"
         assert row.binding_status == "inactive"
+        removed_context = authorization_context(claims)
+        assert removed_context["membership_status"] == "removed"
+        assert removed_context["workspace_authorized"] is False
         with __import__("pytest").raises(AuthzError):
             cleanup_account(claims, uid + "-other")
     finally:
