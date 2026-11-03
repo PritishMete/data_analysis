@@ -31,6 +31,7 @@ def test_original_write_and_delete_require_branch_head_scope():
     assert 'if "organization_owner" in roles or "branch_head" not in roles:' in auth_fn
     assert "dataset_location not in scoped_locations" in auth_fn
     assert 'elif action in {"dataset.delete", "dataset.share", "dataset.manage_acl"}:' in auth_fn
+    assert 'scope_role = "branch_head" if "branch_head" in roles else "manager"' in auth_fn
 
 def test_copy_request_rejection_uses_only_bound_sql_parameters_and_pending_state():
     source = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
