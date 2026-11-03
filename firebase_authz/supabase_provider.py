@@ -2094,7 +2094,7 @@ def request_dataset_copy(claims: dict[str, Any], workspace_id: str, dataset_id: 
 
 
 def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[str, Any]]:
-    """List requests only for organization owners and Branch Heads within their scope."""
+    """List copy requests only within the active Branch Head branch scope."""
     context = authorization_context(claims, workspace_id)
     roles = set(context.get("role_ids", []))
     if "organization_owner" in roles or "branch_head" not in roles:
@@ -2144,9 +2144,9 @@ def list_copy_requests(claims: dict[str, Any], workspace_id: str) -> list[dict[s
               ON profile.organization_id=r.organization_id
              AND profile.principal_id=r.requester_principal_id
             WHERE r.organization_id=:org AND r.workspace_id=:workspace
-              AND (:orgwide OR r.location_id = ANY(:locations))
+              AND r.location_id = ANY(:locations)
             ORDER BY r.created_at DESC
-        """), {"org": org, "workspace": workspace, "orgwide": orgwide,
+        """), {"org": org, "workspace": workspace,
                 "locations": locations}).mappings().all()
         return [dict(row) for row in rows]
 
