@@ -1227,7 +1227,7 @@ class _ManagementShellState extends State<ManagementShell> {
     final summary = overview['summary'] is Map
         ? Map<String, dynamic>.from(overview['summary'] as Map)
         : <String, dynamic>{};
-    final peopleCount = _overviewCount(summary['people_count'], people.length);
+    final peopleCount = _overviewCount(summary['total_people'], people.length);
     final locationCount = _overviewCount(summary['location_count'], locations.length);
     final sectionCount = _overviewCount(summary['section_count'], sections.length);
     final activeCount = assignments
