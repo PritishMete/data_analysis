@@ -95,11 +95,13 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showProposalQueue = capabilities.contains('dataset.proposal.submit') ||
-        capabilities.contains('dataset.proposal.review');
-    final showAccessManagement = capabilities.contains('dataset.copy.request') ||
-        capabilities.contains('dataset.copy_requests.review') ||
-        capabilities.contains('dataset.upload_grants.manage');
+    final showProposalQueue = !readOnly &&
+        (capabilities.contains('dataset.proposal.submit') ||
+            capabilities.contains('dataset.proposal.review'));
+    final showAccessManagement = !readOnly &&
+        (capabilities.contains('dataset.copy.request') ||
+            capabilities.contains('dataset.copy_requests.review') ||
+            capabilities.contains('dataset.upload_grants.manage'));
     final showUpload = !readOnly && capabilities.contains('dataset.upload.direct');
     return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
