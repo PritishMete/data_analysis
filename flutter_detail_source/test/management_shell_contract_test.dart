@@ -275,6 +275,10 @@ void main() {
     expect(source, contains('Widget _invitationSkeleton()'));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_sectionLoadingSkeleton()'));
+    expect(source, contains("itemCount: tabs.length + (_canUi('analysis.run') ? 1 : 0)"));
+    expect(source, contains("if (_canUi('analysis.run'))"));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
+    expect(source, contains("readOnly: _uiPolicy()['read_only'] == true"));
     for (final label in [
       r'Welcome back, $actorName!',
       'Team Members',
