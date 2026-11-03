@@ -504,3 +504,140 @@ def test_inactive_external_viewer_cannot_use_stale_member_role_grant(monkeypatch
             "dataset-stale-viewer",
             "dataset.view_original",
         )
+
+
+
+def test_dataset_authorization_rejects_unknown_capabilities_even_if_granted(monkeypatch):
+    db = _Db(["employee"], grant=["dataset.admin"])
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["employee"]),
+    )
+
+    with pytest.raises(ValueError, match="Unsupported dataset authorization capability"):
+        supabase_provider.authorize_dataset(
+            {"uid": "employee-1", "sub": "employee-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.admin",
+        )
+
+
+def test_unprotected_resource_cannot_be_opened_through_original_dataset_api(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.view_original"], protected=False)
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["external_viewer"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="published, branch-scoped original dataset"):
+        supabase_provider.authorize_dataset(
+            {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+            "workspace-1", "dataset-unprotected", "dataset.view_original",
+        )
+
+
+def test_branch_head_delete_requires_effective_delete_capability(monkeypatch):
+    db = _Db(["branch_head"], branch_locations=["branch-1"])
+    context = _context(["branch_head"])
+    context["permissions"] = ["dataset.upload"]
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="does not include this dataset-management capability"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.delete",
+        )
+
+
+def test_branch_head_cannot_delete_dataset_from_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"],
+        branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    context = _context(["branch_head"])
+    context["permissions"] = ["dataset.upload", "dataset.delete"]
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="outside your Branch Head scope"):
+        supabase_provider.authorize_dataset(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1", "dataset-from-branch-a", "dataset.delete",
+        )
+
+
+def test_external_viewer_cannot_delete_even_with_a_misconfigured_resource_grant(monkeypatch):
+    db = _Db(["external_viewer"], grant=["dataset.delete"])
+    context = _context(["external_viewer"])
+    context["permissions"] = ["dataset.delete"]
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="Only an Organization Owner or the active Branch Head"):
+        supabase_provider.authorize_dataset(
+            {"uid": "viewer-1", "sub": "viewer-1", "provider": "supabase"},
+            "workspace-1", "dataset-1", "dataset.delete",
+        )
+
+
+class _WorkingCopyDb:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        if "FROM working_copy_authorization wc" in sql:
+            return _Result(row={
+                "source_dataset_id": "dataset-1",
+                "source_version": "version-1",
+                "version": 1,
+                "created_by_principal_id": "creator-principal",
+                "location_id": "branch-1",
+            })
+        if "FROM working_copy_assignments" in sql:
+            return _Result(scalar=None)
+        if "FROM resource_grants" in sql:
+            return _Result(scalar=None)
+        raise AssertionError(f"Unexpected working-copy authorization query: {sql}")
+
+
+def test_knowing_another_employees_working_copy_id_does_not_grant_access(monkeypatch):
+    db = _WorkingCopyDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "employee-b",
+        "role_ids": ["employee"],
+        "permissions": ["working_copy.view"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+    monkeypatch.setattr(
+        supabase_provider, "_has_active_branch_assignment",
+        lambda *args, **kwargs: True,
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="assigned to another user or was not shared"):
+        supabase_provider.authorize_working_copy(
+            {"uid": "employee-b", "sub": "employee-b", "provider": "supabase"},
+            "workspace-1", "wc-owned-by-employee-a", "working_copy.view",
+        )
