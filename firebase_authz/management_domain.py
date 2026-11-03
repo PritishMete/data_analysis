@@ -518,6 +518,41 @@ def _management_ui_policy(role_id: str | None) -> dict[str, Any]:
     return policy
 
 
+def _management_ui_policy_for_permissions(
+    role_id: str | None,
+    permissions: set[str] | list[str] | tuple[str, ...],
+) -> dict[str, Any]:
+    """Add only capabilities supported by the active backend permission set."""
+    active_permissions = set(permissions or [])
+    policy = _management_ui_policy(role_id)
+    for permission, capability in (
+        ("dataset.view_original", "dataset.view_original"),
+        ("dataset.create_working_copy", "dataset.create_working_copy"),
+    ):
+        if permission in active_permissions and capability not in policy["capabilities"]:
+            policy["capabilities"].append(capability)
+    if (
+        "dataset.create_working_copy" in active_permissions
+        and "dataset.copy.request" not in policy["capabilities"]
+    ):
+        policy["capabilities"].append("dataset.copy.request")
+    if "analysis.run" in active_permissions:
+        policy["capabilities"].append("analysis.run")
+    if str(role_id or "").strip() == "external_viewer":
+        policy["read_only"] = True
+    elif (
+        str(role_id or "").strip() not in {
+            "organization_owner", "branch_head", "manager", "team_lead"
+        }
+        and active_permissions.intersection({
+            "analysis.run", "dataset.view_original", "dataset.create_working_copy"
+        })
+        and "dataAccess" not in policy["sections"]
+    ):
+        policy["sections"].append("dataAccess")
+    return policy
+
+
 def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
     with SessionLocal() as db:
         actor = _actor(db, claims, workspace_id)
@@ -547,31 +582,12 @@ def management_overview(claims: dict[str, Any], workspace_id: str) -> dict[str, 
                 """), {"org": org, "locations": scoped_locations}).all()
                 counts = {str(row.role_id): int(row.count) for row in rows}
         active_permissions = _permissions(db, org, actor["principal_id"])
-        ui_policy = _management_ui_policy(scope["role_id"])
         # Analytics and employee dataset workspaces are exposed only when the
         # active backend permission set supports them. Professional titles do
         # not independently grant management authority.
-        for permission, capability in (
-            ("dataset.view_original", "dataset.view_original"),
-            ("dataset.create_working_copy", "dataset.create_working_copy"),
-        ):
-            if permission in active_permissions and capability not in ui_policy["capabilities"]:
-                ui_policy["capabilities"].append(capability)
-        if "dataset.create_working_copy" in active_permissions and "dataset.copy.request" not in ui_policy["capabilities"]:
-            ui_policy["capabilities"].append("dataset.copy.request")
-        if "analysis.run" in active_permissions:
-            ui_policy["capabilities"].append("analysis.run")
-        if scope["role_id"] == "external_viewer":
-            ui_policy["read_only"] = True
-        elif (
-            scope["role_id"] not in {
-                "organization_owner", "branch_head", "manager", "team_lead"
-            }
-            and active_permissions.intersection({
-                "analysis.run", "dataset.view_original", "dataset.create_working_copy"
-            })
-        ):
-            ui_policy["sections"].append("dataAccess")
+        ui_policy = _management_ui_policy_for_permissions(
+            scope["role_id"], active_permissions
+        )
         return {
             "organization": {
                 "organization_id": org,
