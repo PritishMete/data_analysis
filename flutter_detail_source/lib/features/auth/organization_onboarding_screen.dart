@@ -70,6 +70,27 @@ class _OrganizationOnboardingScreenState
     }
   }
 
+  Future<bool> _recoverAcceptedInvitation() async {
+    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return false;
+    try {
+      final resolution = await reconcileInsightFlowOnboardingWithRetry(
+        resolve: () => resolveInsightFlowOnboardingStateFromBackend(uid),
+      );
+      if (resolution == null ||
+          (resolution.state != InsightFlowOnboardingState.activeMember &&
+              resolution.state != InsightFlowOnboardingState.profileIncomplete)) {
+        return false;
+      }
+      // The accept request can commit even when its response is lost. Verify
+      // membership with the backend before asking the user to accept again.
+      await widget.onCompleted();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _acceptInvitation(Map<String, dynamic> invitation) async {
     if (_busy) return;
     final workspaceValue = invitation['workspace_id']?.toString().trim() ?? '';
@@ -127,6 +148,7 @@ class _OrganizationOnboardingScreenState
       }
       await widget.onCompleted().timeout(const Duration(seconds: 10));
     } catch (error) {
+      if (await _recoverAcceptedInvitation()) return;
       if (!mounted) return;
       setState(() {
         _message = error is StateError
