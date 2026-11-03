@@ -251,12 +251,12 @@ class _ManagementShellState extends State<ManagementShell> {
       // Delay the full skeleton briefly so fast authorization responses do not
       // flash a placeholder. The generation guard prevents an old timer from
       // changing the loading state of a newer request.
-      Future<void>.delayed(const Duration(milliseconds: 180), () {
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 180), () {
         if (mounted && loading && generation == _loadGeneration &&
             !_showLoadingSkeleton) {
           setState(() => _showLoadingSkeleton = true);
         }
-      });
+      }));
     }
     try {
       final r = await Future.wait([
