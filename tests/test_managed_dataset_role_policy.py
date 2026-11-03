@@ -286,6 +286,25 @@ def test_organization_owner_cannot_manage_branch_original_acl(monkeypatch):
         )
 
 
+def test_branch_head_cannot_upload_original_into_another_branch(monkeypatch):
+    db = _Db(
+        ["branch_head"], branch_locations=["branch-b"],
+        location_id="branch-a",
+    )
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: _context(["branch_head"]),
+    )
+
+    with pytest.raises(supabase_provider.AuthzError, match="selected branch"):
+        supabase_provider.authorize_dataset_upload_scope(
+            {"uid": "head-1", "sub": "head-1", "provider": "supabase"},
+            "workspace-1",
+            location_id="branch-a",
+        )
+
+
 def test_branch_head_can_upload_original_within_assigned_branch_without_manager_grant(monkeypatch):
     db = _Db(["branch_head"], branch_locations=["branch-1"])
     monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
