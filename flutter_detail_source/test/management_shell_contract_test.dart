@@ -269,6 +269,12 @@ void main() {
     expect(source, contains('Widget _overviewActivityItem('));
     expect(source, contains('Widget _overviewStructureStep('));
     expect(source, contains('Widget _overviewSkeleton()'));
+    expect(source, contains('Widget _organizationSkeleton()'));
+    expect(source, contains('Widget _peopleSkeleton()'));
+    expect(source, contains('Widget _dataAccessSkeleton()'));
+    expect(source, contains('Widget _invitationSkeleton()'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
     for (final label in [
       r'Welcome back, $actorName!',
       'Team Members',
@@ -460,9 +466,10 @@ void main() {
       ),
     );
     expect(access, contains("bool get canUpload => !widget.readOnly &&"));
-    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
+    expect(access, contains("!roles.contains('organization_owner')"));
+    expect(access, contains("roles.contains('branch_head')"));
     expect(access, contains("bool get canDelete => !widget.readOnly &&"));
-    expect(access, contains("roles.contains('organization_owner') || roles.contains('branch_head')"));
+    expect(access, contains("roles.contains('branch_head')"));
     expect(access, contains('bool get canCopy => !widget.readOnly && !canViewOriginal;'));
     expect(access, contains("'external_viewer'"));
     expect(access, contains('if (!widget.readOnly) ...['));
