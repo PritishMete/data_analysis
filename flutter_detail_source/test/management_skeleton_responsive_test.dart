@@ -46,7 +46,12 @@ void main() {
           body: SingleChildScrollView(
             child: ManagedDatasetAccessSkeleton(
               readOnly: true,
-              capabilities: <String>{'dataset.view_original'},
+              capabilities: <String>{
+                'dataset.view_original',
+                'dataset.upload.direct',
+                'dataset.proposal.review',
+                'dataset.copy.request',
+              },
             ),
           ),
         ),
