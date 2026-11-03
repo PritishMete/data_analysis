@@ -532,7 +532,8 @@ def _management_ui_policy_for_permissions(
         if permission in active_permissions and capability not in policy["capabilities"]:
             policy["capabilities"].append(capability)
     if (
-        "dataset.create_working_copy" in active_permissions
+        str(role_id or "").strip() not in {"organization_owner", "branch_head"}
+        and "dataset.create_working_copy" in active_permissions
         and "dataset.copy.request" not in policy["capabilities"]
     ):
         policy["capabilities"].append("dataset.copy.request")
