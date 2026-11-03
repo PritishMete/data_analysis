@@ -444,7 +444,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _grantManagerUpload() async {
-    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    if (widget.readOnly || roles.contains('organization_owner') || !roles.contains('branch_head')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
@@ -515,7 +515,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _revokeManagerUpload() async {
-    if (!(roles.contains('organization_owner') || roles.contains('branch_head'))) return;
+    if (widget.readOnly || roles.contains('organization_owner') || !roles.contains('branch_head')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
