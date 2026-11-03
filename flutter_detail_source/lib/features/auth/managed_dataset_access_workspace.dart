@@ -16,11 +16,17 @@ import 'management_navigation.dart';
 String _managedDatasetSha256(Uint8List bytes) => sha256.convert(bytes).toString();
 
 class ManagedDatasetAccessWorkspace extends StatefulWidget {
-  const ManagedDatasetAccessWorkspace({super.key, this.readOnly = false, this.canRunAnalysis = false});
+  const ManagedDatasetAccessWorkspace({
+    super.key,
+    this.readOnly = false,
+    this.canRunAnalysis = false,
+    this.capabilities = const <String>{},
+  });
 
   /// External viewers can inspect explicitly authorized resources only.
   final bool readOnly;
   final bool canRunAnalysis;
+  final Set<String> capabilities;
   @override
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
 }
@@ -495,10 +501,15 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       });
 
       if (!widget.readOnly) {
-        await Future.wait([_loadCatalog(generation), _loadCopyRequests(generation)]);
+        final optionalLoads = <Future<void>>[];
+        if (_can('dataset.copy.request')) optionalLoads.add(_loadCatalog(generation));
+        if (_can('dataset.copy_requests.review')) optionalLoads.add(_loadCopyRequests(generation));
+        await Future.wait(optionalLoads);
       }
-      await _loadManagerUploadGrants(generation);
-      await _loadProposals(generation);
+      if (_requiresManagerUploadGrant) await _loadManagerUploadGrants(generation);
+      if (_can('dataset.proposal.submit') || _can('dataset.proposal.review')) {
+        await _loadProposals(generation);
+      }
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
       final keepLastSnapshot =
@@ -539,7 +550,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _loadManagerUploadGrants([int? generation]) async {
     final expectedGeneration = generation ?? _loadGeneration;
     if (expectedGeneration != _loadGeneration || !mounted) return;
-    if (!roles.contains('manager') || widget.readOnly) {
+    if (!_requiresManagerUploadGrant || widget.readOnly) {
       if (mounted && expectedGeneration == _loadGeneration) {
         setState(() {
           managerUploadGrants = [];
@@ -569,7 +580,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   bool _managerHasUploadGrantFor(Map<String,dynamic>? dataset) {
-    if (!roles.contains('manager')) return false;
+    if (!_requiresManagerUploadGrant) return false;
     if (dataset == null) return managerUploadGrants.isNotEmpty;
     final locationId = dataset['location_id']?.toString();
     return locationId != null && managerUploadGrants.any(
@@ -578,7 +589,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _grantManagerUpload() async {
-    if (widget.readOnly || roles.contains('organization_owner') || !roles.contains('branch_head')) return;
+    if (widget.readOnly || !_can('dataset.upload_grants.manage')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
@@ -649,7 +660,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
 
   Future<void> _revokeManagerUpload() async {
-    if (widget.readOnly || roles.contains('organization_owner') || !roles.contains('branch_head')) return;
+    if (widget.readOnly || !_can('dataset.upload_grants.manage')) return;
     try {
       final scope = await _get('/v1/managed-datasets/upload-scope');
       final locations = ((scope as Map?)?['locations'] as List? ?? const [])
@@ -740,7 +751,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<void> _loadProposals([int? generation]) async {
     final expectedGeneration = generation ?? _loadGeneration;
     if (expectedGeneration != _loadGeneration || !mounted) return;
-    if (!roles.any((role) => role == 'manager' || role == 'branch_head')) {
+    if (!_can('dataset.proposal.submit') && !_can('dataset.proposal.review')) {
       setState(() { proposals = []; proposalsError = null; });
       return;
     }
@@ -1219,7 +1230,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         if (locations.isEmpty) {
           throw StateError('No branch is authorized for original dataset uploads.');
         }
-        if (roles.contains('branch_head') && !roles.contains('organization_owner') && locations.length != 1) {
+        if (_can('dataset.upload.grants.manage') && locations.length != 1) {
           throw StateError('Your Branch Head account must resolve to exactly one assigned branch. Upload is blocked until the branch assignment is corrected.');
         }
         if (locations.length == 1) {
@@ -1560,19 +1571,20 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   }
   Widget _eye(String s) => Text(s.toUpperCase(), style: const TextStyle(color: TechColors.textMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.3, fontFamily: 'monospace'));
   Widget _surface(Widget child) => GlassCard(margin: EdgeInsets.zero, padding: const EdgeInsets.all(14), shape: const LiquidRoundedSuperellipse(borderRadius: 16), child: child);
-  bool get canViewOriginal => roles.any((role) => {
-    'organization_owner', 'branch_head', 'manager', 'external_viewer'
-  }.contains(role));
-  // Managers can publish permanent original changes only with a current explicit
-  // branch grant. Team Leads and other copy-only roles never import originals.
+  bool _can(String capability) => widget.capabilities.contains(capability);
+
+  bool get canViewOriginal => _can('dataset.view_original');
+
+  // A Branch Head has direct branch authority. A Manager needs a current
+  // explicit grant for the exact branch before the upload control is shown.
+  bool get _requiresManagerUploadGrant =>
+      _can('dataset.upload') && !_can('dataset.upload.direct');
   bool get canUpload => !widget.readOnly &&
-      !roles.contains('organization_owner') &&
-      (roles.contains('branch_head') ||
-       (roles.contains('manager') && managerUploadGrants.isNotEmpty));
-  bool get canDelete => !widget.readOnly &&
-      !roles.contains('organization_owner') &&
-      roles.contains('branch_head');
-  bool get canCopy => !widget.readOnly && widget.canRunAnalysis && !canViewOriginal;
+      (_can('dataset.upload.direct') ||
+       (_requiresManagerUploadGrant && managerUploadGrants.isNotEmpty));
+  bool get canDelete => !widget.readOnly && _can('dataset.delete');
+  bool get canCopy => !widget.readOnly &&
+      _can('dataset.create_working_copy') && !canViewOriginal;
 
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
@@ -1782,9 +1794,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           if (!widget.readOnly && widget.canRunAnalysis)
             _action('OPEN AI ANALYTICS', Icons.auto_awesome, _startWorking, active: true),
           _action('DOWNLOAD CSV', Icons.download_outlined, _download),
-          if (canUpload && (!roles.contains('manager') || _managerHasUploadGrantFor(d)))
+          if (canUpload && (!_requiresManagerUploadGrant || _managerHasUploadGrantFor(d)))
             _action('NEW VERSION', Icons.upload_file_outlined, () => _upload(datasetId: d['dataset_id']?.toString())),
-          if (!widget.readOnly && roles.contains('manager') && _managerHasUploadGrantFor(d))
+          if (!widget.readOnly && _requiresManagerUploadGrant && _managerHasUploadGrantFor(d))
             _action('SUBMIT PROPOSAL', Icons.rate_review_outlined, () => _submitProposal(d['dataset_id']?.toString() ?? ''), active: true),
           if (canDelete) _action('DELETE', Icons.delete_outline, _deleteDataset),
         ],
@@ -1811,7 +1823,9 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           _action('NEXT', Icons.chevron_right, offset + pageSize >= total ? () {} : () { setState(() => offset += pageSize); _loadRows(); }),
         ])),
       ])),
-      if (!widget.readOnly && !roles.contains('organization_owner')) ...[
+      if (!widget.readOnly && (_can('dataset.copy.request') ||
+          _can('dataset.copy_requests.review') ||
+          _can('dataset.upload_grants.manage'))) ...[
         const SizedBox(height: 12),
         _accessPanel(),
         const SizedBox(height: 12),
@@ -1826,14 +1840,14 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _proposalPanel() => _surface(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     const Text('Original dataset proposals', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
     const SizedBox(height: 4),
-    Text(roles.contains('branch_head') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
+    Text(_can('dataset.proposal.review') ? 'Review proposals only for branches currently assigned to you.' : 'Your proposals remain private until the assigned Branch Head reviews them.', style: const TextStyle(color: TechColors.textMuted, fontSize: 10, height: 1.4)),
     const SizedBox(height: 9),
     if (proposalsError != null) Text(proposalsError!, style: const TextStyle(color: TechColors.statusRed, fontSize: 10)),
     if (proposals.isEmpty && proposalsError == null) const Text('No proposals in your authorized scope.', style: TextStyle(color: TechColors.textMuted, fontSize: 10)),
     ...proposals.map((p) {
       final status = p['status']?.toString() ?? 'pending';
       final pending = status == 'pending';
-      final canReview = roles.contains('branch_head') && pending;
+      final canReview = _can('dataset.proposal.review') && pending;
       final rejection = p['decision_note']?.toString();
       return Padding(padding: const EdgeInsets.only(bottom: 7), child: GlassContainer(
         useOwnLayer: true, quality: GlassQuality.minimal, settings: TechColors.panelGlass,
@@ -1866,7 +1880,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
     const SizedBox(height: 5),
     const Text('The assigned Branch Head manages the trusted branch original. Managers may publish only when they hold an active explicit upload grant for the exact branch; otherwise changes remain proposals. Organization Owners have organization-wide read and oversight access, not branch master-data write authority. Team Leads and employees work only on individually authorized copies.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
     const SizedBox(height: 10),
-    if (roles.contains('manager') || roles.contains('team_lead')) ...[
+    if (_can('dataset.copy.request')) ...[
       const Text('BRANCH DATA CATALOG', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
       if (catalogError != null)
@@ -1891,7 +1905,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ),
       )),
     ],
-    if (roles.contains('branch_head') && !roles.contains('organization_owner')) ...[
+    if (_can('dataset.copy_requests.review')) ...[
       const Text('PENDING / RECENT REQUESTS', style: TextStyle(color: TechColors.borderActive, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       const SizedBox(height: 6),
       if (requestsError != null)
