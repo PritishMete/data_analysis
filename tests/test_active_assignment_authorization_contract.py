@@ -137,7 +137,8 @@ def test_copy_access_grants_require_acl_capability_and_revoke_the_grant():
     provider = Path("firebase_authz/supabase_provider.py").read_text(encoding="utf-8")
     grant = provider.split("def set_dataset_grant(", 1)[1].split("\ndef create_working_copy", 1)[0]
 
-    assert 'actor_roles.intersection({"organization_owner", "branch_head"})' in grant
+    assert '"organization_owner" in actor_roles or "branch_head" not in actor_roles' in grant
+    assert 'item["role_id"] == "branch_head"' in grant
     assert '"dataset.manage_acl" not in set(context.get("permissions", []))' in grant
     assert "if grant_permissions:" in grant
     assert "DELETE FROM resource_grants" in grant
