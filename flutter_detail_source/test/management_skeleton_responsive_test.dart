@@ -37,8 +37,6 @@ void main() {
       );
     }
   });
-}
-
 
   testWidgets('read-only skeleton never suggests management actions',
       (tester) async {
@@ -106,3 +104,4 @@ void main() {
     expect(find.byKey(const ValueKey('dataset-proposal-skeleton')), findsOneWidget);
     expect(find.byKey(const ValueKey('dataset-access-skeleton')), findsOneWidget);
   });
+}
