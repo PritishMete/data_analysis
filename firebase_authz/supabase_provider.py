@@ -1939,26 +1939,6 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
 
         # Revalidate the upload authority while holding transaction locks so a
         # branch reassignment or grant revocation cannot race registration.
-        if upload_role == "organization_owner":
-            active_authority = db.execute(text("""
-                SELECT oa.assignment_id
-                FROM organizational_assignments oa
-                JOIN organization_members m
-                  ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
-                JOIN member_roles mr
-                  ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
-                 AND mr.role_id='organization_owner'
-                JOIN role_permissions rp
-                  ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
-                JOIN locations l
-                  ON l.organization_id=oa.organization_id AND l.location_id=:location
-                 AND l.status='active'
-                WHERE oa.organization_id=:org AND oa.principal_id=:actor
-                  AND oa.role_id='organization_owner' AND oa.status='active'
-                  AND m.workspace_id=:workspace AND m.status='active'
-                LIMIT 1 FOR SHARE OF oa, m, mr, rp, l
-            """), {"org": organization_id, "actor": actor,
-                    "workspace": resolved_workspace_id, "location": owner_location}).scalar_one_or_none()
         elif upload_role == "branch_head":
             active_authority = db.execute(text("""
                 SELECT oa.assignment_id
@@ -2008,9 +1988,9 @@ def register_dataset(claims: dict[str, Any], workspace_id: str, dataset_id: str 
                     "workspace": resolved_workspace_id, "location": owner_location,
                     "provider": provider, "subject": subject}).scalar_one_or_none()
         else:
-            raise AuthzError("Only an Organization Owner, assigned Branch Head, or explicitly authorized Manager may register an original dataset.")
+            raise AuthzError("Only the assigned Branch Head or an explicitly authorized Manager may register an original dataset.")
         if active_authority is None:
-            raise AuthzError("The active Owner, Branch Head, or Manager upload grant is no longer valid.")
+            raise AuthzError("The active Branch Head assignment or Manager upload grant is no longer valid.")
 
         db.execute(text("""INSERT INTO authorization_resources
             (organization_id, resource_id, resource_type, owner_principal_id)
