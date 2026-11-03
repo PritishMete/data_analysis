@@ -1272,7 +1272,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
           );
           if (uploadLocationId == null) return;
         }
-      } else if (roles.contains('manager') &&
+      } else if (_requiresManagerUploadGrant &&
           !_managerHasUploadGrantFor(selected)) {
         throw StateError(
           'A current upload grant for this exact branch is required.',
@@ -1597,9 +1597,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
       const SizedBox(height: 12), _action('RETRY', Icons.refresh, _load, active: true),
     ]));
     final q = (search ?? '').trim().toLowerCase();
-    final canManage = !widget.readOnly &&
-        !roles.contains('organization_owner') &&
-        roles.contains('branch_head');
+    final canManage = !widget.readOnly && _can('dataset.upload_grants.manage');
     final locationOptions = <String, String>{};
     for (final dataset in datasets) {
       final id = dataset['location_id']?.toString() ?? '';
@@ -1653,7 +1651,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         ])),
         const SizedBox(height: 10),
       ],
-      if (managerUploadGrantsError != null && roles.contains('manager')) ...[
+      if (managerUploadGrantsError != null && _requiresManagerUploadGrant) ...[
         _surface(Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           const Icon(Icons.shield_outlined, color: Color(0xFFFFB454), size: 18),
           const SizedBox(width: 9),
