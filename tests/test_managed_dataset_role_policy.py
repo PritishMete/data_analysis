@@ -475,6 +475,35 @@ def _grantor_context(role="branch_head"):
     }
 
 
+@pytest.mark.parametrize("permissions", [[], ["dataset.create_working_copy"]])
+def test_organization_owner_cannot_grant_or_revoke_dataset_copy_access(monkeypatch, permissions):
+    db = _GrantDb()
+    context = {
+        "workspace_authorized": True,
+        "workspace_id": "workspace-1",
+        "organization_id": "org-1",
+        "principal_id": "owner-principal",
+        "role_ids": ["organization_owner"],
+        "permissions": ["dataset.manage_acl"],
+    }
+    monkeypatch.setattr(supabase_provider, "SessionLocal", _SessionFactory(db))
+    monkeypatch.setattr(
+        supabase_provider, "authorization_context",
+        lambda claims, workspace_id: context,
+    )
+
+    with pytest.raises(
+        supabase_provider.AuthzError,
+        match="Only the active Branch Head assigned to this branch",
+    ):
+        supabase_provider.set_dataset_grant(
+            {"uid": "owner-uid", "sub": "owner-uid", "provider": "supabase"},
+            "workspace-1", "dataset-1", "employee-uid", permissions,
+        )
+
+    assert db.calls == []
+
+
 def test_branch_head_cannot_delegate_original_write_authority(monkeypatch):
     db = _GrantDb()
     context = _grantor_context()
