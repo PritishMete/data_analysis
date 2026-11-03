@@ -2108,6 +2108,326 @@ class _ManagementShellState extends State<ManagementShell> {
     );
   }
 
+
+  Widget _sectionSkeletonBlock({double height = 12, double? width, double radius = 7}) =>
+      Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: TechColors.textMuted.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: TechColors.textMuted.withValues(alpha: .07)),
+        ),
+      );
+
+  Widget _sectionSkeletonPanel({required Widget child, EdgeInsets padding = const EdgeInsets.all(14)}) =>
+      Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: const Color(0xB8051727),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFF164564).withValues(alpha: .9)),
+        ),
+        child: child,
+      );
+
+  Widget _organizationSkeleton() {
+    Widget header() => _sectionSkeletonPanel(
+      padding: const EdgeInsets.all(20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 145, height: 10),
+        const SizedBox(height: 10),
+        _sectionSkeletonBlock(width: 235, height: 24),
+        const SizedBox(height: 8),
+        _sectionSkeletonBlock(width: 310, height: 12),
+        const SizedBox(height: 16),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 126, height: 34, radius: 10),
+          _sectionSkeletonBlock(width: 118, height: 34, radius: 10),
+          _sectionSkeletonBlock(width: 82, height: 34, radius: 10),
+        ]),
+      ]),
+    );
+    Widget branchCard() => _sectionSkeletonPanel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          _sectionSkeletonBlock(width: 36, height: 36, radius: 10),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionSkeletonBlock(width: 145, height: 13),
+            const SizedBox(height: 7),
+            _sectionSkeletonBlock(width: 92, height: 10),
+          ])),
+          _sectionSkeletonBlock(width: 62, height: 20, radius: 20),
+        ]),
+        const SizedBox(height: 14),
+        ...List.generate(3, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: Row(children: [
+            Expanded(child: _sectionSkeletonBlock(height: 10)),
+            const SizedBox(width: 14),
+            _sectionSkeletonBlock(width: 48, height: 10),
+          ]),
+        )),
+      ]),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      header(),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 500 ? 2 : 4;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _sectionSkeletonPanel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 82, height: 10),
+              const SizedBox(height: 9),
+              _sectionSkeletonBlock(width: 48, height: 23),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 112, height: 9),
+            ]),
+          )),
+        ));
+      }),
+      const SizedBox(height: 13),
+      Row(children: [
+        Expanded(child: _sectionSkeletonBlock(width: 160, height: 15)),
+        const Spacer(),
+        _sectionSkeletonBlock(width: 76, height: 11),
+      ]),
+      const SizedBox(height: 9),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 760 ? 1 : 2;
+        final gap = 12.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: branchCard()),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 154, height: 14),
+        const SizedBox(height: 13),
+        ...List.generate(3, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(children: [
+            _sectionSkeletonBlock(width: 32, height: 32, radius: 18),
+            const SizedBox(width: 10),
+            Expanded(child: _sectionSkeletonBlock(height: 11)),
+            const SizedBox(width: 12),
+            _sectionSkeletonBlock(width: 88, height: 30, radius: 8),
+          ]),
+        )),
+      ])),
+    ]);
+  }
+
+  Widget _peopleSkeleton() {
+    Widget hero() => _sectionSkeletonPanel(
+      padding: const EdgeInsets.all(19),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 118, height: 10),
+        const SizedBox(height: 9),
+        _sectionSkeletonBlock(width: 190, height: 24),
+        const SizedBox(height: 8),
+        _sectionSkeletonBlock(width: 285, height: 11),
+      ]),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      hero(),
+      const SizedBox(height: 13),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _sectionSkeletonPanel(child: Row(children: [
+            _sectionSkeletonBlock(width: 34, height: 34, radius: 10),
+            const SizedBox(width: 9),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 42, height: 20),
+              const SizedBox(height: 6),
+              _sectionSkeletonBlock(width: 76, height: 9),
+            ])),
+          ]))),
+        ));
+      }),
+      const SizedBox(height: 13),
+      _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+        final search = _sectionSkeletonBlock(height: 44);
+        final filters = Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+          _sectionSkeletonBlock(width: 112, height: 40, radius: 9),
+        ]);
+        return constraints.maxWidth < 680
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              search, const SizedBox(height: 10), filters,
+            ])
+          : Row(children: [
+              Expanded(flex: 3, child: search),
+              const SizedBox(width: 12),
+              Expanded(flex: 4, child: filters),
+            ]);
+      })),
+      const SizedBox(height: 13),
+      Row(children: [
+        _sectionSkeletonBlock(width: 145, height: 15),
+        const Spacer(),
+        _sectionSkeletonBlock(width: 78, height: 10),
+      ]),
+      const SizedBox(height: 9),
+      ...List.generate(5, (_) => Padding(
+        padding: const EdgeInsets.only(bottom: 9),
+        child: _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+          final identity = Row(children: [
+            _sectionSkeletonBlock(width: 40, height: 40, radius: 20),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionSkeletonBlock(width: 155, height: 12),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 195, height: 10),
+              const SizedBox(height: 7),
+              _sectionSkeletonBlock(width: 90, height: 17, radius: 20),
+            ])),
+          ]);
+          final metadata = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionSkeletonBlock(width: 105, height: 10),
+            const SizedBox(height: 7),
+            _sectionSkeletonBlock(width: 125, height: 10),
+          ]);
+          final action = _sectionSkeletonBlock(width: 92, height: 32, radius: 8);
+          return constraints.maxWidth < 620
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                identity, const SizedBox(height: 12), metadata,
+                const SizedBox(height: 10), Align(alignment: Alignment.centerLeft, child: action),
+              ])
+            : Row(children: [
+                Expanded(flex: 5, child: identity),
+                const SizedBox(width: 14),
+                Expanded(flex: 3, child: metadata),
+                const SizedBox(width: 10),
+                action,
+              ]);
+        })),
+      )),
+    ]);
+  }
+
+  Widget _dataAccessSkeleton() {
+    Widget metric() => _sectionSkeletonPanel(child: Row(children: [
+      _sectionSkeletonBlock(width: 36, height: 36, radius: 10),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 54, height: 21),
+        const SizedBox(height: 6),
+        _sectionSkeletonBlock(width: 92, height: 9),
+      ])),
+    ]));
+    Widget datasetRow() => _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+      final identity = Row(children: [
+        _sectionSkeletonBlock(width: 38, height: 38, radius: 10),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionSkeletonBlock(width: 165, height: 12),
+          const SizedBox(height: 7),
+          _sectionSkeletonBlock(width: 115, height: 9),
+        ])),
+      ]);
+      final metadata = Wrap(spacing: 10, runSpacing: 7, children: [
+        _sectionSkeletonBlock(width: 54, height: 18, radius: 20),
+        _sectionSkeletonBlock(width: 65, height: 18, radius: 20),
+      ]);
+      return constraints.maxWidth < 560
+        ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            identity, const SizedBox(height: 10), metadata,
+            const SizedBox(height: 10), _sectionSkeletonBlock(width: 130, height: 32, radius: 8),
+          ])
+        : Row(children: [
+            Expanded(flex: 4, child: identity),
+            const SizedBox(width: 12),
+            Expanded(flex: 2, child: metadata),
+            const SizedBox(width: 12),
+            _sectionSkeletonBlock(width: 130, height: 32, radius: 8),
+          ]);
+    }));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _sectionSkeletonPanel(padding: const EdgeInsets.all(18), child: Row(children: [
+        _sectionSkeletonBlock(width: 42, height: 42, radius: 11),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionSkeletonBlock(width: 145, height: 10),
+          const SizedBox(height: 9),
+          _sectionSkeletonBlock(width: 235, height: 22),
+          const SizedBox(height: 7),
+          _sectionSkeletonBlock(width: 295, height: 10),
+        ])),
+      ])),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: metric()),
+        ));
+      }),
+      const SizedBox(height: 12),
+      _sectionSkeletonPanel(child: LayoutBuilder(builder: (context, constraints) {
+        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 190, height: 38, radius: 9),
+          _sectionSkeletonBlock(width: 116, height: 38, radius: 9),
+          _sectionSkeletonBlock(width: 116, height: 38, radius: 9),
+        ]);
+        final actions = Wrap(spacing: 8, runSpacing: 8, children: [
+          _sectionSkeletonBlock(width: 142, height: 36, radius: 9),
+          _sectionSkeletonBlock(width: 90, height: 36, radius: 9),
+          _sectionSkeletonBlock(width: 82, height: 36, radius: 9),
+        ]);
+        return constraints.maxWidth < 760
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              controls, const SizedBox(height: 10), actions,
+            ])
+          : Row(children: [
+              Expanded(child: controls), const SizedBox(width: 12), actions,
+            ]);
+      })),
+      const SizedBox(height: 12),
+      _sectionSkeletonPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 150, height: 14),
+        const SizedBox(height: 10),
+        ...List.generate(4, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: datasetRow(),
+        )),
+      ])),
+      const SizedBox(height: 12),
+      _sectionSkeletonPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 185, height: 14),
+        const SizedBox(height: 8),
+        _sectionSkeletonBlock(width: 265, height: 10),
+        const SizedBox(height: 12),
+        ...List.generate(2, (_) => datasetRow()),
+      ])),
+      const SizedBox(height: 12),
+      _sectionSkeletonPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionSkeletonBlock(width: 165, height: 14),
+        const SizedBox(height: 12),
+        ...List.generate(3, (_) => datasetRow()),
+      ])),
+    ]);
+  }
+
+  Widget _sectionLoadingSkeleton() => switch (section) {
+    ManagementSection.overview => _overviewSkeleton(),
+    ManagementSection.organization => _organizationSkeleton(),
+    ManagementSection.people => _peopleSkeleton(),
+    ManagementSection.dataAccess => _dataAccessSkeleton(),
+    ManagementSection.invitations => _invitationSkeleton(),
+    ManagementSection.audit => _auditSkeleton(),
+  };
+
     Widget _invitationSkeleton() {
     Widget block({double height = 12, double? width, double radius = 7}) => Container(
       height: height, width: width,
@@ -3775,8 +4095,7 @@ class _ManagementShellState extends State<ManagementShell> {
               child: Center(child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1500),
                 child: loading
-                  ? (section == ManagementSection.invitations ? _invitationSkeleton()
-                    : section == ManagementSection.audit ? _auditSkeleton() : _overviewSkeleton())
+                  ? _sectionLoadingSkeleton()
                   : error != null
                     ? Container(
                         padding: const EdgeInsets.all(18),
