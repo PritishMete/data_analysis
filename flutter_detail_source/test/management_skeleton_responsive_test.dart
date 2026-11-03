@@ -9,18 +9,21 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 900);
 
-    for (final width in <double>[360, 768, 1024, 1366]) {
-      tester.view.physicalSize = Size(width, 900);
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ManagedDatasetAccessSkeleton(),
-            ),
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ManagedDatasetAccessSkeleton(),
           ),
         ),
-      );
+      ),
+    );
+
+    for (final width in <double>[768, 1024, 1366, 360]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pump();
 
       expect(
         find.byType(ManagedDatasetAccessSkeleton),
