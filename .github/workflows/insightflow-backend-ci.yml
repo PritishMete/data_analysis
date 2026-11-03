@@ -199,6 +199,12 @@ jobs:
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
 
+      - name: Analyze legacy dataset workspace and AI destination
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings \
+            lib/features/auth/managed_dataset_access_workspace.dart \
+            lib/features/dashboard/data_screen.dart
+
       - name: Run Flutter Auth tests
         run: >-
           flutter test
