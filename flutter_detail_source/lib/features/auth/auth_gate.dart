@@ -455,32 +455,15 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
         }
         break;
       case InsightFlowOnboardingState.pendingInvitation:
-        final passwordInvitations = _pendingInvitations
-            .where(
-              (item) =>
-                  item['password_setup_at'] == null &&
-                  item['email_delivery_status'] == 'initiated',
-            )
-            .toList(growable: false);
-        // Only auto-route when there is exactly one invitation. With multiple
-        // invitations, the user must choose the intended organization first.
-        if (_pendingInvitations.length == 1 &&
-            passwordInvitations.length == 1) {
-          final passwordInvitation = passwordInvitations.single;
-          authenticatedChild = EmployeeInvitationPasswordSetupScreen(
-            invitation: passwordInvitation,
-            onCompleted: () async {
-              await _refresh(showLoading: false);
-            },
-          );
-        } else {
-          authenticatedChild = OrganizationOnboardingScreen(
-            state: {'pending_invitations': _pendingInvitations},
-            onCompleted: () async {
-              await _refresh(showLoading: false);
-            },
-          );
-        }
+        // Keep invitation selection in one place. Users with multiple
+        // invitations must explicitly choose the organization before password
+        // setup or acceptance can begin.
+        authenticatedChild = OrganizationOnboardingScreen(
+          state: {'pending_invitations': _pendingInvitations},
+          onCompleted: () async {
+            await _refresh(showLoading: false);
+          },
+        );
         break;
       case InsightFlowOnboardingState.noMembership:
         authenticatedChild = CompanyRegistrationScreen(
