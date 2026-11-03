@@ -77,6 +77,7 @@ jobs:
           flutter test \
             test/management_responsive_filter_contract_test.dart \
             test/management_shell_contract_test.dart \
+            test/onboarding_auth_flow_contract_test.dart \
             test/management_skeleton_responsive_test.dart \
             test/managed_dataset_file_picker_performance_test.dart \
             test/managed_dataset_upload_contract_test.dart
