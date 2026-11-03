@@ -273,6 +273,13 @@ void main() {
     expect(source, contains('Widget _organizationSkeleton()'));
     expect(source, contains('Widget _peopleSkeleton()'));
     expect(source, contains('Widget _dataAccessSkeleton()'));
+    expect(source, contains('ManagedDatasetAccessSkeleton'));
+    expect(source, contains("title: 'Team management'"));
+    expect(source, contains("title: 'Team operations'"));
+    expect(source, contains("title: 'Analytical workspace'"));
+    expect(source, contains("title: 'Read-only workspace'"));
+    expect(source, contains("Organization Overview"));
+    expect(source, contains("Branch Info"));
     expect(source, contains('Widget _invitationSkeleton()'));
     expect(source, contains('Widget _auditSkeleton()'));
     expect(source, contains('_sectionLoadingSkeleton()'));
