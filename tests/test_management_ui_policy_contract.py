@@ -1,4 +1,7 @@
-from firebase_authz.management_domain import _management_ui_policy
+from firebase_authz.management_domain import (
+    _management_ui_policy,
+    _management_ui_policy_for_permissions,
+)
 
 
 def test_organization_owner_policy_is_organization_scoped_and_read_only_for_branch_data():
@@ -73,3 +76,37 @@ def test_external_viewer_policy_is_member_scoped_and_read_only():
     assert policy["sections"] == ["overview", "dataAccess"]
     assert policy["capabilities"] == ["dataset.view_original"]
     assert policy["read_only"] is True
+
+
+
+def test_professional_employee_gets_analytics_workspace_only_with_backend_permission():
+    policy = _management_ui_policy_for_permissions("data_analyst", {"analysis.run"})
+
+    assert policy["management_tier"] == "member"
+    assert "dataAccess" in policy["sections"]
+    assert "analysis.run" in policy["capabilities"]
+    assert "dataset.upload" not in policy["capabilities"]
+    assert "organization" not in policy["sections"]
+
+
+def test_working_copy_workspace_requires_explicit_backend_copy_permission():
+    denied = _management_ui_policy_for_permissions("data_engineer", set())
+    allowed = _management_ui_policy_for_permissions(
+        "data_engineer", {"dataset.create_working_copy"}
+    )
+
+    assert denied["sections"] == ["overview"]
+    assert "dataAccess" in allowed["sections"]
+    assert "dataset.create_working_copy" in allowed["capabilities"]
+    assert "dataset.copy.request" in allowed["capabilities"]
+    assert "dataset.upload" not in allowed["capabilities"]
+
+
+def test_organization_owner_analysis_permission_does_not_grant_original_upload():
+    policy = _management_ui_policy_for_permissions(
+        "organization_owner", {"analysis.run", "dataset.upload"}
+    )
+
+    assert "analysis.run" in policy["capabilities"]
+    assert "dataset.upload" not in policy["capabilities"]
+    assert "dataset.upload.direct" not in policy["capabilities"]
