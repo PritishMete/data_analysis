@@ -32,7 +32,14 @@ class ManagedDatasetAccessWorkspace extends StatefulWidget {
 }
 
 class ManagedDatasetAccessSkeleton extends StatelessWidget {
-  const ManagedDatasetAccessSkeleton({super.key});
+  const ManagedDatasetAccessSkeleton({
+    super.key,
+    this.capabilities = const <String>{},
+    this.readOnly = false,
+  });
+
+  final Set<String> capabilities;
+  final bool readOnly;
 
   Widget _block({double height = 12, double? width, double radius = 8}) =>
       Container(
@@ -87,7 +94,14 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) {
+    final showProposalQueue = capabilities.contains('dataset.proposal.submit') ||
+        capabilities.contains('dataset.proposal.review');
+    final showAccessManagement = capabilities.contains('dataset.copy.request') ||
+        capabilities.contains('dataset.copy_requests.review') ||
+        capabilities.contains('dataset.upload_grants.manage');
+    final showUpload = !readOnly && capabilities.contains('dataset.upload.direct');
+    return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _panel(padding: const EdgeInsets.all(18), child: Row(children: [
@@ -126,9 +140,9 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
           _block(width: 116, height: 38, radius: 9),
         ]);
         final actions = Wrap(spacing: 8, runSpacing: 8, children: [
-          _block(width: 142, height: 36, radius: 9),
+          if (showUpload) _block(width: 142, height: 36, radius: 9),
           _block(width: 90, height: 36, radius: 9),
-          _block(width: 82, height: 36, radius: 9),
+          if (!readOnly) _block(width: 82, height: 36, radius: 9),
         ]);
         return constraints.maxWidth < 760
             ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -147,23 +161,33 @@ class ManagedDatasetAccessSkeleton extends StatelessWidget {
           child: _datasetRow(),
         )),
       ])),
-      const SizedBox(height: 12),
-      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _block(width: 185, height: 14),
-        const SizedBox(height: 8),
-        _block(width: 265, height: 10),
+      if (showProposalQueue) ...[
         const SizedBox(height: 12),
-        ...List.generate(2, (_) => _datasetRow()),
-      ])),
-      const SizedBox(height: 12),
-      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _block(width: 165, height: 14),
+        KeyedSubtree(
+          key: const ValueKey('dataset-proposal-skeleton'),
+          child: _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _block(width: 185, height: 14),
+            const SizedBox(height: 8),
+            _block(width: 265, height: 10),
+            const SizedBox(height: 12),
+            ...List.generate(2, (_) => _datasetRow()),
+          ])),
+        ),
+      ],
+      if (showAccessManagement) ...[
         const SizedBox(height: 12),
-        ...List.generate(3, (_) => _datasetRow()),
-      ])),
+        KeyedSubtree(
+          key: const ValueKey('dataset-access-skeleton'),
+          child: _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _block(width: 165, height: 14),
+            const SizedBox(height: 12),
+            ...List.generate(3, (_) => _datasetRow()),
+          ])),
+        ),
+      ],
     ],
   );
-}
+  }
 
 class _ManagedDatasetRequestException implements Exception {
   const _ManagedDatasetRequestException(this.statusCode, this.message);
@@ -1584,7 +1608,10 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   @override Widget build(BuildContext context) {
-    if (loading) return const ManagedDatasetAccessSkeleton();
+    if (loading) return ManagedDatasetAccessSkeleton(
+      capabilities: widget.capabilities,
+      readOnly: widget.readOnly,
+    );
     if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Access is temporarily unavailable', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
       const SizedBox(height: 7),
