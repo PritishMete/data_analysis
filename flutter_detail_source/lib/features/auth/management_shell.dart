@@ -2652,7 +2652,7 @@ class _ManagementShellState extends State<ManagementShell> {
       case ManagementSection.organization: return organizationView();
       case ManagementSection.people: return peopleView();
       case ManagementSection.invitations: return invitationView();
-      case ManagementSection.dataAccess: return const ManagedDatasetAccessWorkspace();
+      case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace(canRunAnalysis: _canUi('analysis.run'));
       case ManagementSection.audit: return auditView();
     }
   }
@@ -3842,10 +3842,10 @@ class _ManagementShellState extends State<ManagementShell> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            itemCount: tabs.length + 1,
+            itemCount: tabs.length + (_canUi('analysis.run') ? 1 : 0),
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              if (index == tabs.length) {
+              if (_canUi('analysis.run') && index == tabs.length) {
                 return GlassChip(
                   label: 'AI ANALYTICS',
                   selected: false,
@@ -3969,7 +3969,8 @@ class _ManagementShellState extends State<ManagementShell> {
                     ),
                   ),
                 ),
-            Padding(
+            if (_canUi('analysis.run'))
+              Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(9),
