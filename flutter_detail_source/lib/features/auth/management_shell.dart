@@ -1065,7 +1065,7 @@ class _ManagementShellState extends State<ManagementShell> {
         primary: true,
       ));
     }
-    if (_canUi('analysis.run')) {
+    if (_canUi('analysis.run') && !readOnly) {
       actions.add(_dashboardAction(
         'OPEN AI ANALYTICS',
         Icons.auto_awesome,
