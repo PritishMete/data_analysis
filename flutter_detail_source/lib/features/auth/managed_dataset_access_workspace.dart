@@ -25,6 +25,140 @@ class ManagedDatasetAccessWorkspace extends StatefulWidget {
   State<ManagedDatasetAccessWorkspace> createState() => _ManagedDatasetAccessWorkspaceState();
 }
 
+class ManagedDatasetAccessSkeleton extends StatelessWidget {
+  const ManagedDatasetAccessSkeleton({super.key});
+
+  Widget _block({double height = 12, double? width, double radius = 8}) =>
+      Container(
+        height: height,
+        width: width,
+        decoration: BoxDecoration(
+          color: TechColors.textMuted.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: TechColors.textMuted.withValues(alpha: .07)),
+        ),
+      );
+
+  Widget _panel({required Widget child, EdgeInsets padding = const EdgeInsets.all(14)}) =>
+      Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: const Color(0xB8051727),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xFF164564).withValues(alpha: .9)),
+        ),
+        child: child,
+      );
+
+  Widget _datasetRow() => _panel(
+    child: LayoutBuilder(builder: (context, constraints) {
+      final identity = Row(children: [
+        _block(width: 38, height: 38, radius: 10),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _block(width: 165, height: 12),
+          const SizedBox(height: 7),
+          _block(width: 115, height: 9),
+        ])),
+      ]);
+      final metadata = Wrap(spacing: 10, runSpacing: 7, children: [
+        _block(width: 54, height: 18, radius: 20),
+        _block(width: 65, height: 18, radius: 20),
+      ]);
+      return constraints.maxWidth < 560
+          ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              identity, const SizedBox(height: 10), metadata,
+              const SizedBox(height: 10), _block(width: 130, height: 32, radius: 8),
+            ])
+          : Row(children: [
+              Expanded(flex: 4, child: identity),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: metadata),
+              const SizedBox(width: 12),
+              _block(width: 130, height: 32, radius: 8),
+            ]);
+    }),
+  );
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _panel(padding: const EdgeInsets.all(18), child: Row(children: [
+        _block(width: 42, height: 42, radius: 11),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _block(width: 145, height: 10),
+          const SizedBox(height: 9),
+          _block(width: 235, height: 22),
+          const SizedBox(height: 7),
+          _block(width: 295, height: 10),
+        ])),
+      ])),
+      const SizedBox(height: 12),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 560 ? 2 : 4;
+        const gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: List.generate(4, (_) =>
+          SizedBox(width: width, child: _panel(child: Row(children: [
+            _block(width: 36, height: 36, radius: 10),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _block(width: 54, height: 21),
+              const SizedBox(height: 6),
+              _block(width: 92, height: 9),
+            ])),
+          ]))),
+        ));
+      }),
+      const SizedBox(height: 12),
+      _panel(child: LayoutBuilder(builder: (context, constraints) {
+        final controls = Wrap(spacing: 8, runSpacing: 8, children: [
+          _block(width: 190, height: 38, radius: 9),
+          _block(width: 116, height: 38, radius: 9),
+          _block(width: 116, height: 38, radius: 9),
+        ]);
+        final actions = Wrap(spacing: 8, runSpacing: 8, children: [
+          _block(width: 142, height: 36, radius: 9),
+          _block(width: 90, height: 36, radius: 9),
+          _block(width: 82, height: 36, radius: 9),
+        ]);
+        return constraints.maxWidth < 760
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                controls, const SizedBox(height: 10), actions,
+              ])
+            : Row(children: [
+                Expanded(child: controls), const SizedBox(width: 12), actions,
+              ]);
+      })),
+      const SizedBox(height: 12),
+      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _block(width: 150, height: 14),
+        const SizedBox(height: 10),
+        ...List.generate(4, (_) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: _datasetRow(),
+        )),
+      ])),
+      const SizedBox(height: 12),
+      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _block(width: 185, height: 14),
+        const SizedBox(height: 8),
+        _block(width: 265, height: 10),
+        const SizedBox(height: 12),
+        ...List.generate(2, (_) => _datasetRow()),
+      ])),
+      const SizedBox(height: 12),
+      _panel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _block(width: 165, height: 14),
+        const SizedBox(height: 12),
+        ...List.generate(3, (_) => _datasetRow()),
+      ])),
+    ],
+  );
+}
+
 class _ManagedDatasetRequestException implements Exception {
   const _ManagedDatasetRequestException(this.statusCode, this.message);
 
@@ -1443,17 +1577,7 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Widget _action(String label, IconData icon, VoidCallback onTap, {bool active = false}) => GlassButton.custom(onTap: onTap, height: 36, shape: const LiquidRoundedSuperellipse(borderRadius: 12), label: label, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: active ? TechColors.borderActive : TechColors.textPrimary), const SizedBox(width: 6), Text(label, style: TextStyle(color: active ? TechColors.borderActive : TechColors.textPrimary, fontSize: 9, fontWeight: FontWeight.w700, fontFamily: 'monospace'))]));
 
   @override Widget build(BuildContext context) {
-    if (loading) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(height: 22, width: 150, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-        const SizedBox(height: 10),
-        Container(height: 13, width: 270, decoration: BoxDecoration(color: TechColors.panelBg, borderRadius: BorderRadius.circular(8))),
-      ])),
-      const SizedBox(height: 12),
-      _surface(Column(children: [
-        for (var i = 0; i < 3; i++) Padding(padding: const EdgeInsets.only(bottom: 9), child: Container(height: 48, decoration: BoxDecoration(color: TechColors.panelBg.withValues(alpha: .6), borderRadius: BorderRadius.circular(12)))),
-      ])),
-    ]);
+    if (loading) return const ManagedDatasetAccessSkeleton();
     if (error != null) return _surface(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Access is temporarily unavailable', style: TextStyle(color: TechColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
       const SizedBox(height: 7),
