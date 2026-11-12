@@ -34,7 +34,11 @@ void main() {
 
     expect(source, contains("state.selectedView == 'ANALYTICS_REFERENCE'"));
     expect(source, contains('AnalyticsReferenceWorkspace()'));
-    expect(source, contains('Chart guide'));
-    expect(source, contains('Analytical vocabulary'));
+
+    final guide = File(
+      'lib/features/analysis/analytics_reference_workspace.dart',
+    ).readAsStringSync();
+    expect(guide, contains('Chart guide'));
+    expect(guide, contains('Analytical vocabulary'));
   });
 }
