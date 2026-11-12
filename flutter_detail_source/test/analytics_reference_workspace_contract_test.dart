@@ -252,10 +252,27 @@ void main() {
     expect(guide, contains('questions = <String, String>'));
   });
 
-  test('guide returns to Data Workspace', () {
-    expect(analysisScreen, contains('AnalyticsReferenceWorkspace('));
-    expect(analysisScreen, contains("state.selectedView = 'ALL_SYSTEMS'"));
-    expect(guide, contains('Back to Data Workspace'));
+  test('Analytics Guide has no back button or return callback', () {
+    expect(analysisScreen, contains('return const AnalyticsReferenceWorkspace();'));
+    expect(analysisScreen, isNot(contains("state.selectedView = 'ALL_SYSTEMS'")));
+    expect(guide, isNot(contains('Back to Data Workspace')));
+    expect(guide, isNot(contains('onBack')));
+  });
+
+  test('Analytics Guide hides only its Analyze and Run Pipeline action dock', () {
+    expect(dataScreen, contains("if (selectedView != 'NEURAL_CHAT' && selectedView != 'AI_ANALYTICS' && selectedView != 'ANALYTICS_REFERENCE')"));
+    expect(dataScreen, contains('ElectricTaskButton(state: this)'));
+    expect(dataScreen, contains('ScanButton(state: this)'));
+    expect(dataScreen, contains('selectedView == "PIPELINES"'));
+  });
+
+  test('chart catalog and chart recommendations show meaningful icons', () {
+    expect(guide, contains('icon: _chartIcon(title)'));
+    expect(guide, contains('Icon(entry.icon'));
+    expect(guide, contains('Icon(_chartIcon(chart)'));
+    expect(guide, contains("'Bar chart' || 'Column chart'"));
+    expect(guide, contains("'Scatter plot' => Icons.scatter_plot"));
+    expect(guide, contains("'Geographic heatmap' => Icons.map"));
   });
 
   test('Pipeline routing remains unchanged', () {
