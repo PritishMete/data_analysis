@@ -19,7 +19,7 @@ void main() {
     ).readAsStringSync();
   });
 
-  test('Analytics Guide is routed before loading and no-dataset guards', () {
+  test('guide route precedes loading and empty-state guards', () {
     final body = dataScreen.indexOf('Widget _buildBody()');
     final guideRoute = dataScreen.indexOf(
       "if (selectedView == 'ANALYTICS_REFERENCE')",
@@ -40,7 +40,7 @@ void main() {
     );
   });
 
-  test('guide renders all five learning sections and remains dataset independent', () {
+  test('all learning sections render without a dataset', () {
     for (final label in [
       'Overview',
       'Analytical vocabulary',
@@ -55,7 +55,7 @@ void main() {
     expect(guide, isNot(contains('scanDataset')));
   });
 
-  test('vocabulary contains the requested analytical categories and distinctions', () {
+  test('vocabulary catalog covers required terms', () {
     for (final term in [
       'Growth / increase',
       'Surged',
@@ -147,7 +147,7 @@ void main() {
     );
   });
 
-  test('chart catalogue covers the requested chart families and decision guidance', () {
+  test('chart catalog covers required chart types', () {
     for (final chart in [
       'Bar chart',
       'Column chart',
@@ -204,7 +204,7 @@ void main() {
     expect(guide, contains('Correlation does not prove causation'));
   });
 
-  test('methods and interpretation examples cover all four analytics levels', () {
+  test('methods and examples cover four analytics levels', () {
     for (final term in [
       'Descriptive analytics',
       'Diagnostic analytics',
@@ -240,7 +240,7 @@ void main() {
     expect(guide, contains('Confirmed cause'));
   });
 
-  test('search, category filtering, empty results and chart helper are functional', () {
+  test('search, category filter and chart helper are wired', () {
     expect(guide, contains('onChanged: (v) => setState(() => query'));
     expect(guide, contains('e.searchable.contains(query)'));
     expect(guide, contains('category == e.category'));
@@ -250,19 +250,19 @@ void main() {
     expect(guide, contains('questions = <String, String>'));
   });
 
-  test('guide provides a return action to the Data Workspace', () {
+  test('guide returns to Data Workspace', () {
     expect(analysisScreen, contains('AnalyticsReferenceWorkspace('));
     expect(analysisScreen, contains("state.selectedView = 'ALL_SYSTEMS'"));
     expect(guide, contains('Back to Data Workspace'));
   });
 
-  test('Pipeline routing remains present and independent of the guide', () {
+  test('Pipeline routing remains unchanged', () {
     expect(dataScreen, contains('PipelineScreen(state: this)'));
     expect(dataScreen, contains('selectedView == "PIPELINES"'));
     expect(dataScreen, contains("selectedView == 'ANALYTICS_REFERENCE'"));
   });
 
-  test('guide includes responsive layouts for narrow and wide screens', () {
+  test('responsive breakpoints are defined', () {
     expect(guide, contains('LayoutBuilder'));
     expect(guide, contains('constraints.maxWidth < 560'));
     expect(guide, contains('constraints.maxWidth > 850'));
