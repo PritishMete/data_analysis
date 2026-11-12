@@ -4,6 +4,7 @@ import '../dashboard/data_screen.dart';
 
 import '../neural_chat/chat_console.dart';
 import 'ai_analytics_workspace.dart';
+import 'analytics_reference_workspace.dart';
 import 'widgets/overview_metrics.dart';
 import 'widgets/quality_report.dart';
 import 'widgets/preview_tables.dart';
@@ -16,6 +17,10 @@ class AnalysisScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (state.selectedView == 'ANALYTICS_REFERENCE') {
+      return const AnalyticsReferenceWorkspace();
+    }
+
     if (state.selectedView == 'AI_ANALYTICS') {
       return AiAnalyticsWorkspace(state: state);
     }
