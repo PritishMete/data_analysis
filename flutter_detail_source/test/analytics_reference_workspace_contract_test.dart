@@ -63,7 +63,7 @@ void main() {
     }
     expect(guide, contains('When to use'));
     expect(guide, contains('Professional example'));
-    expect(guide, contains('Statistical significance is not the same as practical significance'));
+    expect(guide, contains('Statistical significance is not automatically commercial importance'));
   });
 
   test('chart catalogue covers the requested chart families and decision guidance', () {
