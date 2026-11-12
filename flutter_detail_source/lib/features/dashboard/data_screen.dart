@@ -6453,7 +6453,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // anchors to a corner and can't do a full-width bar, so this is
             // a plain Positioned row instead — same fixed-at-bottom result,
             // just not routed through the FAB slot.
-            if (selectedView != 'NEURAL_CHAT' && selectedView != 'AI_ANALYTICS')
+            if (selectedView != 'NEURAL_CHAT' && selectedView != 'AI_ANALYTICS' && selectedView != 'ANALYTICS_REFERENCE')
               Positioned(
                 left: 20,
                 right: 20,
