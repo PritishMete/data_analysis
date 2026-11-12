@@ -6552,6 +6552,13 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (selectedView == 'AI_ANALYTICS') {
       return AnalysisScreen(state: this);
     }
+    // The analytics reference catalog is self-contained and must remain
+    // reachable before the first dataset scan. Keep this route ahead of the
+    // generic empty-state guard, which otherwise replaces the guide with the
+    // pipeline setup panel whenever analysisData is null.
+    if (selectedView == 'ANALYTICS_REFERENCE') {
+      return AnalysisScreen(state: this);
+    }
     if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: TechColors.borderActive),
