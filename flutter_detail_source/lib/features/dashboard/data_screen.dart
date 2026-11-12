@@ -482,6 +482,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     {"id": "PIPELINES", "label": "PIPELINES", "icon": Icons.tune},
     {"id": "NEURAL_CHAT", "label": "AI CHAT", "icon": Icons.code},
     {"id": "AI_ANALYTICS", "label": "AI ANALYTICS", "icon": Icons.auto_awesome},
+    {"id": "ANALYTICS_REFERENCE", "label": "ANALYTICS GUIDE", "icon": Icons.menu_book_outlined},
     {"id": "OVERVIEW", "label": "OVERVIEW", "icon": Icons.layers},
     {"id": "PREVIEW", "label": "PREVIEW", "icon": Icons.grid_view},
     {"id": "STATS", "label": "STATS", "icon": Icons.analytics},
