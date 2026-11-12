@@ -215,6 +215,7 @@ jobs:
           test/supabase_multi_device_session_test.dart
           test/onboarding_auth_flow_contract_test.dart
           test/ai_analytics_workspace_contract_test.dart
+          test/analytics_reference_workspace_contract_test.dart
 
       - name: Analyze analytics workspaces and reference guide
         run: >-
@@ -222,6 +223,7 @@ jobs:
           lib/features/analysis/ai_analytics_workspace.dart
           lib/features/analysis/analytics_reference_workspace.dart
           test/ai_analytics_workspace_contract_test.dart
+          test/analytics_reference_workspace_contract_test.dart
 
       - name: Build Flutter web
         run: >-
