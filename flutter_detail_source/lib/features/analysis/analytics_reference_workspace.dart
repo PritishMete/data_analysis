@@ -38,6 +38,7 @@ class _AnalyticsReferenceWorkspaceState extends State<AnalyticsReferenceWorkspac
       ..._vocabulary.map((e) => e.category),
       ..._charts.map((e) => e.category),
       ..._methods.map((e) => e.category),
+      ..._interpretations.map((e) => e.category),
     }.toList()..sort();
     categories.remove('All categories');
     categories.insert(0, 'All categories');
@@ -132,7 +133,7 @@ class _AnalyticsReferenceWorkspaceState extends State<AnalyticsReferenceWorkspac
                   _Catalog(entries: _vocabulary, query: query, category: category, empty: 'No vocabulary terms match this search.'),
                   _Catalog(entries: _charts, query: query, category: category, empty: 'No chart types match this search.'),
                   _Catalog(entries: _methods, query: query, category: category, empty: 'No analytical methods match this search.'),
-                  _Interpretations(query: query),
+                  _Interpretations(query: query, category: category),
                 ]),
               ),
             ],
@@ -177,7 +178,8 @@ class _Header extends StatelessWidget {
         SizedBox(height: 4),
         Text('Choose the right language, method and visual; explain what the evidence means.', style: TextStyle(color: TechColors.textMuted, fontSize: 11, height: 1.4)),
       ])),
-      Container(
+      if (MediaQuery.of(context).size.width > 520)
+        Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         decoration: BoxDecoration(color: TechColors.statusGreen.withValues(alpha: .08), border: Border.all(color: TechColors.statusGreen.withValues(alpha: .35)), borderRadius: BorderRadius.circular(5)),
         child: const Text('REFERENCE', style: TextStyle(color: TechColors.statusGreen, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .7)),
@@ -605,11 +607,13 @@ class _Warning extends StatelessWidget {
 }
 
 class _Interpretations extends StatelessWidget {
-  const _Interpretations({required this.query});
-  final String query;
+  const _Interpretations({required this.query, required this.category});
+  final String query, category;
   @override
   Widget build(BuildContext context) {
-    final visible = _interpretations.where((e) => query.isEmpty || e.searchable.contains(query)).toList();
+    final visible = _interpretations.where((e) =>
+      (query.isEmpty || e.searchable.contains(query)) &&
+      (category == 'All categories' || category == e.category)).toList();
     if (visible.isEmpty) return const _Empty('No interpretation examples match this search.');
     return ListView(padding: const EdgeInsets.only(bottom: 18), children: [
       const _Panel(title: 'Turn an observation into a useful statement', body: 'Separate what the data shows from what you think it means. State evidence first, identify possible explanations as hypotheses, and call a cause confirmed only when the evidence supports that conclusion.'),
