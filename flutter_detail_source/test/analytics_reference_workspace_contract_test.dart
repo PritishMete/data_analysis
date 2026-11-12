@@ -143,7 +143,9 @@ void main() {
     expect(guide, contains('Professional example'));
     expect(
       guide,
-      contains('Statistical significance is not automatically commercial importance'),
+      contains(
+        'Statistical significance is not automatically commercial importance',
+      ),
     );
   });
 
