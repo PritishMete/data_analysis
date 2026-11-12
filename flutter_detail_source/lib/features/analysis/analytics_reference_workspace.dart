@@ -90,7 +90,7 @@ const _charts = <_ChartGroup>[
   ]),
   _ChartGroup('Trend', Icons.trending_up, Color(0xFF00C875), [
     _Chart('Line chart', 'Show trends over time.', Icons.show_chart),
-    _Chart('Area chart', 'Show trends and magnitude over time.', Icons.area_chart),
+    _Chart('Area chart', 'Show trends and magnitude over time.', Icons.show_chart),
   ]),
   _ChartGroup('Part-to-whole', Icons.pie_chart, Color(0xFF9B65F5), [
     _Chart('Pie chart', 'Show parts of a whole.', Icons.pie_chart),
@@ -99,14 +99,14 @@ const _charts = <_ChartGroup>[
   ]),
   _ChartGroup('Distribution', Icons.equalizer, Color(0xFFFFC247), [
     _Chart('Histogram', 'Show distribution of numerical data.', Icons.bar_chart),
-    _Chart('Box plot', 'Show spread, median and outliers.', Icons.view_week),
+    _Chart('Box plot', 'Show spread, median and outliers.', Icons.view_agenda),
   ]),
   _ChartGroup('Relationship', Icons.scatter_plot, Color(0xFF22B8C7), [
     _Chart('Scatter plot', 'Show relationship between two variables.', Icons.scatter_plot),
-    _Chart('Bubble chart', 'Show three variables using position and size.', Icons.bubble_chart),
+    _Chart('Bubble chart', 'Show three variables using position and size.', Icons.circle),
   ]),
   _ChartGroup('Contribution to change', Icons.stacked_line_chart, Color(0xFFFF6875), [
-    _Chart('Waterfall chart', 'Explain increases and decreases in a total.', Icons.waterfall_chart),
+    _Chart('Waterfall chart', 'Explain increases and decreases in a total.', Icons.stacked_bar_chart),
   ]),
   _ChartGroup('Process stages', Icons.filter_alt, Color(0xFF9B65F5), [
     _Chart('Funnel chart', 'Show values across sequential stages.', Icons.filter_alt),
@@ -114,7 +114,7 @@ const _charts = <_ChartGroup>[
   _ChartGroup('Geographic', Icons.place, Color(0xFF22B8C7), [
     _Chart('Map chart', 'Visualize geographic data.', Icons.map),
   ]),
-  _ChartGroup('Target achievement', Icons.track_changes, Color(0xFFFF914D), [
+  _ChartGroup('Target achievement', Icons.gps_fixed, Color(0xFFFF914D), [
     _Chart('Gauge chart', 'Show progress toward a target.', Icons.speed),
     _Chart('Bullet chart', 'Compare actual performance with a target.', Icons.linear_scale),
   ]),
