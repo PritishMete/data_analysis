@@ -5,8 +5,7 @@ import '../../app_colors.dart';
 /// Dataset-independent analytical reference. Opening this screen performs no
 /// dataset scan, registration, network request or data mutation.
 class AnalyticsReferenceWorkspace extends StatefulWidget {
-  const AnalyticsReferenceWorkspace({super.key, this.onBack});
-  final VoidCallback? onBack;
+  const AnalyticsReferenceWorkspace({super.key});
 
   @override
   State<AnalyticsReferenceWorkspace> createState() => _AnalyticsReferenceWorkspaceState();
@@ -52,7 +51,7 @@ class _AnalyticsReferenceWorkspaceState extends State<AnalyticsReferenceWorkspac
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Header(onBack: widget.onBack),
+              const _Header(),
               const SizedBox(height: 12),
               Container(
                 decoration: BoxDecoration(
@@ -154,18 +153,13 @@ final _focusBorder = OutlineInputBorder(
 );
 
 class _Header extends StatelessWidget {
-  const _Header({this.onBack});
-  final VoidCallback? onBack;
+  const _Header();
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(color: TechColors.panelBg, border: Border.all(color: TechColors.borderMuted), borderRadius: BorderRadius.circular(10)),
     child: Row(children: [
-      if (onBack != null) ...[
-        IconButton(tooltip: 'Back to Data Workspace', onPressed: onBack, icon: const Icon(Icons.arrow_back, color: TechColors.textPrimary, size: 19)),
-        const SizedBox(width: 3),
-      ],
       Container(
         width: 42,
         height: 42,
@@ -190,9 +184,10 @@ class _Header extends StatelessWidget {
 
 class _Entry {
   const _Entry(this.category, this.title, this.meaning, this.when, this.example, {
-    this.data = '', this.question = '', this.strengths = '', this.limits = '', this.note = '',
+    this.data = '', this.question = '', this.strengths = '', this.limits = '', this.note = '', this.icon,
   });
   final String category, title, meaning, when, example, data, question, strengths, limits, note;
+  final IconData? icon;
   String get searchable => [category, title, meaning, when, example, data, question, strengths, limits, note].join(' ').toLowerCase();
 }
 
@@ -276,8 +271,31 @@ const _vocabulary = <_Entry>[
   _Entry('Data quality and reliability','Data integrity','The degree to which data remains accurate, complete, consistent and protected through its lifecycle.','Use for end-to-end trustworthiness, constraints and controlled transformations.','Referential checks and audit logs helped preserve data integrity.'),
 ];
 
+IconData _chartIcon(String title) => switch (title) {
+  'Bar chart' || 'Column chart' || 'Grouped bar chart' || 'Stacked bar chart' || 'Lollipop chart' => Icons.bar_chart,
+  'Line chart' || 'Area chart' || 'Stacked area chart' || 'Sparkline' || 'Moving average chart' || 'Frequency polygon' || 'Candlestick chart' => Icons.show_chart,
+  'Pie chart' || '100% stacked bar chart' => Icons.pie_chart,
+  'Donut chart' => Icons.donut_large,
+  'Treemap' || 'Heatmap' || 'Correlation matrix' || 'Calendar heatmap' => Icons.grid_on,
+  'Histogram' || 'Violin plot' || 'Density plot' => Icons.equalizer,
+  'Box plot' => Icons.tune,
+  'Scatter plot' => Icons.scatter_plot,
+  'Bubble chart' => Icons.bubble_chart,
+  'Waterfall chart' || 'Decomposition chart' => Icons.account_tree,
+  'Pareto chart' => Icons.bar_chart,
+  'Funnel chart' => Icons.filter_alt,
+  'Sankey diagram' => Icons.swap_horiz,
+  'Choropleth map' || 'Symbol map' || 'Geographic heatmap' => Icons.map,
+  'KPI card' => Icons.dashboard,
+  'Gauge chart' || 'Bullet chart' || 'Actual vs target chart' => Icons.speed,
+  'Control chart' || 'Run chart' => Icons.timeline,
+  'Radar chart' => Icons.radar,
+  'Gantt chart' => Icons.view_timeline,
+  _ => Icons.analytics,
+};
+
 _Entry _c(String cat, String title, String meaning, String when, String data, String question, String strengths, String limits, String example) =>
-    _Entry(cat, title, meaning, when, example, data: data, question: question, strengths: strengths, limits: limits);
+    _Entry(cat, title, meaning, when, example, data: data, question: question, strengths: strengths, limits: limits, icon: _chartIcon(title));
 final _charts = <_Entry>[
   _c('Comparison','Bar chart','Horizontal bars compare values across discrete categories.','Use when category names are long or ranking matters.','Category plus numeric measure.','Which categories are larger or smaller?','Easy to rank and compare; long labels fit.','Too many categories create a long chart; use a consistent scale.','Compare revenue across branches.'),
   _c('Comparison','Column chart','Vertical bars compare values across categories or ordered periods.','Use for a modest number of categories or periods.','Category or period plus numeric measure.','How do values differ across groups or periods?','Familiar and effective for clear differences.','Long labels are awkward; bar baselines should normally start at zero.','Compare monthly sales across four products.'),
@@ -409,6 +427,15 @@ class _EntryTile extends StatelessWidget {
       childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
       iconColor: TechColors.borderActive,
       collapsedIconColor: TechColors.textMuted,
+      leading: entry.icon == null ? null : Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: TechColors.borderActive.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Icon(entry.icon, color: TechColors.borderActive, size: 19),
+      ),
       title: Text(entry.title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w800)),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4),
@@ -507,6 +534,8 @@ class _OverviewTab extends StatelessWidget {
           Row(children: [
             const Icon(Icons.lightbulb_outline, color: TechColors.statusAmber, size: 19),
             const SizedBox(width: 8),
+            Icon(_chartIcon(chart), color: TechColors.borderActive, size: 18),
+            const SizedBox(width: 7),
             Expanded(child: Text('Recommended: $chart', style: const TextStyle(color: TechColors.borderActive, fontSize: 14, fontWeight: FontWeight.w900))),
           ]),
           const SizedBox(height: 5),
@@ -579,7 +608,11 @@ class _Quick extends StatelessWidget {
       Row(children: [
         Expanded(flex: 3, child: Text(question, style: const TextStyle(color: TechColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w700))),
         const SizedBox(width: 8),
-        Expanded(flex: 2, child: Text(chart, style: const TextStyle(color: TechColors.borderActive, fontSize: 11, fontWeight: FontWeight.w900))),
+        Expanded(flex: 2, child: Row(children: [
+          Icon(_chartIcon(chart), color: TechColors.borderActive, size: 16),
+          const SizedBox(width: 5),
+          Expanded(child: Text(chart, overflow: TextOverflow.ellipsis, style: const TextStyle(color: TechColors.borderActive, fontSize: 11, fontWeight: FontWeight.w900))),
+        ])),
       ]),
       const SizedBox(height: 4),
       Text(note, style: const TextStyle(color: TechColors.textMuted, fontSize: 10)),
