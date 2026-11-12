@@ -18,7 +18,9 @@ class AnalysisScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.selectedView == 'ANALYTICS_REFERENCE') {
-      return const AnalyticsReferenceWorkspace();
+      return AnalyticsReferenceWorkspace(
+        onBack: () => state.setState(() => state.selectedView = 'ALL_SYSTEMS'),
+      );
     }
 
     if (state.selectedView == 'AI_ANALYTICS') {
@@ -32,9 +34,6 @@ class AnalysisScreen extends StatelessWidget {
     final showQuality = state.selectedView == 'ALL_SYSTEMS' || state.selectedView == 'QUALITY';
     final showLogs = state.selectedView == 'ALL_SYSTEMS' || state.selectedView == 'LOGS';
 
-    // The dedicated AI CHAT view is a true full-height workspace.  It owns
-    // the available viewport so the conversation can expand instead of
-    // being constrained to the compact dashboard chat card.
     if (state.selectedView == 'NEURAL_CHAT') {
       return Padding(
         padding: const EdgeInsets.all(16),
