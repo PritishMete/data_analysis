@@ -178,6 +178,7 @@ jobs:
           test/management_skeleton_responsive_test.dart
           lib/features/analysis/ai_analytics_workspace.dart
           test/ai_analytics_workspace_contract_test.dart
+          test/analytics_reference_workspace_contract_test.dart
 
       - name: Analyze auth UI Flutter sources
         run: >-
