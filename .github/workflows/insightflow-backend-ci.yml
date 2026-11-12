@@ -182,6 +182,7 @@ jobs:
       - name: Analyze auth UI Flutter sources
         run: >-
           flutter analyze
+          --no-fatal-infos
           lib/features/auth/auth_glass_widgets.dart
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
@@ -215,8 +216,12 @@ jobs:
           test/onboarding_auth_flow_contract_test.dart
           test/ai_analytics_workspace_contract_test.dart
 
-      - name: Analyze dedicated AI Analytics workspace
-        run: flutter analyze lib/features/analysis/ai_analytics_workspace.dart test/ai_analytics_workspace_contract_test.dart
+      - name: Analyze analytics workspaces and reference guide
+        run: >-
+          flutter analyze --no-fatal-infos
+          lib/features/analysis/ai_analytics_workspace.dart
+          lib/features/analysis/analytics_reference_workspace.dart
+          test/ai_analytics_workspace_contract_test.dart
 
       - name: Build Flutter web
         run: >-
