@@ -187,3 +187,8 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+dependency_overrides:
+  # Dart 3.11 rejects the obsolete @JS annotations in older camera_web releases.
+  # This compatible patched release removes those annotations.
+  camera_web: 0.3.5+6
