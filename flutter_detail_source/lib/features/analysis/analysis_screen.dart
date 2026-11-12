@@ -18,9 +18,7 @@ class AnalysisScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.selectedView == 'ANALYTICS_REFERENCE') {
-      return AnalyticsReferenceWorkspace(
-        onBack: () => state.setState(() => state.selectedView = 'ALL_SYSTEMS'),
-      );
+      return const AnalyticsReferenceWorkspace();
     }
 
     if (state.selectedView == 'AI_ANALYTICS') {
