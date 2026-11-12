@@ -8,21 +8,36 @@ void main() {
   late String guide;
 
   setUpAll(() {
-    dataScreen = File('lib/features/dashboard/data_screen.dart').readAsStringSync();
-    analysisScreen = File('lib/features/analysis/analysis_screen.dart').readAsStringSync();
-    guide = File('lib/features/analysis/analytics_reference_workspace.dart').readAsStringSync();
+    dataScreen = File(
+      'lib/features/dashboard/data_screen.dart',
+    ).readAsStringSync();
+    analysisScreen = File(
+      'lib/features/analysis/analysis_screen.dart',
+    ).readAsStringSync();
+    guide = File(
+      'lib/features/analysis/analytics_reference_workspace.dart',
+    ).readAsStringSync();
   });
 
   test('Analytics Guide is routed before loading and no-dataset guards', () {
     final body = dataScreen.indexOf('Widget _buildBody()');
-    final guideRoute = dataScreen.indexOf("if (selectedView == 'ANALYTICS_REFERENCE')", body);
+    final guideRoute = dataScreen.indexOf(
+      "if (selectedView == 'ANALYTICS_REFERENCE')",
+      body,
+    );
     final loadingGuard = dataScreen.indexOf('if (isLoading)', body);
-    final emptyStateGuard = dataScreen.indexOf("if (analysisData == null || analysisData!.containsKey('error'))", body);
+    final emptyStateGuard = dataScreen.indexOf(
+      "if (analysisData == null || analysisData!.containsKey('error'))",
+      body,
+    );
 
     expect(guideRoute, greaterThanOrEqualTo(0));
     expect(loadingGuard, greaterThan(guideRoute));
     expect(emptyStateGuard, greaterThan(guideRoute));
-    expect(dataScreen.substring(guideRoute, loadingGuard), contains('return AnalysisScreen(state: this);'));
+    expect(
+      dataScreen.substring(guideRoute, loadingGuard),
+      contains('return AnalysisScreen(state: this);'),
+    );
   });
 
   test('guide renders all five learning sections and remains dataset independent', () {
@@ -42,44 +57,145 @@ void main() {
 
   test('vocabulary contains the requested analytical categories and distinctions', () {
     for (final term in [
-      'Growth / increase', 'Surged', 'Decline / decrease', 'Stable / no change',
-      'Fluctuation', 'Peak', 'Trough', 'Recovery', 'Reversal', 'Acceleration',
-      'Deceleration', 'Significant', 'Substantial', 'Material', 'Marginal',
-      'Incremental', 'Negligible', 'Nominal', 'Proportional', 'Average (mean)',
-      'Median', 'Mode', 'Variance', 'Standard deviation', 'Skewness', 'Kurtosis',
-      'Outlier', 'Quartile', 'Percentile', 'Distribution', 'Deviation',
-      'Outperformed', 'Underperformed', 'Exceeded expectations', 'Fell short',
-      'Optimal', 'Suboptimal', 'Favorable', 'Adverse', 'Efficiency', 'Productivity',
-      'Year-over-Year (YoY)', 'Month-over-Month (MoM)', 'Quarter-over-Quarter (QoQ)',
-      'Period-over-Period', 'Benchmark', 'Baseline', 'Relative change',
-      'Absolute change', 'Correlation', 'Positive correlation', 'Negative correlation',
-      'Causation', 'Contributing factor', 'Driver', 'Impact', 'Dependency',
-      'Attribution', 'Projection', 'Forecast', 'Extrapolation', 'Trendline',
-      'Seasonality', 'Moving average', 'Confidence interval', 'Prediction',
-      'Scenario analysis', 'Completeness', 'Accuracy', 'Consistency', 'Validity',
-      'Uniqueness', 'Missing values', 'Duplicate records', 'Data integrity',
+      'Growth / increase',
+      'Surged',
+      'Decline / decrease',
+      'Stable / no change',
+      'Fluctuation',
+      'Peak',
+      'Trough',
+      'Recovery',
+      'Reversal',
+      'Acceleration',
+      'Deceleration',
+      'Significant',
+      'Substantial',
+      'Material',
+      'Marginal',
+      'Incremental',
+      'Negligible',
+      'Nominal',
+      'Proportional',
+      'Average (mean)',
+      'Median',
+      'Mode',
+      'Variance',
+      'Standard deviation',
+      'Skewness',
+      'Kurtosis',
+      'Outlier',
+      'Quartile',
+      'Percentile',
+      'Distribution',
+      'Deviation',
+      'Outperformed',
+      'Underperformed',
+      'Exceeded expectations',
+      'Fell short',
+      'Optimal',
+      'Suboptimal',
+      'Favorable',
+      'Adverse',
+      'Efficiency',
+      'Productivity',
+      'Year-over-Year (YoY)',
+      'Month-over-Month (MoM)',
+      'Quarter-over-Quarter (QoQ)',
+      'Period-over-Period',
+      'Benchmark',
+      'Baseline',
+      'Relative change',
+      'Absolute change',
+      'Correlation',
+      'Positive correlation',
+      'Negative correlation',
+      'Causation',
+      'Contributing factor',
+      'Driver',
+      'Impact',
+      'Dependency',
+      'Attribution',
+      'Projection',
+      'Forecast',
+      'Extrapolation',
+      'Trendline',
+      'Seasonality',
+      'Moving average',
+      'Confidence interval',
+      'Prediction',
+      'Scenario analysis',
+      'Completeness',
+      'Accuracy',
+      'Consistency',
+      'Validity',
+      'Uniqueness',
+      'Missing values',
+      'Duplicate records',
+      'Data integrity',
     ]) {
-      expect(guide.toLowerCase(), contains(term.toLowerCase()), reason: term);
+      expect(
+        guide.toLowerCase(),
+        contains(term.toLowerCase()),
+        reason: term,
+      );
     }
     expect(guide, contains('When to use'));
     expect(guide, contains('Professional example'));
-    expect(guide, contains('Statistical significance is not automatically commercial importance'));
+    expect(
+      guide,
+      contains('Statistical significance is not automatically commercial importance'),
+    );
   });
 
   test('chart catalogue covers the requested chart families and decision guidance', () {
     for (final chart in [
-      'Bar chart', 'Column chart', 'Grouped bar chart', 'Stacked bar chart',
-      'Lollipop chart', 'Line chart', 'Area chart', 'Stacked area chart',
-      'Sparkline', 'Moving average chart', 'Pie chart', 'Donut chart', 'Treemap',
-      '100% stacked bar chart', 'Histogram', 'Box plot', 'Violin plot',
-      'Density plot', 'Frequency polygon', 'Scatter plot', 'Bubble chart',
-      'Heatmap', 'Correlation matrix', 'Waterfall chart', 'Pareto chart',
-      'Decomposition chart', 'Funnel chart', 'Sankey diagram', 'Choropleth map',
-      'Symbol map', 'Geographic heatmap', 'KPI card', 'Gauge chart',
-      'Bullet chart', 'Actual vs target chart', 'Control chart', 'Run chart',
-      'Radar chart', 'Gantt chart', 'Calendar heatmap', 'Candlestick chart',
+      'Bar chart',
+      'Column chart',
+      'Grouped bar chart',
+      'Stacked bar chart',
+      'Lollipop chart',
+      'Line chart',
+      'Area chart',
+      'Stacked area chart',
+      'Sparkline',
+      'Moving average chart',
+      'Pie chart',
+      'Donut chart',
+      'Treemap',
+      '100% stacked bar chart',
+      'Histogram',
+      'Box plot',
+      'Violin plot',
+      'Density plot',
+      'Frequency polygon',
+      'Scatter plot',
+      'Bubble chart',
+      'Heatmap',
+      'Correlation matrix',
+      'Waterfall chart',
+      'Pareto chart',
+      'Decomposition chart',
+      'Funnel chart',
+      'Sankey diagram',
+      'Choropleth map',
+      'Symbol map',
+      'Geographic heatmap',
+      'KPI card',
+      'Gauge chart',
+      'Bullet chart',
+      'Actual vs target chart',
+      'Control chart',
+      'Run chart',
+      'Radar chart',
+      'Gantt chart',
+      'Calendar heatmap',
+      'Candlestick chart',
     ]) {
-      expect(guide.toLowerCase(), contains(chart.toLowerCase()), reason: chart);
+      expect(
+        guide.toLowerCase(),
+        contains(chart.toLowerCase()),
+        reason: chart,
+      );
     }
     expect(guide, contains('Data required'));
     expect(guide, contains('Question answered'));
@@ -90,16 +206,35 @@ void main() {
 
   test('methods and interpretation examples cover all four analytics levels', () {
     for (final term in [
-      'Descriptive analytics', 'Diagnostic analytics', 'Predictive analytics',
-      'Prescriptive analytics', 'Root cause analysis', 'Linear regression',
-      'Time-series forecasting', 'Classification', 'Optimization',
-      'Scenario planning', 'Sensitivity analysis', 'Decision analysis',
-      'Resource allocation', 'Revenue growth', 'Revenue up, profit down',
-      'Sales target variance', 'Expense overrun', 'Output per input',
-      'Performance against benchmark', 'Retention movement', 'Cycle-time improvement',
-      'Branch below benchmark', 'Forecast with uncertainty',
+      'Descriptive analytics',
+      'Diagnostic analytics',
+      'Predictive analytics',
+      'Prescriptive analytics',
+      'Root cause analysis',
+      'Linear regression',
+      'Time-series forecasting',
+      'Classification',
+      'Optimization',
+      'Scenario planning',
+      'Sensitivity analysis',
+      'Decision analysis',
+      'Resource allocation',
+      'Revenue growth',
+      'Revenue up, profit down',
+      'Sales target variance',
+      'Expense overrun',
+      'Output per input',
+      'Performance against benchmark',
+      'Retention movement',
+      'Cycle-time improvement',
+      'Branch below benchmark',
+      'Forecast with uncertainty',
     ]) {
-      expect(guide.toLowerCase(), contains(term.toLowerCase()), reason: term);
+      expect(
+        guide.toLowerCase(),
+        contains(term.toLowerCase()),
+        reason: term,
+      );
     }
     expect(guide, contains('Four levels of analytical language'));
     expect(guide, contains('Confirmed cause'));
