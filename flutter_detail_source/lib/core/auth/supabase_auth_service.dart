@@ -31,7 +31,7 @@ class InsightFlowSupabaseAuthService {
   /// for multi-device use.
   static FlutterAuthClientOptions get authOptions =>
       FlutterAuthClientOptions(
-        authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
+        authFlowType: AuthFlowType.pkce,
         detectSessionInUri: true,
         persistSession: true,
         autoRefreshToken: true,
@@ -40,6 +40,8 @@ class InsightFlowSupabaseAuthService {
   /// Use local scope so signing out on this installation does not revoke
   /// sessions on the user's other devices.
   static const SignOutScope localSignOutScope = SignOutScope.local;
+  static const SignOutScope otherSessionsSignOutScope = SignOutScope.others;
+  static const SignOutScope globalSignOutScope = SignOutScope.global;
 
   static Future<bool> initialize() async {
     if (!InsightFlowSupabaseConfig.isConfigured) return false;
@@ -288,8 +290,22 @@ class InsightFlowSupabaseAuthService {
     );
   }
 
-  static Future<void> signOut() =>
+  /// Ends only this installation's Supabase session.
+  static Future<void> signOut() => signOutCurrentDevice();
+
+  static Future<void> signOutCurrentDevice() =>
       client.auth.signOut(scope: localSignOutScope);
+
+  /// Ends every other Supabase Auth session while keeping this one active.
+  ///
+  /// Supabase does not emit a signed-out event for the current session when
+  /// the `others` scope is used.
+  static Future<void> signOutOtherSessions() =>
+      client.auth.signOut(scope: otherSessionsSignOutScope);
+
+  /// Revokes all Supabase Auth sessions for the current account.
+  static Future<void> signOutEverywhere() =>
+      client.auth.signOut(scope: globalSignOutScope);
 
   static Future<Session?>? _ensureSessionFuture;
 
