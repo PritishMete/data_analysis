@@ -175,6 +175,92 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     }
   }
 
+  Future<bool> _confirmSessionAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(message),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _signOutOtherSessions() async {
+    if (_busy ||
+        !await _confirmSessionAction(
+          title: 'End other sessions?',
+          message:
+              'InsightFlow will sign out this account on other browsers and devices. This device will stay signed in.',
+          confirmLabel: 'End other sessions',
+        )) {
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await InsightFlowSupabaseAuthService.signOutOtherSessions();
+      _setMessage(
+        'Other InsightFlow sessions were signed out. This device remains active.',
+      );
+    } catch (_) {
+      _setMessage(
+        'Other sessions could not be signed out. Please try again.',
+        error: true,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _signOutEverywhere() async {
+    if (_busy ||
+        !await _confirmSessionAction(
+          title: 'Sign out everywhere?',
+          message:
+              'This will revoke all InsightFlow sessions for this account, including this device. You will need to sign in again.',
+          confirmLabel: 'Sign out everywhere',
+        )) {
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await InsightFlowSupabaseAuthService.signOutEverywhere();
+    } catch (_) {
+      _setMessage(
+        'InsightFlow could not revoke every session. This device remains signed in; please try again.',
+        error: true,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _deleteAccount() async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
@@ -304,6 +390,37 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ),
+        const SizedBox(height: 22),
+        const AuthGlassFieldLabel('Sessions & devices'),
+        const Text(
+          'Each InsightFlow app or browser profile keeps its own secure session. '
+          'You can end other sessions or sign out on every device.',
+          style: TextStyle(
+            color: TechColors.textMuted,
+            fontSize: 10,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+        GlassButton.custom(
+          onTap: _busy ? () {} : _signOutOtherSessions,
+          enabled: !_busy,
+          width: double.infinity,
+          height: 44,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: 'End other sessions',
+          child: const Text(
+            'End other sessions',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+        TextButton(
+          onPressed: _busy ? null : _signOutEverywhere,
+          child: const Text(
+            'Sign out everywhere',
+            style: TextStyle(color: CupertinoColors.destructiveRed),
+          ),
+        ),
         if (_message != null) ...[
           const SizedBox(height: 12),
           AuthGlassMessage(text: _message!, error: _error),
@@ -318,7 +435,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         ),
         TextButton(
           onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
-          child: const Text('Sign out'),
+          child: const Text('Sign out on this device'),
         ),
       ],
     );
