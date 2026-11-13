@@ -51,14 +51,15 @@
 
   patchHistory();
 
-  Office.onReady(function (info) {
-    patchHistory();
-    if (typeof window._onOfficeReady === "function") {
-      window._onOfficeReady();
-    }
+  var flutterStarted = false;
 
-    console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
-    window.__isOfficeHost = !!(info && info.host);
+  function startFlutter() {
+    if (flutterStarted) {
+      return;
+    }
+    flutterStarted = true;
+
+    patchHistory();
 
     // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
     // Office task panes can retain a previous Flutter web bundle after gh-pages
@@ -78,7 +79,26 @@
       };
     };
     document.head.appendChild(script);
-  });
+  }
+
+  // Office.js is optional for the normal browser deployment. Do not make the
+  // entire Flutter application depend on Office.onReady, which may be absent
+  // or fail outside an Office host. When Office is available, keep the host
+  // signal and callback behavior for Excel integrations.
+  if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+    Office.onReady(function (info) {
+      if (typeof window._onOfficeReady === "function") {
+        window._onOfficeReady();
+      }
+      console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
+      window.__isOfficeHost = !!(info && info.host);
+      startFlutter();
+    });
+  }
+
+  // Start immediately for ordinary browsers; the idempotent Office callback
+  // above can still enrich the host state when Office.js becomes ready.
+  startFlutter();
 </script>
 </body>
 </html>
