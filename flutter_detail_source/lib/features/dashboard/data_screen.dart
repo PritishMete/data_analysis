@@ -6482,7 +6482,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   //
   // The EXCEL / UPLOAD FILE toggle (previously `DataSourceToggle`) has been
   // removed entirely — [SourceRouter] inside the Pipelines tab is now the
-  // one place source selection happens, and `_buildEmptyState()` below
+  // one place source selection happens, and `buildEmptyState()` below
   // already shows an uploaded-file badge, so this panel is just the title.
   Widget _buildGlassAppBar() {
     return GlassContainer(
@@ -6564,29 +6564,41 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         child: CircularProgressIndicator(color: TechColors.borderActive),
       );
     }
-    if (analysisData == null || analysisData!.containsKey('error')) {
+    // Keep the pipeline editor isolated to its own tab. Previously the
+    // no-dataset guard above this route sent every tab to the same pipeline
+    // setup panel, making ALL / OVERVIEW / PREVIEW / STATS / QUALITY / LOGS
+    // appear to contain identical content before the first scan.
+    if (selectedView == "PIPELINES") {
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildEmptyState(),
-            const SizedBox(height: 12),
+            if (analysisData == null || analysisData!.containsKey('error')) ...[
+              buildEmptyState(),
+              const SizedBox(height: 12),
+            ],
             PipelineScreen(state: this),
           ],
         ),
       );
     }
-    if (selectedView == "PIPELINES") {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
-        child: PipelineScreen(state: this),
-      );
+    if (selectedView == "PIVOT_EDITOR") {
+      if (analysisData == null || analysisData!.containsKey('error')) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
+          child: buildEmptyState(),
+        );
+      }
+      return PivotEditor(state: this);
     }
-    if (selectedView == "PIVOT_EDITOR") return PivotEditor(state: this);
+
+    // AnalysisScreen owns the ALL and individual analysis tabs, including
+    // their empty-data states. Do not replace them with the pipeline editor.
     return AnalysisScreen(state: this);
   }
 
-  Widget _buildEmptyState() {
+  Widget buildEmptyState() {
     if (dataSourceMode == DataSourceMode.uploadedFile && uploadedFile != null) {
       return GlassContainer(
         useOwnLayer: true,
