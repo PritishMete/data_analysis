@@ -22,8 +22,8 @@ def test_invalid_token_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setattr(
         auth_middleware,
-        "verify_id_token",
-        lambda token: (_ for _ in ()).throw(auth_middleware.AuthenticationRequired("invalid")),
+        "verify_supabase_access_token",
+        lambda token, require_email_verified=True: (_ for _ in ()).throw(auth_middleware.AuthenticationRequired("invalid")),
     )
     from main import app
     response = TestClient(app).get(
@@ -253,7 +253,7 @@ def test_unregistered_google_or_email_account_is_not_authorized_by_backend(monke
 def test_protected_middleware_rejects_non_supabase_persistence_without_firebase_fallback(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
+    monkeypatch.setattr(auth_middleware, "verify_supabase_access_token", lambda token, require_email_verified=True: {"uid": "alice", "email_verified": True})
 
     def firebase_authorization_must_not_run(*args, **kwargs):
         raise AssertionError("Firebase authorization must never be used")

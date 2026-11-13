@@ -133,6 +133,24 @@ def _frontend_status(client_build_id: str | None) -> dict[str, Any]:
     }
 
 
+def _external_frontend_status() -> dict[str, Any]:
+    """Describe a separately hosted frontend without claiming it is reachable."""
+    return {
+        "status": "external",
+        "hosting": "external",
+        "artifact_present": False,
+        "availability_verified": False,
+        "url": os.getenv("INSIGHTFLOW_FRONTEND_URL") or "configured_externally",
+        "detail_analysis_build_id": None,
+        "expected_build_id": os.getenv("INSIGHTFLOW_EXPECTED_FRONTEND_BUILD_ID") or "unavailable",
+        "stale_build": False,
+    }
+
+
+def _frontend_hosting_mode() -> str:
+    return os.getenv("INSIGHTFLOW_FRONTEND_HOSTING_MODE", "external").strip().lower()
+
+
 def _recovery(frontend: dict[str, Any], services: dict[str, str], startup: dict[str, str]) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
 
@@ -168,9 +186,9 @@ def build_diagnostics(client_build_id: str | None = None) -> dict[str, Any]:
         "privacy": "healthy" if isinstance(LOCAL_ONLY, bool) else "unavailable",
         **{name: status for name, status in services.items()},
     }
-    frontend = _frontend_status(client_build_id)
+    frontend = _frontend_status(client_build_id) if _frontend_hosting_mode() == "local" else _external_frontend_status()
     recovery = _recovery(frontend, services, startup)
-    healthy = frontend["status"] == "healthy" and all(value == "healthy" for value in services.values()) and startup["privacy"] == "healthy"
+    healthy = all(value == "healthy" for value in services.values()) and startup["privacy"] == "healthy"
 
     return {
         "success": True,
@@ -197,21 +215,26 @@ def build_diagnostics(client_build_id: str | None = None) -> dict[str, Any]:
 
 def run_startup_self_check() -> dict[str, str]:
     """Lightweight startup checks; never processes datasets."""
-    index, bundle, bootstrap = _frontend_build_files()
-    frontend_ok = all(path.is_file() for path in (index, bundle, bootstrap)) and bool(_read_meta_build_id(index))
+    frontend_ok = True
+    frontend_status = "external"
+    if _frontend_hosting_mode() == "local":
+        index, bundle, bootstrap = _frontend_build_files()
+        frontend_ok = all(path.is_file() for path in (index, bundle, bootstrap)) and bool(_read_meta_build_id(index))
+        frontend_status = "healthy" if frontend_ok else "unavailable"
     statuses = {
         "backend": "healthy",
-        "frontend": "healthy" if frontend_ok else "unavailable",
+        "frontend": frontend_status,
         "conversation_state": _service_check(*REQUIRED_IMPORTS["conversation_state"])[0],
         "report_engine": _service_check(*REQUIRED_IMPORTS["report_generation"])[0],
         "privacy": "healthy" if isinstance(LOCAL_ONLY, bool) else "unavailable",
     }
     logger.info("[InsightFlow] Backend: %s", "OK" if statuses["backend"] == "healthy" else "FAIL")
-    logger.info("[InsightFlow] Detail Analysis frontend: %s", "OK" if statuses["frontend"] == "healthy" else "FAIL")
+    logger.info("[InsightFlow] Detail Analysis frontend: %s", "EXTERNAL" if statuses["frontend"] == "external" else ("OK" if frontend_ok else "FAIL"))
     logger.info("[InsightFlow] Conversation state: %s", "OK" if statuses["conversation_state"] == "healthy" else "FAIL")
     logger.info("[InsightFlow] Report engine: %s", "OK" if statuses["report_engine"] == "healthy" else "FAIL")
     logger.info("[InsightFlow] Privacy guard: %s", "OK" if statuses["privacy"] == "healthy" else "FAIL")
-    if all(value == "healthy" for value in statuses.values()):
+    backend_ready = all(value == "healthy" for name, value in statuses.items() if name != "frontend")
+    if backend_ready:
         logger.info("[InsightFlow] Ready: http://127.0.0.1:8000/ui/")
     else:
         logger.warning("[InsightFlow] Ready with degraded services; run /v1/system/diagnostics for recovery guidance.")
