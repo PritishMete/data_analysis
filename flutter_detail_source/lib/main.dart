@@ -130,7 +130,12 @@ class InsightFlowApp extends StatelessWidget {
           // (e.g. showError/showNotification in data_screen.dart) throws
           // "No ScaffoldMessenger widget found".
           child: ScaffoldMessenger(
-            child: BackendHeartbeatHost(child: child!),
+            // CupertinoApp can provide a null child during its first builder
+            // pass. Keep startup renderable instead of turning that transient
+            // state into a release-only null-check crash and blank page.
+            child: BackendHeartbeatHost(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
         home: const AuthGate(),

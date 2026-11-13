@@ -42,7 +42,7 @@ def test_authenticated_user_without_permission_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
+    monkeypatch.setattr(auth_middleware, "verify_supabase_access_token", lambda token, require_email_verified=True: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
         "firebase_authz.supabase_provider.authorize",
         lambda *args, **kwargs: (_ for _ in ()).throw(auth_middleware.PermissionDenied("sensitive-internal-detail")),
@@ -64,7 +64,7 @@ def test_authorized_user_reaches_protected_api(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": True})
+    monkeypatch.setattr(auth_middleware, "verify_supabase_access_token", lambda token, require_email_verified=True: {"uid": "alice", "email_verified": True})
     monkeypatch.setattr(
         "firebase_authz.supabase_provider.authorize",
         lambda *args, **kwargs: {
@@ -92,7 +92,7 @@ def test_missing_workspace_or_resource_context_is_rejected(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice"})
+    monkeypatch.setattr(auth_middleware, "verify_supabase_access_token", lambda token, require_email_verified=True: {"uid": "alice"})
     from main import app
     no_workspace = TestClient(app).get(
         "/transform/history/test",
@@ -110,7 +110,7 @@ def test_unverified_token_is_rejected_before_protected_api(monkeypatch):
     monkeypatch.setenv("INSIGHTFLOW_AUTH_REQUIRED", "true")
     monkeypatch.setenv("AUTHN_PROVIDER_MODE", "supabase")
     monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
-    monkeypatch.setattr(auth_middleware, "verify_id_token", lambda token: {"uid": "alice", "email_verified": False})
+    monkeypatch.setattr(auth_middleware, "verify_supabase_access_token", lambda token, require_email_verified=True: {"uid": "alice", "email_verified": False})
     from main import app
     response = TestClient(app).get(
         "/transform/history/test",

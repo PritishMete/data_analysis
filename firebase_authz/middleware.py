@@ -11,10 +11,9 @@ from .service import (
     AuthenticationRequired,
     PermissionDenied,
     authorization,
-    verify_id_token,
 )
 from .schema import validate_id
-from .supabase_auth import SupabaseAuthUnavailable
+from .supabase_auth import SupabaseAuthUnavailable, verify_supabase_access_token
 
 
 PUBLIC_PATHS = {
@@ -178,10 +177,22 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             )
 
         try:
-            claims = verify_id_token(header[7:].strip())
+            token = header[7:].strip()
+            authn_provider = os.environ.get("AUTHN_PROVIDER_MODE", "").strip().lower()
+            persistence_provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
+            if authn_provider != "supabase" or persistence_provider != "supabase":
+                raise AuthenticationRequired(
+                    "Supabase authentication and authorization are required; "
+                    "AUTHN_PROVIDER_MODE and AUTHZ_PERSISTENCE_PROVIDER must both be 'supabase'."
+                )
+
+            # The production identity provider is Supabase. Firebase token
+            # verification here would reject valid Supabase JWTs before the
+            # provider-specific authorization path could run.
+            claims = verify_supabase_access_token(token, require_email_verified=True)
             uid = str(claims.get("uid", "")).strip()
             if not uid:
-                raise AuthenticationRequired("Firebase authentication failed.")
+                raise AuthenticationRequired("Supabase authentication failed.")
             if claims.get("email_verified") is not True:
                 return JSONResponse(
                     status_code=403,
@@ -223,14 +234,6 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
             # dataset.upload capability may submit file content.
             is_multipart_upload = request.method in {"POST", "PUT", "PATCH"} and request.headers.get("content-type", "").lower().startswith("multipart/form-data")
 
-            persistence_provider = os.getenv("AUTHZ_PERSISTENCE_PROVIDER", "").strip().lower()
-            if persistence_provider != "supabase":
-                # Never route a Supabase-authenticated request into legacy
-                # Firebase authorization when configuration is absent or invalid.
-                raise AuthenticationRequired(
-                    "Supabase authorization is required; "
-                    "AUTHZ_PERSISTENCE_PROVIDER must be 'supabase'."
-                )
             from .supabase_provider import authorize as provider_authorize
             decision = provider_authorize(claims, workspace_id, action, resource_id or None)
             if is_multipart_upload:
