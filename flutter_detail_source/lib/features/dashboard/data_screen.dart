@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
 import '../../core/interop/excel_mutation_authorization.dart';
-import '../../core/auth/insightflow_auth_service.dart';
+import '../../core/auth/supabase_auth_service.dart';
 import '../auth/account_management_screen.dart';
 import '../auth/management_navigation.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -569,7 +569,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   Future<void> _loadDatasetUploadCapability() async {
     try {
-      final user = InsightFlowAuthService.currentUser;
+      final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
       if (user == null) return;
       final resolution = await resolveInsightFlowOnboardingStateFromBackend(user.uid);
       if (!mounted) return;
@@ -4816,7 +4816,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       );
 
       final request = http.MultipartRequest('POST', Uri.parse(_cleanDataUrl));
-      await attachFirebaseAuth(request, resourceId: activeSheetName);
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.fields['config'] = json.encode({
         "steps": steps,
         "output_sheet_name": targetSheetName,
@@ -5950,7 +5950,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           .map((row) => row.map(escapeCsvValue).join(','))
           .join('\n');
       final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
-      await attachFirebaseAuth(request, resourceId: activeSheetName);
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -6110,7 +6110,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         'POST',
         Uri.parse("https://data-analysis-oajs.onrender.com/analyze-report"),
       );
-      await attachFirebaseAuth(request, resourceId: activeSheetName);
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -6323,7 +6323,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           "https://data-analysis-oajs.onrender.com/analyze-report-focused",
         ),
       );
-      await attachFirebaseAuth(request, resourceId: activeSheetName);
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.fields['focus_analysis_types'] = json.encode(selectedTypes);
       request.files.add(
         http.MultipartFile.fromString(
@@ -6533,7 +6533,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             ),
             IconButton(
               tooltip: 'Sign out',
-              onPressed: () => InsightFlowAuthService.signOut(),
+              onPressed: InsightFlowSupabaseAuthService.signOut,
               icon: const Icon(
                 Icons.logout,
                 size: 18,

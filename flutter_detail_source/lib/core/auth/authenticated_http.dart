@@ -574,7 +574,7 @@ Future<String> _requireSupabaseAccessToken() async {
   return token;
 }
 
-Future<void> attachFirebaseAuth(
+Future<void> attachSupabaseAuth(
   http.BaseRequest request, {
   String? resourceId,
   bool forceRefresh = false,
@@ -592,7 +592,7 @@ Future<void> attachFirebaseAuth(
   }
 }
 
-Future<Map<String, String>> firebaseAuthHeaders({
+Future<Map<String, String>> authHeaders({
   String? resourceId,
   bool forceRefresh = false,
 }) async {
@@ -623,7 +623,7 @@ Future<String?> _resolveDatasetId(String sourceSheetName) async {
   final id = await getWorkbookDatasetId(sourceSheetName);
   if (id == null || id.isEmpty) return null;
   try {
-    final headers = await firebaseAuthHeaders(resourceId: id);
+    final headers = await authHeaders(resourceId: id);
     final uid = InsightFlowSupabaseAuthService.currentSupabaseUser?.id;
     if (uid != null) {
       await http.post(
@@ -646,7 +646,7 @@ Future<bool> _checkAuthorization({
   required String action,
   required String resourceId,
 }) async {
-  final headers = await firebaseAuthHeaders(resourceId: resourceId);
+  final headers = await authHeaders(resourceId: resourceId);
   final response = await http.post(
     Uri.parse('$backendBaseUrl/v1/authz/check'),
     headers: {...headers, 'Content-Type': 'application/json'},
@@ -665,7 +665,7 @@ Future<Map<String, dynamic>?> requestWorkingCopy({
   String? sourceVersion,
 }) async {
   if (insightFlowWorkspaceId.isEmpty || datasetId.trim().isEmpty) return null;
-  final headers = await firebaseAuthHeaders(resourceId: datasetId);
+  final headers = await authHeaders(resourceId: datasetId);
   final response = await http.post(
     Uri.parse('$backendBaseUrl/v1/authz/working-copies'),
     headers: {...headers, 'Content-Type': 'application/json'},
@@ -782,7 +782,7 @@ Future<bool> authorizeWorkingCopyExcelMutation({
     return false;
   }
   final safeResourceId = _safeResourceId(workingCopyId);
-  final headers = await firebaseAuthHeaders(resourceId: safeResourceId);
+  final headers = await authHeaders(resourceId: safeResourceId);
   final response = await http.post(
     Uri.parse('$backendBaseUrl/v1/authz/check'),
     headers: {...headers, 'Content-Type': 'application/json'},
