@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_colors.dart';
+import 'analytics_visual_icons.dart';
 
 /// Dataset-independent analytical reference. Opening this screen performs no
 /// dataset scan, registration, network request or data mutation.
@@ -68,11 +69,11 @@ class _AnalyticsReferenceWorkspaceState extends State<AnalyticsReferenceWorkspac
                   indicatorWeight: 3,
                   labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                   tabs: [
-                    Tab(text: 'Overview'),
-                    Tab(text: 'Analytical vocabulary'),
-                    Tab(text: 'Chart selection'),
-                    Tab(text: 'Analytical methods'),
-                    Tab(text: 'Interpret findings'),
+                    Tab(icon: Icon(Icons.auto_stories_outlined, size: 16), text: 'Overview'),
+                    Tab(icon: Icon(Icons.translate, size: 16), text: 'Analytical vocabulary'),
+                    Tab(icon: Icon(Icons.insert_chart_outlined, size: 16), text: 'Chart selection'),
+                    Tab(icon: Icon(Icons.science_outlined, size: 16), text: 'Analytical methods'),
+                    Tab(icon: Icon(Icons.fact_check_outlined, size: 16), text: 'Interpret findings'),
                   ],
                 ),
               ),
@@ -271,28 +272,7 @@ const _vocabulary = <_Entry>[
   _Entry('Data quality and reliability','Data integrity','The degree to which data remains accurate, complete, consistent and protected through its lifecycle.','Use for end-to-end trustworthiness, constraints and controlled transformations.','Referential checks and audit logs helped preserve data integrity.'),
 ];
 
-IconData _chartIcon(String title) => switch (title) {
-  'Bar chart' || 'Column chart' || 'Grouped bar chart' || 'Stacked bar chart' || 'Lollipop chart' => Icons.bar_chart,
-  'Line chart' || 'Area chart' || 'Stacked area chart' || 'Sparkline' || 'Moving average chart' || 'Frequency polygon' || 'Candlestick chart' => Icons.show_chart,
-  'Pie chart' || '100% stacked bar chart' => Icons.pie_chart,
-  'Donut chart' => Icons.donut_large,
-  'Treemap' || 'Heatmap' || 'Correlation matrix' || 'Calendar heatmap' => Icons.grid_on,
-  'Histogram' || 'Violin plot' || 'Density plot' => Icons.equalizer,
-  'Box plot' => Icons.tune,
-  'Scatter plot' => Icons.scatter_plot,
-  'Bubble chart' => Icons.bubble_chart,
-  'Waterfall chart' || 'Decomposition chart' => Icons.account_tree,
-  'Pareto chart' => Icons.bar_chart,
-  'Funnel chart' => Icons.filter_alt,
-  'Sankey diagram' => Icons.swap_horiz,
-  'Choropleth map' || 'Symbol map' || 'Geographic heatmap' => Icons.map,
-  'KPI card' => Icons.dashboard,
-  'Gauge chart' || 'Bullet chart' || 'Actual vs target chart' => Icons.speed,
-  'Control chart' || 'Run chart' => Icons.timeline,
-  'Radar chart' => Icons.radar,
-  'Gantt chart' => Icons.view_timeline,
-  _ => Icons.analytics,
-};
+IconData _chartIcon(String title) => AnalyticsVisualIcons.chart(title);
 
 _Entry _c(String cat, String title, String meaning, String when, String data, String question, String strengths, String limits, String example) =>
     _Entry(cat, title, meaning, when, example, data: data, question: question, strengths: strengths, limits: limits, icon: _chartIcon(title));
@@ -427,14 +407,14 @@ class _EntryTile extends StatelessWidget {
       childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
       iconColor: TechColors.borderActive,
       collapsedIconColor: TechColors.textMuted,
-      leading: entry.icon == null ? null : Container(
+      leading: Container(
         width: 34,
         height: 34,
         decoration: BoxDecoration(
           color: TechColors.borderActive.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(7),
         ),
-        child: Icon(entry.icon, color: TechColors.borderActive, size: 19),
+        child: Icon(entry.icon ?? AnalyticsVisualIcons.vocabulary(entry.title, entry.category), color: TechColors.borderActive, size: 19),
       ),
       title: Text(entry.title, style: const TextStyle(color: TechColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w800)),
       subtitle: Padding(
@@ -497,10 +477,10 @@ class _OverviewTab extends StatelessWidget {
       const SizedBox(height: 11),
       LayoutBuilder(builder: (context, constraints) {
         const cards = [
-          _StepCard('01', 'Describe', 'What happened? Summarize level, movement and distribution.', Icons.query_stats),
-          _StepCard('02', 'Diagnose', 'Where did it happen and which factors may explain the pattern?', Icons.manage_search),
-          _StepCard('03', 'Predict', 'What could happen next, and how uncertain is the estimate?', Icons.trending_up),
-          _StepCard('04', 'Prescribe', 'Which action best meets the objective and constraints?', Icons.task_alt),
+          _StepCard('01', 'Describe', 'What happened? Summarize level, movement and distribution.'),
+          _StepCard('02', 'Diagnose', 'Where did it happen and which factors may explain the pattern?'),
+          _StepCard('03', 'Predict', 'What could happen next, and how uncertain is the estimate?'),
+          _StepCard('04', 'Prescribe', 'Which action best meets the objective and constraints?'),
         ];
         final columns = constraints.maxWidth > 850 ? 4 : constraints.maxWidth > 520 ? 2 : 1;
         return Wrap(
@@ -575,16 +555,15 @@ class _Panel extends StatelessWidget {
 }
 
 class _StepCard extends StatelessWidget {
-  const _StepCard(this.number, this.title, this.body, this.icon);
+  const _StepCard(this.number, this.title, this.body);
   final String number, title, body;
-  final IconData icon;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(color: TechColors.panelBg, border: Border.all(color: TechColors.borderMuted), borderRadius: BorderRadius.circular(9)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Icon(icon, color: TechColors.borderActive, size: 18),
+        Icon(AnalyticsVisualIcons.narrativeStage(title), color: TechColors.borderActive, size: 18),
         const Spacer(),
         Text(number, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800)),
       ]),

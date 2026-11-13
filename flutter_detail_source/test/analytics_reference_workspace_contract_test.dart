@@ -270,9 +270,10 @@ void main() {
     expect(guide, contains('icon: _chartIcon(title)'));
     expect(guide, contains('Icon(entry.icon'));
     expect(guide, contains('Icon(_chartIcon(chart)'));
-    expect(guide, contains("'Bar chart' || 'Column chart'"));
-    expect(guide, contains("'Scatter plot' => Icons.scatter_plot"));
-    expect(guide, contains("'Geographic heatmap' => Icons.map"));
+    expect(guide, contains("import 'analytics_visual_icons.dart';"));
+    expect(guide, contains('AnalyticsVisualIcons.chart(title)'));
+    expect(guide, contains('AnalyticsVisualIcons.vocabulary(entry.title, entry.category)'));
+    expect(guide, contains('AnalyticsVisualIcons.narrativeStage(title)'));
   });
 
   test('Pipeline routing remains unchanged', () {
