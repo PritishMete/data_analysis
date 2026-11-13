@@ -555,16 +555,15 @@ class _Panel extends StatelessWidget {
 }
 
 class _StepCard extends StatelessWidget {
-  const _StepCard(this.number, this.title, this.body, this.icon);
+  const _StepCard(this.number, this.title, this.body);
   final String number, title, body;
-  final IconData icon;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(color: TechColors.panelBg, border: Border.all(color: TechColors.borderMuted), borderRadius: BorderRadius.circular(9)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Icon(icon, color: TechColors.borderActive, size: 18),
+        Icon(AnalyticsVisualIcons.narrativeStage(title), color: TechColors.borderActive, size: 18),
         const Spacer(),
         Text(number, style: const TextStyle(color: TechColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800)),
       ]),
