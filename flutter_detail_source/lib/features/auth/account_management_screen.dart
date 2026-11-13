@@ -393,7 +393,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         ),
         const SizedBox(height: 22),
         const AuthGlassFieldLabel('Sessions & devices'),
-        const Text(
+        Text(
           'Each InsightFlow app or browser profile keeps its own secure session. '
           'You can end other sessions or sign out on every device.',
           style: TextStyle(
