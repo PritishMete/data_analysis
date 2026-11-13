@@ -477,10 +477,10 @@ class _OverviewTab extends StatelessWidget {
       const SizedBox(height: 11),
       LayoutBuilder(builder: (context, constraints) {
         const cards = [
-          _StepCard('01', 'Describe', 'What happened? Summarize level, movement and distribution.', Icons.query_stats),
-          _StepCard('02', 'Diagnose', 'Where did it happen and which factors may explain the pattern?', Icons.manage_search),
-          _StepCard('03', 'Predict', 'What could happen next, and how uncertain is the estimate?', Icons.trending_up),
-          _StepCard('04', 'Prescribe', 'Which action best meets the objective and constraints?', Icons.task_alt),
+          _StepCard('01', 'Describe', 'What happened? Summarize level, movement and distribution.'),
+          _StepCard('02', 'Diagnose', 'Where did it happen and which factors may explain the pattern?'),
+          _StepCard('03', 'Predict', 'What could happen next, and how uncertain is the estimate?'),
+          _StepCard('04', 'Prescribe', 'Which action best meets the objective and constraints?'),
         ];
         final columns = constraints.maxWidth > 850 ? 4 : constraints.maxWidth > 520 ? 2 : 1;
         return Wrap(
