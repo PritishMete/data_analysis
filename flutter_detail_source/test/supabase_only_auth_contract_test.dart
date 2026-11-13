@@ -41,6 +41,15 @@ void main() {
     expect(source, isNot(contains('InsightFlowAuthService')));
   });
 
+  test('dashboard protected actions use Supabase identity and helpers', () {
+    final source = File('lib/features/dashboard/data_screen.dart').readAsStringSync();
+
+    expect(source, contains('InsightFlowSupabaseAuthService.currentSupabaseUser'));
+    expect(source, contains('InsightFlowSupabaseAuthService.signOut'));
+    expect(source, isNot(contains('InsightFlowAuthService')));
+    expect(source, isNot(contains('attachFirebaseAuth')));
+  });
+
   test('signup error messages are mapped by Supabase Auth', () {
     final source = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
 

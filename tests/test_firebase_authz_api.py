@@ -16,6 +16,7 @@ def test_unauthenticated_protected_api_is_rejected(monkeypatch):
         },
     )
     assert response.status_code == 401
+    assert response.json()["detail"] == "Supabase authentication required."
 
 
 def test_invalid_token_is_rejected(monkeypatch):

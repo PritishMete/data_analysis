@@ -173,7 +173,7 @@ class FirebaseAuthorizationMiddleware(BaseHTTPMiddleware):
         if not header.startswith("Bearer ") or not header[7:].strip():
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Firebase authentication required."},
+                content={"detail": "Supabase authentication required."},
             )
 
         try:
