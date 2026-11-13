@@ -142,6 +142,13 @@ class InsightFlowSupabaseAuthService {
           return 'Too many attempts. Please try again later.';
         case 'email_address_invalid':
           return 'Enter a valid email address.';
+        case 'access_denied':
+        case 'user_cancelled':
+        case 'user_canceled':
+          return 'Google sign-in was cancelled.';
+        case 'provider_disabled':
+        case 'provider_not_enabled':
+          return 'Google sign-in is not enabled for this InsightFlow project.';
       }
       final message = error.message.toLowerCase();
       if (message.contains('network') || message.contains('failed to fetch')) {
@@ -266,6 +273,15 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithOAuth(provider, redirectTo: redirectTo);
   }
 
+  /// Starts the Supabase-managed Google OAuth flow. The browser callback is
+  /// consumed by supabase_flutter using the PKCE options configured above.
+  static Future<bool> signInWithGoogle({String? redirectTo}) {
+    return signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,
+    );
+  }
+
   static Future<void> beginPhoneVerification(String phone) async {
     await client.auth.updateUser(
       UserAttributes(phone: phone.trim()),
@@ -383,3 +399,4 @@ class SupabaseAuthUser {
   final String? email;
   final bool emailVerified;
 }
+

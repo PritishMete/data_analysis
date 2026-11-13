@@ -22,18 +22,28 @@ class AuthGate extends StatelessWidget {
 
   static String? _redirectErrorMessage() {
     final fragment = Uri.base.fragment.trim();
-    if (fragment.isEmpty) return null;
+    final query = Uri.base.queryParameters;
+    if (fragment.isEmpty && query.isEmpty) return null;
     try {
-      final values = Uri.splitQueryString(
-        fragment.startsWith('#') ? fragment.substring(1) : fragment,
-      );
+      final values = <String, String>{...query};
+      if (fragment.isNotEmpty) {
+        values.addAll(Uri.splitQueryString(
+          fragment.startsWith('#') ? fragment.substring(1) : fragment,
+        ));
+      }
       final error = (values['error'] ?? '').toLowerCase();
       final code = (values['error_code'] ?? '').toLowerCase();
       if (error.isEmpty && code.isEmpty) return null;
+      if (error == 'access_denied' ||
+          code == 'access_denied' ||
+          code == 'user_cancelled' ||
+          code == 'user_canceled') {
+        return 'Google sign-in was cancelled. You can try again or use email and password.';
+      }
       if (code == 'otp_expired') {
         return 'This confirmation link has expired. Please request a new confirmation email.';
       }
-      return 'This confirmation link could not be completed. Please sign in and request a new confirmation email.';
+      return 'Google sign-in could not be completed. Please try again or use email and password.';
     } catch (_) {
       return null;
     }
@@ -559,3 +569,4 @@ class _AuthError extends StatelessWidget {
     );
   }
 }
+
