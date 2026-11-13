@@ -571,7 +571,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     try {
       final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
       if (user == null) return;
-      final resolution = await resolveInsightFlowOnboardingStateFromBackend(user.uid);
+      final resolution = await resolveInsightFlowOnboardingStateFromBackend(user.id);
       if (!mounted) return;
       final roles = resolution.roleIds.map((role) => role.toLowerCase()).toSet();
       setState(() {
