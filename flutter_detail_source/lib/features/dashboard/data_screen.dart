@@ -6583,7 +6583,15 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         ),
       );
     }
-    if (selectedView == "PIVOT_EDITOR") return PivotEditor(state: this);
+    if (selectedView == "PIVOT_EDITOR") {
+      if (analysisData == null || analysisData!.containsKey('error')) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
+          child: buildEmptyState(),
+        );
+      }
+      return PivotEditor(state: this);
+    }
 
     // AnalysisScreen owns the ALL and individual analysis tabs, including
     // their empty-data states. Do not replace them with the pipeline editor.
