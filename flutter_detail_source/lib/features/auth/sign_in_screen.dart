@@ -116,6 +116,33 @@ class _SignInScreenState extends State<SignInScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _signInWithGoogle() async {
+    if (_loading || _showCreateAccount || _transitioning) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _loading = true;
+      _emailVerificationRequired = false;
+      _messageIsError = true;
+      _error = null;
+    });
+
+    try {
+      final started = await InsightFlowSupabaseAuthService.signInWithGoogle();
+      if (!started && mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Google sign-in could not start. Please try again.';
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
+      });
+    }
+  }
+
   Future<void> _signUp() async {
     if (_loading || !_showCreateAccount) return;
     final name = _nameController.text.trim();
@@ -394,6 +421,13 @@ class _SignInScreenState extends State<SignInScreen> {
         ),
         const SizedBox(height: 10),
         const Divider(height: 1),
+        const SizedBox(height: 10),
+        _submitButton(
+          label: 'Continue with Google',
+          busy: _loading,
+          onTap: _signInWithGoogle,
+          icon: CupertinoIcons.globe,
+        ),
         const SizedBox(height: 8),
         _modeSwitch(
           prompt: 'New to InsightFlow? ',
