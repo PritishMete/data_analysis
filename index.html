@@ -3,7 +3,7 @@
 <head>
   <base href="/data_analysis/">
   <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="cee0eaba4954323cd3cdbab0e4b3fe275fe32179">
+  <meta name="detail-analysis-build-id" content="fb7ac858a6ee9fae91920e734263471145b51f6e">
   <meta name="google-signin-client_id" content="791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com">
   <title>InsightFlow</title>
 
@@ -51,19 +51,20 @@
 
   patchHistory();
 
-  Office.onReady(function (info) {
-    patchHistory();
-    if (typeof window._onOfficeReady === "function") {
-      window._onOfficeReady();
-    }
+  var flutterStarted = false;
 
-    console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
-    window.__isOfficeHost = !!(info && info.host);
+  function startFlutter() {
+    if (flutterStarted) {
+      return;
+    }
+    flutterStarted = true;
+
+    patchHistory();
 
     // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
     // Office task panes can retain a previous Flutter web bundle after gh-pages
     // has received a new build. CI replaces the marker with the source commit.
-    var buildCommit = "cee0eaba4954323cd3cdbab0e4b3fe275fe32179";
+    var buildCommit = "fb7ac858a6ee9fae91920e734263471145b51f6e";
     var script = document.createElement("script");
     script.src = "flutter_bootstrap.js?build=" + buildCommit;
     script.onload = function () {
@@ -78,7 +79,26 @@
       };
     };
     document.head.appendChild(script);
-  });
+  }
+
+  // Office.js is optional for the normal browser deployment. Do not make the
+  // entire Flutter application depend on Office.onReady, which may be absent
+  // or fail outside an Office host. When Office is available, keep the host
+  // signal and callback behavior for Excel integrations.
+  if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+    Office.onReady(function (info) {
+      if (typeof window._onOfficeReady === "function") {
+        window._onOfficeReady();
+      }
+      console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
+      window.__isOfficeHost = !!(info && info.host);
+      startFlutter();
+    });
+  }
+
+  // Start immediately for ordinary browsers; the idempotent Office callback
+  // above can still enrich the host state when Office.js becomes ready.
+  startFlutter();
 </script>
 </body>
 </html>
