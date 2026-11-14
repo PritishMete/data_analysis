@@ -5,9 +5,9 @@ on:
   # `main` remains the repository default branch but is not silently treated as
   # the production implementation until a reviewed release synchronization occurs.
   push:
-    branches: [main, main]
+    branches: [main]
   pull_request:
-    branches: [main, main]
+    branches: [main]
   workflow_dispatch:
 
 jobs:

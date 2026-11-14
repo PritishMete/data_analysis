@@ -326,8 +326,8 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
   });
 
   test('managed dataset backend reads physical tables when data_table_name is present', () {
-    final repository = File('../datasets/repository.py').readAsStringSync();
-    final physical = File('../datasets/physical_table.py').readAsStringSync();
+    final repository = File('../../datasets/repository.py').readAsStringSync();
+    final physical = File('../../datasets/physical_table.py').readAsStringSync();
 
     expect(repository, contains('if version is None or not version.data_table_name'));
     expect(repository, contains('version.data_table_name'));
