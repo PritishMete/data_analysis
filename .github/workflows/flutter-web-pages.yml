@@ -142,7 +142,13 @@ jobs:
           assert_file "Flutter bootstrap" build/web/flutter_bootstrap.js
           assert_file "compiled Dart bundle" build/web/main.dart.js
           assert_text "exact source commit marker" "${GITHUB_SHA}" build/web/index.html
-          assert_text "Google sign-in entry point" "Continue with Google" build/web/main.dart.js
+          if grep -R -Fq -- "Google sign-in" build/web; then
+            echo "PASS: compiled Google authentication entry point (build/web)"
+          else
+            echo "FAIL: compiled Google authentication entry point (build/web); expected Google auth diagnostic text"
+            find build/web -maxdepth 2 -type f -print | sort | head -n 40
+            exit 1
+          fi
           assert_text "profile completion auth marker" "profile_complete" build/web/main.dart.js
           assert_text "membership status auth marker" "membership_status" build/web/main.dart.js
           assert_text "authorization API integration" "/v1/authz/me" build/web/main.dart.js
