@@ -6449,7 +6449,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
             // Persistent authenticated-app brand. Login/signup never build
             // DataScreen, so the auth surface remains unchanged.
-            const Positioned(
+            Positioned(
               top: 12,
               right: 18,
               child: SafeArea(
