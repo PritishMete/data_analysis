@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: insightflow-flutter-pages
@@ -36,11 +38,11 @@ jobs:
 
       - name: Run auth and onboarding regression tests
         working-directory: flutter_detail_source
-        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart
+        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart test/google_oauth_entrypoint_test.dart
 
       - name: Analyze changed auth and onboarding files
         working-directory: flutter_detail_source
-        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/features/auth/auth_gate.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart
+        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart test/google_oauth_entrypoint_test.dart
 
       - name: Stamp production web build identity
         working-directory: flutter_detail_source
@@ -123,7 +125,9 @@ jobs:
           set -euo pipefail
           test -f build/web/index.html
           test -f build/web/flutter_bootstrap.js
+          test -f build/web/main.dart.js
           grep -q "${GITHUB_SHA}" build/web/index.html
+          grep -q "Continue with Google" build/web/main.dart.js
           grep -R -q "profile_complete" build/web
           grep -R -q "membership_status" build/web
           grep -R -q "/v1/authz/me" build/web
@@ -153,7 +157,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -f gh-pages-publish/flutter_bootstrap.js
+          test -f gh-pages-publish/main.dart.js
           grep -q "${GITHUB_SHA}" gh-pages-publish/index.html
+          grep -q "Continue with Google" gh-pages-publish/main.dart.js
           grep -R -q "profile_complete" gh-pages-publish
           grep -R -q "membership_status" gh-pages-publish
 
@@ -171,3 +178,38 @@ jobs:
           fi
           git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
           git push origin gh-pages
+
+
+      - name: Upload complete GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gh-pages-publish
+
+      - name: Deploy GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Verify live Google sign-in bundle
+        shell: bash
+        env:
+          PAGES_URL: https://pritishmete.github.io/data_analysis
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            index_url="\${PAGES_URL}/index.html?verify=\${GITHUB_SHA}-\${attempt}"
+            index_html="$(curl --fail --silent --show-error --location "\${index_url}")"
+            if grep -q "\${GITHUB_SHA}" <<<"\${index_html}"; then
+              bundle_path="$(grep -o 'main.dart.js?[^\"]*' <<<"\${index_html}" | head -n 1)"
+              if [ -n "\${bundle_path}" ]; then
+                bundle_js="$(curl --fail --silent --show-error --location "\${PAGES_URL}/\${bundle_path}")"
+                if grep -q "Continue with Google" <<<"\${bundle_js}"; then
+                  echo "Live Pages bundle verified for \${GITHUB_SHA}."
+                  exit 0
+                fi
+              fi
+            fi
+            echo "Waiting for live Pages deployment (attempt \${attempt}/18)."
+            sleep 10
+          done
+          echo "::error::Live Pages did not expose the expected build SHA and Google sign-in entry point."
+          exit 1
