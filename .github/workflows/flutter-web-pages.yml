@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'flutter_detail_source/**'
+      - 'apps/flutter_app/**'
       - '.github/workflows/flutter-web-pages.yml'
   workflow_dispatch:
 
@@ -33,11 +33,11 @@ jobs:
           cache: true
 
       - name: Install Flutter dependencies
-        working-directory: flutter_detail_source
+        working-directory: apps/flutter_app
         run: flutter pub get
 
       - name: Build Flutter web
-        working-directory: flutter_detail_source
+        working-directory: apps/flutter_app
         run: flutter build web --release --base-href /data_analysis/
 
       - name: Checkout published gh-pages
@@ -59,7 +59,7 @@ jobs:
           rm -f gh-pages-publish/main.dart.js
           rm -f gh-pages-publish/index.html
           rm -f gh-pages-publish/version.json
-          cp -R flutter_detail_source/build/web/. gh-pages-publish/
+          cp -R apps/flutter_app/build/web/. gh-pages-publish/
 
       - name: Commit and publish
         working-directory: gh-pages-publish
