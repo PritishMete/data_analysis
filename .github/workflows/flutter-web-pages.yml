@@ -44,17 +44,6 @@ jobs:
         working-directory: apps/flutter_app
         run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart test/google_oauth_entrypoint_test.dart
 
-      - name: Stamp production web build identity
-        working-directory: apps/flutter_app
-        shell: bash
-        env:
-          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
-        run: |
-          set -euo pipefail
-          test -n "${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}"
-          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
-          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" web/index.html
-
       - name: Validate production web build configuration
         shell: bash
         env:
@@ -117,6 +106,17 @@ jobs:
             --dart-define "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
           )
           flutter "${build_args[@]}"
+
+      - name: Stamp generated web build identity
+        working-directory: apps/flutter_app
+        shell: bash
+        env:
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}"
+          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" build/web/index.html
+          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" build/web/index.html
 
       - name: Verify generated web bundle
         working-directory: apps/flutter_app
