@@ -1,7 +1,7 @@
 from pathlib import Path
 
 MUTATIONS = {
-    "flutter_detail_source/web/excel_helper.js": [
+    "apps/flutter_app/web/excel_helper.js": [
         "processExcelPipeline",
         "jsApplyColorScale",
         "jsAddComputedColumn",
@@ -12,9 +12,9 @@ MUTATIONS = {
         "jsBuildWrapRowsTable",
         "jsSplitColumnPipeline",
     ],
-    "flutter_detail_source/web/excel_native_chart.js": ["createNativeExcelChart"],
-    "flutter_detail_source/web/excel_synthetic_data.js": ["executeSyntheticData"],
-    "flutter_detail_source/web/excel_quality_report_generator.js": ["jsWriteQualityReportWorksheet"],
+    "apps/flutter_app/web/excel_native_chart.js": ["createNativeExcelChart"],
+    "apps/flutter_app/web/excel_synthetic_data.js": ["executeSyntheticData"],
+    "apps/flutter_app/web/excel_quality_report_generator.js": ["jsWriteQualityReportWorksheet"],
 }
 
 
@@ -39,7 +39,7 @@ def test_every_office_mutation_entry_point_requires_server_authorization():
 
 
 def test_mutation_guard_is_loaded_before_mutation_engines():
-    html = Path("flutter_detail_source/web/index.html").read_text(encoding="utf-8")
+    html = Path("apps/flutter_app/web/index.html").read_text(encoding="utf-8")
     guard = html.index("excel_authorization_guard.js")
     helper = html.index("excel_helper.js")
     assert guard < helper

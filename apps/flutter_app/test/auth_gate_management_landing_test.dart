@@ -56,7 +56,7 @@ void main() {
 
   test('Render blueprint follows the manually deployed backend branch', () {
     final render = File('../render.yaml').readAsStringSync();
-    expect(render, contains('branch: feature/employee-management-cell'));
+    expect(render, contains('branch: main'));
     expect(render, contains('autoDeployTrigger: off'));
   });
 
@@ -68,7 +68,7 @@ void main() {
     expect(workflow, contains('default: false'));
     expect(
       workflow,
-      contains("github.ref == 'refs/heads/feature/employee-management-cell' && inputs.confirm_production_migration == true"),
+      contains("github.ref == 'refs/heads/main' && inputs.confirm_production_migration == true"),
     );
     expect(workflow, contains('environment: production'));
     expect(workflow, contains('concurrency:'));

@@ -4,7 +4,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FLUTTER_ROOT = REPO_ROOT / "flutter_detail_source"
+FLUTTER_ROOT = REPO_ROOT / "apps" / "flutter_app"
 SERVING_ROOT = REPO_ROOT / "frontend" / "flutter_detail"
 
 

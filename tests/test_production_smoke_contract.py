@@ -7,7 +7,7 @@ WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "prod
 def test_production_smoke_is_manual_and_pinned_to_release_branch():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "workflow_dispatch:" in workflow
-    assert 'refs/heads/feature/employee-management-cell' in workflow
+    assert 'refs/heads/main' in workflow
     assert 'EXPECTED_SHA="${GITHUB_SHA}"' in workflow
     assert "STALE_RENDER_BUILD" in workflow
     assert "/health" in workflow

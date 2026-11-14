@@ -2,9 +2,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PASSWORD = ROOT / "flutter_detail_source/lib/features/auth/employee_invitation_password_setup_screen.dart"
-ONBOARDING = ROOT / "flutter_detail_source/lib/features/auth/organization_onboarding_screen.dart"
-AUTH = ROOT / "flutter_detail_source/lib/core/auth/supabase_auth_service.dart"
+PASSWORD = ROOT / "apps/flutter_app/lib/features/auth/employee_invitation_password_setup_screen.dart"
+ONBOARDING = ROOT / "apps/flutter_app/lib/features/auth/organization_onboarding_screen.dart"
+AUTH = ROOT / "apps/flutter_app/lib/core/auth/supabase_auth_service.dart"
 
 
 def test_password_setup_has_bounded_auth_backend_and_acceptance_requests():

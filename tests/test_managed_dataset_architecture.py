@@ -114,7 +114,7 @@ def test_managed_dataset_uploads_are_serialized_and_ui_requires_ready_status():
     root = Path(__file__).resolve().parents[1]
     service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
     workspace = (
-        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        root / "apps" / "flutter_app" / "lib" / "features" / "auth"
         / "managed_dataset_access_workspace.dart"
     ).read_text(encoding="utf-8")
 
@@ -144,7 +144,7 @@ def test_failed_uploads_are_not_returned_as_copyable_datasets():
 def test_managed_dataset_ui_only_reports_import_after_ready_confirmation():
     root = Path(__file__).resolve().parents[1]
     workspace = (
-        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        root / "apps" / "flutter_app" / "lib" / "features" / "auth"
         / "managed_dataset_access_workspace.dart"
     ).read_text(encoding="utf-8")
 
@@ -179,7 +179,7 @@ def test_manager_proposals_share_upload_duplicate_and_name_locks():
     proposals = (root / "dataset_storage" / "proposals.py").read_text(encoding="utf-8")
     service = (root / "dataset_storage" / "service.py").read_text(encoding="utf-8")
     workspace = (
-        root / "flutter_detail_source" / "lib" / "features" / "auth"
+        root / "apps" / "flutter_app" / "lib" / "features" / "auth"
         / "managed_dataset_access_workspace.dart"
     ).read_text(encoding="utf-8")
 

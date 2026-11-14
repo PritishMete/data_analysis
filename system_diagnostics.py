@@ -41,7 +41,7 @@ def _frontend_root() -> Path:
 
 
 def _flutter_source_root() -> Path:
-    return _repo_root() / "flutter_detail_source"
+    return _repo_root() / "apps" / "flutter_app"
 
 
 def _frontend_build_files() -> tuple[Path, Path, Path]:
@@ -82,9 +82,9 @@ def _source_fallback_build_id() -> str:
                     for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                         digest.update(chunk)
         else:
-            digest.update(b"flutter_detail_source:missing")
+        digest.update(b"apps/flutter_app:missing")
     except OSError:
-        digest.update(b"flutter_detail_source:unreadable")
+        digest.update(b"apps/flutter_app:unreadable")
     return digest.hexdigest()[:12].lower()
 
 

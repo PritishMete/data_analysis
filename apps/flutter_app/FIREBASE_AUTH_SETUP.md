@@ -30,7 +30,7 @@ The Flutter client does not initialize or write to that database. Authorization 
 
 ## 2. Preferred FlutterFire CLI path
 
-From `flutter_detail_source/`:
+From `apps/flutter_app/`:
 
 ```bash
 firebase login

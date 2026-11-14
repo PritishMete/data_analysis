@@ -1,6 +1,6 @@
 from pathlib import Path
 
-PATH = Path('flutter_detail_source/lib/detail_analysis_main.dart')
+PATH = Path('apps/flutter_app/lib/detail_analysis_main.dart')
 text = PATH.read_text(encoding='utf-8')
 original = text
 
