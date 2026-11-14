@@ -6453,7 +6453,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               top: 12,
               right: 18,
               child: SafeArea(
-                child: const InsightFlowFloatingBrand(),
+                child: InsightFlowFloatingBrand(),
               ),
             ),
 
