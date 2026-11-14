@@ -82,7 +82,7 @@ def _source_fallback_build_id() -> str:
                     for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                         digest.update(chunk)
         else:
-        digest.update(b"apps/flutter_app:missing")
+            digest.update(b"apps/flutter_app:missing")
     except OSError:
         digest.update(b"apps/flutter_app:unreadable")
     return digest.hexdigest()[:12].lower()

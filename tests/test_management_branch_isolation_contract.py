@@ -18,7 +18,7 @@ def test_database_enforces_single_active_branch_for_every_assignment_writer():
 
 
 def test_branch_switchers_are_only_available_to_organization_owner():
-source = Path("apps/flutter_app/lib/features/auth/management_shell.dart").read_text()
+    source = Path("apps/flutter_app/lib/features/auth/management_shell.dart").read_text()
     assert "bool get _isOrganizationOwner => _managementRole() == 'organization_owner';" in source
     assert "if (_isOrganizationOwner && locations.isNotEmpty)" in source
     assert "if (_isOrganizationOwner)\n              DropdownButtonFormField<String?>" in source
