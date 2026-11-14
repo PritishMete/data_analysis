@@ -12,6 +12,7 @@ import '../../core/interop/excel_mutation_authorization.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../auth/account_management_screen.dart';
 import '../auth/management_navigation.dart';
+import '../../widgets/insightflow_floating_brand.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
