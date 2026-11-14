@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-SUPPORTED_OPERATIONS = {"filter", "sort", "group", "aggregate", "search", "count", "report"}
+SUPPORTED_OPERATIONS = {"filter", "sort", "group", "aggregate", "search", "count", "report", "quality_check"}
 SUPPORTED_OPERATORS = {
     "equals",
     "not_equals",
@@ -41,6 +41,7 @@ class StructuredQuery:
     limit: int | None = None
     search: str | None = None
     report: str | None = None
+    identifier_column_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -52,5 +53,5 @@ class StructuredQuery:
             "limit": self.limit,
             "search": self.search,
             "report": self.report,
+            "identifier_column_id": self.identifier_column_id,
         }
-

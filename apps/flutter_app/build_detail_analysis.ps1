@@ -1,7 +1,13 @@
 [CmdletBinding()]
 param(
   [string]$ServingRoot = '',
-  [string]$BaseHref = '/ui/'
+  [string]$BaseHref = '/ui/',
+  [string]$FirebaseWebApiKey = $env:INSIGHTFLOW_FIREBASE_WEB_API_KEY,
+  [string]$FirebaseWebAppId = $env:INSIGHTFLOW_FIREBASE_WEB_APP_ID,
+  [string]$FirebaseWebMessagingSenderId = $env:INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID,
+  [string]$FirebaseWebProjectId = $env:INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID,
+  [string]$FirebaseWebAuthDomain = $env:INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN,
+  [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,7 +46,31 @@ New-Item -ItemType Directory -Path $StagingRoot -Force | Out-Null
 Push-Location $FlutterRoot
 try {
   Write-Host "Building standalone Detail Analysis Flutter target..."
-  & flutter build web --release --target $Target --base-href $BaseHref --output-dir $StagingRoot
+  $buildArgs = @(
+    'build',
+    'web',
+    '--release',
+    '--target',
+    $Target,
+    '--base-href',
+    $BaseHref,
+    '--output-dir',
+    $StagingRoot
+  )
+  $dartDefines = @{
+    'INSIGHTFLOW_FIREBASE_WEB_API_KEY' = $FirebaseWebApiKey
+    'INSIGHTFLOW_FIREBASE_WEB_APP_ID' = $FirebaseWebAppId
+    'INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID' = $FirebaseWebMessagingSenderId
+    'INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID' = $FirebaseWebProjectId
+    'INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN' = $FirebaseWebAuthDomain
+    'INSIGHTFLOW_WORKSPACE_ID' = $WorkspaceId
+  }
+  foreach ($entry in $dartDefines.GetEnumerator()) {
+    if (-not [string]::IsNullOrWhiteSpace($entry.Value)) {
+      $buildArgs += "--dart-define=$($entry.Key)=$($entry.Value)"
+    }
+  }
+  & flutter @buildArgs
   if ($LASTEXITCODE -ne 0) {
     throw "Flutter build failed with exit code $LASTEXITCODE."
   }
@@ -69,7 +99,10 @@ Set-Content -LiteralPath (Join-Path $StagingRoot 'index.html') -Value $standalon
 # The shared Flutter web directory contains Excel-only helper assets. They are
 # valid for the add-in build but must not ship with the standalone target.
 Get-ChildItem -LiteralPath $StagingRoot -Recurse -File |
-  Where-Object { $_.Name -in @('excel_data_processor.js', 'excel_helper.js', 'excel_quality_report_generator.js') } |
+  Where-Object {
+    $_.Name -eq 'deploy.ps1' -or
+    $_.Name -like 'excel_*.js'
+  } |
   Remove-Item -Force
 
 if (Test-Path -LiteralPath $OutputRoot) {

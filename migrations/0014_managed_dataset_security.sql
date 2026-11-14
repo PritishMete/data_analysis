@@ -1,0 +1,173 @@
+-- Managed dataset security, per-version schema metadata, and optional private original archive.
+-- Analytical rows remain authoritative in PostgreSQL. The Storage bucket is only an optional archive.
+
+CREATE TABLE IF NOT EXISTS dataset_columns (
+    id BIGSERIAL PRIMARY KEY,
+    dataset_id VARCHAR(36) NOT NULL REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+    version_pk VARCHAR(36) REFERENCES dataset_versions(version_pk) ON DELETE CASCADE,
+    column_name VARCHAR(255) NOT NULL,
+    detected_type VARCHAR(32) NOT NULL,
+    nullable BOOLEAN NOT NULL DEFAULT true,
+    unique_count INTEGER NOT NULL DEFAULT 0,
+    missing_percentage DOUBLE PRECISION NOT NULL DEFAULT 0,
+    inferred_role VARCHAR(32),
+    inferred_role_confidence DOUBLE PRECISION,
+    inferred_role_evidence JSONB,
+    role_detected_at TIMESTAMPTZ
+);
+
+ALTER TABLE dataset_columns ADD COLUMN IF NOT EXISTS version_pk VARCHAR(36);
+CREATE INDEX IF NOT EXISTS ix_dataset_columns_dataset_version
+    ON dataset_columns(dataset_id, version_pk);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_dataset_columns_version_name
+    ON dataset_columns(version_pk, column_name)
+    WHERE version_pk IS NOT NULL;
+
+ALTER TABLE datasets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dataset_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dataset_columns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dataset_rows ENABLE ROW LEVEL SECURITY;
+
+CREATE SCHEMA IF NOT EXISTS private;
+
+CREATE OR REPLACE FUNCTION private.insightflow_principal_id()
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT b.principal_id
+    FROM public.identity_bindings b
+    WHERE b.provider = 'supabase'
+      AND b.provider_subject = (SELECT auth.uid()::text)
+      AND b.status = 'active'
+    LIMIT 1
+$$;
+
+REVOKE ALL ON FUNCTION private.insightflow_principal_id() FROM PUBLIC;
+GRANT USAGE ON SCHEMA private TO authenticated;
+GRANT EXECUTE ON FUNCTION private.insightflow_principal_id() TO authenticated;
+
+DROP POLICY IF EXISTS managed_datasets_select ON datasets;
+CREATE POLICY managed_datasets_select ON datasets
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.organization_id = datasets.organization_id
+          AND da.dataset_id = datasets.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+DROP POLICY IF EXISTS managed_dataset_versions_select ON dataset_versions;
+CREATE POLICY managed_dataset_versions_select ON dataset_versions
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_versions.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+DROP POLICY IF EXISTS managed_dataset_columns_select ON dataset_columns;
+CREATE POLICY managed_dataset_columns_select ON dataset_columns
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_authorization da
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE da.dataset_id = dataset_columns.dataset_id
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+DROP POLICY IF EXISTS managed_dataset_rows_select ON dataset_rows;
+CREATE POLICY managed_dataset_rows_select ON dataset_rows
+FOR SELECT TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.dataset_versions v
+        JOIN public.dataset_authorization da
+          ON da.dataset_id = v.dataset_id
+        JOIN public.resource_grants rg
+          ON rg.organization_id = da.organization_id
+         AND rg.resource_id = da.dataset_id
+        WHERE v.version_pk = dataset_rows.version_pk
+          AND da.status = 'active'
+          AND rg.principal_id = (SELECT private.insightflow_principal_id())
+          AND rg.permissions ? 'dataset.view_original'
+    )
+);
+
+-- Backend uses its server-side PostgreSQL connection for writes. Do not grant
+-- direct write access to anon/authenticated through the Data API.
+REVOKE ALL ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows FROM anon, authenticated;
+GRANT SELECT ON TABLE datasets, dataset_versions, dataset_columns, dataset_rows TO authenticated;
+
+
+-- Existing interrupted records may still carry a legacy Firebase storage marker.
+-- Structured PostgreSQL rows remain authoritative; clear that obsolete marker so
+-- the managed dataset lifecycle no longer depends on Firebase objects.
+UPDATE dataset_versions
+SET storage_provider = NULL, storage_object_id = NULL
+WHERE storage_provider = 'firebase_storage';
+
+UPDATE datasets
+SET storage_provider = NULL, storage_object_id = NULL
+WHERE storage_provider = 'firebase_storage';
+
+-- Optional original CSV archive: private bucket, server-side access only.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'managed-datasets',
+    'managed-datasets',
+    false,
+    104857600,
+    ARRAY['text/csv']
+)
+ON CONFLICT (id) DO UPDATE
+SET public = false,
+    file_size_limit = EXCLUDED.file_size_limit,
+    allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_read ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_read
+ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_write ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_write
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_update ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_update
+ON storage.objects FOR UPDATE TO authenticated
+USING (bucket_id = 'managed-datasets' AND false)
+WITH CHECK (bucket_id = 'managed-datasets' AND false);
+
+DROP POLICY IF EXISTS managed_datasets_archive_no_direct_delete ON storage.objects;
+CREATE POLICY managed_datasets_archive_no_direct_delete
+ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'managed-datasets' AND false);

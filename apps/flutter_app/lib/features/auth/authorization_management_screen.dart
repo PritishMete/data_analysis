@@ -1,0 +1,1322 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
+
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+import '../../app_colors.dart';
+import '../../core/auth/authenticated_http.dart';
+import '../../core/auth/supabase_auth_service.dart';
+import '../../tech_background.dart';
+import 'auth_glass_widgets.dart';
+import 'account_management_screen.dart';
+import '../../widgets/shared/dock_glass_material.dart';
+
+class AuthorizationManagementScreen extends StatefulWidget {
+  const AuthorizationManagementScreen({super.key, this.onStartWorking});
+
+  final Future<void> Function(String datasetId)? onStartWorking;
+
+  @override
+  State<AuthorizationManagementScreen> createState() =>
+      _AuthorizationManagementScreenState();
+}
+
+class _AuthorizationManagementScreenState
+    extends State<AuthorizationManagementScreen> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic> _snapshot = const {};
+  String? _datasetUploadStatus;
+  String? _datasetUploadFileName;
+  int? _datasetUploadFileSize;
+  bool _datasetUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _logout() async {
+    try {
+      await InsightFlowSupabaseAuthService.signOut();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error.toString().replaceFirst('Bad state: ', ''),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final headers = await supabaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      final response = await http.get(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) {
+        final decoded = jsonDecode(response.body);
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Authorization management is unavailable.',
+        );
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) {
+        throw StateError('Invalid authorization response.');
+      }
+      final snapshot = Map<String, dynamic>.from(decoded);
+      // Managed dataset metadata is included in the same authorized management
+      // snapshot. Do not issue a second browser request to /v1/managed-datasets:
+      // the snapshot already carries the server-authorized registry and avoids
+      // a redundant cross-origin request during ManagementShell initialization.
+      if (mounted) {
+        setState(() {
+          _snapshot = snapshot;
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = error.toString().replaceFirst('Bad state: ', '');
+        });
+      }
+    }
+  }
+
+  String _joinRoles(dynamic roles) {
+    if (roles is! List || roles.isEmpty) return '—';
+    return roles.map((item) => item.toString()).join(', ');
+  }
+
+  Future<void> _post(String path, Map<String, dynamic> body) async {
+    final headers = await supabaseAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$insightFlowBackendBaseUrl/v1/authz/$path'),
+      headers: {...headers, 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {}
+      throw StateError(
+        decoded is Map && decoded['detail'] != null
+            ? decoded['detail'].toString()
+            : 'Authorization change was rejected.',
+      );
+    }
+  }
+
+  Future<void> _setMemberStatus(String uid, String status) async {
+    await _post('membership/status', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': uid,
+      'status': status,
+    });
+    await _load();
+  }
+
+  Future<void> _setRole(String uid, String role, bool enabled) async {
+    await _post('roles/mutate', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': uid,
+      'role_id': role,
+      'enabled': enabled,
+    });
+    await _load();
+  }
+
+  Future<void> _approveEmployee(Map<String, dynamic> member) async {
+    await _post('approved-employees', {
+      'workspace_id': insightFlowWorkspaceId,
+      'target_uid': member['uid'],
+      'employee_id': member['employee_id'],
+    });
+    await _load();
+  }
+
+  List<Widget> _memberRows() {
+    final members = (_snapshot['members'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (members.isEmpty) {
+      return [const _MetaRow('Status', 'No members in this scope.')];
+    }
+    final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
+    final owner = roles.contains('organization_owner') || roles.contains('branch_head');
+    return members.expand<Widget>((member) {
+      final uid = member['uid']?.toString() ?? '';
+      final status = member['membership_status']?.toString() ?? 'active';
+      final memberRoles = List<String>.from(member['role_ids'] ?? const []);
+      final rows = <Widget>[
+        _MetaRow(
+          member['employee_id']?.toString() ?? uid,
+          '$status · ${memberRoles.isEmpty ? 'No role assigned' : memberRoles.join(', ')}',
+        ),
+      ];
+      if (uid != InsightFlowSupabaseAuthService.currentSupabaseUser?.id) {
+        rows.add(
+          Wrap(
+            spacing: 6,
+            children: [
+              if (status == 'active')
+                TextButton(
+                  onPressed: () => _approveEmployee(member),
+                  child: const Text('Approve'),
+                ),
+              if (status == 'active')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'suspended'),
+                  child: const Text('Suspend'),
+                ),
+              if (status == 'suspended')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'active'),
+                  child: const Text('Reactivate'),
+                ),
+              if (status != 'removed')
+                TextButton(
+                  onPressed: () => _setMemberStatus(uid, 'removed'),
+                  child: const Text('Remove'),
+                ),
+              if (!memberRoles.contains('team_lead'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'team_lead', true),
+                  child: const Text('Promote Team Lead'),
+                ),
+              if (memberRoles.contains('team_lead'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'team_lead', false),
+                  child: const Text('Remove Team Lead'),
+                ),
+              if (owner && memberRoles.contains('manager'))
+                TextButton(
+                  onPressed: () => _setRole(uid, 'manager', false),
+                  child: const Text('Remove Manager'),
+                ),
+            ],
+          ),
+        );
+      }
+      return rows;
+    }).toList();
+  }
+
+  Future<void> _inviteEmployee() async {
+    final email = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Invite employee'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: email,
+              decoration: const InputDecoration(labelText: 'Company email'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Invite'),
+          ),
+        ],
+      ),
+    );
+    if (result != true) {
+      email.dispose();
+      return;
+    }
+    if (email.text.trim().isEmpty) {
+      email.dispose();
+      throw StateError('Company email is required.');
+    }
+    await _post('invitations', {
+      'workspace_id': insightFlowWorkspaceId,
+      'email': email.text.trim(),
+      'role_id': 'data_analyst',
+    });
+    email.dispose();
+    await _load();
+  }
+
+  List<Widget> _datasetAccessRows() {
+    final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
+    final lead =
+        roles.contains('team_lead') &&
+        !roles.contains('manager') &&
+        !roles.contains('organization_owner') &&
+        !roles.contains('branch_head');
+    final allMembers =
+        (_snapshot[lead ? 'approved_employees' : 'members'] as List? ??
+                const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+    final delegations = (_snapshot['delegations'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((d) => d['status']?.toString() == 'active')
+        .toList();
+    final delegatedMemberIds = lead
+        ? delegations
+            .expand((d) => (d['member_ids'] as List? ?? const []))
+            .map((e) => e.toString())
+            .toSet()
+        : <String>{};
+    final members = lead
+        ? allMembers
+            .where((m) => delegatedMemberIds.contains(m['uid']?.toString()))
+            .toList()
+        : allMembers;
+    final datasets = (_snapshot['datasets'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (datasets.isEmpty) {
+      return [const _MetaRow('Status', 'No datasets in this scope.')];
+    }
+    final rows = <Widget>[];
+    for (final dataset in datasets) {
+      final datasetId = dataset['dataset_id']?.toString() ?? '';
+      final delegatedDataset = lead &&
+          delegations.any(
+            (d) => (d['dataset_ids'] as List? ?? const [])
+                .map((e) => e.toString())
+                .contains(datasetId),
+          );
+      if (lead && !delegatedDataset) continue;
+      rows.add(
+        _MetaRow(
+          'Dataset',
+          '$datasetId${dataset['protected_original'] == true ? ' · PROTECTED ORIGINAL' : ''}',
+        ),
+      );
+      for (final member in members) {
+        final uid = member['uid']?.toString() ?? '';
+        if (uid.isEmpty) continue;
+        rows.add(
+          Wrap(
+            spacing: 5,
+            children: [
+              Text(
+                member['employee_id']?.toString() ?? uid,
+                style: const TextStyle(
+                  color: TechColors.textMuted,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              TextButton(
+                onPressed: () => _post('datasets/grants', {
+                  'workspace_id': insightFlowWorkspaceId,
+                  'dataset_id': datasetId,
+                  'target_uid': uid,
+                  'permissions': ['dataset.view_original'],
+                }).then((_) => _load()),
+                child: const Text('Viewer'),
+              ),
+              if (!lead)
+                TextButton(
+                  onPressed: () => _post('datasets/grants', {
+                    'workspace_id': insightFlowWorkspaceId,
+                    'dataset_id': datasetId,
+                    'target_uid': uid,
+                    'permissions': [
+                      'dataset.view_original',
+                      'dataset.create_working_copy',
+                      'dataset.edit_working_copy',
+                    ],
+                  }).then((_) => _load()),
+                  child: const Text('Editor'),
+                ),
+              TextButton(
+                onPressed: () => _post('datasets/grants', {
+                  'workspace_id': insightFlowWorkspaceId,
+                  'dataset_id': datasetId,
+                  'target_uid': uid,
+                  'permissions': [],
+                }).then((_) => _load()),
+                child: const Text('Revoke'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+    return rows;
+  }
+
+  Future<PlatformFile?> _pickManagedCsv() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv'],
+      withReadStream: true,
+      allowMultiple: false,
+    );
+    final file = result?.files.isNotEmpty == true ? result!.files.single : null;
+    if (file == null) return null;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      throw StateError('Managed datasets currently accept CSV files only.');
+    }
+    final size = file.size;
+    if (size <= 0 || file.readStream == null) {
+      throw StateError('The selected CSV is empty or could not be read.');
+    }
+    return file;
+  }
+
+  Future<void> _uploadManagedDataset() async {
+    if (_datasetUploading) return;
+    try {
+      final file = await _pickManagedCsv();
+      if (file == null) return;
+      await _sendManagedFile(
+        '/v1/managed-datasets',
+        file,
+        'Managed dataset imported.',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadManagedVersion(String datasetId) async {
+    if (_datasetUploading) return;
+    try {
+      final file = await _pickManagedCsv();
+      if (file == null) return;
+      await _sendManagedFile(
+        '/v1/managed-datasets/$datasetId/versions',
+        file,
+        'New protected dataset version imported.',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendManagedFile(
+    String path,
+    PlatformFile file,
+    String successMessage,
+  ) async {
+    final size = file.size;
+    final stream = file.readStream;
+    if (size <= 0 || stream == null) {
+      throw StateError('The selected CSV is empty or could not be streamed.');
+    }
+    setState(() {
+      _datasetUploading = true;
+      _datasetUploadFileName = file.name;
+      _datasetUploadFileSize = size;
+      _datasetUploadStatus = 'Preparing';
+    });
+    try {
+      final headers = await supabaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      setState(() => _datasetUploadStatus = 'Uploading');
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(insightFlowBackendBaseUrl + path),
+      );
+      request.headers.addAll(headers);
+      request.files.add(
+        http.MultipartFile(
+          'file',
+          http.ByteStream(stream),
+          size,
+          filename: file.name,
+        ),
+      );
+      final response = await request.send();
+      setState(() => _datasetUploadStatus = 'Validating');
+      final body = await response.stream.bytesToString();
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(body);
+      } catch (_) {}
+      if (response.statusCode != 200) {
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Managed dataset operation was rejected.',
+        );
+      }
+      setState(() => _datasetUploadStatus = 'Importing');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) setState(() => _datasetUploadStatus = 'Profiling');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) setState(() => _datasetUploadStatus = 'Ready');
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _datasetUploadStatus = 'Failed');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _datasetUploading = false;
+          if (_datasetUploadStatus == 'Ready' || _datasetUploadStatus == 'Failed') {
+            _datasetUploadStatus = null;
+            _datasetUploadFileName = null;
+            _datasetUploadFileSize = null;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadManagedDataset(Map<String, dynamic> dataset) async {
+    try {
+      final headers = await supabaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      final id = dataset['dataset_id'].toString();
+      final version = dataset['current_version']?.toString();
+      var url = '$insightFlowBackendBaseUrl/v1/managed-datasets/$id/download';
+      if (version != null && version.isNotEmpty) {
+        url += '?version_id=${Uri.encodeQueryComponent(version)}';
+      }
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode != 200) {
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Dataset download was rejected.',
+        );
+      }
+      final filename =
+          dataset['original_filename']?.toString() ?? 'dataset.csv';
+      await FilePicker.platform.saveFile(
+        dialogTitle: 'Save managed dataset',
+        fileName: filename.toLowerCase().endsWith('.csv')
+            ? filename
+            : '$filename.csv',
+        bytes: response.bodyBytes,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteManagedDataset(String datasetId) async {
+    try {
+      final headers = await supabaseAuthHeaders();
+      if (insightFlowWorkspaceId.isNotEmpty) {
+        headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+      }
+      final response = await http.delete(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) {
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        throw StateError(
+          decoded is Map && decoded['detail'] != null
+              ? decoded['detail'].toString()
+              : 'Dataset deletion was rejected.',
+        );
+      }
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+        );
+      }
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  List<Widget> _managedDatasetRows(bool canManage) {
+    final datasets = (_snapshot['datasets'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((d) => d['status']?.toString() != 'deleted')
+        .toList();
+
+    final rows = <Widget>[
+      if (canManage)
+        GlassButton.custom(
+          onTap: _datasetUploading ? () {} : _uploadManagedDataset,
+          width: double.infinity,
+          height: 42,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+          label: _datasetUploading ? 'Upload in progress' : 'Upload Dataset',
+          child: Text(
+            _datasetUploading ? 'UPLOAD IN PROGRESS' : 'Upload Dataset',
+          ),
+        ),
+      if (_datasetUploading) ...[
+        if (_datasetUploadFileName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: _MetaRow(
+              'File',
+              '${_datasetUploadFileName!} · ${_formatBytes(_datasetUploadFileSize ?? 0)}',
+            ),
+          ),
+        if (_datasetUploadStatus != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _MetaRow('Status', _datasetUploadStatus!),
+          ),
+      ],
+    ];
+
+    if (datasets.isEmpty) {
+      rows.add(const _MetaRow('Status', 'No managed datasets in this scope.'));
+      return rows;
+    }
+
+    for (final dataset in datasets) {
+      final id = dataset['dataset_id']?.toString() ?? '';
+      final name = dataset['original_filename']?.toString() ??
+          dataset['display_name']?.toString() ??
+          id;
+      final version = dataset['current_version']?.toString() ?? '—';
+      final status = dataset['status']?.toString() ?? 'processing';
+      final rowCount = dataset['row_count']?.toString() ?? '—';
+      final columnCount = dataset['column_count']?.toString() ?? '—';
+      final uploadedBy = dataset['uploaded_by_uid']?.toString() ?? '—';
+      final size = dataset['file_size']?.toString();
+
+      rows.add(_MetaRow(name, '$rowCount rows · $columnCount columns'));
+      rows.add(_MetaRow('Version', '$version · ${status.toUpperCase()}'));
+      rows.add(_MetaRow(
+        'Uploaded',
+        '$uploadedBy · ${dataset['created_at']?.toString() ?? '—'}'
+            '${size == null ? '' : ' · $size bytes'}',
+      ));
+      rows.add(_MetaRow('Status', status.toUpperCase()));
+      rows.add(
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            if (widget.onStartWorking != null && status == 'ready')
+              TextButton(
+                onPressed: () => widget.onStartWorking!(id),
+                child: const Text('Open'),
+              ),
+            if (widget.onStartWorking != null && status == 'ready')
+              TextButton(
+                onPressed: () => widget.onStartWorking!(id),
+                child: const Text('Start Working'),
+              ),
+            if (status == 'ready')
+              TextButton(
+                onPressed: () => _downloadManagedDataset(dataset),
+                child: const Text('Download CSV'),
+              ),
+            if (canManage && status == 'ready')
+              TextButton(
+                onPressed: () => _uploadManagedVersion(id),
+                child: const Text('Upload New Version'),
+              ),
+            if (canManage && status != 'processing')
+              TextButton(
+                onPressed: () => _deleteManagedDataset(id),
+                child: const Text('Delete'),
+              ),
+          ],
+        ),
+      );
+    }
+    return rows;
+  }
+
+  Future<void> _createDelegation() async {
+    final memberIds = <String>{};
+    final datasetIds = <String>{};
+    final leads = (_snapshot['members'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where(
+          (m) =>
+              m['membership_status']?.toString() == 'active' &&
+              m['role_ids'] is List &&
+              (m['role_ids'] as List).contains('team_lead'),
+        )
+        .toList();
+    if (leads.isEmpty) {
+      throw StateError('No active Team Lead is available.');
+    }
+    String leadUid = leads.first['uid'].toString();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Manage Team Lead delegation'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: leadUid,
+                  decoration: const InputDecoration(labelText: 'Team Lead'),
+                  items: leads
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m['uid'].toString(),
+                          child: Text(
+                            m['employee_id']?.toString() ?? m['uid'].toString(),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setDialogState(() => leadUid = v ?? leadUid),
+                ),
+                const SizedBox(height: 10),
+                const Text('Approved employees only'),
+                ...(_snapshot['approved_employees'] as List? ?? const [])
+                    .whereType<Map>()
+                    .map((raw) {
+                      final m = Map<String, dynamic>.from(raw);
+                      final id = m['uid']?.toString() ?? '';
+                      return CheckboxListTile(
+                        dense: true,
+                        value: memberIds.contains(id),
+                        title: Text(m['employee_id']?.toString() ?? id),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked == true) {
+                            memberIds.add(id);
+                          } else {
+                            memberIds.remove(id);
+                          }
+                        }),
+                      );
+                    }),
+                const SizedBox(height: 8),
+                const Text('Datasets'),
+                ...(_snapshot['datasets'] as List? ?? const [])
+                    .whereType<Map>()
+                    .map((raw) {
+                      final dataset = Map<String, dynamic>.from(raw);
+                      final id = dataset['dataset_id']?.toString() ?? '';
+                      return CheckboxListTile(
+                        dense: true,
+                        value: datasetIds.contains(id),
+                        title: Text(id),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked == true) {
+                            datasetIds.add(id);
+                          } else {
+                            datasetIds.remove(id);
+                          }
+                        }),
+                      );
+                    }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delegate'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result != true || memberIds.isEmpty || datasetIds.isEmpty) return;
+    await _post('delegations', {
+      'workspace_id': insightFlowWorkspaceId,
+      'team_lead_uid': leadUid,
+      'member_ids': memberIds.toList(),
+      'dataset_ids': datasetIds.toList(),
+      'permissions': ['dataset.create_working_copy'],
+    });
+    await _load();
+  }
+
+  String _itemLabel(Map<String, dynamic> item) {
+    final id =
+        item['dataset_id'] ??
+        item['working_copy_id'] ??
+        item['employee_id'] ??
+        item['email'] ??
+        item['event_id'] ??
+        'record';
+    final status = item['status'] ?? item['outcome'] ?? '';
+    final idText = id.toString();
+    final statusText = status.toString();
+    return '$idText${statusText.isEmpty ? '' : ' · $statusText'}';
+  }
+
+  List<Widget> _rows(dynamic values) {
+    if (values is! List || values.isEmpty) {
+      return [const _MetaRow('Status', 'No records in this scope.')];
+    }
+    final result = <Widget>[];
+    for (final raw in values.take(100)) {
+      if (raw is Map) {
+        result.add(_MetaRow('•', _itemLabel(Map<String, dynamic>.from(raw))));
+      }
+    }
+    return result.isEmpty
+        ? [const _MetaRow('Status', 'No records in this scope.')]
+        : result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _PortalGlassScaffold(
+        title: 'ACCESS / LOADING',
+        subtitle: 'READING ORGANIZATION AUTHORIZATION METADATA',
+        children: [Center(child: CircularProgressIndicator(strokeWidth: 1.8))],
+      );
+    }
+    if (_error != null) {
+      return _PortalGlassScaffold(
+        title: 'ACCESS / UNAVAILABLE',
+        subtitle: 'AUTHORIZATION MANAGEMENT',
+        children: [
+          AuthGlassMessage(text: _error!, error: true),
+          const SizedBox(height: 12),
+          TextButton(onPressed: _load, child: const Text('Retry')),
+        ],
+      );
+    }
+
+    final roles = List<String>.from(_snapshot['role_ids'] ?? const []);
+    final isOwner = roles.contains('organization_owner') || roles.contains('branch_head');
+    final isManager = roles.contains('manager');
+    final isLead = roles.contains('team_lead');
+    final isViewer = roles.contains('external_viewer');
+
+    final sections = <Widget>[
+      _MetadataSection(
+        title: isOwner || isManager
+            ? 'ORGANIZATION / MANAGEMENT'
+            : isLead
+            ? 'TEAM LEAD / ASSIGNED TEAM'
+            : isViewer
+            ? 'VIEWER / SHARED WITH ME'
+            : 'EMPLOYEE / MY DATASETS',
+        children: [
+          _MetaRow(
+            'Organization',
+            _snapshot['organization_id']?.toString() ?? '—',
+          ),
+          _MetaRow('Workspace', _snapshot['workspace_id']?.toString() ?? '—'),
+          _MetaRow('Roles', _joinRoles(_snapshot['role_ids'])),
+        ],
+      ),
+      if (isOwner || isManager)
+        _MetadataSection(
+          title: 'TEAM / EMPLOYEES',
+          children: [
+            ..._memberRows(),
+            if (isOwner)
+              TextButton(
+                onPressed: _inviteEmployee,
+                child: const Text('Invite employee'),
+              ),
+          ],
+        ),
+      if (isLead)
+        _MetadataSection(
+          title: 'TEAM LEAD / APPROVED EMPLOYEES',
+          children: [
+            ..._rows(_snapshot['approved_employees']),
+            const SizedBox(height: 6),
+            _MetadataSection(
+              title: 'DELEGATION SCOPE',
+              children: _rows(_snapshot['delegations']),
+            ),
+          ],
+        ),
+      _MetadataSection(
+        title: 'MANAGED DATASETS',
+        children: _managedDatasetRows(isOwner),
+      ),
+      _MetadataSection(
+        title: 'DATASET ACCESS',
+        children: [
+          ..._datasetAccessRows(),
+          if (isOwner)
+            TextButton(
+              onPressed: _createDelegation,
+              child: const Text('Manage Team Lead delegation'),
+            ),
+        ],
+      ),
+      _MetadataSection(
+        title: 'WORKING COPIES',
+        children: [
+          ..._rows(_snapshot['working_copies']),
+          if (!isManager && !isLead && !isViewer)
+            ...((_snapshot['datasets'] as List? ?? const [])
+                .whereType<Map>()
+                .where((dataset) => dataset['protected_original'] == true)
+                .map(
+                  (dataset) => TextButton(
+                    onPressed: widget.onStartWorking == null
+                        ? null
+                        : () => widget.onStartWorking!(
+                            dataset['dataset_id'].toString(),
+                          ),
+                    child: Text('Start working · ${dataset['dataset_id']}'),
+                  ),
+                )),
+        ],
+      ),
+      if (isOwner || isManager)
+        _MetadataSection(
+          title: 'INVITATIONS',
+          children: _rows(_snapshot['invitations']),
+        ),
+      if (isOwner || isManager)
+        _MetadataSection(title: 'AUDIT', children: _rows(_snapshot['audit'])),
+    ];
+
+    return _PortalGlassScaffold(
+      wideContent: true,
+      onLogout: _logout,
+      title: isOwner ? 'ORGANIZATION / MANAGEMENT' : 'ACCESS / AUTHORIZATION',
+      subtitle: isOwner
+          ? 'Branch Head management portal'
+          : 'Capability and resource authorization metadata only',
+      children: [
+        _ResponsivePortalSections(sections: sections),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton(onPressed: _load, child: const Text('Refresh')),
+              TextButton(
+                onPressed: _logout,
+                child: const Text('Log out'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PortalGlassScaffold extends StatelessWidget {
+  const _PortalGlassScaffold({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+    this.wideContent = true,
+    this.onLogout,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+  final bool wideContent;
+  final VoidCallback? onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      body: LiquidGlassScope(
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: GlassBackgroundSource(
+                child: TechAnimatedBackground(),
+              ),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final horizontal = constraints.maxWidth < 560 ? 14.0 : 24.0;
+                    final maxWidth = wideContent ? 1400.0 : 900.0;
+                    final contentWidth = (constraints.maxWidth - horizontal * 2)
+                        .clamp(0.0, maxWidth)
+                        .toDouble();
+
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(horizontal, 10, horizontal, 28),
+                      child: Center(
+                        child: SizedBox(
+                          width: contentWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _PortalGlassAppBar(
+                                title: title,
+                                subtitle: subtitle,
+                                onLogout: onLogout,
+                              ),
+                              const SizedBox(height: 10),
+                              ...children,
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PortalGlassAppBar extends StatelessWidget {
+  const _PortalGlassAppBar({
+    required this.title,
+    required this.subtitle,
+    this.onLogout,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback? onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    // This is the ScanButton material adapted to a horizontal floating
+    // surface: identical physical settings, but a rounded-rectangle geometry
+    // so the navbar remains a navbar rather than becoming one giant button.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: TechColors.borderActive.withValues(alpha: 0.24),
+            blurRadius: 18,
+            spreadRadius: 1,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: GlassQuality.minimal,
+        settings: dockGlassSettings(
+          glassColor: TechColors.borderActive.withValues(alpha: 0.14),
+        ),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+        child: Row(
+        children: [
+          // Brand mark is deliberately kept inside the same glass surface,
+          // so the background glow/refraction visibly passes through it.
+          const Icon(
+            Icons.terminal,
+            color: TechColors.borderActive,
+            size: 18,
+          ),
+          const SizedBox(width: 9),
+          const Text(
+            'InsightFlow',
+            style: TextStyle(
+              color: TechColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 1,
+            height: 20,
+            color: Colors.white.withValues(alpha: 0.16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.admin_panel_settings_outlined,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.58),
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: TechColors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.42),
+                      fontSize: 9,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          _PortalGlassIconButton(
+            tooltip: 'Account',
+            icon: Icons.account_circle_outlined,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AccountManagementScreen(),
+              ),
+            ),
+          ),
+          _PortalGlassIconButton(
+            tooltip: 'Sign out',
+            icon: Icons.logout,
+            onPressed: onLogout,
+          ),
+        ],
+      ),
+    ),
+  );
+  }
+}
+
+class _PortalGlassIconButton extends StatelessWidget {
+  const _PortalGlassIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassButton.custom(
+      onTap: onPressed ?? () {},
+      enabled: onPressed != null,
+      width: 38,
+      height: 38,
+      shape: const LiquidOval(),
+      useOwnLayer: true,
+      quality: GlassQuality.standard,
+      settings: dockGlassSettings(
+        glassColor: TechColors.borderActive.withValues(alpha: 0.16),
+      ),
+      glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
+      glowRadius: kDockGlowRadius,
+      interactionScale: kDockInteractionScale,
+      child: Icon(
+        icon,
+        size: 17,
+        color: TechColors.textPrimary,
+      ),
+    );
+  }
+}
+
+class _ResponsivePortalSections extends StatelessWidget {
+  const _ResponsivePortalSections({required this.sections});
+
+  final List<Widget> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= 1120 ? 3 : width >= 720 ? 2 : 1;
+        final gap = width >= 720 ? 14.0 : 10.0;
+
+        if (columns == 1) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < sections.length; index++) ...[
+                sections[index],
+                if (index != sections.length - 1) SizedBox(height: gap),
+              ],
+            ],
+          );
+        }
+
+        // True row/column grid: cards occupy the same column tracks and each
+        // row aligns to the tallest card in that row. This keeps the portal
+        // visually organised on desktop instead of producing independent
+        // vertical masonry columns.
+        final rows = <TableRow>[];
+        for (var start = 0; start < sections.length; start += columns) {
+          final cells = <Widget>[];
+          for (var offset = 0; offset < columns; offset++) {
+            final index = start + offset;
+            cells.add(
+              Padding(
+                padding: EdgeInsets.only(
+                  right: offset == columns - 1 ? 0 : gap,
+                  bottom: gap,
+                ),
+                child: index < sections.length
+                    ? sections[index]
+                    : const SizedBox.shrink(),
+              ),
+            );
+          }
+          rows.add(TableRow(children: cells));
+        }
+
+        return Table(
+          columnWidths: {
+            for (var index = 0; index < columns; index++)
+              index: const FlexColumnWidth(),
+          },
+          defaultVerticalAlignment: TableCellVerticalAlignment.top,
+          children: rows,
+        );
+      },
+    );
+  }
+}
+
+class _MetadataSection extends StatelessWidget {
+  const _MetadataSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      settings: TechColors.sectionGlass,
+      quality: GlassQuality.standard,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: TechColors.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaRow extends StatelessWidget {
+  const _MetaRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Text(
+        '$label  $value',
+        style: const TextStyle(
+          color: TechColors.textMuted,
+          fontSize: 11,
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+}

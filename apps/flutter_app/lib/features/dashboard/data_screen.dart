@@ -2,10 +2,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../core/auth/authenticated_http.dart';
+import '../../core/interop/excel_mutation_authorization.dart';
+import '../../core/auth/supabase_auth_service.dart';
+import '../auth/account_management_screen.dart';
+import '../auth/management_navigation.dart';
+import '../../widgets/insightflow_floating_brand.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_colors.dart';
@@ -19,6 +26,7 @@ import '../../core/interop/excel_interop.dart';
 import '../../core/interop/office_host.dart';
 import '../../core/services/file_upload_handler.dart';
 import '../../core/services/local_pipeline_service.dart';
+import '../../core/services/secure_excel_local_service.dart';
 import '../../core/security/outbound_privacy_guard.dart';
 import '../../core/security/privacy_mode.dart';
 import '../../models/transformation_result.dart';
@@ -30,9 +38,17 @@ import 'analyze_fab.dart';
 import 'execute_pipeline_fab.dart';
 import 'navigation_tabs.dart';
 import 'ai_report_model.dart';
-import '../../widgets/insightflow_floating_brand.dart';
+import '../../widgets/overlays/ranking_limit_dialog.dart';
 
 enum DataSourceMode { excel, uploadedFile, excelLive }
+
+const List<Map<String, String>> kAllMetricOps = [
+  {'id': 'sum', 'label': 'SUM'},
+  {'id': 'average', 'label': 'AVERAGE'},
+  {'id': 'count', 'label': 'COUNT'},
+  {'id': 'min', 'label': 'MIN'},
+  {'id': 'max', 'label': 'MAX'},
+];
 
 class _FilterPlannerPrivacyContext {
   final String sanitizedQuery;
@@ -143,17 +159,34 @@ List<dynamic> decodeSourceMatrix(String raw) {
 }
 
 class DataScreen extends StatefulWidget {
-  const DataScreen({super.key});
+  const DataScreen({
+    super.key,
+    this.managedDatasetId,
+    this.managedVersionId,
+    this.managedWorkingCopyId,
+    this.initialView = "ALL_SYSTEMS",
+    this.analysisAuthorized = false,
+  });
+
+  final String? managedDatasetId;
+  final String? managedVersionId;
+  final String? managedWorkingCopyId;
+  final String initialView;
+  final bool analysisAuthorized;
 
   @override
   State<DataScreen> createState() => DataScreenState();
 }
 
 class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
+  bool get isManagedDatasetSession =>
+      widget.managedDatasetId?.trim().isNotEmpty == true ||
+      widget.managedWorkingCopyId?.trim().isNotEmpty == true;
+
   // ── Analysis ──────────────────────────────────────────────────────────────
   Map<String, dynamic>? analysisData;
   bool isLoading = false;
-  String selectedView = "ALL_SYSTEMS";
+  late String selectedView = widget.initialView;
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   final TextEditingController chatController = TextEditingController();
@@ -168,6 +201,11 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   bool freezeHeaderRow = true;
   bool enableAutoFilter = true;
   final Set<String> deduplicateColumns = {};
+
+  final TextEditingController metricsSheetNameController =
+      TextEditingController(text: "Metrics_Layer");
+  final Set<String> metricsColumns = {};
+  final Set<String> metricsOps = {};
 
   // ── Column splitter ───────────────────────────────────────────────────────
   String? splitTargetColumn;
@@ -202,6 +240,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // ── Pivot table ───────────────────────────────────────────────────────────
   bool generatePivotTable = false;
   List<String> pivotRowFields = [];
+  List<String> pivotColumnFields = [];
+  List<String> pivotFilterFields = [];
   List<Map<String, String>> pivotValueFields = [];
   final TextEditingController pivotSheetNameController = TextEditingController(
     text: "Pivot_Workspace",
@@ -300,6 +340,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // ── Pivot editor ──────────────────────────────────────────────────────────
   String? activePivotSheetName;
   List<String> pivotEditorRowFields = [];
+  List<String> pivotEditorColumnFields = [];
+  List<String> pivotEditorFilterFields = [];
   List<Map<String, String>> pivotEditorValueFields = [];
   List<String> pivotSourceHeaders = [];
   bool pivotEditorRefreshing = false;
@@ -320,6 +362,16 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   DataSourceMode dataSourceMode = DataSourceMode.excel;
   FileUploadResult? uploadedFile;
   bool isUploadingFile = false;
+  bool canUploadDataset = false;
+
+  String? get currentFileName => uploadedFile?.fileName;
+
+  Uint8List? get currentFileBytes {
+    final rows = uploadedFile?.rows;
+    if (rows == null || rows.isEmpty) return null;
+    final csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
+    return Uint8List.fromList(utf8.encode(csv));
+  }
 
   // Power BI Detail Analysis is deliberately separate from the single-file
   // pipeline so profiling cannot overwrite the active workbook dataset.
@@ -430,6 +482,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     {"id": "ALL_SYSTEMS", "label": "ALL", "icon": Icons.terminal},
     {"id": "PIPELINES", "label": "PIPELINES", "icon": Icons.tune},
     {"id": "NEURAL_CHAT", "label": "AI CHAT", "icon": Icons.code},
+    {"id": "AI_ANALYTICS", "label": "AI ANALYTICS", "icon": Icons.auto_awesome},
+    {"id": "ANALYTICS_REFERENCE", "label": "ANALYTICS GUIDE", "icon": Icons.menu_book_outlined},
     {"id": "OVERVIEW", "label": "OVERVIEW", "icon": Icons.layers},
     {"id": "PREVIEW", "label": "PREVIEW", "icon": Icons.grid_view},
     {"id": "STATS", "label": "STATS", "icon": Icons.analytics},
@@ -475,7 +529,15 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _transformationManager.addListener(_onTransformationManagerChanged);
+    _loadDatasetUploadCapability();
     syncOnStartup();
+    if (widget.initialView == 'AI_ANALYTICS' && isManagedDatasetSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && analysisData == null && !isLoading) {
+          analyzeData();
+        }
+      });
+    }
   }
 
   @override
@@ -506,10 +568,92 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // Business logic — all unchanged
   // =========================================================================
 
+  Future<void> _loadDatasetUploadCapability() async {
+    try {
+      final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+      if (user == null) return;
+      final resolution = await resolveInsightFlowOnboardingStateFromBackend(user.id);
+      if (!mounted) return;
+      final roles = resolution.roleIds.map((role) => role.toLowerCase()).toSet();
+      setState(() {
+        canUploadDataset = roles.contains('organization_owner') ||
+            roles.contains('branch_head');
+      });
+    } catch (_) {
+      // Fail closed: an employee must not receive an upload control merely
+      // because the role lookup was unavailable.
+      if (mounted) setState(() => canUploadDataset = false);
+    }
+  }
+
   Future<void> syncOnStartup() async {
     if (!kIsWeb) return;
     await refreshWorksheetNames();
+    final persistedSource = await getInsightFlowSourceWorksheetName();
+    if (persistedSource != null && persistedSource.isNotEmpty) {
+      if (availableSheets.contains(persistedSource)) {
+        useActiveSelection = false;
+        selectedSourceSheet = persistedSource;
+        activeSheetName = persistedSource;
+      } else {
+        useActiveSelection = false;
+        selectedSourceSheet = null;
+        activeSheetName = "Source worksheet unavailable";
+      }
+    } else {
+      final candidate = await getInsightFlowSourceWorksheetName();
+      if (candidate != null && candidate.isNotEmpty) {
+        final saved = await setInsightFlowSourceWorksheetName(candidate);
+        if (saved) {
+          useActiveSelection = false;
+          selectedSourceSheet = candidate;
+          activeSheetName = candidate;
+        }
+      } else {
+        useActiveSelection = false;
+        selectedSourceSheet = null;
+        activeSheetName = "Select an original dataset worksheet";
+      }
+    }
     await syncHeadersSilently();
+  }
+
+  /// Establishes the workbook's analytical source once, then reuses it for
+  /// subsequent queries. Excel activation remains presentation-only.
+  Future<String?> _ensureAnalyticalSourceSheet() async {
+    if (dataSourceMode == DataSourceMode.uploadedFile) return null;
+    if (!kIsWeb) return null;
+    final persisted = await getInsightFlowSourceWorksheetName();
+    if (persisted != null && persisted.isNotEmpty) {
+      if (!availableSheets.contains(persisted)) {
+        throw "The established source worksheet '$persisted' is no longer available. Select an original dataset worksheet before running this query.";
+      }
+      if (useActiveSelection || selectedSourceSheet != persisted) {
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = persisted;
+            activeSheetName = persisted;
+          });
+        }
+      }
+      return persisted;
+    }
+    final candidate = await getInsightFlowSourceWorksheetName();
+    if (candidate == null || candidate.isEmpty) {
+      throw "No analytical source worksheet is established. Select an original dataset worksheet first.";
+    }
+    if (!await setInsightFlowSourceWorksheetName(candidate)) {
+      throw "Could not establish '$candidate' as the analytical source worksheet.";
+    }
+    if (mounted) {
+      setState(() {
+        useActiveSelection = false;
+        selectedSourceSheet = candidate;
+        activeSheetName = candidate;
+      });
+    }
+    return candidate;
   }
 
   Future<void> refreshWorksheetNames() async {
@@ -536,7 +680,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (!kIsWeb) return;
     String? rawData;
     if (!useActiveSelection && selectedSourceSheet != null) {
-      rawData = await fetchSheetData(selectedSourceSheet!);
+      rawData = await getInsightFlowSourceData();
+      rawData ??= await fetchSheetData(selectedSourceSheet!);
     } else {
       rawData = await safeFetchActiveSheetData();
       if (rawData == null) {
@@ -793,8 +938,17 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   Future<String?> _fetchSourceData() async {
     if (dataSourceMode == DataSourceMode.uploadedFile)
       return _uploadedFileAsJsonString();
-    if (useActiveSelection) return safeFetchActiveSheetData();
-    return fetchSheetData(selectedSourceSheet ?? "");
+    final source = await _ensureAnalyticalSourceSheet();
+    if (source == null || source.isEmpty) return null;
+    // Analytical reads must use the persisted worksheet/range context. This
+    // prevents a generated Quality_Report, Query_Result, or Pivot sheet from
+    // becoming the source merely because Excel activated it.
+    if (kIsWeb) {
+      final persistedData = await getInsightFlowSourceData();
+      if (persistedData != null && persistedData.isNotEmpty)
+        return persistedData;
+    }
+    return fetchSheetData(source);
   }
 
   Future<void> fetchLookupReferenceHeaders(String targetSheet) async {
@@ -1090,8 +1244,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   // Base URL for /smart_query — same backend as /agentic_command and
   // /parse_command, just a different route (see main.py + query_router.py).
-  static const String _smartQueryUrl =
-      "https://data-analysis-oajs.onrender.com/smart_query";
+  static const String _backendBaseUrl =
+      "https://data-analysis-oajs.onrender.com";
+  static const String _smartQueryUrl = "$_backendBaseUrl/smart_query";
   static const String _sentimentUrl =
       "https://data-analysis-oajs.onrender.com/sentiment_analysis";
   static const Duration _sentimentRequestTimeout = Duration(minutes: 4);
@@ -1306,6 +1461,64 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }
   }
 
+  String _applyRankingLimit(
+    String query,
+    RankingLimitChoice choice,
+    bool descending,
+  ) {
+    final suffix = choice.all
+        ? ' all'
+        : ' ' + (descending ? 'top ' : 'bottom ') + choice.limit.toString();
+    return query + suffix;
+  }
+
+  Future<bool> _handleRankingSelection({
+    required String originalQuery,
+    required Map<String, dynamic> operation,
+  }) async {
+    final groupBy = operation['group_by'] is List
+        ? List<dynamic>.from(operation['group_by'])
+        : <dynamic>[];
+    final groupingColumn = groupBy.isNotEmpty
+        ? groupBy.first.toString()
+        : 'results';
+    final availableCount = (operation['available_count'] as num?)?.toInt() ?? 0;
+    final descending = operation['sort']?.toString() != 'asc';
+    if (!mounted) return true;
+
+    final choice = await RankingLimitDialog.show(
+      context: context,
+      descending: descending,
+      groupingColumn: groupingColumn,
+      availableCount: availableCount,
+    );
+    if (!mounted) return true;
+    if (choice == null) {
+      setState(() {
+        isSearchingChat = false;
+        chatHistory.add({
+          'sender': 'system',
+          'text': 'Ranking cancelled. The original worksheet was not changed.',
+        });
+      });
+      return true;
+    }
+    await _executeSmartQuery(
+      _applyRankingLimit(originalQuery, choice, descending),
+    );
+    return true;
+  }
+
+  // Secure grouped-count and quality requests are claimed before the generic
+  // filter planner. Grouped analytics must never be interpreted as row filters.
+  Future<bool> _tryExecuteSecureExcelLocalQuery(String query) async {
+    if (!secureLocalOnly || !SecureExcelLocalService.supportsQuery(query)) {
+      return false;
+    }
+    await _executeSmartQuery(query);
+    return true;
+  }
+
   Future<bool> _tryExecuteLocalNaturalFilterQuery(String query) async {
     final text = query.trim();
     if (text.isEmpty) return false;
@@ -1508,10 +1721,28 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     });
 
     final lowerQuery = query.toLowerCase();
+    if (dataSourceMode != DataSourceMode.uploadedFile && kIsWeb) {
+      try {
+        await _ensureAnalyticalSourceSheet();
+        await syncHeadersSilently();
+      } catch (e) {
+        setState(() {
+          isSearchingChat = false;
+          chatHistory.add({"sender": "system", "text": "❌ " + e.toString()});
+        });
+        return;
+      }
+    }
     final isCategorizationQuery = RegExp(
       r'\b(?:categorize|categorise|classification|classify|categorization|categorisation)\b',
       caseSensitive: false,
     ).hasMatch(lowerQuery);
+
+    // Secure worksheet analytics must win over generic filter interpretation.
+    final bool localSecureHandled = await _tryExecuteSecureExcelLocalQuery(
+      query,
+    );
+    if (localSecureHandled) return;
 
     // Gemini is the primary natural-language planner. It receives only the
     // user query + detected column names; the workbook rows stay local. The
@@ -1684,7 +1915,24 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     String action,
     Map<String, dynamic> parsed,
   ) async {
-    if (!_kLegacyExcelActions.contains(action)) {
+    final permission = action == "pivot" ? "pivot.create" : "worksheet.modify";
+    final authorized = await _authorizeMutationAndAdoptWorkingCopy(
+      action: permission,
+    );
+    if (!authorized) {
+      if (mounted) {
+        setState(() {
+          isSearchingChat = false;
+          chatHistory.add({
+            "sender": "system",
+            "text":
+                "You are not authorized to perform this Excel operation in the current workspace.",
+          });
+        });
+      }
+      return;
+    }
+    if (!_kLegacyExcelActions.contains(action) && action != "unknown") {
       await _applyGenericTransformation(parsed);
       return;
     }
@@ -1694,11 +1942,111 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     try {
       switch (action) {
         case "pivot":
-          result = await _executeAgenticPivot(
-            parsed["pivot"] is Map
-                ? Map<String, dynamic>.from(parsed["pivot"])
-                : {},
-          );
+          final String pivotUserText =
+              chatHistory.reversed
+                  .firstWhere(
+                    (entry) => entry["sender"] == "user",
+                    orElse: () => {"text": ""},
+                  )["text"]
+                  ?.toString() ??
+              "";
+          final bool combinedChartRequested = RegExp(
+            r"\b(chart|pivotchart)\b",
+            caseSensitive: false,
+          ).hasMatch(pivotUserText);
+          final bool explicitPivotChart = RegExp(
+            r"\bpivotchart\b",
+            caseSensitive: false,
+          ).hasMatch(pivotUserText);
+          final pivotConfig = parsed["pivot"] is Map
+              ? Map<String, dynamic>.from(parsed["pivot"] as Map)
+              : <String, dynamic>{};
+          final lower = pivotUserText.toLowerCase();
+          if (combinedChartRequested) {
+            final topMatch = RegExp(
+              r"\btop\s+(\d+)\b",
+              caseSensitive: false,
+            ).firstMatch(pivotUserText);
+            final limit = topMatch == null
+                ? null
+                : int.tryParse(topMatch.group(1)!);
+            pivotConfig["sortByValue"] = "descending";
+            if (limit != null && limit > 0) pivotConfig["limit"] = limit;
+            pivotConfig["hideGrandTotals"] = true;
+            final existingName =
+                (pivotConfig["sheetName"]?.toString().trim().isNotEmpty ??
+                    false)
+                ? pivotConfig["sheetName"].toString().trim()
+                : "Pivot Analysis";
+            pivotConfig["reuseExisting"] = availableSheets.contains(
+              existingName,
+            );
+            pivotConfig["tableName"] = "Pivot_InsightFlow_Combined";
+          }
+          result = await _executeAgenticPivot(pivotConfig);
+          if (combinedChartRequested && result["success"] == true) {
+            final placement = result["pivotPlacement"] is Map
+                ? Map<String, dynamic>.from(result["pivotPlacement"] as Map)
+                : <String, dynamic>{};
+            final chartType = lower.contains("pie")
+                ? "pie"
+                : (lower.contains("line")
+                      ? "line"
+                      : (lower.contains("column") ? "column" : "bar"));
+            final rowField =
+                (pivotConfig["rowFields"] is List &&
+                    (pivotConfig["rowFields"] as List).isNotEmpty)
+                ? (pivotConfig["rowFields"] as List).first.toString()
+                : "Category";
+            final valueEntry =
+                (pivotConfig["valueFields"] is List &&
+                    (pivotConfig["valueFields"] as List).isNotEmpty &&
+                    (pivotConfig["valueFields"] as List).first is Map)
+                ? Map<String, dynamic>.from(
+                    (pivotConfig["valueFields"] as List).first as Map,
+                  )
+                : <String, dynamic>{};
+            final valueField = valueEntry["field"]?.toString() ?? "Value";
+            final valueOp = valueEntry["op"]?.toString().toLowerCase() ?? "sum";
+            final opLabel = valueOp == "average"
+                ? "Average"
+                : (valueOp == "count"
+                      ? "Count"
+                      : (valueOp == "max"
+                            ? "Max"
+                            : (valueOp == "min" ? "Min" : "Total")));
+            final limit = pivotConfig["limit"] is num
+                ? (pivotConfig["limit"] as num).toInt()
+                : null;
+            final title =
+                (limit != null ? "Top " + limit.toString() + " " : "") +
+                rowField +
+                " by " +
+                opLabel +
+                " " +
+                valueField;
+            final chartResult = await createNativeExcelChart(
+              json.encode({
+                "sheetName": placement["sheet"],
+                "sourceRangeAddress": placement["pivotRangeAddress"],
+                "columns": [rowField, valueField],
+                "rows": const [{}],
+                "categoryColumnIndex": 0,
+                "valueColumnIndex": 1,
+                "chartType": chartType,
+                "title": title,
+                "chartName": "InsightFlow_Pivot_Chart",
+                "startCell": placement["chartStartCell"] ?? "D1",
+                "endCell": placement["chartEndCell"] ?? "L20",
+              }),
+            );
+            result = {
+              ...result,
+              "combinedChartRequested": true,
+              "explicitPivotChart": explicitPivotChart,
+              "chartResult": chartResult,
+            };
+          }
           break;
         case "filter":
           final String filterUserText =
@@ -1802,7 +2150,39 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           ? "appended below the existing table(s)"
           : "placed in a new worksheet";
       finalMessage =
-          "$finalMessage (${placement['sheet']}, $mode, starting at row ${placement['startingRow']})";
+          "$finalMessage (" +
+          placement["sheet"].toString() +
+          ", " +
+          mode +
+          ", starting at row " +
+          placement["startingRow"].toString() +
+          ")";
+      if (result["combinedChartRequested"] == true) {
+        final chartResult = result["chartResult"] is Map
+            ? Map<String, dynamic>.from(result["chartResult"] as Map)
+            : <String, dynamic>{};
+        if (chartResult["success"] == true) {
+          finalMessage +=
+              "\n📊 Editable native chart linked to the PivotTable output confirmed on '" +
+              placement["sheet"].toString() +
+              "' (" +
+              (chartResult["chartName"]?.toString() ??
+                  "InsightFlow_Pivot_Chart") +
+              ").";
+          if (result["explicitPivotChart"] == true)
+            finalMessage +=
+                " Office.js exposes PivotChart options, but this supported add-in path does not expose a PivotChart creation method, so this is accurately reported as a regular native Excel chart backed by the PivotTable cells.";
+        } else {
+          finalMessage +=
+              "\n⚠️ Partial completion: PivotTable created and preserved on '" +
+              placement["sheet"].toString() +
+              "', but chart creation failed at " +
+              (chartResult["stage"]?.toString() ?? "unknown stage") +
+              ": " +
+              (chartResult["error"]?.toString() ?? "unknown error") +
+              ".";
+        }
+      }
     }
     setState(() {
       isSearchingChat = false;
@@ -2717,7 +3097,231 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         );
         return;
       }
-      if (secureLocalOnly) {
+      // Explicit PivotTable requests are workbook operations, not remote analytics.
+      // Classify them before SecureExcelLocalService/remote fallback so secure-local
+      // mode cannot reject a request the existing Office.js PivotTable engine supports.
+      final explicitPivotQuery = RegExp(
+        r'\bpivot\s*table\b|\bpivottable\b',
+        caseSensitive: false,
+      ).hasMatch(lower);
+      if (explicitPivotQuery) {
+        final parsedPivot = await parseAgenticCommand(
+          userText: userText,
+          availableColumns: detectedHeaders,
+          availableSheets: availableSheets,
+        );
+        if (parsedPivot['needsClarification'] == true) {
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text":
+                  parsedPivot['message']?.toString() ??
+                  'Please specify the PivotTable measure.',
+            });
+          });
+          return;
+        }
+        if ((parsedPivot['action'] ?? '').toString() == 'pivot') {
+          await _dispatchParsedOperation('pivot', parsedPivot);
+          return;
+        }
+      }
+
+      if (secureLocalOnly && SecureExcelLocalService.supportsQuery(userText)) {
+        final String? jsonString = await _fetchSourceData();
+        if (jsonString == null || jsonString.isEmpty) {
+          throw "No data found. Select a range or load a file first.";
+        }
+        final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
+        if (rawRows.isEmpty || rawRows.first is! List) {
+          throw "Unnrecognised data shape — expected a 2D array from Excel or file.";
+        }
+        final rows = rawRows
+            .whereType<List<dynamic>>()
+            .where(
+              (r) => r.any((c) => c != null && c.toString().trim().isNotEmpty),
+            )
+            .toList();
+        final localResult = await SecureExcelLocalService.execute(
+          sourceRows: rows,
+          query: userText,
+        );
+        if (localResult['success'] != true) {
+          throw localResult['error']?.toString() ??
+              'Local secure Excel analysis failed.';
+        }
+        final operation = localResult['operation'] is Map
+            ? Map<String, dynamic>.from(localResult['operation'] as Map)
+            : <String, dynamic>{};
+        final action = operation['action']?.toString() ?? 'unknown';
+        if (action == 'rank_selection') {
+          await _handleRankingSelection(
+            originalQuery: userText,
+            operation: operation,
+          );
+          return;
+        }
+        if (action == 'clarification') {
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text":
+                  operation['question']?.toString() ??
+                  localResult['error']?.toString() ??
+                  'Please clarify the requested measure.',
+            });
+          });
+          return;
+        }
+        if (action == 'quality_check' && operation['source_mutated'] == true) {
+          throw 'Local quality check unexpectedly reported source mutation.';
+        }
+
+        if (action == 'synthetic_column') {
+          final sheetName = localResult['sheetName']?.toString();
+          final columnName = localResult['generated_column']?.toString();
+          final hypothetical = localResult['hypothetical'] == true;
+          if (sheetName != null && sheetName.isNotEmpty) {
+            useActiveSelection = false;
+            selectedSourceSheet = sheetName;
+            activeSheetName = sheetName;
+          }
+          await refreshWorksheetNames();
+          await syncHeadersSilently();
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text":
+                  "${localResult['message'] ?? 'Synthetic data was created successfully.'}"
+                  "\n\nWorksheet: $sheetName"
+                  "\nColumn: $columnName"
+                  "\nHypothetical: $hypothetical"
+                  "\nSource worksheet changed: No"
+                  "\nThe original worksheet remains unchanged. Retrying this request will reuse the existing protected output worksheet instead of creating a duplicate.",
+            });
+          });
+        } else if (action == 'group' || action == 'aggregate') {
+          final columns = operation['columns'] is List
+              ? List<dynamic>.from(operation['columns'])
+              : <dynamic>[];
+          final resultRows = operation['rows'] is List
+              ? List<dynamic>.from(operation['rows'])
+              : <dynamic>[];
+          final tableText = _formatSqlResultAsText(columns, resultRows);
+          String sheetNote = "";
+          try {
+            final agentName = await suggestAgenticSheetName(
+              query: userText,
+              operation: "query_result",
+              context: {
+                "result_columns": columns.map((e) => e.toString()).toList(),
+              },
+            );
+            final sheetName = _sanitizeSheetName(
+              agentName ??
+                  _queryDerivedSheetName(userText, fallback: "Query_Result"),
+            );
+            final writeResult = await writeQueryResultToSheet(
+              json.encode({
+                "targetSheetName": sheetName,
+                "columns": columns,
+                "rows": resultRows,
+              }),
+            );
+            if (writeResult["success"] == true) {
+              sheetNote = "\n\n📄 Created and switched to sheet '$sheetName'.";
+              await refreshWorksheetNames();
+              await syncHeadersSilently();
+              final chart = operation['chart'] is Map
+                  ? Map<String, dynamic>.from(operation['chart'] as Map)
+                  : null;
+              final chartRequested = RegExp(
+                r'\bchart\b',
+                caseSensitive: false,
+              ).hasMatch(userText);
+              if (chartRequested && chart == null) {
+                sheetNote +=
+                    "\n⚠️ Partial completion: the result table was created, but the analytical plan did not contain a chart operation.";
+              } else if (chart != null) {
+                final chartResult = await createNativeExcelChart(
+                  json.encode({
+                    'sheetName': sheetName,
+                    'columns': columns,
+                    'rows': resultRows,
+                    'chartType': chart['chartType'],
+                    'categoryColumn': chart['categoryColumn'],
+                    'valueColumn': chart['valueColumn'],
+                    'title': chart['title'],
+                    'chartName': 'InsightFlow_Chart',
+                    'startCell': 'D1',
+                    'endCell': 'L20',
+                    'limit': chart['limit'],
+                  }),
+                );
+                if (chartResult['success'] == true) {
+                  sheetNote +=
+                      "\n📊 Editable native chart confirmed on '" +
+                      sheetName +
+                      "' (" +
+                      (chartResult['chartName']?.toString() ??
+                          'InsightFlow_Chart') +
+                      ").";
+                } else {
+                  sheetNote +=
+                      "\n⚠️ Partial completion: table created on '" +
+                      sheetName +
+                      "', but chart creation failed: " +
+                      (chartResult['error']?.toString() ?? 'unknown error');
+                }
+              }
+            } else {
+              sheetNote =
+                  "\n\n⚠️ Could not write results to a sheet: ${writeResult['error'] ?? 'unknown error'}";
+            }
+          } catch (e) {
+            sheetNote = "\n\n⚠️ Could not write results to a sheet: $e";
+          }
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text":
+                  "${localResult['message'] ?? 'Here is what I found:'}\n\n$tableText$sheetNote",
+            });
+          });
+        } else {
+          final missing = operation['missing_by_column'] is Map
+              ? Map<String, dynamic>.from(operation['missing_by_column'] as Map)
+              : <String, dynamic>{};
+          final duplicate = operation['duplicate_identifier'] is Map
+              ? Map<String, dynamic>.from(
+                  operation['duplicate_identifier'] as Map,
+                )
+              : <String, dynamic>{};
+          final duplicateValues = duplicate['values'] is List
+              ? List<dynamic>.from(duplicate['values'])
+              : <dynamic>[];
+          final missingText = missing.isEmpty
+              ? 'Missing values: none'
+              : 'Missing values: ${missing.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
+          final duplicateText = duplicate['status'] == 'ok'
+              ? 'Duplicate ${duplicate['column'] ?? 'identifier'} values: ${duplicateValues.isEmpty ? 'none' : duplicateValues.join(', ')}\nDuplicate identifier rows: ${duplicate['duplicate_row_count'] ?? 0}'
+              : 'Duplicate identifier check: ${duplicate['status'] ?? 'not available'}';
+          setState(() {
+            isSearchingChat = false;
+            chatHistory.add({
+              "sender": "system",
+              "text":
+                  "${localResult['message'] ?? 'Completed the data quality check locally.'}\n\n$missingText\n$duplicateText\nSource mutated: No",
+            });
+          });
+        }
+        return;
+      }
+      if (secureLocalOnly && !isManagedDatasetSession) {
         setState(() {
           isSearchingChat = false;
           chatHistory.add({
@@ -2728,22 +3332,31 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         });
         return;
       }
-      final String? jsonString = await _fetchSourceData();
-      if (jsonString == null || jsonString.isEmpty) {
-        throw "No data found. Select a range or load a file first.";
-      }
-      final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
-      if (rawRows.isEmpty || rawRows.first is! List) {
-        throw "Unrecognised data shape — expected a 2D array from Excel or file.";
-      }
-      final List<List<dynamic>> rows = rawRows
-          .whereType<List<dynamic>>()
-          .where(
-            (r) => r.any((c) => c != null && c.toString().trim().isNotEmpty),
-          )
-          .toList();
-      if (rows.length < 2) {
-        throw "Dataset too small — needs at least a header row and one data row.";
+      final bool managedRemoteSession = isManagedDatasetSession;
+      final List<List<dynamic>> rows;
+      if (managedRemoteSession) {
+        // Managed analytical data stays server-side. The backend resolves the
+        // authorized dataset/version for the query instead of copying the full
+        // dataset into Flutter memory.
+        rows = const <List<dynamic>>[];
+      } else {
+        final String? jsonString = await _fetchSourceData();
+        if (jsonString == null || jsonString.isEmpty) {
+          throw "No data found. Select a range or load a file first.";
+        }
+        final List<dynamic> rawRows = decodeSourceMatrix(jsonString);
+        if (rawRows.isEmpty || rawRows.first is! List) {
+          throw "Unnrecognised data shape — expected a 2D array from Excel or file.";
+        }
+        rows = rawRows
+            .whereType<List<dynamic>>()
+            .where(
+              (r) => r.any((c) => c != null && c.toString().trim().isNotEmpty),
+            )
+            .toList();
+        if (rows.length < 2) {
+          throw "Dataset too small — needs at least a header row and one data row.";
+        }
       }
       final lowerQuery = userText.toLowerCase();
       final isSentimentQuery =
@@ -2761,7 +3374,12 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Sentiment only needs the review and restaurant columns. Sending the
       // whole workbook duplicates unnecessary data in browser and Render.
       List<List<dynamic>> requestRows = rows;
-      if (isSentimentQuery) {
+      if (isSentimentQuery && managedRemoteSession) {
+        // Managed datasets remain server-side; the dedicated backend sentiment
+        // endpoint receives the persisted dataset identity instead of a copied
+        // browser-side CSV.
+        requestRows = const <List<dynamic>>[];
+      } else if (isSentimentQuery) {
         final headers = rows.first
             .map((e) => e?.toString().trim() ?? '')
             .toList();
@@ -2798,7 +3416,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           .join('\n');
 
       final Map<String, dynamic> decoded;
-      if (secureLocalOnly && isSentimentQuery) {
+      if (secureLocalOnly && isSentimentQuery && !managedRemoteSession) {
         final reviewIndex = rows.first.indexWhere((cell) {
           final header = cell?.toString().toLowerCase() ?? '';
           return header.contains('review') &&
@@ -2835,36 +3453,79 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           'sentiment': sentiment,
         };
       } else {
-        final request = http.MultipartRequest(
-          'POST',
-          Uri.parse(isSentimentQuery ? _sentimentUrl : _smartQueryUrl),
-        );
+        final uri = Uri.parse(isSentimentQuery ? _sentimentUrl : _smartQueryUrl);
+        final fields = <String, String>{};
         if (isSentimentQuery) {
-          // Dedicated sentiment endpoint: bypasses the general-purpose router.
-          request.fields['batch_size'] = '150';
-          request.fields['include_details'] = 'false';
+          fields['batch_size'] = '150';
+          fields['include_details'] = 'false';
         } else {
-          request.fields['text'] = userText;
-          request.fields['available_sheets'] = json.encode(availableSheets);
+          fields['text'] = userText;
+          fields['available_sheets'] = json.encode(availableSheets);
         }
-        request.files.add(
-          http.MultipartFile.fromString(
-            'file',
-            csvData,
-            filename: 'data_source.csv',
-          ),
-        );
 
-        final streamedResponse = await request.send().timeout(
-          isSentimentQuery
-              ? _sentimentRequestTimeout
-              : const Duration(seconds: 60),
-        );
-        final body = await streamedResponse.stream.bytesToString();
-        decoded = decodeBackendResponse(
-          body,
-          statusCode: streamedResponse.statusCode,
-        );
+        final workingCopyId = widget.managedWorkingCopyId?.trim();
+        if (managedRemoteSession) {
+          if (workingCopyId != null && workingCopyId.isNotEmpty) {
+            fields['managed_working_copy_id'] = workingCopyId;
+          } else {
+            final datasetId = widget.managedDatasetId?.trim();
+            if (datasetId == null || datasetId.isEmpty) {
+              throw "Managed dataset or working-copy identity is missing.";
+            }
+            fields['managed_dataset_id'] = datasetId;
+            final versionId = widget.managedVersionId?.trim();
+            if (versionId != null && versionId.isNotEmpty) {
+              fields['managed_version_id'] = versionId;
+            }
+          }
+
+          // Managed analysis is form-encoded, not treated as a file upload.
+          // The only identity sent by copy-only users is the working-copy ID.
+          final request = http.Request('POST', uri);
+          request.headers.addAll(await supabaseAuthHeaders());
+          if (insightFlowWorkspaceId.isNotEmpty) {
+            request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+          }
+          request.headers['X-InsightFlow-Resource-ID'] =
+              (workingCopyId != null && workingCopyId.isNotEmpty)
+                  ? workingCopyId
+                  : widget.managedDatasetId!.trim();
+          request.bodyFields = fields;
+          final streamedResponse = await request.send().timeout(
+            isSentimentQuery
+                ? _sentimentRequestTimeout
+                : const Duration(seconds: 60),
+          );
+          final body = await streamedResponse.stream.bytesToString();
+          decoded = decodeBackendResponse(
+            body,
+            statusCode: streamedResponse.statusCode,
+          );
+        } else {
+          final request = http.MultipartRequest('POST', uri);
+          request.headers.addAll(await supabaseAuthHeaders());
+          if (insightFlowWorkspaceId.isNotEmpty) {
+            request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+          }
+          request.fields.addAll(fields);
+          request.files.add(
+            http.MultipartFile.fromString(
+              'file',
+              csvData,
+              filename: 'data_source.csv',
+            ),
+          );
+          final streamedResponse = await request.send().timeout(
+            isSentimentQuery
+                ? _sentimentRequestTimeout
+                : const Duration(seconds: 60),
+          );
+          final body = await streamedResponse.stream.bytesToString();
+          decoded = decodeBackendResponse(
+            body,
+            statusCode: streamedResponse.statusCode,
+          );
+        }
       }
 
       if (decoded.containsKey('error')) {
@@ -3096,6 +3757,73 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     return buffer.toString();
   }
 
+  Future<bool> _startWorkingFromDataset(String datasetId) async {
+    if (!kIsWeb) return false;
+    await refreshWorksheetNames();
+    for (final sheet in availableSheets) {
+      final resolvedId = await getWorkbookDatasetId(sheet);
+      if (resolvedId == datasetId) {
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = sheet;
+            activeSheetName = sheet;
+          });
+        }
+        return _authorizeMutationAndAdoptWorkingCopy(
+          action: 'worksheet.modify',
+        );
+      }
+    }
+    if (mounted) {
+      showNotification(
+        'The assigned dataset is not open in this workbook.',
+        TechColors.statusOrange,
+      );
+    }
+    return false;
+  }
+
+  Future<bool> _authorizeMutationAndAdoptWorkingCopy({
+    required String action,
+  }) async {
+    final originalSource = activeSheetName;
+    final authorized = await authorizeExcelOperation(
+      backendBaseUrl: _backendBaseUrl,
+      action: action,
+      resourceId: originalSource,
+    );
+    if (!authorized) {
+      if (mounted) {
+        showNotification(
+          'This protected original cannot be modified and no authorized '
+          'working copy could be created.',
+          TechColors.statusOrange,
+        );
+      }
+      return false;
+    }
+
+    final persistedSource = await getInsightFlowSourceWorksheetName();
+    if (persistedSource != null &&
+        persistedSource.isNotEmpty &&
+        persistedSource != originalSource &&
+        mounted) {
+      setState(() {
+        useActiveSelection = false;
+        selectedSourceSheet = persistedSource;
+        activeSheetName = persistedSource;
+      });
+      await refreshWorksheetNames();
+      await syncHeadersSilently();
+      showNotification(
+        'Protected original kept unchanged. Started working on $persistedSource.',
+        TechColors.statusGreen,
+      );
+    }
+    return true;
+  }
+
   // ── Agentic command dispatchers ───────────────────────────────────────
   // Each builds the exact options shape executePipeline()/applyColorScale()
   // already expect (see runTransformationPipeline/runColorCodingPipeline
@@ -3120,105 +3848,6 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // can ask _promptPivotPlacement ONCE and loop this function over each
   // pivot config with the same override, with no further Flutter changes
   // needed here.
-  Future<Map<String, dynamic>> _executeAgenticPivot(
-    Map<String, dynamic> config, {
-    String? placementOverride,
-  }) async {
-    // Stable default (matches the manual flow's own default of
-    // "Pivot_Workspace", and the "Pivot Analysis" example worksheet name)
-    // rather than a fresh timestamped name on every call — a unique name
-    // every time would mean this sheet could never be detected as already
-    // existing, so append mode could never trigger. The LLM's own
-    // sheetName, when it provides one, always takes priority.
-    final String sheetName =
-        (config["sheetName"]?.toString().trim().isNotEmpty ?? false)
-        ? config["sheetName"].toString().trim()
-        : "Pivot Analysis";
-
-    final List<String> rowFields = (config["rowFields"] is List)
-        ? List<String>.from(
-            (config["rowFields"] as List)
-                .map((e) => (e ?? '').toString())
-                .where((s) => s.isNotEmpty),
-          )
-        : <String>[];
-
-    final List<Map<String, String>> valueFields =
-        (config["valueFields"] is List)
-        ? (config["valueFields"] as List).map<Map<String, String>>((v) {
-            final m = v is Map
-                ? Map<String, dynamic>.from(v)
-                : <String, dynamic>{};
-            return {
-              "field": (m["field"] ?? "").toString(),
-              "op": (m["op"] ?? "sum").toString(),
-            };
-          }).toList()
-        : <Map<String, String>>[];
-
-    if (rowFields.isEmpty ||
-        valueFields.isEmpty ||
-        valueFields.any((v) => v["field"]!.isEmpty)) {
-      return {
-        "success": false,
-        "error":
-            "Could not determine pivot row/value fields from that request.",
-      };
-    }
-
-    final String? choice =
-        placementOverride ??
-        await _promptPivotPlacement(sheetName, alwaysAsk: true);
-    if (choice == null) {
-      // User dismissed the dialog — same as the manual flow's own
-      // `if (choice == null) return;` in runTransformationPipeline: abort
-      // rather than guessing a placement on their behalf.
-      return {
-        "success": false,
-        "error": "Pivot placement not confirmed.",
-        "cancelled": true,
-      };
-    }
-    final bool appendMode = choice == "APPEND_EXISTING";
-
-    // Mirrors runTransformationPipeline's own collision-avoidance exactly:
-    // when the user picks "Create New Worksheet" (not append) AND a sheet
-    // with this name already exists, rename rather than reuse it. Without
-    // this, processExcelPipeline's own "not appendMode -> delete any sheet
-    // with this name, then recreate" branch (web/excel_helper.js) would
-    // silently DELETE a previously-created "Pivot Analysis" sheet — and
-    // every PivotTable on it — the moment someone chose "Create New
-    // Worksheet" a second time, which is exactly the "never overwrite
-    // previous Pivot Tables" rule this feature is required to uphold.
-    String targetSheetName = sheetName;
-    await refreshWorksheetNames();
-    if (!appendMode && availableSheets.contains(targetSheetName)) {
-      targetSheetName =
-          "${targetSheetName}_${DateTime.now().millisecondsSinceEpoch % 10000}";
-    }
-
-    final options = {
-      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null)
-          ? selectedSourceSheet
-          : null,
-      "targetSheetName": null,
-      "createNewSheet": false,
-      "freezeHeaderRow": false,
-      "enableAutoFilter": false,
-      "generateSummarySheet": false,
-      "removeDuplicates": false,
-      "filter": null,
-      "pivotConfig": {
-        "sheetName": targetSheetName,
-        "tableName": "Pivot_${DateTime.now().millisecondsSinceEpoch % 10000}",
-        "rowFields": rowFields,
-        "valueFields": valueFields,
-        "appendMode": appendMode,
-      },
-    };
-    return await executePipeline(json.encode(options));
-  }
-
   Future<Map<String, dynamic>> _executeAgenticFilter(
     Map<String, dynamic> config, {
     String userText = "",
@@ -4071,7 +4700,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       // Excel/CSV rating cells are often exported as strings such as
       // `4.1/5`, `4.1 out of 5`, `Rated 4.1`, or `4,1`. Extract the first
       // meaningful numeric value so numeric comparisons work consistently.
-      s = s.replaceAll(RegExp(r'(?i)\bout\s+of\b'), '/');
+      s = s.replaceAll(RegExp(r'\bout\s+of\b', caseSensitive: false), '/');
       s = s.replaceAll(RegExp(r'[₹$€£\s]'), '');
       if (s.contains(',') && !s.contains('.'))
         s = s.replaceAll(',', '.');
@@ -4188,6 +4817,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       );
 
       final request = http.MultipartRequest('POST', Uri.parse(_cleanDataUrl));
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.fields['config'] = json.encode({
         "steps": steps,
         "output_sheet_name": targetSheetName,
@@ -4406,7 +5036,111 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     return null;
   }
 
+  Future<Map<String, dynamic>> _executeManualPivotFromBuilder() async {
+    final requestedSheet = pivotSheetNameController.text.trim().isNotEmpty
+        ? _sanitizeSheetName(pivotSheetNameController.text.trim())
+        : "Pivot_Workspace";
+
+    final rowFields = pivotRowFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final columnFields = pivotColumnFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final filterFields = pivotFilterFields
+        .map((field) => field.trim())
+        .where((field) => field.isNotEmpty)
+        .toList();
+    final valueFields = pivotValueFields
+        .map(
+          (entry) => <String, String>{
+            "field": (entry["field"] ?? "").trim(),
+            "op": (entry["op"] ?? "sum").trim().toLowerCase(),
+          },
+        )
+        .where((entry) => entry["field"]!.isNotEmpty)
+        .toList();
+
+    if (rowFields.isEmpty) {
+      return {
+        "success": false,
+        "error": "Pick at least one PivotTable row field.",
+      };
+    }
+    if (valueFields.isEmpty) {
+      return {
+        "success": false,
+        "error": "Pick at least one PivotTable value field.",
+      };
+    }
+
+    const supportedPivotOps = {
+      "sum",
+      "average",
+      "count",
+      "counta",
+      "max",
+      "min",
+      "product",
+      "stdev",
+    };
+    final unsupported = valueFields
+        .map((entry) => entry["op"]!)
+        .firstWhere((op) => !supportedPivotOps.contains(op), orElse: () => "");
+    if (unsupported.isNotEmpty) {
+      return {
+        "success": false,
+        "error": "Unsupported PivotTable aggregation: " + unsupported,
+      };
+    }
+
+    // Manual Builder deliberately delegates to the exact same native executor
+    // used by AI/query PivotTable requests. This keeps source resolution,
+    // placement, native hierarchy assignment, verification, and cleanup in
+    // one implementation instead of maintaining two divergent contracts.
+    final result = await _executeAgenticPivot({
+      "sheetName": requestedSheet,
+      "tableName":
+          "Pivot_" + (DateTime.now().millisecondsSinceEpoch % 10000).toString(),
+      "rowFields": rowFields,
+      "columnFields": columnFields,
+      "valueFields": valueFields,
+      "filterFields": filterFields,
+      "reuseExisting": false,
+    }, placementOverride: null);
+
+    if (result["success"] == true) {
+      String actualPivotSheet = requestedSheet;
+      final placementRaw = result["pivotPlacement"];
+      if (placementRaw is Map && placementRaw["sheet"] is String) {
+        actualPivotSheet = placementRaw["sheet"].toString();
+      } else if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+        try {
+          final placement = json.decode(placementRaw);
+          if (placement is Map && placement["sheet"] is String) {
+            actualPivotSheet = placement["sheet"].toString();
+          }
+        } catch (_) {}
+      }
+      result["manualPivotSheet"] = actualPivotSheet;
+    }
+    return result;
+  }
+
   Future<void> runTransformationPipeline() async {
+    final permission = generatePivotTable ? "pivot.create" : "worksheet.modify";
+    final authorized = await _authorizeMutationAndAdoptWorkingCopy(
+      action: permission,
+    );
+    if (!authorized) {
+      showNotification(
+        "You are not authorized to perform this Excel operation in the current workspace.",
+        TechColors.statusOrange,
+      );
+      return;
+    }
     if (secureLocalOnly &&
         dataSourceMode == DataSourceMode.uploadedFile &&
         uploadedFile == null) {
@@ -4423,19 +5157,50 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         return;
       }
     }
+    if (generatePivotTable) {
+      setState(() => pipelineProcessing = true);
+      final result = await _executeManualPivotFromBuilder();
+      if (!mounted) return;
+      setState(() => pipelineProcessing = false);
+
+      if (result["success"] == true) {
+        final actualPivotSheet =
+            result["manualPivotSheet"]?.toString().trim().isNotEmpty == true
+            ? result["manualPivotSheet"].toString()
+            : pivotSheetNameController.text.trim();
+
+        setState(() {
+          activePivotSheetName = actualPivotSheet;
+          pivotEditorRowFields = List<String>.from(pivotRowFields);
+          pivotEditorColumnFields = List<String>.from(pivotColumnFields);
+          pivotEditorValueFields = List<Map<String, String>>.from(
+            pivotValueFields,
+          );
+          pivotEditorFilterFields = List<String>.from(pivotFilterFields);
+          pivotSourceHeaders = List<String>.from(detectedHeaders);
+        });
+        showNotification(
+          "✅ Native PivotTable created.",
+          TechColors.statusGreen,
+        );
+      } else {
+        showNotification(
+          "PIVOT ERROR: " + (result["error"] ?? "Unknown error").toString(),
+          TechColors.statusRed,
+        );
+      }
+      return;
+    }
     String desiredPivotSheet = pivotSheetNameController.text.trim().isNotEmpty
         ? pivotSheetNameController.text.trim()
         : "Pivot_Workspace";
     bool appendMode = false;
     if (generatePivotTable) {
-      final pivotAgentName = await suggestAgenticSheetName(
-        query:
-            "Create pivot ${pivotRowFields.join(', ')} with ${pivotValueFields.map((e) => e['field']).join(', ')}",
-        operation: "manual_pivot",
-        context: {"rows": pivotRowFields, "values": pivotValueFields},
-      );
-      if (pivotAgentName != null && pivotAgentName.trim().isNotEmpty) {
-        desiredPivotSheet = _sanitizeSheetName(pivotAgentName);
+      // The manual builder owns its requested destination. Do not replace it
+      // with an agentic sheet-name suggestion.
+      desiredPivotSheet = _sanitizeSheetName(desiredPivotSheet);
+      if (desiredPivotSheet.isEmpty) {
+        desiredPivotSheet = "Pivot_Workspace";
       }
     }
     if (generatePivotTable && kIsWeb) {
@@ -4502,16 +5267,79 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         },
       );
     }
+    final String? pivotSource = generatePivotTable
+        ? await _ensureAnalyticalSourceSheet()
+        : ((!useActiveSelection && selectedSourceSheet != null)
+              ? selectedSourceSheet
+              : null);
+    if (generatePivotTable) {
+      // Manual PivotBuilder and AI pivot queries use the same native Office.js
+      // pivotConfig contract. Normalize the Flutter state before dispatch.
+      pivotRowFields = pivotRowFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotColumnFields = pivotColumnFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotFilterFields = pivotFilterFields
+          .map((field) => field.trim())
+          .where((field) => field.isNotEmpty)
+          .toList();
+      pivotValueFields = pivotValueFields
+          .map(
+            (entry) => <String, String>{
+              "field": (entry["field"] ?? "").trim(),
+              "op": (entry["op"] ?? "sum").trim().toLowerCase(),
+            },
+          )
+          .where((entry) => entry["field"]!.isNotEmpty)
+          .toList();
+
+      if (pivotRowFields.isEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Pick at least one PivotTable row field.");
+        return;
+      }
+      if (pivotValueFields.isEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Pick at least one PivotTable value field.");
+        return;
+      }
+
+      const supportedPivotOps = {
+        "sum",
+        "average",
+        "count",
+        "counta",
+        "max",
+        "min",
+        "product",
+        "stdev",
+      };
+      final unsupported = pivotValueFields
+          .map((entry) => entry["op"]!)
+          .firstWhere(
+            (op) => !supportedPivotOps.contains(op),
+            orElse: () => "",
+          );
+      if (unsupported.isNotEmpty) {
+        setState(() => pipelineProcessing = false);
+        showError("Unsupported PivotTable aggregation: " + unsupported);
+        return;
+      }
+    }
+
     final Map<String, dynamic> options = {
-      "sourceSheetName": (!useActiveSelection && selectedSourceSheet != null)
-          ? selectedSourceSheet
-          : null,
-      "targetSheetName":
-          (useCustomTargetName &&
-              targetSheetNameController.text.trim().isNotEmpty)
-          ? targetSheetNameController.text.trim()
-          : (generatePivotTable
-                ? autoTargetName
+      "sourceSheetName": pivotSource,
+      // Native PivotTables write directly to pivotConfig.sheetName.
+      // Never create a parallel copied-data result sheet for the Pivot path.
+      "targetSheetName": generatePivotTable
+          ? null
+          : ((useCustomTargetName &&
+                    targetSheetNameController.text.trim().isNotEmpty)
+                ? targetSheetNameController.text.trim()
                 : (agentPipelineSheetName ?? autoTargetName)),
       "createNewSheet": true,
       "freezeHeaderRow": freezeHeaderRow,
@@ -4558,7 +5386,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
               "tableName":
                   "Pivot_${DateTime.now().millisecondsSinceEpoch % 10000}",
               "rowFields": pivotRowFields,
+              "columnFields": pivotColumnFields,
               "valueFields": pivotValueFields,
+              "filterFields": pivotFilterFields,
               "appendMode": appendMode,
             }
           : null,
@@ -4615,17 +5445,28 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     if (result["success"] == true) {
       await refreshWorksheetNames();
       if (generatePivotTable) {
-        String? resolvedSource =
-            (!useActiveSelection && selectedSourceSheet != null)
-            ? selectedSourceSheet
-            : (availableSheets.isNotEmpty ? availableSheets.first : null);
+        String actualPivotSheet = desiredPivotSheet;
+        final placementRaw = result["pivotPlacement"];
+        if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+          try {
+            final placement = json.decode(placementRaw);
+            if (placement is Map && placement["sheet"] is String) {
+              actualPivotSheet = placement["sheet"].toString();
+            }
+          } catch (_) {
+            // Native creation already succeeded; retain the requested name
+            // only as a UI fallback if placement metadata cannot be decoded.
+          }
+        }
         setState(() {
-          activePivotSheetName = desiredPivotSheet;
-          pivotSourceSheetName = resolvedSource;
+          activePivotSheetName = actualPivotSheet;
+          pivotSourceSheetName = pivotSource;
           pivotEditorRowFields = List<String>.from(pivotRowFields);
+          pivotEditorColumnFields = List<String>.from(pivotColumnFields);
           pivotEditorValueFields = List<Map<String, String>>.from(
             pivotValueFields,
           );
+          pivotEditorFilterFields = List<String>.from(pivotFilterFields);
           pivotSourceHeaders = List<String>.from(detectedHeaders);
         });
         showNotification("✅ Pivot synchronized.", TechColors.statusGreen);
@@ -4641,6 +5482,135 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         TechColors.statusRed,
       );
     }
+  }
+
+  Future<Map<String, dynamic>> _executeAgenticPivot(
+    Map<String, dynamic> config, {
+    String? placementOverride,
+  }) async {
+    final String sheetName =
+        (config["sheetName"]?.toString().trim().isNotEmpty ?? false)
+        ? config["sheetName"].toString().trim()
+        : "Pivot Analysis";
+
+    final List<String> rowFields = config["rowFields"] is List
+        ? List<String>.from(
+            (config["rowFields"] as List)
+                .map((e) => (e ?? "").toString())
+                .where((s) => s.isNotEmpty),
+          )
+        : <String>[];
+    final List<String> columnFields = config["columnFields"] is List
+        ? List<String>.from(
+            (config["columnFields"] as List)
+                .map((e) => (e ?? "").toString())
+                .where((s) => s.isNotEmpty),
+          )
+        : <String>[];
+    final List<String> filterFields = config["filterFields"] is List
+        ? List<String>.from(
+            (config["filterFields"] as List)
+                .map((e) => (e ?? "").toString())
+                .where((s) => s.isNotEmpty),
+          )
+        : <String>[];
+    final List<Map<String, String>> valueFields = config["valueFields"] is List
+        ? (config["valueFields"] as List).map<Map<String, String>>((v) {
+            final m = v is Map
+                ? Map<String, dynamic>.from(v)
+                : <String, dynamic>{};
+            return {
+              "field": (m["field"] ?? "").toString(),
+              "op": (m["op"] ?? "sum").toString(),
+            };
+          }).toList()
+        : <Map<String, String>>[];
+
+    if (rowFields.isEmpty ||
+        valueFields.isEmpty ||
+        valueFields.any((v) => v["field"]!.isEmpty)) {
+      return {
+        "success": false,
+        "error":
+            "Could not determine pivot row/value fields from that request.",
+      };
+    }
+
+    final bool reuseExisting = config["reuseExisting"] == true;
+    final String? choice = reuseExisting
+        ? "REUSE_EXISTING"
+        : (placementOverride ??
+              await _promptPivotPlacement(sheetName, alwaysAsk: true));
+    if (choice == null)
+      return {
+        "success": false,
+        "error": "Pivot placement not confirmed.",
+        "cancelled": true,
+      };
+
+    final bool appendMode = choice == "APPEND_EXISTING";
+    String targetSheetName = sheetName;
+    await refreshWorksheetNames();
+    if (!appendMode &&
+        !reuseExisting &&
+        availableSheets.contains(targetSheetName)) {
+      targetSheetName =
+          targetSheetName +
+          "_" +
+          (DateTime.now().millisecondsSinceEpoch % 10000).toString();
+    }
+
+    final String? source = await _ensureAnalyticalSourceSheet();
+    final options = {
+      "sourceSheetName": source,
+      "targetSheetName": null,
+      "createNewSheet": false,
+      "freezeHeaderRow": false,
+      "enableAutoFilter": false,
+      "generateSummarySheet": false,
+      "removeDuplicates": false,
+      "filter": null,
+      "pivotConfig": {
+        "sheetName": targetSheetName,
+        "tableName":
+            (config["tableName"]?.toString().trim().isNotEmpty ?? false)
+            ? config["tableName"].toString().trim()
+            : "Pivot_" +
+                  (DateTime.now().millisecondsSinceEpoch % 10000).toString(),
+        "rowFields": rowFields,
+        "columnFields": columnFields,
+        "valueFields": valueFields,
+        "filterFields": filterFields,
+        "appendMode": appendMode,
+        "reuseExisting": reuseExisting,
+        if (config["sortByValue"] != null) "sortByValue": config["sortByValue"],
+        if (config["limit"] != null) "limit": config["limit"],
+        if (config["hideGrandTotals"] != null)
+          "hideGrandTotals": config["hideGrandTotals"],
+      },
+    };
+
+    if (secureLocalOnly && dataSourceMode == DataSourceMode.uploadedFile) {
+      return {
+        "success": false,
+        "error":
+            "Pivot creation requires an Excel workbook in secure-local mode.",
+      };
+    }
+    final result = await executePipeline(json.encode(options));
+    await refreshWorksheetNames();
+    if (result["success"] == true) {
+      setState(() {
+        activePivotSheetName = targetSheetName;
+        pivotSourceSheetName = source;
+        pivotEditorRowFields = List<String>.from(rowFields);
+        pivotEditorColumnFields = List<String>.from(columnFields);
+        pivotEditorValueFields = List<Map<String, String>>.from(valueFields);
+        pivotEditorFilterFields = List<String>.from(filterFields);
+        pivotSourceHeaders = List<String>.from(detectedHeaders);
+      });
+    }
+    return result;
   }
 
   Future<void> rerunPivot() async {
@@ -4663,16 +5633,32 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         "sheetName": activePivotSheetName,
         "tableName": "Pivot_Manual_Refactor",
         "rowFields": pivotEditorRowFields,
+        "columnFields": pivotEditorColumnFields,
         "valueFields": pivotEditorValueFields,
+        "filterFields": pivotEditorFilterFields,
         "appendMode": false,
       },
     };
     final result = await executePipeline(json.encode(options));
     setState(() => pivotEditorRefreshing = false);
     if (result["success"] == true) {
+      String actualPivotSheet = activePivotSheetName!;
+      final placementRaw = result["pivotPlacement"];
+      if (placementRaw is String && placementRaw.trim().isNotEmpty) {
+        try {
+          final placement = json.decode(placementRaw);
+          if (placement is Map && placement["sheet"] is String) {
+            actualPivotSheet = placement["sheet"].toString();
+          }
+        } catch (_) {}
+      }
+      setState(() => activePivotSheetName = actualPivotSheet);
       showNotification("✅ Pivot updated.", TechColors.statusGreen);
     } else {
-      showNotification("PIVOT ERROR: ${result['error']}", TechColors.statusRed);
+      showNotification(
+        "PIVOT ERROR: " + (result["error"] ?? "Unknown error").toString(),
+        TechColors.statusRed,
+      );
     }
   }
 
@@ -4744,9 +5730,146 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     }).toList();
   }
 
+  Future<Map<String, dynamic>> _loadManagedDatasetProfile() async {
+    final workingCopyId = widget.managedWorkingCopyId?.trim();
+    final datasetId = widget.managedDatasetId?.trim();
+    if ((workingCopyId == null || workingCopyId.isEmpty) &&
+        (datasetId == null || datasetId.isEmpty)) {
+      throw "Managed dataset or working-copy identity is missing.";
+    }
+    final headers = await supabaseAuthHeaders();
+    if (insightFlowWorkspaceId.isNotEmpty) {
+      headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+    }
+    final query = <String, String>{'preview_limit': '5'};
+    late final Uri uri;
+    if (workingCopyId != null && workingCopyId.isNotEmpty) {
+      // A copy-only user navigates by opaque copy ID; the source dataset and
+      // pinned version are resolved and authorized by the backend.
+      headers['X-InsightFlow-Resource-ID'] = workingCopyId;
+      uri = Uri.parse(
+        '$insightFlowBackendBaseUrl/v1/managed-datasets/working-copies/$workingCopyId/profile',
+      ).replace(queryParameters: query);
+    } else {
+      headers['X-InsightFlow-Resource-ID'] = datasetId!;
+      final versionId = widget.managedVersionId?.trim();
+      if (versionId != null && versionId.isNotEmpty) {
+        query['version_id'] = versionId;
+      }
+      uri = Uri.parse(
+        '$insightFlowBackendBaseUrl/v1/managed-datasets/$datasetId/profile',
+      ).replace(queryParameters: query);
+    }
+    final response = await http.get(uri, headers: headers).timeout(
+      const Duration(seconds: 30),
+    );
+    final decoded = decodeBackendResponse(
+      response.body,
+      statusCode: response.statusCode,
+    );
+    if (response.statusCode != 200) {
+      throw decoded['error']?.toString() ??
+          decoded['detail']?.toString() ??
+          'Managed dataset profile could not be loaded.';
+    }
+    return decoded;
+  }
+
   Future<void> analyzeData() async {
     setState(() => isLoading = true);
     try {
+      if (isManagedDatasetSession) {
+        final decoded = await _loadManagedDatasetProfile();
+        final schema = decoded['schema'] is List
+            ? (decoded['schema'] as List)
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item))
+                  .toList()
+            : <Map<String, dynamic>>[];
+        final cleanHeaders = schema.isNotEmpty
+            ? schema.map((item) => item['column_name']?.toString() ?? '').toList()
+            : (decoded['column_names'] is List
+                ? (decoded['column_names'] as List)
+                    .map((item) => item?.toString() ?? '')
+                    .toList()
+                : <String>[]);
+        if (cleanHeaders.isEmpty || (decoded['row_count'] ?? 0) <= 0) {
+          throw "Managed dataset is not READY or contains no data.";
+        }
+        final preview = decoded['preview'] is List
+            ? (decoded['preview'] as List)
+                .whereType<List>()
+                .map((row) => List<dynamic>.from(row))
+                .toList()
+            : <List<dynamic>>[];
+        final missing = decoded['missing_values'] is Map
+            ? Map<String, dynamic>.from(decoded['missing_values'] as Map)
+            : <String, dynamic>{};
+        final unique = decoded['unique_values'] is Map
+            ? Map<String, dynamic>.from(decoded['unique_values'] as Map)
+            : <String, dynamic>{};
+        setState(() {
+          detectedHeaders = cleanHeaders;
+          selectedFilterColumn ??= cleanHeaders.first;
+          pivotRowFields = [cleanHeaders.first];
+          pivotValueFields = [
+            {"field": cleanHeaders.last, "op": "sum"},
+          ];
+          lookupSourceColumn = cleanHeaders.first;
+          colorCodeColumn = cleanHeaders.first;
+          analysisData = {
+            "summary": {
+              "rows": decoded['row_count'] ?? 0,
+              "columns": decoded['column_count'] ?? cleanHeaders.length,
+              "column_names": cleanHeaders,
+              "dtypes": {
+                for (final item in schema)
+                  item['column_name']?.toString() ?? '':
+                      item['detected_type']?.toString() ?? 'text',
+              },
+            },
+            "missing_values": missing,
+            "unique_values": unique,
+            "distribution": {
+              "unique_values": unique,
+            },
+            "preview": _rowsToMapRows(preview, cleanHeaders),
+            "sample": _rowsToMapRows(preview, cleanHeaders),
+            "describe": <Map<String, dynamic>>[],
+            "info": decoded['info']?.toString() ??
+                'Managed dataset profile loaded from Supabase PostgreSQL.',
+            "duplicates": {"count": 0, "status": "not_profiled"},
+          };
+          aiReport = null;
+          reportText = null;
+          reportError = null;
+          _pendingReportCleanedData = null;
+          chatFilteredHeaders = cleanHeaders;
+        });
+        return;
+      }
+      // Active Selection is an explicit source-selection action. Capture the
+      // worksheet identity before scanning can create/activate any generated
+      // report sheet. Once captured, all analytical queries use this persisted
+      // source context rather than Excel's presentation-active worksheet.
+      if (kIsWeb &&
+          dataSourceMode == DataSourceMode.excel &&
+          useActiveSelection) {
+        final established =
+            await establishInsightFlowSourceFromActiveWorksheet();
+        if (established == null || established.isEmpty) {
+          throw "Select an original dataset worksheet before scanning.";
+        }
+        if (mounted) {
+          setState(() {
+            useActiveSelection = false;
+            selectedSourceSheet = established;
+            activeSheetName = established;
+          });
+        }
+        await refreshWorksheetNames();
+      }
+
       final String? jsonString = await _fetchSourceData();
       if (jsonString == null || jsonString.isEmpty)
         throw "No data found. Select a range or load a file first.";
@@ -4828,6 +5951,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           .map((row) => row.map(escapeCsvValue).join(','))
           .join('\n');
       final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -4987,6 +6111,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
         'POST',
         Uri.parse("https://data-analysis-oajs.onrender.com/analyze-report"),
       );
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.files.add(
         http.MultipartFile.fromString(
           'file',
@@ -5199,6 +6324,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           "https://data-analysis-oajs.onrender.com/analyze-report-focused",
         ),
       );
+      await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.fields['focus_analysis_types'] = json.encode(selectedTypes);
       request.files.add(
         http.MultipartFile.fromString(
@@ -5253,6 +6379,42 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.analysisAuthorized) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF020D18),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, color: Color(0xFFFFB65E), size: 34),
+                const SizedBox(height: 12),
+                const Text(
+                  'AI Analytics access is not authorized',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'The backend has not granted the analysis.run capability for this account. Return to your Management Cell workspace or contact your administrator.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFFB6D3EC), fontSize: 12, height: 1.45),
+                ),
+                const SizedBox(height: 14),
+                TextButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text('Return to workspace'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (kIsWeb) {
+      SecureExcelLocalService.registerDialogContext(() => context);
+    }
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -5275,7 +6437,9 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
                     const SizedBox(height: 56),
 
                     // ── Navigation tabs (only when data is loaded) ─────────
-                    if (analysisData != null) NavigationTabs(state: this),
+                    // Keep navigation visible before the first scan so users
+                    // can open AI Analytics directly from a fresh Data Screen.
+                    NavigationTabs(state: this),
 
                     // ── Body ──────────────────────────────────────────────
                     Expanded(child: _buildBody()),
@@ -5286,7 +6450,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
             // Persistent authenticated-app brand. Login/signup never build
             // DataScreen, so the auth surface remains unchanged.
-            const Positioned(
+            Positioned(
               top: 12,
               right: 18,
               child: SafeArea(
@@ -5300,7 +6464,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
             // anchors to a corner and can't do a full-width bar, so this is
             // a plain Positioned row instead — same fixed-at-bottom result,
             // just not routed through the FAB slot.
-            if (selectedView != 'NEURAL_CHAT')
+            if (selectedView != 'NEURAL_CHAT' && selectedView != 'AI_ANALYTICS' && selectedView != 'ANALYTICS_REFERENCE')
               Positioned(
                 left: 20,
                 right: 20,
@@ -5325,35 +6489,127 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
     );
   }
 
+  // ── Glass app bar — replaces AppBar, sits inside the LiquidGlassScope ────
+  //
+  // The EXCEL / UPLOAD FILE toggle (previously `DataSourceToggle`) has been
+  // removed entirely — [SourceRouter] inside the Pipelines tab is now the
+  // one place source selection happens, and `buildEmptyState()` below
+  // already shows an uploaded-file badge, so this panel is just the title.
+  Widget _buildGlassAppBar() {
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: isRunningInsideOffice ? GlassQuality.minimal : GlassQuality.standard,
+      settings: TechColors.panelGlass,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      shape: const LiquidRoundedSuperellipse(borderRadius: 0),
+      child: Row(
+          children: [
+            const Icon(
+              Icons.terminal,
+              color: TechColors.borderActive,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'CORE // DATA-ENGINE',
+              style: TextStyle(
+                color: TechColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Access management',
+              onPressed: () => openInsightFlowManagement(context),
+              icon: const Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Account',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AccountManagementScreen(),
+                ),
+              ),
+              icon: const Icon(
+                Icons.account_circle_outlined,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: InsightFlowSupabaseAuthService.signOut,
+              icon: const Icon(
+                Icons.logout,
+                size: 18,
+                color: TechColors.textPrimary,
+              ),
+            ),
+          ],
+      ),
+    );
+  }
+
   Widget _buildBody() {
+    // The dedicated workspace must render even before an Excel scan exists.
+    // In particular, managed working-copy sessions load their profile on entry
+    // and must not be routed back to the generic empty-state/pipeline screen.
+    if (selectedView == 'AI_ANALYTICS') {
+      return AnalysisScreen(state: this);
+    }
+    // The analytics reference catalog is self-contained and must remain
+    // reachable before the first dataset scan. Keep this route ahead of the
+    // generic empty-state guard, which otherwise replaces the guide with the
+    // pipeline setup panel whenever analysisData is null.
+    if (selectedView == 'ANALYTICS_REFERENCE') {
+      return AnalysisScreen(state: this);
+    }
     if (isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: TechColors.borderActive),
       );
     }
-    if (analysisData == null || analysisData!.containsKey('error')) {
+    // Keep the pipeline editor isolated to its own tab. Previously the
+    // no-dataset guard above this route sent every tab to the same pipeline
+    // setup panel, making ALL / OVERVIEW / PREVIEW / STATS / QUALITY / LOGS
+    // appear to contain identical content before the first scan.
+    if (selectedView == "PIPELINES") {
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildEmptyState(),
-            const SizedBox(height: 12),
+            if (analysisData == null || analysisData!.containsKey('error')) ...[
+              buildEmptyState(),
+              const SizedBox(height: 12),
+            ],
             PipelineScreen(state: this),
           ],
         ),
       );
     }
-    if (selectedView == "PIPELINES") {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
-        child: PipelineScreen(state: this),
-      );
+    if (selectedView == "PIVOT_EDITOR") {
+      if (analysisData == null || analysisData!.containsKey('error')) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
+          child: buildEmptyState(),
+        );
+      }
+      return PivotEditor(state: this);
     }
-    if (selectedView == "PIVOT_EDITOR") return PivotEditor(state: this);
+
+    // AnalysisScreen owns the ALL and individual analysis tabs, including
+    // their empty-data states. Do not replace them with the pipeline editor.
     return AnalysisScreen(state: this);
   }
 
-  Widget _buildEmptyState() {
+  Widget buildEmptyState() {
     if (dataSourceMode == DataSourceMode.uploadedFile && uploadedFile != null) {
       return GlassContainer(
         useOwnLayer: true,

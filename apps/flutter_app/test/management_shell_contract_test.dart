@@ -1,0 +1,606 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('management shell rechecks role policy before rendering a selected section', () {
+    final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final bodyStart = source.indexOf('Widget body() {');
+    final bodyEnd = source.indexOf('Widget actions() {', bodyStart);
+    expect(bodyStart, greaterThanOrEqualTo(0));
+    expect(bodyEnd, greaterThan(bodyStart));
+    final body = source.substring(bodyStart, bodyEnd);
+    expect(body, contains('if (!_sectionAllowed(section))'));
+    expect(body, contains('return overviewView();'));
+    expect(body.indexOf('if (!_sectionAllowed(section))'), lessThan(body.indexOf('switch (section)')));
+  });
+
+  test('People search cannot bypass role-aware section policy', () {
+    final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final searchStart = source.indexOf('onSubmitted: (value)');
+    final searchEnd = source.indexOf('style: const TextStyle(color: Color(0xFFD9ECFF)', searchStart);
+    expect(searchStart, greaterThanOrEqualTo(0));
+    expect(searchEnd, greaterThan(searchStart));
+    final handler = source.substring(searchStart, searchEnd);
+    expect(handler, contains('_sectionAllowed(ManagementSection.people)'));
+    expect(handler, contains('return;'));
+  });
+
+  test('Phase 3 management shell exposes required navigation and existing DataScreen route', () {
+    final source = File('lib/features/auth/management_shell.dart').readAsStringSync();
+    final accessSource = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
+    final managementNavigation = File(
+      'lib/features/auth/management_navigation.dart',
+    ).readAsStringSync();
+
+    final navigationStart = source.indexOf('final tabs = <MapEntry<ManagementSection, String>>[');
+    final navigationEnd = source.indexOf(
+      'return AdaptiveLiquidGlassLayer(',
+      navigationStart,
+    );
+    expect(navigationStart, greaterThanOrEqualTo(0));
+    expect(navigationEnd, greaterThan(navigationStart));
+    final navigation = source.substring(navigationStart, navigationEnd);
+    for (final label in [
+      "MapEntry(ManagementSection.overview, 'OVERVIEW')",
+      "MapEntry(ManagementSection.organization, 'ORGANIZATION')",
+      "MapEntry(ManagementSection.people, 'PEOPLE')",
+      "MapEntry(ManagementSection.dataAccess, 'ACCESS')",
+      "MapEntry(ManagementSection.invitations, 'INVITATIONS')",
+      "MapEntry(ManagementSection.audit, 'AUDIT')",
+    ]) {
+      expect(navigation, contains(label));
+    }
+    expect(navigation, isNot(contains('LOCATIONS')));
+    expect(navigation, isNot(contains('SECTIONS')));
+    expect(navigation, isNot(contains('DATA ACCESS')));
+    expect(navigation, isNot(contains('AUDIT LOG')));
+    expect(navigation, isNot(contains('ANALYSIS')));
+    expect(source, isNot(contains('_managementAnalysisNavChip')));
+    expect(source, contains("Text('Audit Activity'"));
+    expect(source, contains('GOVERNANCE / TRACEABILITY'));
+    expect(source, contains('Review who changed what, when it happened'));
+    expect(source, contains("'management.location.created'"));
+    expect(source, contains("'Location created'"));
+    expect(source, contains("'management.manager.assigned'"));
+    expect(source, contains("'Manager assigned'"));
+    expect(source, contains("event['actor_principal_id']"));
+    expect(source, contains("event['created_at']"));
+    expect(source, contains("event['metadata']"));
+    expect(source, contains("Search activity"));
+    expect(source, contains("tooltip:'Clear search'"));
+    expect(source, contains('Activity area'));
+    expect(source, contains('Clear search and filters'));
+    expect(source, contains('No activity to show yet'));
+    expect(source, contains('No activity matches your search or filters.'));
+    expect(source, contains('_showAuditDetails(e)'));
+    expect(source, contains('constraints.maxWidth < 480'));
+    expect(source, isNot(contains("request('/audit?limit=100')")));
+    expect(source, contains('enum ManagementSection { overview, organization, people, invitations, dataAccess, audit }'));
+    expect(source, isNot(contains('ManagementSection.locations')));
+    expect(source, isNot(contains('ManagementSection.sections')));
+    expect(source, contains("'CREATE LOCATION'"));
+    expect(source, contains("'CREATE SECTION'"));
+    expect(source, contains("'LOCATION → BRANCH HEAD / MANAGER → SECTION → TEAM LEAD → EMPLOYEE'"));
+    expect(source, contains('selectedLocation = id'));
+    expect(source, contains('selectedSection = sectionId'));
+    expect(source, contains('selectedSection ?? sections.first'));
+    expect(source, contains('assignmentList()'));
+    expect(source, contains('actions()'));
+
+    // Dataset access must use the canonical Branch Data & Access workspace;
+    // the legacy screen passed original dataset IDs into analysis.
+    expect(source, contains('case ManagementSection.dataAccess: return ManagedDatasetAccessWorkspace('));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
+    expect(source, isNot(contains('AuthorizationManagementScreen(')));
+    // The analysis route is deliberately kept in the shared navigation helper;
+    // verify the real route target rather than only checking the caller name.
+    expect(
+      managementNavigation,
+      contains("import '../dashboard/data_screen.dart';"),
+    );
+    expect(managementNavigation, contains('builder: (_) => DataScreen('));
+    expect(managementNavigation, contains('managedDatasetId: managedDatasetId'));
+    expect(managementNavigation, contains('managedVersionId: managedVersionId'));
+    expect(
+      managementNavigation,
+      contains('managedWorkingCopyId: managedWorkingCopyId'),
+    );
+    expect(source, contains('LiquidGlassScope'));
+    expect(source, contains('GlassBackgroundSource'));
+    expect(source, contains('TechAnimatedBackground'));
+    expect(source, contains('backgroundColor: kAppBackgroundColor'));
+    expect(source, contains('GlassCard'));
+    expect(source, contains('child: Wrap('));
+    expect(source, contains('runSpacing: 8'));
+    expect(source, contains('labelText: label,'));
+    expect(source, isNot(contains('labelText: label.toUpperCase()')));
+    expect(source, contains('fontSize: 12, height: 1.4'));
+    expect(source, contains('fontWeight: selected ? FontWeight.w700 : FontWeight.w500'));
+    expect(source, contains('selectedColor: TechColors.borderActive.withValues(alpha: 0.22)'));
+    expect(source, contains('GlassChip'));
+    expect(source, contains('AdaptiveLiquidGlassLayer'));
+    expect(source, isNot(contains('_managementAnalysisNavChip')));
+    expect(source, contains('kInsightFlowNavigationGlassSettings'));
+    expect(source, contains('management_navigation.dart'));
+    expect(source, contains("'/overview'"));
+    expect(source, contains("'/locations'"));
+    expect(source, contains("'/sections'"));
+    expect(source, contains("'/people'"));
+    expect(source, contains("'/assignments'"));
+    expect(source, contains('Future<void>? _refreshFuture'));
+    expect(source, contains('final active = _refreshFuture'));
+    expect(source, contains('identical(_refreshFuture, future)'));
+    expect(source, contains('Management service timed out while loading'));
+    expect(source, isNot(contains('return await sendWithHeaders(')));
+    expect(source, contains("'/assignments/manager'"));
+    expect(source, contains("'/assignments/manager/change'"));
+    expect(source, contains("'/assignments/team-lead'"));
+    expect(source, contains("'/assignments/reporting'"));
+    expect(source, contains("a['full_name']"));
+    expect(source, contains("a['email_verified']"));
+    expect(source, contains("a['phone_verified']"));
+    expect(source, contains("a['id_proof_supplied']"));
+    expect(source, contains('_showAssignmentProfile(a)'));
+    expect(source, contains("request('/assignments/\${Uri.encodeComponent(assignmentId)}/profile')"));
+    expect(source, contains('FutureBuilder<Map<String, dynamic>>'));
+    expect(source, contains("'Loading profile…'"));
+    expect(source, contains('_assignmentProfileFuture'));
+    expect(source, contains('_selectedAssignmentProfile'));
+    expect(source, contains('GestureDetector'));
+    expect(source, contains('onTap: _closeAssignmentProfile'));
+    expect(source, contains("'Close'"));
+    expect(source, isNot(contains('barrierDismissible: false')));
+    expect(source, isNot(contains('profile[\'full_name\']!')));
+    expect(source, isNot(contains('profile[\'employee_id\']!')));
+    expect(source, contains("fontSize: 11"));
+    expect(source, contains("fontSize: 12"));
+    expect(source, contains("fontSize: 19"));
+    expect(source, isNot(contains("month + '/' + day + '/' + ist.year.toString()")));
+    expect(source, contains("'PROFILE COMPLETENESS'"));
+    expect(source, contains('BRANCH HEAD'));
+    // Account header must distinguish an employee's assigned professional
+    // role from the broad employee authorization role.
+    expect(source, contains("managementRole.toLowerCase() == 'employee'"));
+    expect(source, contains("'assigned_role'"));
+    expect(source, contains("'employee_role'"));
+    expect(source, contains("'job_role'"));
+    expect(source, contains("'designation'"));
+    expect(source, contains("return _roleLabel(assigned);"));
+    expect(source, contains('No active Managers assigned'));
+    // Assignment Registry layout contract: keep compact identifiers intact,
+    // bound the action control, and provide an explicit narrow-width path.
+    expect(source, contains('Widget _assignmentRegistryValue('));
+    expect(source, contains('maxLines: 1'));
+    expect(source, contains('softWrap: false'));
+    expect(source, contains('overflow: TextOverflow.ellipsis'));
+    expect(source, contains('final compact = constraints.maxWidth < 620;'));
+    expect(source, contains('final reportingAction = SizedBox('));
+    expect(source, contains('width: 132'));
+    expect(source, contains('_assignmentRegistryRow(a)'));
+    expect(source, contains("_profileFieldHeight = 72"));
+    expect(source, contains("height: dialogHeight"));
+    expect(source, contains("MediaQuery.sizeOf(context).height - 48"));
+    expect(source, contains("constraints.maxWidth >= 560"));
+    expect(source, contains("crossAxisCount: 2"));
+    expect(source, contains("mainAxisExtent: _profileFieldHeight"));
+    final profileOverlayStart = source.indexOf('_buildAssignmentProfileOverlay');
+    final profileHeaderStart = source.indexOf(
+      'final employeeId =',
+      profileOverlayStart,
+    );
+    final profileHeaderEnd = source.indexOf(
+      "Divider(",
+      profileHeaderStart,
+    );
+    expect(profileHeaderStart, greaterThanOrEqualTo(0));
+    expect(profileHeaderEnd, greaterThan(profileHeaderStart));
+    final profileHeader = source.substring(
+      profileHeaderStart,
+      profileHeaderEnd,
+    );
+    expect(profileHeader, contains("employeeId.isEmpty ? '—' : employeeId"));
+    expect(profileHeader, contains("textAlign: TextAlign.right"));
+    expect(profileHeader, contains("const Spacer()"));
+    expect(profileHeader, isNot(contains("'EMPLOYEE ID'")));
+    expect(profileHeader, isNot(contains("Icons.close_rounded")));
+    expect(profileHeader, isNot(contains("tooltip: 'Close'")));
+    expect(source, contains("final profileCompletion = completion != 100"));
+    expect(source, contains("if (profileCompletion != null)"));
+    expect(source, contains("profileCompletion,"));
+    expect(source, contains("GridView.count("));
+    expect(source, contains("children: gridChildren"));
+
+    expect(source, contains("glowIntensity: 0"));
+    expect(source, contains("shadowElevation: 0"));
+    expect(source, contains("glowColor: Colors.transparent"));
+    expect(source, contains("return '\$month/\$day/\${ist.year}"));
+    expect(source, isNot(contains("day + '/' + month + '/' + ist.year.toString()")));
+
+    final detailsStart = source.indexOf('final details = <Widget>[');
+    final detailsEnd = source.indexOf('return LayoutBuilder', detailsStart);
+    expect(detailsStart, greaterThanOrEqualTo(0));
+    expect(detailsEnd, greaterThan(detailsStart));
+    final detailsBlock = source.substring(detailsStart, detailsEnd);
+    final fieldOrder = [
+      'ROLE',
+      'EMAIL',
+      'EMAIL VERIFIED',
+      'PHONE',
+      'PHONE VERIFIED',
+      'ADDRESS LINE 1',
+      'ADDRESS LINE 2',
+      'STATE',
+      'COUNTRY',
+      'PIN / POSTAL CODE',
+      'ID PROOF TYPE',
+      'ID PROOF NUMBER',
+      'BRANCH',
+      'SECTION',
+      'REPORTS TO',
+      'ASSIGNMENT STATUS',
+      'CREATED',
+      'UPDATED',
+      'PROFILE COMPLETENESS',
+    ];
+    var previous = -1;
+    for (final field in fieldOrder) {
+      final index = detailsBlock.indexOf("'$field'");
+      expect(index, greaterThan(previous), reason: 'Field order changed at $field');
+      previous = index;
+    }
+
+    expect(source, contains("a['employee_id']"));
+    expect(source, contains("a['role_id']"));
+    expect(source, contains("a['location_name']"));
+    expect(source, contains("a['section_name']"));
+    expect(source, contains("a['status']"));
+    // The overview is now implemented as a single responsive role-aware view.
+    // Assert the active UI contract rather than requiring deleted legacy helpers.
+    // Sidebar branch identity must be data-backed: company + branch name,
+    // with the branch-head-provided identifier shown as secondary metadata.
+    expect(source, contains('Map<String, dynamic>? get _currentBranchSummary'));
+    expect(source, contains("overview['organization']"));
+    expect(source, contains("_currentBranchSummary?['branch_identifier']"));
+    expect(source, contains("'\$companyName.\$branchName'"));
+    expect(source, contains("'Branch ID: \${_branchIdentifier()}'"));
+    expect(source, contains('fontSize: 9'));
+    expect(source, contains('fontWeight: FontWeight.w700'));
+    expect(source, contains('Widget overviewView()'));
+    expect(source, contains('Widget _overviewActivityItem('));
+    expect(source, contains('Widget _overviewStructureStep('));
+    expect(source, contains('Widget _overviewSkeleton()'));
+    expect(source, contains('Widget _organizationSkeleton()'));
+    expect(source, contains('Widget _peopleSkeleton()'));
+    expect(source, contains('Widget _dataAccessSkeleton()'));
+    expect(source, contains('ManagedDatasetAccessSkeleton'));
+    expect(source, contains("title: 'Team management'"));
+    expect(source, contains("title: 'Team operations'"));
+    expect(source, contains("title: 'Analytical workspace'"));
+    expect(source, contains("title: 'Read-only workspace'"));
+    expect(source, contains("Organization Overview"));
+    expect(source, contains("Branch Info"));
+    expect(source, contains("Future<void> editLocation(Map<String, dynamic> location)"));
+    expect(source, contains("readOnly: true"));
+    expect(source, contains("Primary branch identifier (immutable)"));
+    expect(source, contains("body: {'name': name.text.trim()}"));
+    expect(source, contains("_canUi('location.update')"));
+    expect(source, contains('Widget _invitationSkeleton()'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
+    expect(source, contains('_showLoadingSkeleton'));
+    expect(source, contains('_loadGeneration'));
+    expect(source, contains('Duration(milliseconds: 180)'));
+    expect(source, contains("itemCount: tabs.length + (_canUi('analysis.run') ? 1 : 0)"));
+    expect(source, contains("if (_canUi('analysis.run'))"));
+    expect(source, contains("canRunAnalysis: _canUi('analysis.run')"));
+    expect(source, contains("readOnly: _uiPolicy()['read_only'] == true"));
+    for (final label in [
+      r'Welcome back, $actorName!',
+      'Team Members',
+      'Locations',
+      'Sections',
+      'Active Access',
+      'Team Overview',
+      'Branch Info',
+      'Quick Actions',
+      'Recent Activity',
+      'Organization Structure',
+      'Branch Structure',
+      'Invite Team Member',
+      'Manage People',
+      'Manage Permissions',
+      'Review Audit Activity',
+      'Manage Organization Structure',
+      'Manage Branch Structure',
+    ]) {
+      expect(source, contains(label));
+    }
+    // Personalize the welcome greeting without exposing role/email as a name,
+    // and keep the user's name plus server-assigned role visible on compact UI.
+    expect(source, contains("rawActorName.isEmpty ? 'there' : rawActorName"));
+    expect(source, contains('height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76'));
+    expect(source, contains('Text(_uiRoleLabel(),'));
+    expect(source, contains('actorName,'));
+    expect(source, contains('audit.take(5)'));
+    expect(source, contains('ManagementSection.audit => _auditSkeleton()'));
+    expect(source, contains('ManagementSection.invitations => _invitationSkeleton()'));
+    expect(source, contains('ManagementSection.organization'));
+    expect(source, contains('ManagementSection.people'));
+    expect(source, contains('ManagementSection.invitations'));
+    expect(source, contains('ManagementSection.dataAccess'));
+    expect(source, contains('ManagementSection.audit'));
+    // Dashboard redesign contracts for the four management workspaces.
+    expect(source, contains("Text('Audit Activity'"));
+    expect(source, contains("Text('Invitations'"));
+    expect(accessSource, contains("Text('Branch Data & Access'"));
+    expect(accessSource, contains("stat('Managed datasets'"));
+    expect(accessSource, contains("stat('Access requests'"));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('_overviewSkeleton()'));
+    expect(source, contains('_sectionLoadingSkeleton()'));
+    expect(source, contains("Widget peopleView()"));
+    expect(source, contains("_eyebrow('PEOPLE DIRECTORY')"));
+    expect(source, contains("A clear view of your team, roles, and branch assignments."));
+    expect(source, contains("Pending invitations"));
+    expect(source, contains("people-location-"));
+    expect(source, contains("Team members"));
+    expect(source, contains("Widget _invitationMeta("));
+    expect(source, contains("_eyebrow('TEAM ONBOARDING')"));
+    expect(source, contains("Track every invitation from send to acceptance, with clear status and expiry details."));
+    expect(source, contains("Invitation activity"));
+    expect(source, contains("invitation-status-"));
+
+    expect(source, contains("A clear view of your team, roles, and branch assignments."));
+    expect(source, contains("Search name, email, employee ID, or role"));
+    expect(source, contains("No people match your search"));
+    expect(source, contains("No people match these filters"));
+    expect(source, contains("No people yet"));
+    expect(source, contains("Clear search and filters"));
+    expect(source, contains("Total people"));
+    expect(source, contains("Active members"));
+    expect(source, contains("Assigned"));
+    expect(source, contains("View profile"));
+    expect(source, contains("case 'organization_owner':"));
+    expect(source, contains("return 'Organization Owner';"));
+    expect(source, contains("return 'Branch Head';"));
+    expect(source, contains("return 'Team Lead';"));
+    expect(source, contains('final reportsPerson = people.where((person) =>'));
+    expect(source, contains('final reportsName ='));
+    expect(source, contains("label: const Text('Retry profile')"));
+    expect(source, contains("final assignmentId=p['assignment_id']?.toString()??'';"));
+    expect(source, contains("a['assignment_id']?.toString()==assignmentId"));
+    expect(source, contains("_showAssignmentProfile(target)"));
+    expect(source, contains("selectedLocation"));
+    expect(source, contains("selectedSection"));
+    expect(source, contains("final compact = constraints.maxWidth < 620"));
+    expect(source, contains("request('')"));
+    expect(source, contains("maps(r[5]['invitations'])"));
+    expect(source, contains('Widget invitationView()'));
+    expect(source, contains("maps(r[5]['invitations'])"));
+    expect(source, isNot(contains('pendingInvitations = 0')));
+    expect(source, contains('observedStatuses'));
+    expect(source, contains('View invitation details'));
+    expect(source, contains('_invitationPerson(item)'));
+    expect(source, contains('full_name'));
+    expect(source, contains('_invitationStatusChip'));
+    expect(source, contains('_formatInvitationExpiry'));
+    expect(source, contains('_invitationSkeleton()'));
+    // Loading placeholders should reuse the loaded dashboard's glass-panel,
+    // gradient hero, metric-card, and responsive activity-row geometry.
+    expect(source, contains('Widget metricCard() => Container('));
+    expect(source, contains('Widget panelContent({int rows = 3})'));
+    expect(source, contains('Widget _auditSkeleton()'));
+    expect(source, contains('Widget _invitationSkeleton()'));
+    expect(source, contains('Color(0xE8113551)'));
+    expect(source, contains('BorderRadius.circular(16)'));
+    expect(source, contains('BorderRadius.circular(14)'));
+    expect(source, contains("ManagementSection.invitations => _invitationSkeleton()"));
+    expect(source, contains('Invitation details'));
+    expect(source, contains("item['invitation_id']"));
+    expect(source, contains("item['expires_at']"));
+    final invitationStart = source.indexOf('Widget invitationView()');
+    final invitationEnd = source.indexOf('String _sectionLabel', invitationStart);
+    expect(invitationStart, greaterThanOrEqualTo(0));
+    expect(invitationEnd, greaterThan(invitationStart));
+    final invitationUi = source.substring(invitationStart, invitationEnd);
+    expect(source, contains('void _showInvitationDetails('));
+    expect(source, contains('showDialog<void>'));
+    expect(invitationUi, contains('_showInvitationDetails(item)'));
+    expect(invitationUi, contains('Search email, person, role, or branch'));
+    expect(invitationUi, contains('Clear search and filters'));
+    expect(source, contains('Future<void> _inviteEmployee() async'));
+    expect(source, contains('GlassDialog.show<Map<String, dynamic>>'));
+    expect(source, contains("title: 'Invite employee'"));
+    expect(source, contains("GlassDialogAction("));
+    expect(source, contains("label:const Text('Invite member')"));
+    final invitationRoleStart = source.indexOf(
+      "const roleOptions = <String>[",
+      source.indexOf("Future<void> _inviteEmployee() async"),
+    );
+    final invitationRoleEnd = source.indexOf("];", invitationRoleStart);
+    expect(invitationRoleStart, greaterThanOrEqualTo(0));
+    expect(invitationRoleEnd, greaterThan(invitationRoleStart));
+    final invitationRoles = source.substring(
+      invitationRoleStart,
+      invitationRoleEnd,
+    );
+    for (final role in [
+      'manager',
+      'team_lead',
+      'data_analyst',
+      'senior_data_analyst',
+      'business_analyst',
+      'data_scientist',
+      'data_engineer',
+      'ml_engineer',
+      'analytics_engineer',
+      'bi_developer',
+      'data_architect',
+      'data_quality_analyst',
+      'data_governance_analyst',
+      'external_viewer',
+    ]) {
+      expect(
+        invitationRoles,
+        contains("'$role'"),
+        reason: 'Invitation role missing: $role',
+      );
+    }
+    expect(
+      invitationRoles,
+      isNot(contains("'employee'")),
+      reason: 'Generic employee must not be offered as an invitation role.',
+    );
+    expect(source, contains('v1/authz/invitations'));
+    expect(source, contains("'email_delivery_status'"));
+    expect(source, contains("no duplicate Auth account was created"));
+    expect(invitationUi, isNot(contains('Resend')));
+    expect(invitationUi, isNot(contains('Cancel invitation')));
+    expect(invitationUi, isNot(contains('Revoke invitation')));
+    expect(source, contains('Search email, person, role, or branch'));
+    expect(source, contains("tooltip:'Clear search'"));
+    expect(source, contains('Clear search and filters'));
+    expect(source, contains('No invitations'));
+    expect(source, contains('No invitations match your search'));
+    expect(source, contains('No invitations match the selected status'));
+    expect(source, contains("item['expires_at']"));
+    expect(source, contains("item['role_id']"));
+    expect(source, contains('constraints.maxWidth < 480'));
+    expect(source, contains('Manage invitations sent to people in your organization'));
+    expect(source, isNot(contains('INVITATION CONTROL')));
+    expect(source, isNot(contains('CONTROL PLANE')));
+
+    final access = File('lib/features/auth/managed_dataset_access_workspace.dart').readAsStringSync();
+    expect(source, contains("MapEntry(ManagementSection.dataAccess, 'ACCESS')"));
+    expect(access, contains("Text('Branch Data & Access'"));
+    expect(access, contains('Search managed resources'));
+    expect(access, contains('Clear search'));
+    expect(access, contains('No managed resources are available in this authorized scope yet.'));
+    expect(access, contains('No resources match the current search and filters.'));
+    expect(access, contains('Access is temporarily unavailable'));
+    expect(access, contains("_action('RETRY'"));
+
+    // Dataset actions consume the backend-provided capability contract;
+    // role names are not used as a Flutter authorization boundary.
+    expect(access, contains("bool _can(String capability) => widget.capabilities.contains(capability);"));
+    expect(access, contains("bool get canViewOriginal => _can('dataset.view_original');"));
+    expect(access, contains("bool get canUpload => !widget.readOnly &&"));
+    expect(access, contains("_can('dataset.upload.direct')"));
+    expect(access, contains("bool get canDelete => !widget.readOnly && _can('dataset.delete');"));
+    expect(access, contains('bool get canCopy => !widget.readOnly &&'));
+    expect(access, contains("widget.canRunAnalysis && !canViewOriginal"));
+    expect(access, contains("_can('dataset.upload_grants.manage')"));
+    expect(access, contains("_can('dataset.copy_requests.review')"));
+    expect(access, contains("_can('dataset.proposal.review')"));
+    expect(access, contains('AWAITING BRANCH HEAD APPROVAL'));
+    expect(access, isNot(contains("roles.contains(")));
+    expect(access, contains('openInsightFlowAnalysis(context, managedWorkingCopyId: workingCopyId'));
+
+
+    final headerStart = source.indexOf('Widget _buildManagementHeader()');
+    final headerEnd = source.indexOf('Widget _buildManagementNavigation()', headerStart);
+    expect(headerStart, greaterThanOrEqualTo(0));
+    expect(headerEnd, greaterThan(headerStart));
+    final header = source.substring(headerStart, headerEnd);
+    // Contract the active responsive dashboard header rather than the removed
+    // legacy glass-header implementation.
+    expect(header, contains('height: MediaQuery.sizeOf(context).width < 720 ? 148 : 76'));
+    expect(header, contains('InsightFlow'));
+    expect(header, contains('Search people, datasets, or insights'));
+    expect(header, contains('TextField('));
+    expect(header, contains('actorName'));
+    expect(header, contains('_uiRoleLabel()'));
+    expect(header, contains("tooltip: 'Profile'"));
+    expect(header, contains('onPressed: _showCurrentUserProfile'));
+    expect(header, contains('constraints.maxWidth < 720'));
+    expect(header, contains('Color(0xF0031222)'));
+    expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
+
+    expect(source, contains('Future<Map<String, dynamic>> _loadCurrentUserProfile()'));
+    expect(source, contains("getSelf('/me')"));
+    expect(source, contains("getSelf('/profile/me')"));
+    expect(source, contains("'organization_name': contextData['organization_name']"));
+    expect(source, contains("'principal_id': principalId"));
+    expect(source, contains("profile['id_proof_number_masked']"));
+    expect(source, contains('bool _isCurrentUserProfile = false'));
+    expect(source, contains('Future<void> _confirmSignOut() async'));
+    expect(source, contains('final confirmed = await GlassDialog.show<bool>('));
+    expect(source, contains("title: 'Sign out?'"));
+    expect(source, contains("message: 'Are you sure you want to sign out?'"));
+    expect(source, contains("label: 'Cancel'"));
+    expect(source, contains("label: 'Sign Out'"));
+    expect(source, contains('isPrimary: true'));
+    expect(source, contains('if (confirmed == true && mounted)'));
+    expect(source, contains('await InsightFlowSupabaseAuthService.signOut()'));
+    expect(header, contains('onPressed: _confirmSignOut'));
+
+    expect(header, contains('Icons.hub_rounded'));
+    expect(header, isNot(contains('Icons.terminal')));
+
+    final authGate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    expect(authGate, contains('if (_onboardingState == InsightFlowOnboardingState.activeMember)'));
+    expect(authGate, contains('return authenticatedChild;'));
+    expect(authGate, contains('return AuthenticatedBrandShell(child: authenticatedChild);'));
+
+    final brand = File('lib/widgets/insightflow_floating_brand.dart').readAsStringSync();
+    expect(brand, contains('thickness: 14'));
+    expect(brand, contains('blur: 8'));
+    expect(brand, contains('glassColor: Color(0x0FFFFFFF)'));
+    expect(brand, contains('refractiveIndex: 1.05'));
+    expect(brand, contains('quality: GlassQuality.standard'));
+    expect(brand, contains('interactionScale: 1.0'));
+    expect(brand, contains('stretch: 0.0'));
+    expect(brand, contains('anchorStretch: false'));
+    expect(brand, contains('TechColors.borderActive.withValues(alpha: 0.16)'));
+
+    final managementNavStart = source.indexOf('Widget _buildManagementNavigation()');
+    final managementNavEnd = source.indexOf('@override\n  Widget build', managementNavStart);
+    expect(managementNavStart, greaterThanOrEqualTo(0));
+    expect(managementNavEnd, greaterThan(managementNavStart));
+    final navigationAfter = source.substring(managementNavStart, managementNavEnd);
+    expect(navigationAfter, contains('settings: kInsightFlowNavigationGlassSettings'));
+    expect(navigationAfter, contains('GlassChip'));
+    expect(navigationAfter, contains('height: 56'));
+
+    // The organization heading must not share a constrained desktop Row with
+    // the action chips; that caused one-character-per-line wrapping.
+    final organizationStart = source.indexOf('Widget organizationView()');
+    final organizationEnd = source.indexOf('Widget peopleView()', organizationStart);
+    expect(organizationStart, greaterThanOrEqualTo(0));
+    expect(organizationEnd, greaterThan(organizationStart));
+    final organizationView = source.substring(organizationStart, organizationEnd);
+    expect(organizationView, contains("_eyebrow('ORGANIZATION / STRUCTURE')"));
+    expect(organizationView, contains("Text('Branches and teams'"));
+    expect(organizationView, contains("stat('Branches / locations'"));
+    expect(organizationView, contains("stat('Active assignments'"));
+    expect(organizationView, contains('alignment: Alignment.centerLeft'));
+    expect(organizationView, isNot(contains('Expanded(child: _eyebrow')));
+
+    // Management navigation must be driven exclusively by the server's
+    // validated UI policy. Missing, malformed, empty, or unknown policy
+    // values must not fall back to a role-derived menu.
+    expect(source, contains('List<ManagementSection>? _parseAllowedSections(dynamic rawPolicy)'));
+    expect(source, contains("final policySections = _parseAllowedSections(r[0]['ui_policy']);"));
+    expect(source, contains('if (roleId.isEmpty || policySections == null)'));
+    expect(source, contains('Management permissions could not be verified.'));
+    expect(source, contains('if (section == null || parsed.contains(section)) return null;'));
+    expect(source, contains('if (!parsed.contains(ManagementSection.overview)) return null;'));
+    final allowedStart = source.indexOf('List<ManagementSection> _allowedSections()');
+    final allowedEnd = source.indexOf('bool _sectionAllowed', allowedStart);
+    expect(allowedStart, greaterThanOrEqualTo(0));
+    expect(allowedEnd, greaterThan(allowedStart));
+    final allowedPolicy = source.substring(allowedStart, allowedEnd);
+    expect(allowedPolicy, contains("_parseAllowedSections(overview['ui_policy'])"));
+    expect(allowedPolicy, isNot(contains('switch (_managementRole())')));
+    expect(allowedPolicy, isNot(contains("case 'manager':")));
+    final loadStart = source.indexOf('Future<void> _loadAll() async');
+    final loadEnd = source.indexOf('String _managementRole()', loadStart);
+    expect(loadStart, greaterThanOrEqualTo(0));
+    expect(loadEnd, greaterThan(loadStart));
+    final loadFlow = source.substring(loadStart, loadEnd);
+    expect(loadFlow, contains('overview = const {};'));
+    expect(loadFlow, contains('final policySections = _parseAllowedSections(r[0][\'ui_policy\']);'));
+
+  });
+}

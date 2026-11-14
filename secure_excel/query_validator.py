@@ -60,8 +60,6 @@ def _coerce_value(column_role: str, value: Any) -> Any:
                 return False
         raise ValidationError(f"Value {value!r} is not valid for a boolean-capability column.")
     if column_role in NUMERIC_ROLES:
-        if value is None:
-            return value
         try:
             return float(value)
         except Exception as exc:
@@ -103,4 +101,22 @@ def validate_structured_query(query: dict[str, Any], schema: dict[str, Any]) -> 
 
     normalized = dict(query)
     normalized["conditions"] = normalized_conditions
+
+    if operation == "quality_check":
+        identifier_column_id = query.get("identifier_column_id")
+        if identifier_column_id is not None:
+            profile = _column_profile(schema, identifier_column_id)
+            if profile is None:
+                raise ValidationError(f"Unknown identifier column_id: {identifier_column_id!r}")
+            if profile.get("role") != "identifier":
+                raise ValidationError(
+                    f"Column {identifier_column_id!r} is not semantically identified as an identifier."
+                )
+        elif query.get("report") != "data_quality_ambiguous_identifier":
+            identifiers = schema.get("role_index", {}).get("identifier", [])
+            if len(identifiers) > 1:
+                raise ValidationError(
+                    "Multiple identifier columns were detected; specify which identifier to check for duplicates."
+                )
+
     return normalized

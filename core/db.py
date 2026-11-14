@@ -45,9 +45,27 @@ def _database_url() -> str:
 
 DATABASE_URL = _database_url()
 
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+# Bound PostgreSQL connection establishment so a database/network outage
+# cannot hold the ASGI startup lifecycle until Render's port-scan timeout.
+_connect_args = (
+    {"check_same_thread": False}
+    if DATABASE_URL.startswith("sqlite")
+    else {"connect_timeout": 10}
+)
 
-engine = create_engine(DATABASE_URL, connect_args=_connect_args, future=True)
+_engine_pool_options = {}
+if not DATABASE_URL.startswith("sqlite"):
+    # Render/Supabase/Postgres connections can be dropped while the service is
+    # idle. Validate a pooled connection before checkout and recycle older
+    # connections so ManagementShell never inherits a dead idle socket.
+    _engine_pool_options.update(pool_pre_ping=True, pool_recycle=600)
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=_connect_args,
+    future=True,
+    **_engine_pool_options,
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

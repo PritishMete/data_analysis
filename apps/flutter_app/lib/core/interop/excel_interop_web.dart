@@ -5,6 +5,7 @@ library excel_sheet_interop;
 import 'dart:convert';
 import 'dart:js_interop';
 import 'package:http/http.dart' as http;
+import '../auth/authenticated_http.dart';
 import '../security/privacy_mode.dart';
 
 // ── JS Bindings ──────────────────────────────────────────────────────────────
@@ -51,6 +52,9 @@ external JSPromise<JSObject> _jsWriteRangeBinningFormulas(JSString optionsJson);
 @JS('jsAppendStaticColumn')
 external JSPromise<JSObject> _jsAppendStaticColumn(JSString optionsJson);
 
+@JS('createNativeExcelChart')
+external JSPromise<JSObject> _createNativeExcelChart(JSString optionsJson);
+
 @JS('jsWriteQualityReportWorksheet')
 external JSPromise<JSObject> _jsWriteQualityReportWorksheet(JSString optionsJson);
 
@@ -60,6 +64,13 @@ extension type PipelineResponse._(JSObject _) implements JSObject {
   external bool get success;
   external int get processedRows;
   external String? get error;
+  external String? get stage;
+  external String? get chartId;
+  external String? get chartName;
+  external String? get sheetName;
+  external String? get chartType;
+  external String? get sourceRange;
+  external String? get title;
   // Only set by processExcelPipeline when opts.pivotConfig was present —
   // a JSON string (see JSON.stringify(...) in web/excel_helper.js) rather
   // than a nested JS object, decoded the same way every other JSON payload
@@ -112,6 +123,56 @@ Future<String?> getActiveWorksheetName() async {
     return result.toDart;
   } catch (_) {
     return null;
+  }
+}
+
+@JS('getInsightFlowSourceData')
+external JSPromise<JSString?> _getInsightFlowSourceData();
+
+Future<String?> getInsightFlowSourceData() async {
+  try {
+    final result = await _getInsightFlowSourceData().toDart;
+    if (result == null || result.isNull || result.isUndefined) return null;
+    return result.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
+@JS('getInsightFlowSourceWorksheetName')
+external JSPromise<JSString?> _getInsightFlowSourceWorksheetName();
+
+@JS('establishInsightFlowSourceFromActiveWorksheet')
+external JSPromise<JSString?> _establishInsightFlowSourceFromActiveWorksheet();
+
+Future<String?> establishInsightFlowSourceFromActiveWorksheet() async {
+  try {
+    final result = await _establishInsightFlowSourceFromActiveWorksheet().toDart;
+    if (result == null || result.isNull || result.isUndefined) return null;
+    return result.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
+@JS('setInsightFlowSourceWorksheetName')
+external JSPromise<JSBoolean> _setInsightFlowSourceWorksheetName(JSString sheetName);
+
+Future<String?> getInsightFlowSourceWorksheetName() async {
+  try {
+    final result = await _getInsightFlowSourceWorksheetName().toDart;
+    if (result == null || result.isNull || result.isUndefined) return null;
+    return result.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<bool> setInsightFlowSourceWorksheetName(String sheetName) async {
+  try {
+    return (await _setInsightFlowSourceWorksheetName(sheetName.toJS).toDart).toDart;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -391,9 +452,10 @@ Future<Map<String, dynamic>> backtrackFillMissing(String optionsJson) async {
     // route in this file — see _cleanDataUrl's counterpart in data_screen.dart).
     final Uri apiUrl = Uri.parse('https://data-analysis-oajs.onrender.com/api/clean/dynamic_backtrack');
 
+    final requestHeaders = await authHeaders(resourceId: sheetName ?? 'active-sheet');
     final response = await http.post(
       apiUrl,
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", ...requestHeaders},
       body: jsonEncode({
         "data": records,
         "target_column": targetColumn,
@@ -466,6 +528,28 @@ Future<Map<String, dynamic>> writeQueryResultToSheet(String optionsJson) async {
     };
   } catch (e) {
     return {"success": false, "error": e.toString()};
+  }
+}
+
+/// Creates or replaces an editable native Excel chart on an existing result worksheet.
+Future<Map<String,dynamic>> createNativeExcelChart(String optionsJson) async {
+  try {
+    final obj = await _createNativeExcelChart(optionsJson.toJS).toDart;
+    final response = PipelineResponse._(obj);
+    return {
+      'success': response.success,
+      'processedRows': response.processedRows,
+      'error': response.error,
+      'stage': response.stage,
+      'chartId': response.chartId,
+      'chartName': response.chartName,
+      'sheetName': response.sheetName,
+      'chartType': response.chartType,
+      'sourceRange': response.sourceRange,
+      'title': response.title,
+    };
+  } catch (e) {
+    return {'success': false, 'error': e.toString(), 'stage': 'interop'};
   }
 }
 

@@ -1,0 +1,44 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid && data.child('suspended').val() != true",
+        ".write": false
+      }
+    },
+    "workspaces": {
+      "$workspaceId": {
+        ".read": false,
+        ".write": false,
+        "members": {
+          "$uid": {
+            ".read": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('suspended').val() != true",
+            ".write": false
+          }
+        },
+        "roles": {
+          ".read": false,
+          ".write": false
+        },
+        "resources": {
+          "$resourceId": {
+            ".read": false,
+            ".write": false,
+            "grants": {
+              "$uid": {
+                ".read": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('suspended').val() != true",
+                ".write": false
+              }
+            }
+          }
+        },
+        "bootstrap": {
+          ".read": false,
+          ".write": false
+        }
+      }
+    }
+  }
+}

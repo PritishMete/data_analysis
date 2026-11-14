@@ -1,0 +1,188 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/account_management_screen.dart';
+
+void main() {
+  Future<void> pumpAuthApp(
+    WidgetTester tester,
+    Widget child, {
+    Size size = const Size(330, 556),
+  }) async {
+    await tester.binding.setSurfaceSize(size);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      LiquidGlassWidgets.wrap(
+        theme: GlassThemeData(
+          brightness: Brightness.dark,
+          dark: const GlassThemeVariant(
+            settings: GlassThemeSettings(
+              glassColor: Color(0x1FFFFFFF),
+              thickness: 20,
+              blur: 14,
+              refractiveIndex: 0.9,
+              saturation: 1.2,
+              ambientStrength: 0.4,
+              lightIntensity: 0.8,
+            ),
+            quality: GlassQuality.minimal,
+          ),
+        ),
+        child: CupertinoApp(
+          theme: const CupertinoThemeData(brightness: Brightness.dark),
+          home: child,
+        ),
+      ),
+    );
+
+    await tester.pump();
+  }
+
+  testWidgets('sign in uses shared glass fields and remains narrow-pane safe', (
+    tester,
+  ) async {
+    await pumpAuthApp(tester, const SignInScreen());
+
+    expect(find.text('InsightFlow'), findsNothing);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
+    expect(find.byType(GlassPasswordField), findsOneWidget);
+    expect(find.text('EMAIL'), findsOneWidget);
+    expect(find.text('PASSWORD'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.text('Forgot password?'), findsOneWidget);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, Colors.transparent);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sign in has a visible mobile action and morphs into sign up in place', (
+    tester,
+  ) async {
+    await pumpAuthApp(tester, const SignInScreen());
+
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.byType(SignUpScreen), findsNothing);
+
+    await tester.tap(find.text('Create account'));
+    await tester.pump();
+
+    final morphSize = find.byKey(
+      const ValueKey<String>('auth-card-morph-size'),
+    );
+    expect(morphSize, findsOneWidget);
+    final morphOpacity = find.descendant(
+      of: morphSize,
+      matching: find.byType(AnimatedOpacity),
+    );
+    final initialCardHeight = tester.getSize(morphSize).height;
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0);
+    final washDuringExpansion = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+    );
+    expect(
+      (washDuringExpansion.decoration! as BoxDecoration).color,
+      Colors.white.withValues(alpha: 0.055),
+    );
+
+    await tester.pump(const Duration(milliseconds: 220));
+    final expandingCardHeight = tester.getSize(morphSize).height;
+    expect(expandingCardHeight, greaterThan(initialCardHeight));
+
+    await tester.pump(const Duration(milliseconds: 280));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(tester.getSize(morphSize).height, greaterThan(initialCardHeight));
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 1);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.byType(SignUpScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    final expandedCardHeight = tester.getSize(morphSize).height;
+    await tester.tap(find.text('Sign in'));
+    await tester.pump();
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 0);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.white.withValues(alpha: 0.055),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    final collapsingCardHeight = tester.getSize(morphSize).height;
+    expect(collapsingCardHeight, lessThan(expandedCardHeight));
+
+    await tester.pump(const Duration(milliseconds: 280));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(tester.widget<AnimatedOpacity>(morphOpacity).opacity, 1);
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey<String>('auth-card-morph-wash')),
+      ).decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.byType(GlassPasswordField), findsOneWidget);
+    expect(find.byType(SignUpScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('account management uses shared glass fields', (tester) async {
+    await pumpAuthApp(tester, const AccountManagementScreen());
+
+    expect(find.text('ACCOUNT / PROFILE'), findsOneWidget);
+    expect(find.byType(GlassTextField), findsAtLeastNWidgets(2));
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.text('Save profile'), findsOneWidget);
+    expect(find.text('Change password'), findsOneWidget);
+    expect(find.text('Delete account'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shared password field keeps show/hide interaction', (
+    tester,
+  ) async {
+    await pumpAuthApp(tester, const SignInScreen());
+
+    expect(find.byIcon(CupertinoIcons.eye_slash_fill), findsOneWidget);
+    await tester.tap(find.byIcon(CupertinoIcons.eye_slash_fill));
+    await tester.pump();
+
+    expect(find.byIcon(CupertinoIcons.eye_fill), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sign up uses shared glass fields and scrolls in narrow pane', (
+    tester,
+  ) async {
+    await pumpAuthApp(tester, const SignUpScreen());
+
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.byType(GlassTextField), findsNWidgets(4));
+    expect(find.text('FULL NAME'), findsOneWidget);
+    expect(find.text('EMAIL'), findsOneWidget);
+    expect(find.text('PASSWORD'), findsOneWidget);
+    expect(find.text('CONFIRM PASSWORD'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, Colors.transparent);
+    expect(tester.takeException(), isNull);
+  });
+}

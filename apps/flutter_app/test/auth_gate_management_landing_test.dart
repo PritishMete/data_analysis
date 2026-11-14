@@ -1,0 +1,89 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import '../lib/core/auth/authenticated_http.dart';
+
+void main() {
+  test('active-member routing uses authoritative role resolution', () {
+    final source =
+        File('lib/features/auth/auth_gate.dart').readAsStringSync();
+    final start = source.indexOf(
+      'case InsightFlowOnboardingState.activeMember:',
+    );
+    final end = source.indexOf(
+      'case InsightFlowOnboardingState.pendingInvitation:',
+      start,
+    );
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+
+    final activeMemberBlock = source.substring(start, end);
+    expect(activeMemberBlock, contains('resolveInsightFlowLandingRole'));
+    expect(activeMemberBlock, contains("case 'branch_head':"));
+    expect(activeMemberBlock, contains("case 'manager':"));
+    expect(activeMemberBlock, contains("case 'employee':"));
+    expect(activeMemberBlock, contains("case 'external_viewer':"));
+    expect(activeMemberBlock, contains('ManagedDatasetAccessWorkspace(readOnly: true)'));
+    expect(activeMemberBlock, contains('NO UNAMBIGUOUS ACTIVE ROLE'));
+  });
+
+  test('each supported role resolves to its intended landing experience', () {
+    expect(resolveInsightFlowLandingRole(['branch_head']), 'branch_head');
+    expect(resolveInsightFlowLandingRole(['manager']), 'manager');
+    expect(resolveInsightFlowLandingRole(['team_lead']), 'team_lead');
+    expect(resolveInsightFlowLandingRole(['employee']), 'employee');
+    expect(
+      resolveInsightFlowLandingRole(['external_viewer']),
+      'external_viewer',
+    );
+    expect(
+      resolveInsightFlowLandingRole(['organization_owner', 'branch_head']),
+      'organization_owner',
+    );
+  });
+
+  test('role resolver fails closed for missing, unknown, or conflicting roles', () {
+    expect(resolveInsightFlowLandingRole([]), isNull);
+    expect(resolveInsightFlowLandingRole(['manager', 'employee']), isNull);
+    expect(resolveInsightFlowLandingRole(['superuser']), isNull);
+    final source =
+        File('lib/core/auth/authenticated_http.dart').readAsStringSync();
+    expect(source, contains('String? resolveInsightFlowLandingRole'));
+    expect(source, contains('if (roles.isEmpty || roles.any'));
+    expect(source, contains('if (roles.length != 1) return null;'));
+  });
+
+  test('Render blueprint follows the manually deployed backend branch', () {
+    final render = File('../render.yaml').readAsStringSync();
+    expect(render, contains('branch: main'));
+    expect(render, contains('autoDeployTrigger: off'));
+  });
+
+  test('production migrations require explicit confirmation on the release branch', () {
+    final workflow =
+        File('../.github/workflows/production-authz-migrations.yml').readAsStringSync();
+    expect(workflow, contains('workflow_dispatch:'));
+    expect(workflow, contains('confirm_production_migration:'));
+    expect(workflow, contains('default: false'));
+    expect(
+      workflow,
+      contains("github.ref == 'refs/heads/main' && inputs.confirm_production_migration == true"),
+    );
+    expect(workflow, contains('environment: production'));
+    expect(workflow, contains('concurrency:'));
+    expect(workflow, isNot(contains('  push:')));
+  });
+
+  test('external viewer workspace hides mutation controls through read-only capability policy', () {
+    final source = File(
+      'lib/features/auth/managed_dataset_access_workspace.dart',
+    ).readAsStringSync();
+    expect(source, contains('this.readOnly = false'));
+    expect(source, contains("final showUpload = !readOnly && capabilities.contains('dataset.upload.direct')"));
+    expect(source, contains('final showProposalQueue = !readOnly &&'));
+    expect(source, contains('final showAccessManagement = !readOnly &&'));
+    expect(source, contains('capabilities.contains(\'dataset.copy.request\')'));
+    expect(source, contains('if (!widget.readOnly) {'));
+  });
+}

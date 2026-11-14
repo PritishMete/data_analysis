@@ -1,11 +1,3 @@
-# datasets/schemas.py
-# ─────────────────────────────────────────────────────────────────────────────
-# Pydantic I/O models for the Dataset Registry API. Kept separate from the
-# SQLAlchemy models in models.py on purpose (clean architecture: persistence
-# shape and wire shape are allowed to diverge even when they look similar
-# today).
-# ─────────────────────────────────────────────────────────────────────────────
-
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -18,14 +10,27 @@ class DatasetColumnOut(BaseModel):
     unique_count: int
     missing_percentage: float
     inferred_role: str | None
-    # Additive: confidence/evidence/timestamp behind that same inferred_role,
-    # persisted directly on DatasetColumn (see datasets/models.py) rather
-    # than only living in schema_intelligence's separate audit tables — so
-    # this same Dataset Registry endpoint already carries them, with zero
-    # schema_intelligence import needed here.
     inferred_role_confidence: float | None = None
     inferred_role_evidence: dict | None = None
     role_detected_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class DatasetVersionOut(BaseModel):
+    version_id: str
+    version_number: int
+    status: str
+    file_hash: str
+    schema_hash: str
+    row_count: int
+    column_count: int
+    original_filename: str
+    file_size: int
+    created_by: str | None
+    created_at: datetime
+    storage_provider: str | None
+    storage_object_id: str | None
 
     model_config = {"from_attributes": True}
 
@@ -42,6 +47,14 @@ class DatasetOut(BaseModel):
     column_count: int
     source_type: str
     last_accessed: datetime
+    status: str = "ready"
+    original_filename: str | None = None
+    content_type: str | None = None
+    file_size: int | None = None
+    storage_provider: str | None = None
+    storage_object_id: str | None = None
+    current_version_id: str | None = None
+    version_number: int = 1
 
     model_config = {"from_attributes": True}
 
@@ -49,6 +62,4 @@ class DatasetOut(BaseModel):
 class DatasetRegisterResponse(BaseModel):
     dataset: DatasetOut
     columns: list[DatasetColumnOut]
-    was_duplicate: bool  # true if this exact file_hash was already registered
-    # for this organization — the existing row was returned/touched instead
-    # of inserting a new one.
+    was_duplicate: bool

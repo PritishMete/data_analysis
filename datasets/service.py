@@ -1,19 +1,84 @@
-# datasets/service.py
-# ─────────────────────────────────────────────────────────────────────────────
-# Dataset Registry business logic. Deterministic only — pandas for column
-# stats, hashlib for identity, SQLAlchemy (via the repository) for
-# persistence. No AI/LLM calls happen anywhere in this file, per the
-# project requirement that registry/schema-detection work stays
-# non-probabilistic and cheap to run on every upload.
-# ─────────────────────────────────────────────────────────────────────────────
+from __future__ import annotations
 
+import csv
+import hashlib
+import io
+import itertools
+import os
+import unicodedata
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import BinaryIO
 
 import pandas as pd
+from sqlalchemy import select
 
 from .hashing import compute_file_hash, compute_schema_hash
-from .models import Dataset, DatasetColumn
+from .models import Dataset, DatasetColumn, DatasetVersion
+from .physical_table import ROW_NUMBER_COLUMN, create_physical_table, resolve_dataset_table_name
 from .repository import DatasetRepository
+
+
+DEFAULT_CHUNK_ROWS = int(os.getenv("INSIGHTFLOW_DATASET_CHUNK_ROWS", "5000"))
+MAX_COLUMNS = int(os.getenv("INSIGHTFLOW_MANAGED_DATASET_MAX_COLUMNS", "200"))
+SAMPLE_ROWS = int(os.getenv("INSIGHTFLOW_SCHEMA_SAMPLE_ROWS", "10000"))
+
+# Python's csv module defaults to a 128 KiB field ceiling. That is too small
+# for legitimate exported text/JSON cells in managed datasets. Keep parsing
+# bounded while allowing large fields inside the overall upload-size limit.
+CSV_MAX_FIELD_BYTES = max(128 * 1024, int(os.getenv("INSIGHTFLOW_CSV_MAX_FIELD_BYTES", str(10 * 1024 * 1024))))
+csv.field_size_limit(CSV_MAX_FIELD_BYTES)
+
+
+def _json_value(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.isoformat()
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _logical_type(series: pd.Series) -> str:
+    dtype = series.dtype
+    if pd.api.types.is_bool_dtype(dtype):
+        return "boolean"
+    if pd.api.types.is_integer_dtype(dtype):
+        return "integer"
+    if pd.api.types.is_float_dtype(dtype):
+        return "decimal"
+    if pd.api.types.is_datetime64_any_dtype(dtype):
+        return "datetime"
+    values = series.dropna().astype(str).head(1000)
+    if not values.empty:
+        lower = values.str.strip().str.lower()
+        if lower.isin({"true", "false", "yes", "no"}).all():
+            return "boolean"
+        if lower.str.contains(r"[-/:]", regex=True).mean() >= 0.8:
+            parsed = pd.to_datetime(values, errors="coerce")
+            if parsed.notna().mean() >= 0.95:
+                return "datetime"
+    return "text"
+
+
+def _merge_types(current: str | None, incoming: str) -> str:
+    if not current or current == incoming:
+        return incoming
+    if {current, incoming} <= {"integer", "decimal"}:
+        return "decimal"
+    if current == "boolean" or incoming == "boolean":
+        return "text"
+    if current == "datetime" or incoming == "datetime":
+        return "text"
+    return "text"
 
 
 @dataclass
@@ -23,14 +88,14 @@ class DatasetRegistration:
     was_duplicate: bool
 
 
-class DatasetRegistryService:
-    """Depends on a DatasetRepository via constructor injection (see
-    routes.py's `get_dataset_repository` -> `get_dataset_registry_service`
-    dependency chain) — this class never opens its own DB session, so it can
-    be unit-tested with a repository backed by an in-memory SQLite engine or,
-    for pure-logic tests, a hand-rolled fake repository.
-    """
+@dataclass
+class StreamingDatasetRegistration:
+    registration: DatasetRegistration
+    version: DatasetVersion
+    sample: pd.DataFrame
 
+
+class DatasetRegistryService:
     def __init__(self, repository: DatasetRepository):
         self.repository = repository
 
@@ -44,54 +109,573 @@ class DatasetRegistryService:
         uploaded_by: str | None,
         source_type: str,
     ) -> DatasetRegistration:
-        """Idempotent: re-uploading byte-identical content for the same
-        organization returns the EXISTING dataset (with last_accessed
-        refreshed) instead of creating a duplicate row. This is what lets the
-        registry eventually recognize "this is the same file as before"
-        rather than accumulating a new row per re-upload/re-analysis.
-        """
         file_hash = compute_file_hash(raw_bytes)
-
         existing = self.repository.find_by_file_hash(file_hash, organization_id)
-        if existing is not None:
+        if existing is not None and existing.status not in {"failed", "deleted"}:
             self.repository.touch_last_accessed(existing.dataset_id)
-            existing_columns = self.repository.get_columns(existing.dataset_id)
-            return DatasetRegistration(dataset=existing, columns=existing_columns, was_duplicate=True)
+            return DatasetRegistration(
+                existing, self.repository.get_columns(existing.dataset_id), True
+            )
 
-        schema_hash = compute_schema_hash(
-            (str(col), str(df[col].dtype)) for col in df.columns
-        )
-
-        dataset = Dataset(
-            organization_id=organization_id,
-            dataset_name=dataset_name,
-            uploaded_by=uploaded_by,
-            schema_hash=schema_hash,
-            file_hash=file_hash,
-            row_count=int(len(df)),
-            column_count=int(len(df.columns)),
-            source_type=source_type,
-        )
-        dataset = self.repository.create_dataset(dataset)
-
-        column_rows = [self._build_column_row(dataset.dataset_id, df, col) for col in df.columns]
-        column_rows = self.repository.add_columns(column_rows)
-
-        return DatasetRegistration(dataset=dataset, columns=column_rows, was_duplicate=False)
+        schema_hash = compute_schema_hash((str(col), str(df[col].dtype)) for col in df.columns)
+        now = datetime.now(timezone.utc)
+        self.repository.db.rollback()
+        with self.repository.db.begin():
+            dataset = Dataset(
+                organization_id=organization_id,
+                dataset_name=dataset_name,
+                uploaded_by=uploaded_by,
+                schema_hash=schema_hash,
+                file_hash=file_hash,
+                row_count=int(len(df)),
+                column_count=int(len(df.columns)),
+                source_type=source_type,
+                status="ready",
+                original_filename=dataset_name,
+                file_size=len(raw_bytes),
+                content_type="text/csv" if source_type == "csv" else None,
+                version_number=1,
+                current_version_id="v1",
+                created_at=now,
+                last_accessed=now,
+            )
+            self.repository.create_dataset(dataset, commit=False)
+            version = DatasetVersion(
+                dataset_id=dataset.dataset_id,
+                version_id="v1",
+                version_number=1,
+                status="ready",
+                file_hash=file_hash,
+                schema_hash=schema_hash,
+                row_count=len(df),
+                column_count=len(df.columns),
+                original_filename=dataset_name,
+                file_size=len(raw_bytes),
+                created_by=uploaded_by,
+                created_at=now,
+            )
+            self.repository.add_version(version, commit=False)
+            columns = [
+                self._build_column_row(dataset.dataset_id, df, col, version.version_pk)
+                for col in df.columns
+            ]
+            self.repository.add_columns(columns, commit=False)
+            self.repository.bulk_add_rows(
+                version.version_pk,
+                [
+                    {
+                        "row_number": index + 1,
+                        "row_data": {
+                            str(k): _json_value(v) for k, v in row.items()
+                        },
+                    }
+                    for index, row in enumerate(df.to_dict(orient="records"))
+                ],
+            )
+        return DatasetRegistration(dataset, columns, False)
 
     @staticmethod
-    def _build_column_row(dataset_id: str, df: pd.DataFrame, column_name: str) -> DatasetColumn:
+    def _normalize_reserved_column_name(column: str) -> str:
+        """Normalize a header only for comparison with reserved internal names."""
+        normalized = unicodedata.normalize("NFKC", str(column)).casefold()
+        return "".join(
+            character
+            for character in normalized
+            if not character.isspace() and unicodedata.category(character) != "Cf"
+        )
+
+    @staticmethod
+    def _normalize_csv_header_identity(column: str) -> str:
+        """Normalize cosmetic header differences to catch ambiguous CSV schemas."""
+        normalized = unicodedata.normalize("NFKC", str(column)).casefold().strip()
+        return "".join(
+            character
+            for character in normalized
+            if unicodedata.category(character) != "Cf"
+        )
+
+    @staticmethod
+    def _rename_reserved_csv_columns(columns: list[str]) -> list[str]:
+        """Keep source row-number values while avoiding the internal DB column."""
+        reserved_name = DatasetRegistryService._normalize_reserved_column_name(
+            ROW_NUMBER_COLUMN
+        )
+        renamed = list(columns)
+        used_names = set(columns)
+        for index, column in enumerate(columns):
+            if (
+                DatasetRegistryService._normalize_reserved_column_name(column)
+                != reserved_name
+            ):
+                continue
+
+            candidate = "source_row_number"
+            suffix = 2
+            while candidate in used_names:
+                candidate = f"source_row_number_{suffix}"
+                suffix += 1
+            renamed[index] = candidate
+            used_names.add(candidate)
+        return renamed
+
+    @staticmethod
+    def _validate_csv_structure(file_obj: BinaryIO) -> list[str]:
+        file_obj.seek(0)
+        text_stream = io.TextIOWrapper(file_obj, encoding="utf-8-sig", newline="")
+        try:
+            reader = csv.reader(text_stream, strict=True)
+            header = next(reader, None)
+            if not header or any(not str(column).strip() for column in header):
+                raise ValueError("CSV header must contain named columns.")
+            source_columns = [str(column) for column in header]
+            if len(source_columns) > MAX_COLUMNS:
+                raise ValueError(f"CSV has too many columns; maximum is {MAX_COLUMNS}.")
+            normalized_headers = [
+                DatasetRegistryService._normalize_csv_header_identity(column)
+                for column in source_columns
+            ]
+            if any(not column for column in normalized_headers):
+                raise ValueError("CSV header contains a column name that is empty after normalization.")
+            if len(set(normalized_headers)) != len(normalized_headers):
+                raise ValueError(
+                    "CSV contains ambiguous duplicate column names. Column names must be unique "
+                    "after case, Unicode, and surrounding-whitespace normalization."
+                )
+
+            # Names that look like the internal row tracker after Unicode,
+            # whitespace, or case normalization are retained as source data
+            # under a safe, non-reserved column name.
+            columns = DatasetRegistryService._rename_reserved_csv_columns(
+                source_columns
+            )
+            for row_number, row in enumerate(reader, start=2):
+                if len(row) != len(source_columns):
+                    raise ValueError(
+                        f"CSV row {row_number} has {len(row)} fields; expected {len(source_columns)}."
+                    )
+            return columns
+        except csv.Error as exc:
+            raise ValueError(f"CSV could not be parsed safely: {exc}") from exc
+        finally:
+            text_stream.detach()
+            file_obj.seek(0)
+
+    def register_csv_stream(
+        self,
+        *,
+        file_obj: BinaryIO,
+        filename: str,
+        organization_id: str,
+        dataset_name: str,
+        uploaded_by: str | None,
+        existing_dataset_id: str | None = None,
+        content_type: str | None = None,
+        max_bytes: int,
+        chunk_rows: int = DEFAULT_CHUNK_ROWS,
+        candidate_version_id: str | None = None,
+    ) -> StreamingDatasetRegistration:
+        safe_name = os.path.basename(str(filename or "").replace("\\", "/")).strip()
+        if (
+            not safe_name
+            or len(safe_name) > 255
+            or not safe_name.lower().endswith(".csv")
+            or any(ord(char) < 32 or ord(char) == 127 for char in safe_name)
+        ):
+            raise ValueError("Only safe CSV files are accepted as managed datasets.")
+
+        display_name = str(dataset_name or "").strip()
+        if (
+            not display_name
+            or len(display_name) > 255
+            or any(ord(char) < 32 or ord(char) == 127 for char in display_name)
+        ):
+            raise ValueError("Dataset name must be between 1 and 255 printable characters.")
+
+        file_hash, file_size = self._hash_stream(file_obj, max_bytes)
+        existing = None
+        if existing_dataset_id is None:
+            existing = self.repository.find_by_file_hash(file_hash, organization_id)
+            if existing is not None and existing.status not in {"failed", "deleted"}:
+                version = self.repository.get_version(existing.dataset_id)
+                if version is None or version.status != "ready":
+                    raise ValueError("Duplicate dataset has no READY current version.")
+                self.repository.touch_last_accessed(existing.dataset_id)
+                return StreamingDatasetRegistration(
+                    DatasetRegistration(
+                        existing,
+                        self.repository.get_columns_for_version(version.version_pk),
+                        True,
+                    ),
+                    version,
+                    pd.DataFrame(),
+                )
+        else:
+            existing = self.repository.get_by_id(existing_dataset_id)
+            if existing is None or existing.organization_id != organization_id:
+                raise ValueError("Dataset is not accessible in this organization.")
+            if existing.status == "deleted":
+                raise ValueError("This dataset cannot receive a new version.")
+            current = self.repository.get_version(existing.dataset_id)
+            if current is not None and current.file_hash == file_hash:
+                # Proposal submissions must not mutate any official dataset metadata,
+                # even when the uploaded candidate matches the current file exactly.
+                if candidate_version_id is None:
+                    self.repository.touch_last_accessed(existing.dataset_id)
+                return StreamingDatasetRegistration(
+                    DatasetRegistration(
+                        existing,
+                        self.repository.get_columns_for_version(current.version_pk),
+                        True,
+                    ),
+                    current,
+                    pd.DataFrame(),
+                )
+
+        expected_columns = self._validate_csv_structure(file_obj)
+
+        file_obj.seek(0)
+        try:
+            chunks = pd.read_csv(
+                file_obj,
+                chunksize=max(1, chunk_rows),
+                encoding="utf-8-sig",
+                on_bad_lines="error",
+                header=0,
+                names=expected_columns,
+            )
+            first = next(chunks)
+        except StopIteration as exc:
+            raise ValueError("CSV must contain at least one data row.") from exc
+        except pd.errors.EmptyDataError as exc:
+            raise ValueError("CSV is empty or has no header.") from exc
+        except (pd.errors.ParserError, UnicodeDecodeError) as exc:
+            raise ValueError(f"CSV could not be parsed safely: {exc}") from exc
+
+        columns = [str(column) for column in first.columns]
+        if columns != expected_columns:
+            raise ValueError("CSV header could not be parsed consistently.")
+
+        is_version = existing is not None
+        version_number = existing.version_number + 1 if is_version else 1
+        sample_frames: list[pd.DataFrame] = []
+        sample_count = 0
+        type_map: dict[str, str] = {}
+        missing: dict[str, int] = {column: 0 for column in columns}
+        row_count = 0
+
+        # First pass: infer the complete schema and profiling data without
+        # retaining the whole CSV in memory. The file is then rewound and read
+        # a second time for bulk insertion into the typed physical table.
+        for chunk in itertools.chain((first,), chunks):
+            chunk_columns = [str(c) for c in chunk.columns]
+            if chunk_columns != columns:
+                raise ValueError("CSV rows do not have a consistent column structure.")
+            for column in columns:
+                missing[column] += int(chunk[column].isna().sum())
+                type_map[column] = _merge_types(
+                    type_map.get(column),
+                    _logical_type(chunk[column]),
+                )
+            row_count += len(chunk)
+            remaining = max(0, SAMPLE_ROWS - sample_count)
+            if remaining:
+                sample = chunk.head(remaining).copy()
+                sample_frames.append(sample)
+                sample_count += len(sample)
+
+        if row_count <= 0:
+            raise ValueError("CSV must contain at least one data row.")
+
+        schema_hash = compute_schema_hash(type_map.items())
+        physical_columns = [(column, type_map.get(column, "text")) for column in columns]
+
+        # Hash/deduplication and current-version lookups above trigger
+        # SQLAlchemy autobegin. End that read-only transaction before opening
+        # the single atomic ingestion transaction.
+        self.repository.db.rollback()
+
+        with self.repository.db.begin():
+            if is_version:
+                dataset = existing
+            else:
+                dataset = Dataset(
+                    organization_id=organization_id,
+                    dataset_name=display_name,
+                    uploaded_by=uploaded_by,
+                    schema_hash="",
+                    file_hash=file_hash,
+                    row_count=0,
+                    column_count=len(columns),
+                    source_type="csv",
+                    status="processing",
+                    original_filename=safe_name,
+                    content_type=content_type or "text/csv",
+                    file_size=file_size,
+                    version_number=1,
+                    current_version_id=None,
+                )
+                self.repository.create_dataset(dataset, commit=False)
+
+            version = DatasetVersion(
+                dataset_id=dataset.dataset_id,
+                version_id=candidate_version_id or f"v{version_number}",
+                version_number=version_number,
+                status="processing",
+                file_hash=file_hash,
+                schema_hash=schema_hash,
+                row_count=0,
+                column_count=len(columns),
+                original_filename=safe_name,
+                content_type=content_type or "text/csv",
+                file_size=file_size,
+                created_by=uploaded_by,
+            )
+            self.repository.add_version(version, commit=False)
+
+            connection = self.repository.db.connection()
+            table_name = resolve_dataset_table_name(
+                connection,
+                dataset_name=dataset.dataset_name or display_name,
+                dataset_id=dataset.dataset_id,
+                version_number=version_number,
+                version_pk=version.version_pk,
+            )
+            create_physical_table(
+                connection,
+                table_name,
+                physical_columns,
+            )
+            version.data_table_name = table_name
+
+            # Second pass: stream chunks into PostgreSQL using COPY (production)
+            # or executemany (test dialects). No full DataFrame is retained.
+            file_obj.seek(0)
+            insert_chunks = pd.read_csv(
+                file_obj,
+                chunksize=max(1, chunk_rows),
+                encoding="utf-8-sig",
+                on_bad_lines="error",
+                header=0,
+                names=expected_columns,
+            )
+            inserted_rows = 0
+            for chunk in insert_chunks:
+                records = []
+                for row_offset, record in enumerate(
+                    chunk.to_dict(orient="records"),
+                    start=1,
+                ):
+                    records.append({
+                        "row_number": inserted_rows + row_offset,
+                        "row_data": {
+                            str(key): _json_value(value) for key, value in record.items()
+                        },
+                    })
+                self.repository.bulk_add_rows(
+                    version.version_pk,
+                    records,
+                    table_name=table_name,
+                    columns=physical_columns,
+                )
+                inserted_rows += len(records)
+
+            if inserted_rows != row_count:
+                raise ValueError(
+                    f"CSV row count changed during ingestion: expected {row_count}, "
+                    f"inserted {inserted_rows}."
+                )
+
+            column_rows = [
+                DatasetColumn(
+                    dataset_id=dataset.dataset_id,
+                    version_pk=version.version_pk,
+                    column_name=column,
+                    detected_type=type_map.get(column, "text"),
+                    nullable=missing[column] > 0,
+                    unique_count=self.repository.count_distinct_physical_value(
+                        table_name,
+                        column,
+                        physical_columns,
+                    ),
+                    missing_count=missing[column],
+                    missing_percentage=round((missing[column] / row_count) * 100.0, 4),
+                )
+                for column in columns
+            ]
+            self.repository.add_columns(column_rows, commit=False)
+
+            version.row_count = row_count
+            version.status = "processing"
+            self.repository.db.flush()
+
+            if not is_version:
+                dataset.schema_hash = schema_hash
+                dataset.file_hash = file_hash
+                dataset.row_count = row_count
+                dataset.column_count = len(columns)
+                dataset.version_number = version_number
+                dataset.original_filename = safe_name
+                dataset.content_type = content_type or "text/csv"
+                dataset.file_size = file_size
+                dataset.status = "processing"
+
+        sample = (
+            pd.concat(sample_frames, ignore_index=True)
+            if sample_frames
+            else first.head(0)
+        )
+        return StreamingDatasetRegistration(
+            DatasetRegistration(dataset, column_rows, False),
+            version,
+            sample,
+        )
+
+    def finalize_version(
+        self,
+        dataset_id: str,
+        version_id: str,
+        *,
+        storage_provider: str | None = None,
+        storage_object_id: str | None = None,
+        expected_current_version_id: str | None = None,
+        commit: bool = True,
+    ) -> Dataset:
+        """Make a processing version official.
+
+        commit=False lets an approval service compose pointer publication with
+        its submission-state transition and audit event in one caller-owned
+        transaction. The caller must lock the dataset and submission rows and
+        revalidate reviewer authorization before invoking this method. The
+        optional expected-current-version guard rejects stale proposals; it is
+        checked again after the caller has acquired the dataset row lock.
+        """
+        try:
+            # Serialize every official publication, including legacy direct Branch Head uploads,
+            # with proposal approvals. Refresh the identity-map object after acquiring the row lock.
+            if hasattr(self.repository.db, "execute"):
+                dataset = self.repository.db.execute(
+                    select(Dataset)
+                    .where(Dataset.dataset_id == dataset_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).scalar_one_or_none()
+            else:  # lightweight repository doubles used by isolated unit tests
+                dataset = self.repository.get_by_id(dataset_id)
+            version = self.repository.get_version(dataset_id, version_id)
+            if dataset is None or version is None:
+                raise ValueError("Dataset version does not exist.")
+            if version.status != "processing":
+                raise ValueError("Only a PROCESSING version can become READY.")
+            if (
+                expected_current_version_id is not None
+                and dataset.current_version_id != expected_current_version_id
+            ):
+                raise ValueError("The official dataset changed after this proposal was submitted.")
+            version.status = "ready"
+            version.storage_provider = storage_provider
+            version.storage_object_id = storage_object_id
+            dataset.status = "ready"
+            dataset.current_version_id = version.version_id
+            dataset.version_number = version.version_number
+            dataset.schema_hash = version.schema_hash
+            dataset.file_hash = version.file_hash
+            dataset.row_count = version.row_count
+            dataset.column_count = version.column_count
+            dataset.original_filename = version.original_filename
+            dataset.content_type = version.content_type
+            dataset.file_size = version.file_size
+            dataset.storage_provider = storage_provider
+            dataset.storage_object_id = storage_object_id
+            dataset.last_accessed = datetime.now(timezone.utc)
+            self.repository.db.flush()
+            if commit:
+                self.repository.db.commit()
+            return dataset
+        except Exception:
+            # In composed approval transactions the surrounding transaction
+            # owns rollback. Rolling back here would invalidate unrelated work
+            # and obscure the actual transaction boundary.
+            if commit:
+                self.repository.db.rollback()
+            raise
+
+    def mark_failed(self, dataset_id: str, version_id: str, reason: str) -> None:
+        with self.repository.db.begin():
+            version = self.repository.get_version(dataset_id, version_id)
+            dataset = self.repository.get_by_id(dataset_id)
+            if version is not None:
+                version.status = "failed"
+                version.failure_reason = str(reason)[:1000]
+            if dataset is not None and dataset.current_version_id is None:
+                dataset.status = "failed"
+            self.repository.db.flush()
+
+    @staticmethod
+    def _prepare_chunk(
+        chunk: pd.DataFrame,
+        current_row_count: int,
+        type_map: dict[str, str],
+        missing: dict[str, int],
+        sample_count: int,
+        sample_limit: int,
+    ) -> tuple[list[dict], pd.DataFrame | None]:
+        rows = []
+        for column in chunk.columns:
+            name = str(column)
+            missing[name] += int(chunk[name].isna().sum())
+            type_map[name] = _merge_types(type_map.get(name), _logical_type(chunk[name]))
+        for row_offset, record in enumerate(
+            chunk.to_dict(orient="records"), start=1
+        ):
+            rows.append({
+                "row_number": current_row_count + row_offset,
+                "row_data": {
+                    str(key): _json_value(value) for key, value in record.items()
+                },
+            })
+        remaining = max(0, sample_limit - sample_count)
+        sample = chunk.head(remaining).copy() if remaining else None
+        return rows, sample
+
+    @staticmethod
+    def _build_column_row(
+        dataset_id: str,
+        df: pd.DataFrame,
+        column_name: str,
+        version_pk: str,
+    ) -> DatasetColumn:
         series = df[column_name]
         row_count = len(series)
         missing_count = int(series.isnull().sum())
-        missing_pct = (missing_count / row_count * 100.0) if row_count > 0 else 0.0
-
         return DatasetColumn(
             dataset_id=dataset_id,
+            version_pk=version_pk,
             column_name=str(column_name),
             detected_type=str(series.dtype),
             nullable=missing_count > 0,
             unique_count=int(series.nunique(dropna=True)),
-            missing_percentage=round(missing_pct, 4),
-            inferred_role=None,  # filled in later by SchemaIntelligenceService
+            missing_percentage=round(
+                (missing_count / row_count * 100.0), 4
+            ) if row_count else 0.0,
+            inferred_role=None,
         )
+
+    @staticmethod
+    def _hash_stream(file_obj: BinaryIO, max_bytes: int) -> tuple[str, int]:
+        digest = hashlib.sha256()
+        total = 0
+        file_obj.seek(0)
+        while True:
+            chunk = file_obj.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(
+                    f"Dataset exceeds the configured {max_bytes} byte limit."
+                )
+            digest.update(chunk)
+        file_obj.seek(0)
+        if total == 0:
+            raise ValueError("Dataset file is empty.")
+        return digest.hexdigest(), total

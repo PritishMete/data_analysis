@@ -2,13 +2,15 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+/// Single solid application background shared by ScanButton and all primary screens.
+const Color kAppBackgroundColor = Color(0xFF22D3EE);
+
 /// Cyberpunk design style color tokens utilized throughout the terminal shell.
 class TechColors {
-  // Shared InsightFlow liquid-glass brand palette.
+  // Historical Data Screen drifting-glow palette.
   static const brandDarkBlue = Color(0xFF123A8C);
   static const brandBlue = Color(0xFF2E6FF2);
   static const brandGraphite = Color(0xFF6E6E76);
-
   static const bgBlack      = Color(0xFF0F111A);
   static const panelBg      = Color(0xFF141824);
   static const borderActive = brandBlue;

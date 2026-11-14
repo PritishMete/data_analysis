@@ -1,0 +1,250 @@
+name: Excel Add-in Build and Deploy
+
+run-name: Flutter Pages deploy ${{ github.sha }}
+
+on:
+  push:
+    branches: [feature/data-workspace]
+    paths:
+      - 'apps/flutter_app/**'
+      - 'firebase_authz/**'
+      - 'migrations/**'
+      - 'core/db.py'
+      - 'requirements.txt'
+      - 'render.yaml'
+      - 'main.py'
+      - 'tools/verify_excel_deployment.py'
+      - '.github/workflows/excel-addin-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: insightflow-flutter-pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/flutter_app
+
+    steps:
+      - name: Checkout source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source commit
+        working-directory: .
+        run: |
+          set -euo pipefail
+          checked_out="$(git rev-parse HEAD)"
+          if [ "$checked_out" != "${{ github.sha }}" ]; then
+            echo "::error::Checked-out source $checked_out does not match workflow SHA ${{ github.sha }}"
+            exit 1
+          fi
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter analyze
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: Flutter tests
+        run: flutter test
+
+      - name: Taskpane-local secure query tests
+        run: node test/excel_secure_query_test.js
+
+      - name: Taskpane-local aggregation tests
+        run: node test/excel_secure_aggregation_test.js
+
+      - name: Taskpane-local revenue safety tests
+        run: node test/excel_secure_revenue_test.js
+
+      - name: Taskpane-local synthetic data tests
+        run: node test/excel_synthetic_data_test.js
+
+      - name: Worksheet schema bridge tests
+        run: node test/excel_schema_bridge_test.js
+
+      - name: Source worksheet context tests
+        run: node test/excel_source_context_test.js
+
+      - name: Schema intelligence tests
+        run: node test/excel_schema_intelligence_test.js
+
+      - name: Native Excel chart tests
+        run: node test/excel_native_chart_test.js
+
+      - name: Query-to-chart flow regression test
+        run: node test/excel_query_chart_flow_test.js
+
+      - name: PivotTable-to-chart integration test
+        run: node test/excel_pivot_chart_integration_test.js
+
+      - name: Native PivotTable execution test
+        run: node test/excel_native_pivot_test.js
+
+      - name: Build Excel-enabled Flutter web app
+        env:
+          INSIGHTFLOW_FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
+          INSIGHTFLOW_FIREBASE_WEB_APP_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
+          INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
+          INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+          INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
+          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
+          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
+        run: |
+          set -euo pipefail
+          required=(
+            INSIGHTFLOW_FIREBASE_WEB_API_KEY
+            INSIGHTFLOW_FIREBASE_WEB_APP_ID
+            INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID
+            INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID
+            INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN
+            INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
+            INSIGHTFLOW_SUPABASE_URL
+            INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY
+          )
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required build configuration: ${name}"
+              exit 1
+            fi
+          done
+          clean_env() {
+            printf '%s' "${!1:-}" | tr -d '\r\n'
+          }
+
+          build_args=(
+            build
+            web
+            --release
+            --no-wasm-dry-run
+            --base-href
+            "/data_analysis/"
+            --dart-define
+            "INSIGHTFLOW_FIREBASE_WEB_API_KEY=$(clean_env INSIGHTFLOW_FIREBASE_WEB_API_KEY)"
+            --dart-define
+            "INSIGHTFLOW_FIREBASE_WEB_APP_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_APP_ID)"
+            --dart-define
+            "INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID)"
+            --dart-define
+            "INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID)"
+            --dart-define
+            "INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=$(clean_env INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN)"
+            --dart-define
+            "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID=$(clean_env INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID)"
+            --dart-define
+            "INSIGHTFLOW_WORKSPACE_ID=$(clean_env INSIGHTFLOW_WORKSPACE_ID)"
+            --dart-define
+            "INSIGHTFLOW_SUPABASE_URL=$(clean_env INSIGHTFLOW_SUPABASE_URL)"
+            --dart-define
+            "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
+            --dart-define
+            "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
+          )
+          flutter "${build_args[@]}"
+
+      - name: Stamp deployed source commit
+        working-directory: .
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          index = Path('apps/flutter_app/build/web/index.html')
+          text = index.read_text(encoding='utf-8')
+          marker = '__INSIGHTFLOW_BUILD_COMMIT__'
+          commit = os.environ['SOURCE_COMMIT']
+          google_marker = '__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__'
+          google_client_id = os.environ.get('INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID', '').strip()
+          if not google_client_id:
+              raise SystemExit('missing INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID')
+          if google_marker not in text:
+              raise SystemExit(f'missing {google_marker} in generated index.html')
+          if marker not in text:
+              raise SystemExit(f'missing {marker} in generated index.html')
+          text = text.replace(google_marker, google_client_id)
+          index.write_text(text.replace(marker, commit), encoding='utf-8')
+          PY
+
+      - name: Generate GitHub Pages SPA fallback
+        working-directory: .
+        run: |
+          set -euo pipefail
+          # GitHub Pages serves this document for unknown deep paths. Keep the
+          # browser URL (including its fragment) intact while loading the same
+          # Flutter app and project-scoped asset base as the root document.
+          cp apps/flutter_app/build/web/index.html apps/flutter_app/build/web/404.html
+          test -s apps/flutter_app/build/web/404.html
+
+      - name: Verify build contract
+        working-directory: .
+        run: |
+          python tools/verify_excel_deployment.py \
+            --directory apps/flutter_app/build/web \
+            --expected-commit "${{ github.sha }}"
+
+      - name: Publish build to gh-pages without force push
+        working-directory: .
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages:refs/remotes/origin/gh-pages
+          deploy_dir="$(mktemp -d)"
+          cleanup() {
+            git worktree remove --force "$deploy_dir" >/dev/null 2>&1 || true
+            rm -rf "$deploy_dir"
+          }
+          trap cleanup EXIT
+
+          git worktree add --detach "$deploy_dir" origin/gh-pages
+          git -C "$deploy_dir" rm -r --ignore-unmatch .
+          find apps/flutter_app/build/web -mindepth 1 -maxdepth 1 -print0 | \
+            xargs -0 -I{} cp -a "{}" "$deploy_dir/"
+
+          git -C "$deploy_dir" add -A
+          if git -C "$deploy_dir" diff --cached --quiet; then
+            echo "No generated deployment changes."
+            exit 0
+          fi
+
+          git -C "$deploy_dir" -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Deploy Excel add-in ${SOURCE_COMMIT}"
+          git -C "$deploy_dir" push origin HEAD:gh-pages
+
+      - name: Verify live GitHub Pages taskpane
+        working-directory: .
+        run: |
+          python tools/verify_excel_deployment.py \
+            --url https://pritishmete.github.io/data_analysis/ \
+            --expected-commit "${{ github.sha }}" \
+            --retries 24 \
+            --delay 5

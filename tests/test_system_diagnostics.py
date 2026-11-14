@@ -44,6 +44,15 @@ def test_missing_frontend_build(monkeypatch, tmp_path):
     assert status["stale_build"] is False
 
 
+def test_external_frontend_does_not_degrade_backend(monkeypatch):
+    monkeypatch.delenv("INSIGHTFLOW_FRONTEND_HOSTING_MODE", raising=False)
+    result = system_diagnostics.build_diagnostics()
+    assert result["overall_status"] in {"healthy", "degraded"}
+    assert result["frontend"]["status"] == "external"
+    assert result["frontend"]["availability_verified"] is False
+    assert not any(action["id"] == "frontend_missing" for action in result["recovery"])
+
+
 def test_recovery_actions_are_structured():
     actions = system_diagnostics._recovery(
         {"status": "stale"},

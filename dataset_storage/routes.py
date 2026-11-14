@@ -1,0 +1,515 @@
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Body, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+
+from firebase_authz.service import AuthzError, AuthenticationRequired, PermissionDenied, verify_id_token
+from firebase_authz.supabase_provider import authorization_context
+from .service import (
+    create_managed_working_copy,
+    delete_managed_dataset,
+    stream_managed_dataset_csv,
+    get_managed_dataset,
+    get_managed_dataset_rows,
+    get_managed_dataset_profile,
+    get_working_copy_rows,
+    get_working_copy_profile,
+    list_authorized_datasets,
+    upload_managed_dataset_stream,
+    check_managed_dataset_duplicates,
+    DatasetUploadConflict,
+)
+from .proposals import submit_dataset_proposal, list_dataset_proposals, decide_dataset_proposal
+from .manager_grants import (
+    create_manager_upload_grant,
+    list_manager_upload_grants,
+    list_my_manager_upload_grants,
+    list_uploadable_locations,
+    revoke_manager_upload_grant,
+)
+
+router = APIRouter(prefix="/v1/managed-datasets", tags=["managed-datasets"])
+logger = logging.getLogger(__name__)
+
+
+def _token(value: str | None) -> str:
+    if not value or not value.startswith("Bearer "):
+        raise HTTPException(401, "Authentication required.")
+    return value[7:].strip()
+
+
+def _workspace(value: str | None, authorization: str | None = None) -> str:
+    """Resolve an authenticated workspace; never trust a client-supplied ID by itself.
+
+    The header is only a workspace selector. Authorization is still resolved from
+    the bearer identity, and the selected workspace must be an active membership
+    of that identity. If the cached header is stale/missing, recover the unique
+    active workspace from the authoritative Supabase authorization context.
+    """
+    token = _token(authorization)
+    claims = verify_id_token(token)
+    normalized = (value or "").strip()
+
+    if normalized:
+        selected = authorization_context(claims, normalized)
+        logger.info(
+            "managed_dataset_workspace_resolution selected=%s authorized=%s principal=%s organization=%s",
+            normalized,
+            bool(selected.get("workspace_authorized")),
+            selected.get("principal_id"),
+            selected.get("organization_id"),
+        )
+        if selected.get("workspace_authorized"):
+            return str(selected["workspace_id"]).strip()
+
+    context = authorization_context(claims)
+    workspaces = context.get("workspaces") or []
+    logger.info(
+        "managed_dataset_workspace_resolution fallback authorized=%s principal=%s organization=%s workspace_count=%s",
+        bool(context.get("workspace_authorized")),
+        context.get("principal_id"),
+        context.get("organization_id"),
+        len(workspaces),
+    )
+    active = [
+        item for item in workspaces
+        if isinstance(item, dict)
+        and str(item.get("membership_status") or "").lower() == "active"
+        and str(item.get("workspace_id") or "").strip()
+    ]
+    if len(active) == 1:
+        return str(active[0]["workspace_id"]).strip()
+    if not active:
+        raise HTTPException(403, "Workspace authorization context required.")
+    raise HTTPException(409, "Multiple workspace contexts are available; select a workspace.")
+
+
+def _map_error(exc: Exception) -> HTTPException:
+    # Preserve deliberate FastAPI responses raised by workspace/context helpers.
+    # Route handlers catch broad exceptions to normalize service errors; without
+    # this guard, a deliberate 403/409 from _workspace is incorrectly rewritten
+    # as a generic 500, hiding the actionable authorization state from the client.
+    if isinstance(exc, HTTPException):
+        return exc
+
+    # Keep client responses sanitized, but retain unexpected failure details in
+    # server logs so CSV-import failures can be diagnosed from their traceback.
+    if isinstance(exc, (AuthenticationRequired, PermissionDenied, AuthzError)):
+        # Log denied attempts without bearer tokens, request bodies, dataset
+        # contents, or potentially sensitive exception messages.
+        logger.warning(
+            "managed_dataset_access_denied error_type=%s status_code=%s",
+            type(exc).__name__,
+            401 if isinstance(exc, AuthenticationRequired) else 403,
+        )
+    elif not isinstance(exc, (FileNotFoundError, ValueError, DatasetUploadConflict)):
+        logger.exception("managed_dataset_operation_failed", exc_info=exc)
+    if isinstance(exc, AuthenticationRequired):
+        return HTTPException(401, str(exc))
+    if isinstance(exc, (PermissionDenied, AuthzError)):
+        return HTTPException(403, str(exc))
+    if isinstance(exc, FileNotFoundError):
+        return HTTPException(404, str(exc))
+    if isinstance(exc, DatasetUploadConflict):
+        return HTTPException(409, detail={"code": "dataset_duplicate", "conflicts": exc.conflicts})
+    if isinstance(exc, ValueError):
+        return HTTPException(400, str(exc))
+    return HTTPException(500, "Managed dataset operation failed.")
+
+
+@router.get("")
+def managed_dataset_list(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """Return one bounded page plus an authorized-only total for the catalogue."""
+    try:
+        return list_authorized_datasets(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/proposals")
+def managed_new_dataset_proposal_submit(
+    file: UploadFile = File(...),
+    location_id: str = Query(..., min_length=1),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    """Stage a brand-new dataset privately until a Branch Head approves it."""
+    try:
+        return {"success": True, "proposal": submit_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=None, location_id=location_id, filename=file.filename or "",
+            stream=file.file, content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/upload-scope")
+def managed_upload_scope(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"locations": list_uploadable_locations(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/duplicate-check")
+def managed_dataset_duplicate_check(
+    body: dict = Body(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        file_sha256 = body.get("file_sha256")
+        dataset_name = body.get("dataset_name")
+        dataset_id = body.get("dataset_id")
+        if dataset_name is not None and not isinstance(dataset_name, str):
+            raise ValueError("dataset_name must be text.")
+        if dataset_id is not None and not isinstance(dataset_id, str):
+            raise ValueError("dataset_id must be text.")
+        if not isinstance(file_sha256, str):
+            raise ValueError("A valid SHA-256 file hash is required.")
+        return check_managed_dataset_duplicates(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            file_sha256=file_sha256,
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+            location_id=location_id,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/upload-grants/me")
+def managed_my_manager_upload_grants(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"grants": list_my_manager_upload_grants(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/upload-grants")
+def managed_manager_upload_grant_list(
+    location_id: str = Query(..., min_length=1),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"grants": list_manager_upload_grants(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            location_id=location_id,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/upload-grants")
+def managed_manager_upload_grant_create(
+    body: dict = Body(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        manager = body.get("manager_principal_id")
+        location = body.get("location_id")
+        if not isinstance(manager, str) or not isinstance(location, str):
+            raise ValueError("manager_principal_id and location_id are required.")
+        return {"success": True, "grant": create_manager_upload_grant(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            manager_principal_id=manager, location_id=location,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.delete("/upload-grants/{grant_id}")
+def managed_manager_upload_grant_revoke(
+    grant_id: str,
+    body: dict = Body(default={}),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("A JSON object is required.")
+        reason = body.get("reason")
+        if reason is not None and not isinstance(reason, str):
+            raise ValueError("reason must be text.")
+        return {"success": True, "grant": revoke_manager_upload_grant(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            grant_id=grant_id, reason=reason,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/proposals")
+def managed_dataset_proposal_list(
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"proposals": list_dataset_proposals(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization)
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/{dataset_id}/proposals")
+def managed_dataset_proposal_submit(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"success": True, "proposal": submit_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=dataset_id, filename=file.filename or "", stream=file.file,
+            content_type=file.content_type,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/proposals/{proposal_id}/decision")
+def managed_dataset_proposal_decision(
+    proposal_id: str,
+    body: dict = Body(default={}),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        if not isinstance(body, dict) or not isinstance(body.get("approve"), bool):
+            raise ValueError("A boolean approve field is required.")
+        return decide_dataset_proposal(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            proposal_id=proposal_id, approve=body["approve"],
+            decision_note=body.get("decision_note"),
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/working-copies/{working_copy_id}/profile")
+def managed_working_copy_profile(
+    working_copy_id: str,
+    preview_limit: int = Query(default=5, ge=1, le=20),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_working_copy_profile(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            working_copy_id=working_copy_id,
+            preview_limit=preview_limit,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/working-copies/{working_copy_id}/rows")
+def managed_working_copy_rows(
+    working_copy_id: str,
+    limit: int = Query(default=1000, ge=1, le=10000),
+    offset: int = Query(default=0, ge=0),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_working_copy_rows(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            working_copy_id=working_copy_id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/{dataset_id}")
+def managed_dataset_detail(
+    dataset_id: str,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_managed_dataset(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/{dataset_id}/profile")
+def managed_dataset_profile(
+    dataset_id: str,
+    version_id: str | None = Query(default=None),
+    preview_limit: int = Query(default=5, ge=1, le=20),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_managed_dataset_profile(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            dataset_id=dataset_id,
+            version_id=version_id,
+            preview_limit=preview_limit,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/{dataset_id}/rows")
+def managed_dataset_rows(
+    dataset_id: str,
+    version_id: str | None = Query(default=None),
+    limit: int = Query(default=1000, ge=1, le=10000),
+    offset: int = Query(default=0, ge=0),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return get_managed_dataset_rows(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=dataset_id, version_id=version_id, limit=limit, offset=offset,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("")
+def managed_dataset_upload(
+    file: UploadFile = File(...),
+    dataset_name: str | None = Form(default=None, max_length=255),
+    replace_dataset_id: str | None = Form(default=None),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+    location_id: str | None = Header(default=None, alias="X-InsightFlow-Location-ID"),
+):
+    try:
+        result = upload_managed_dataset_stream(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            filename=file.filename or "",
+            stream=file.file,
+            content_type=file.content_type,
+            dataset_name=dataset_name,
+            replace_dataset_id=replace_dataset_id,
+            location_id=location_id,
+        )
+        return {"success": True, "dataset": result}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/{dataset_id}/versions")
+def managed_dataset_version(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    confirm_duplicate: bool = Form(default=False),
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        result = upload_managed_dataset_stream(
+            workspace_id=_workspace(workspace_id, authorization),
+            token=_token(authorization),
+            filename=file.filename or "",
+            stream=file.file,
+            content_type=file.content_type,
+            dataset_id=dataset_id,
+            confirm_duplicate=confirm_duplicate,
+        )
+        return {"success": True, "dataset": result}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.get("/{dataset_id}/download")
+def managed_dataset_download(
+    dataset_id: str,
+    version_id: str | None = None,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        iterator, metadata = stream_managed_dataset_csv(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization),
+            dataset_id=dataset_id, version_id=version_id,
+        )
+        filename = metadata.get("original_filename") or "dataset.csv"
+        if not str(filename).lower().endswith(".csv"):
+            filename = f"{filename}.csv"
+        return StreamingResponse(
+            iterator,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-InsightFlow-Dataset-ID": dataset_id,
+                "X-InsightFlow-Version": str(metadata.get("version_id", version_id or "")),
+            },
+        )
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.post("/{dataset_id}/working-copies")
+def managed_working_copy(
+    dataset_id: str,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return {"success": True, "working_copy": create_managed_working_copy(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id,
+        )}
+    except Exception as exc:
+        raise _map_error(exc)
+
+
+@router.delete("/{dataset_id}")
+def managed_dataset_delete(
+    dataset_id: str,
+    authorization: str = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
+):
+    try:
+        return delete_managed_dataset(
+            workspace_id=_workspace(workspace_id, authorization), token=_token(authorization), dataset_id=dataset_id,
+        )
+    except Exception as exc:
+        raise _map_error(exc)
