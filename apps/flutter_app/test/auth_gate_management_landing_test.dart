@@ -55,14 +55,14 @@ void main() {
   });
 
   test('Render blueprint follows the manually deployed backend branch', () {
-    final render = File('../render.yaml').readAsStringSync();
+    final render = File('../../render.yaml').readAsStringSync();
     expect(render, contains('branch: main'));
     expect(render, contains('autoDeployTrigger: off'));
   });
 
   test('production migrations require explicit confirmation on the release branch', () {
     final workflow =
-        File('../.github/workflows/production-authz-migrations.yml').readAsStringSync();
+        File('../../.github/workflows/production-authz-migrations.yml').readAsStringSync();
     expect(workflow, contains('workflow_dispatch:'));
     expect(workflow, contains('confirm_production_migration:'));
     expect(workflow, contains('default: false'));
