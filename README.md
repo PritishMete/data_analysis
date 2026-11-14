@@ -170,6 +170,62 @@ These are analytical/modeling candidates and should still be validated against t
 - optional remote reasoning only when explicitly enabled
 - privacy guardrails around outbound payloads
 
+## Repository Layout
+
+The repository is a monorepo. Application source code belongs on `main`; `gh-pages` is reserved for the generated Flutter Web publication output.
+
+```text
+data_analysis/
+├── apps/
+│   └── flutter_app/       # Flutter application: Android, Windows and Web
+├── common/                # Shared Python analytics and domain modules
+├── core/                  # Backend core infrastructure
+├── datasets/              # Dataset domain and persistence
+├── docs/                  # Architecture and developer documentation
+├── frontend/              # Existing browser-facing frontend assets
+├── ingestion/              # Backend ingestion modules
+├── memory_engine/         # Backend memory subsystem
+├── plan_cache/            # Backend query-plan cache
+├── query_history/          # Backend query history
+├── schema_intelligence/   # Schema discovery and relationships
+├── secure_excel/           # Backend Excel query and privacy services
+├── sql_cache/              # Backend SQL cache
+├── tests/                  # Python test suite
+├── tools/                  # Developer utilities
+├── .github/workflows/      # CI and deployment workflows
+├── main.py                 # FastAPI application entry point
+├── requirements.txt        # Python dependencies
+└── render.yaml             # Render service configuration
+```
+
+The Python backend currently remains at the repository root because the Render start command and Python module imports use that layout. Keep backend changes compatible with `uvicorn main:app` until a dedicated backend relocation is planned and its import/deployment paths are updated together.
+
+### Open the Flutter project
+
+Open `apps/flutter_app/` in Android Studio. It is one Flutter project with platform targets under the same directory; do not create separate copies for Android, Windows and Web.
+
+```bash
+cd apps/flutter_app
+flutter pub get
+```
+
+### Run the backend locally
+
+From the repository root:
+
+```bash
+pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+### Branch conventions
+
+- `main` is the source of truth for maintained application code.
+- `gh-pages` contains generated static website output only. Do not edit application source there.
+- Use short-lived `feature/*`, `fix/*` or `chore/*` branches for active work, then merge completed work into `main`.
+- Do not create `backup/*` branches. Keep history in Git commits and pull requests instead.
+- Delete a development branch only after its changes are merged or explicitly discarded.
+
 ## Development Workflow
 
 InsightFlow is developed from explicit product requirements, analytical rules, privacy constraints and acceptance criteria.
