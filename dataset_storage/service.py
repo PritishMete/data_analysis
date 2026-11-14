@@ -1,0 +1,2014 @@
+from __future__ import annotations
+
+import csv
+import io
+import logging
+import os
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+from typing import Any, BinaryIO, Iterator
+
+from sqlalchemy import delete, exists, func, select, text
+
+from firebase_authz.service import AuthzError, PermissionDenied, require_email_verified, verify_id_token
+from firebase_authz.supabase_provider import (
+    audit_dataset_event,
+    authorization_context,
+    authorize,
+    authorize_dataset_upload_scope,
+    authorize_dataset,
+    authorize_working_copy,
+    create_working_copy,
+    delete_dataset_authorization,
+    register_dataset,
+    revoke_dataset_working_copies,
+)
+from datasets.models import Dataset, DatasetColumn, DatasetRow, DatasetVersion
+from datasets.repository import DatasetRepository
+from datasets.service import DatasetRegistryService
+from schema_intelligence.repository import RelationshipRepository
+from schema_intelligence.service import SchemaIntelligenceService
+
+from .provider import SupabaseDatasetStorageProvider, archive_original_enabled
+
+logger = logging.getLogger(__name__)
+
+MAX_DATASET_BYTES = int(
+    os.getenv("INSIGHTFLOW_DATASET_MAX_BYTES", str(100 * 1024 * 1024))
+)
+STALE_MANAGED_DATASET_PROCESSING_SECONDS = max(
+    60, int(os.getenv("INSIGHTFLOW_MANAGED_DATASET_PROCESSING_GRACE_SECONDS", "7200"))
+)
+BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".sh"}
+
+
+class DatasetUploadConflict(Exception):
+    """A new upload matches an existing dataset name or exact file content."""
+
+    def __init__(self, conflicts: list[dict[str, Any]]):
+        self.conflicts = conflicts
+        super().__init__("A matching dataset already exists.")
+
+
+def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
+    """Return a replacement ID only when every conflict resolves unambiguously.
+
+    Fail closed for unknown conflict shapes. A conflict without a visible
+    dataset ID (for example, a cross-branch match or pending proposal) must
+    never be silently ignored while selecting a replacement target.
+    """
+    blocked_reasons = {
+        "content_outside_branch",
+        "upload_in_progress",
+        "proposal_pending",
+    }
+    if not conflicts:
+        return None
+
+    dataset_ids: set[str] = set()
+    for item in conflicts:
+        if not isinstance(item, dict):
+            return None
+        reasons = item.get("reasons") or []
+        if not isinstance(reasons, (list, tuple, set)):
+            return None
+        if item.get("code") in blocked_reasons or blocked_reasons.intersection(reasons):
+            return None
+        dataset_id = str(item.get("dataset_id") or "").strip()
+        if not dataset_id:
+            return None
+        dataset_ids.add(dataset_id)
+
+    return next(iter(dataset_ids)) if len(dataset_ids) == 1 else None
+
+
+def _safe_filename(filename: str) -> str:
+    raw_name = str(filename or "").strip()
+    if "/" in raw_name or "\\" in raw_name:
+        raise ValueError("Unsafe dataset filename.")
+    name = os.path.basename(raw_name)
+    if (
+        not name
+        or name in {".", ".."}
+        or len(name) > 255
+        or "/" in name
+        or "\\" in name
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+    ):
+        raise ValueError("Unsafe dataset filename.")
+    extension = os.path.splitext(name)[1].lower()
+    if extension in BLOCKED_EXTENSIONS:
+        raise ValueError("This file type is not accepted as a managed dataset.")
+    if extension != ".csv":
+        raise ValueError("Only safe CSV files are accepted as managed datasets.")
+    return name
+
+
+def _safe_dataset_name(dataset_name: str | None, filename: str) -> str:
+    if dataset_name is None:
+        name = os.path.splitext(filename)[0].strip()
+    else:
+        name = str(dataset_name).strip()
+    if (
+        not name
+        or len(name) > 255
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+    ):
+        raise ValueError("Dataset name must be between 1 and 255 printable characters.")
+    return name
+
+
+def _claims(token: str) -> dict[str, Any]:
+    return require_email_verified(verify_id_token(token))
+
+
+def _authorization_context(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+    context = authorization_context(claims, workspace_id)
+    if not context.get("workspace_authorized"):
+        raise PermissionDenied("User is not an active member of this workspace.")
+    return context
+
+
+
+def _authorize_upload(
+    claims: dict[str, Any],
+    workspace_id: str,
+    *,
+    location_id: str | None = None,
+) -> dict[str, Any]:
+    """Authorize Branch Head writes or a Manager with a live branch grant.
+
+    Organization Owners have organization-wide read/oversight access, not
+    authority to modify a branch's trusted master dataset. The shared scope
+    check validates the exact branch assignment and active Manager grant.
+    """
+    context = _authorization_context(claims, workspace_id)
+    roles = set(context.get("role_ids", []))
+    if "organization_owner" in roles or not roles.intersection({"branch_head", "manager"}):
+        raise AuthzError(
+            "Only the assigned Branch Head or an explicitly authorized Manager "
+            "may write an original dataset. Organization Owners are read-only."
+        )
+    return authorize_dataset_upload_scope(
+        claims, workspace_id, location_id=location_id
+    )
+
+
+def _authorize_delete(claims: dict[str, Any], workspace_id: str) -> dict[str, Any]:
+    return authorize(claims, workspace_id, "dataset.delete")
+
+
+def _authorize_dataset(
+    claims: dict[str, Any], workspace_id: str, dataset_id: str, action: str
+):
+    # Every managed-dataset operation must resolve the dataset resource itself.
+    # Do not short-circuit owners/managers through workspace-only permission
+    # checks: the managed dataset is the resource boundary for profile, rows,
+    # download, and working-copy operations.
+    context = _authorization_context(claims, workspace_id)
+    scope = authorize_dataset(claims, workspace_id, dataset_id, action)
+
+    # Authorization grants can be temporarily stale while deletion is being
+    # finalized. Treat the database lifecycle state as authoritative too, so a
+    # retained or accidentally stale ACL can never make a tombstoned dataset
+    # readable or writable again.
+    from core.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        dataset = db.get(Dataset, dataset_id)
+        if (
+            dataset is None
+            or dataset.organization_id != str(context["organization_id"])
+            or dataset.status in {"deleted", "deleting"}
+        ):
+            raise FileNotFoundError("Dataset not found.")
+    finally:
+        db.close()
+    return scope
+
+
+def _audit_safely(
+    workspace_id: str,
+    actor_uid: str,
+    action: str,
+    outcome: str,
+    *,
+    resource_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    try:
+        payload = dict(metadata or {})
+        if resource_id:
+            payload["resource_id"] = resource_id
+        audit_dataset_event(
+            workspace_id, actor_uid, action, outcome, metadata=payload
+        )
+    except Exception as exc:
+        # Audit persistence must never fail silently. The business operation may
+        # already be committed, so preserve its result while emitting a
+        # structured, non-sensitive diagnostic for operators.
+        logger.error(
+            "dataset_audit_write_failed action=%s outcome=%s resource_id_present=%s error_type=%s",
+            action,
+            outcome,
+            bool(resource_id),
+            type(exc).__name__,
+        )
+
+
+def _structured_summary(dataset, version_count: int) -> dict[str, Any]:
+    current = next(
+        (
+            version
+            for version in getattr(dataset, "versions", [])
+            if version.version_id == dataset.current_version_id
+        ),
+        None,
+    )
+    return {
+        "dataset_id": dataset.dataset_id,
+        "organization_id": dataset.organization_id,
+        "display_name": dataset.dataset_name,
+        "dataset_name": dataset.dataset_name,
+        "original_filename": current.original_filename if current else dataset.original_filename,
+        "content_type": (current.content_type if current else None) or dataset.content_type or "text/csv",
+        "file_size": current.file_size if current else dataset.file_size,
+        "current_version": dataset.current_version_id,
+        "version": dataset.version_number,
+        "version_count": version_count,
+        "row_count": current.row_count if current else dataset.row_count,
+        "column_count": current.column_count if current else dataset.column_count,
+        "uploaded_by_uid": (current.created_by if current else None) or dataset.uploaded_by,
+        "uploaded_at": (
+            current.created_at.isoformat()
+            if current and current.created_at
+            else dataset.created_at.isoformat()
+            if dataset.created_at
+            else None
+        ),
+        "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
+        "status": dataset.status,
+        "protected_original": True,
+        "storage_provider": current.storage_provider if current else dataset.storage_provider,
+        "storage_mode": "sql_structured",
+        "archive_original": bool(
+            current and current.storage_provider == "supabase_storage"
+        ),
+    }
+
+
+def list_authorized_datasets(
+    *,
+    workspace_id: str,
+    token: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Return an authorized catalogue page without running lifecycle recovery.
+
+    Catalogue reads must be side-effect free. Stale upload recovery can publish
+    or retire records, so it belongs to the upload/maintenance lifecycle and
+    must never be triggered by a Branch Head merely viewing their own branch.
+    """
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    organization_id = str(context["organization_id"])
+    roles = set(context.get("role_ids", []))
+    privileged = bool(roles.intersection({"organization_owner", "branch_head", "manager", "external_viewer"}))
+    action = "dataset.view_original" if privileged else "dataset.create_working_copy"
+    page_limit = max(1, min(int(limit), 100))
+    page_offset = max(0, int(offset))
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        # Branch-scoped roles should not scan every dataset in the organization.
+        # Resolve their active operational assignments once and push the branch
+        # filter into the catalogue query; per-resource authorization remains
+        # mandatory below.
+        location_ids: list[str] | None = None
+        scoped_role = "branch_head" if "branch_head" in roles else (
+            "manager" if "manager" in roles else None
+        )
+        if scoped_role:
+            assignments = repo.db.execute(
+                text("""
+                    SELECT DISTINCT oa.location_id
+                    FROM organizational_assignments oa
+                    JOIN organization_members m
+                      ON m.organization_id=oa.organization_id
+                     AND m.principal_id=oa.principal_id
+                    JOIN locations l
+                      ON l.organization_id=oa.organization_id
+                     AND l.location_id=oa.location_id
+                    WHERE oa.organization_id=:organization_id
+                      AND oa.principal_id=:principal_id
+                      AND oa.role_id=:role_id
+                      AND oa.status='active'
+                      AND oa.location_id IS NOT NULL
+                      AND m.workspace_id=:workspace_id
+                      AND m.status='active'
+                      AND l.status='active'
+                """),
+                {
+                    "organization_id": organization_id,
+                    "principal_id": str(context["principal_id"]),
+                    "role_id": scoped_role,
+                    "workspace_id": str(context["workspace_id"]),
+                },
+            ).scalars().all()
+            location_ids = sorted({str(value) for value in assignments if value})
+            if scoped_role == "branch_head" and len(location_ids) != 1:
+                raise AuthzError(
+                    "A Branch Head must have exactly one active branch assignment to access original datasets."
+                )
+            if not location_ids:
+                return {
+                    "datasets": [],
+                    "pagination": {
+                        "offset": page_offset,
+                        "limit": page_limit,
+                        "total": 0,
+                        "has_more": False,
+                    },
+                }
+
+        authorized: list[tuple[Any, dict[str, Any]]] = []
+        scan_offset = 0
+        scan_size = 250
+        while True:
+            if location_ids is None:
+                # Preserve compatibility for organization-wide and copy-only
+                # catalogue readers; only branch-scoped roles need SQL prefiltering.
+                batch = repo.list_by_organization(
+                    organization_id, limit=scan_size, offset=scan_offset
+                )
+            else:
+                batch = repo.list_by_organization(
+                    organization_id,
+                    limit=scan_size,
+                    offset=scan_offset,
+                    location_ids=location_ids,
+                )
+            if not batch:
+                break
+            for dataset in batch:
+                if dataset.status in {"deleted", "deleting"}:
+                    continue
+                if dataset.status == "failed" and not privileged:
+                    continue
+                try:
+                    scope = _authorize_dataset(
+                        claims, workspace_id, dataset.dataset_id, action
+                    )
+                except AuthzError:
+                    continue
+                authorized.append((dataset, scope))
+            scan_offset += len(batch)
+            if len(batch) < scan_size:
+                break
+
+        total = len(authorized)
+        page = authorized[page_offset : page_offset + page_limit]
+        items: list[dict[str, Any]] = []
+        for dataset, scope in page:
+            if privileged:
+                item = _structured_summary(
+                    dataset, len(repo.list_versions(dataset.dataset_id))
+                )
+                item["location_id"] = (
+                    str(scope.get("location_id"))
+                    if scope.get("location_id") is not None
+                    else None
+                )
+                item["location_name"] = (
+                    scope.get("location_name")
+                    or scope.get("branch_name")
+                    or item["location_id"]
+                )
+            else:
+                display_name = (
+                    dataset.dataset_name
+                    or dataset.original_filename
+                    or dataset.dataset_id
+                )
+                item = {
+                    "dataset_id": dataset.dataset_id,
+                    "display_name": display_name,
+                    "dataset_name": display_name,
+                    "location_id": (
+                        str(scope.get("location_id"))
+                        if scope.get("location_id") is not None
+                        else None
+                    ),
+                    "location_name": (
+                        scope.get("location_name")
+                        or scope.get("branch_name")
+                        or (
+                            str(scope.get("location_id"))
+                            if scope.get("location_id") is not None
+                            else None
+                        )
+                    ),
+                    "status": dataset.status,
+                    "created_at": (
+                        dataset.created_at.isoformat()
+                        if dataset.created_at
+                        else None
+                    ),
+                    "access_mode": "copy_only",
+                }
+            items.append(item)
+
+        return {
+            "datasets": items,
+            "pagination": {
+                "offset": page_offset,
+                "limit": page_limit,
+                "total": total,
+                "has_more": page_offset + page_limit < total,
+            },
+        }
+    finally:
+        repo.db.close()
+
+
+def get_managed_dataset(
+    *, workspace_id: str, token: str, dataset_id: str
+) -> dict[str, Any]:
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        return _structured_summary(dataset, len(repo.list_versions(dataset_id)))
+    finally:
+        repo.db.close()
+
+
+def get_managed_dataset_profile(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    version_id: str | None,
+    preview_limit: int = 5,
+) -> dict[str, Any]:
+    """Return authorized persisted metadata and a small preview for DataScreen.
+
+    The analytical rows remain server-side. This endpoint exposes only schema,
+    profiling counters, and a bounded preview so the managed DataScreen can
+    initialize its existing analysis UI without downloading the full dataset.
+    """
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id, version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Dataset version not found.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        rows = repo.get_rows(
+            version.version_pk,
+            limit=min(max(1, preview_limit), 20),
+            offset=0,
+        )
+        ordered_names = [column.column_name for column in columns]
+        column_stats = [
+            {
+                "column_name": column.column_name,
+                "detected_type": column.detected_type,
+                "nullable": column.nullable,
+                "unique_count": column.unique_count,
+                "missing_count": column.missing_count,
+                "missing_percentage": column.missing_percentage,
+                "inferred_role": column.inferred_role,
+                "inferred_role_confidence": column.inferred_role_confidence,
+            }
+            for column in columns
+        ]
+        return {
+            **_structured_summary(dataset, len(repo.list_versions(dataset_id))),
+            "version_id": version.version_id,
+            "version_status": version.status,
+            "schema": column_stats,
+            "column_names": ordered_names,
+            "missing_values": {
+                item["column_name"]: item["missing_count"] for item in column_stats
+            },
+            "unique_values": {
+                item["column_name"]: item["unique_count"] for item in column_stats
+            },
+            "preview": [
+                [
+                    (
+                        row["row_data"] if isinstance(row, dict) else row.row_data
+                    ).get(name)
+                    for name in ordered_names
+                ]
+                for row in rows
+            ],
+            "info": "Managed dataset profile loaded from Supabase PostgreSQL; full rows remain server-side.",
+        }
+    finally:
+        repo.db.close()
+
+
+def get_managed_dataset_rows(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    version_id: str | None,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id, version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Dataset version not found.")
+        rows = repo.get_rows(version.version_pk, limit=limit, offset=offset)
+        return {
+            "dataset_id": dataset_id,
+            "version_id": version.version_id,
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "offset": max(0, offset),
+            "limit": min(max(1, limit), 10000),
+            "rows": rows,
+        }
+    finally:
+        repo.db.close()
+
+
+def get_working_copy_profile(
+    *,
+    workspace_id: str,
+    token: str,
+    working_copy_id: str,
+    preview_limit: int = 5,
+) -> dict[str, Any]:
+    """Read a pinned snapshot through a working-copy grant, not by source ID."""
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    copy_context = authorize_working_copy(
+        claims, workspace_id, working_copy_id, "working_copy.view"
+    )
+    source_dataset_id = str(copy_context["source_dataset_id"])
+    source_version_id = str(copy_context["source_version"])
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        dataset = repo.get_by_id(source_dataset_id)
+        organization_id = str(context["organization_id"])
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("The working-copy source is no longer available.")
+        version = repo.get_version(source_dataset_id, source_version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("The authorized working-copy version is no longer available.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        names = [column.column_name for column in columns]
+        column_stats = [
+            {
+                "column_name": column.column_name,
+                "detected_type": column.detected_type,
+                "nullable": column.nullable,
+                "unique_count": column.unique_count,
+                "missing_count": column.missing_count,
+                "missing_percentage": column.missing_percentage,
+                "inferred_role": column.inferred_role,
+                "inferred_role_confidence": column.inferred_role_confidence,
+            }
+            for column in columns
+        ]
+        rows = repo.get_rows(
+            version.version_pk,
+            limit=min(max(1, preview_limit), 20),
+            offset=0,
+        )
+        return {
+            "working_copy_id": working_copy_id,
+            "access_mode": "working_copy",
+            "dataset_name": dataset.dataset_name or dataset.original_filename or "Authorized copy",
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "version_status": version.status,
+            "schema": column_stats,
+            "column_names": names,
+            "missing_values": {
+                item["column_name"]: item["missing_count"] for item in column_stats
+            },
+            "unique_values": {
+                item["column_name"]: item["unique_count"] for item in column_stats
+            },
+            "preview": [
+                [
+                    (row["row_data"] if isinstance(row, dict) else row.row_data).get(name)
+                    for name in names
+                ]
+                for row in rows
+            ],
+        }
+    finally:
+        repo.db.close()
+
+
+def get_working_copy_rows(
+    *,
+    workspace_id: str,
+    token: str,
+    working_copy_id: str,
+    limit: int = 1000,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Read rows from the immutable version pinned to an authorized working copy."""
+    claims = _claims(token)
+    copy_context = authorize_working_copy(
+        claims, workspace_id, working_copy_id, "working_copy.view"
+    )
+    source_dataset_id = str(copy_context["source_dataset_id"])
+    source_version_id = str(copy_context["source_version"])
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        dataset = repo.get_by_id(source_dataset_id)
+        if dataset is None or dataset.organization_id != str(copy_context["organization_id"]):
+            raise FileNotFoundError("The working-copy source is no longer available.")
+        version = repo.get_version(source_dataset_id, source_version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("The authorized working-copy version is no longer available.")
+        rows = repo.get_rows(version.version_pk, limit=min(max(1, limit), 10000), offset=max(0, offset))
+        return {
+            "working_copy_id": working_copy_id,
+            "access_mode": "working_copy",
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "offset": max(0, offset),
+            "limit": min(max(1, limit), 10000),
+            "rows": rows,
+        }
+    finally:
+        repo.db.close()
+
+
+def load_managed_dataset_dataframe(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str | None = None,
+    version_id: str | None = None,
+    working_copy_id: str | None = None,
+) -> pd.DataFrame:
+    """Materialize one authorized managed version for an analysis request.
+
+    Ingestion remains chunked/bulk. This materialization is deliberately kept
+    on the backend so a managed 500k-row dataset is never copied into the
+    browser just to run a remote analytical query.
+    """
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    if working_copy_id:
+        # Resolve source and pinned version exclusively server-side. The client
+        # cannot convert a copy request into a direct original read by choosing
+        # an original dataset ID or newer version.
+        copy_context = authorize_working_copy(
+            claims, workspace_id, working_copy_id, "working_copy.view"
+        )
+        dataset_id = str(copy_context["source_dataset_id"])
+        version_id = str(copy_context["source_version"])
+    else:
+        if not dataset_id:
+            raise ValueError("A managed dataset or authorized working copy is required.")
+        _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        organization_id = str(context["organization_id"])
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id, version_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Dataset version not found.")
+        columns = repo.get_columns_for_version(version.version_pk)
+        names = [column.column_name for column in columns]
+        physical = repo.iter_physical_rows(
+            version.version_pk,
+            batch_size=5000,
+        )
+        rows = [
+            [item["row_data"].get(name) for name in names]
+            for item in physical
+        ]
+        return pd.DataFrame.from_records(rows, columns=names)
+    finally:
+        repo.db.close()
+
+
+def stream_managed_dataset_csv(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    version_id: str | None = None,
+) -> tuple[Iterator[bytes], dict[str, Any]]:
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.view_original")
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    organization_id = str(context["organization_id"])
+    dataset = repo.get_by_id(dataset_id)
+    if dataset is None or dataset.organization_id != organization_id:
+        repo.db.close()
+        raise FileNotFoundError("Dataset not found.")
+    version = repo.get_version(dataset_id, version_id)
+    if version is None or version.status != "ready":
+        repo.db.close()
+        raise FileNotFoundError("Dataset version not found.")
+
+    columns = repo.get_columns_for_version(version.version_pk)
+    if not columns:
+        columns = repo.get_columns(dataset_id)
+
+    def generate() -> Iterator[bytes]:
+        try:
+            header = io.StringIO()
+            csv.writer(header, lineterminator="\r\n").writerow(
+                [column.column_name for column in columns]
+            )
+            yield header.getvalue().encode("utf-8")
+
+            for item in repo.iter_physical_rows(
+                version.version_pk,
+                batch_size=5000,
+            ):
+                line = io.StringIO()
+                writer = csv.writer(line, lineterminator="\\r\\n")
+                writer.writerow([
+                    "" if item["row_data"].get(column.column_name) is None
+                    else item["row_data"].get(column.column_name)
+                    for column in columns
+                ])
+                yield line.getvalue().encode("utf-8")
+            _audit_safely(
+                workspace_id,
+                str(claims["uid"]),
+                "dataset.download",
+                "succeeded",
+                resource_id=dataset_id,
+                metadata={"version_id": version.version_id, "mode": "structured_csv_export"},
+            )
+        finally:
+            repo.db.close()
+
+    return generate(), {
+        "version_id": version.version_id,
+        "original_filename": version.original_filename,
+        "dataset_id": dataset_id,
+    }
+
+
+def _register_authorization(
+    claims: dict[str, Any],
+    workspace_id: str,
+    dataset_id: str,
+    location_id: str | None = None,
+) -> None:
+    register_dataset(
+        claims,
+        workspace_id,
+        dataset_id,
+        str(claims["uid"]),
+        True,
+        location_id=location_id,
+    )
+
+
+def _unregister_authorization(workspace_id: str, dataset_id: str) -> None:
+    try:
+        delete_dataset_authorization(workspace_id, dataset_id)
+    except Exception:
+        pass
+
+
+def _mark_failed_sql_version(
+    repo: DatasetRepository,
+    dataset_id: str,
+    version_id: str,
+    was_new_dataset: bool,
+    reason: str,
+) -> None:
+    # Preserve the explicit FAILED lifecycle state for audit/retry visibility,
+    # but remove every structured row/column so the failed version is never
+    # usable as an analytical dataset. Existing READY versions are untouched.
+    with repo.db.begin():
+        dataset = repo.get_by_id(dataset_id)
+        version = repo.get_version(dataset_id, version_id)
+        if version is not None:
+            if version.data_table_name:
+                from datasets.physical_table import drop_physical_table
+                drop_physical_table(repo.db.connection(), version.data_table_name)
+                version.data_table_name = None
+            repo.db.execute(
+                delete(DatasetRow).where(DatasetRow.version_pk == version.version_pk)
+            )
+            repo.db.execute(
+                delete(DatasetColumn).where(
+                    DatasetColumn.version_pk == version.version_pk
+                )
+            )
+            version.status = "failed"
+            version.failure_reason = str(reason)[:1000]
+            version.row_count = 0
+            version.column_count = 0
+        if dataset is not None and was_new_dataset:
+            dataset.status = "failed"
+            dataset.current_version_id = None
+            dataset.row_count = 0
+            dataset.column_count = 0
+            dataset.schema_hash = ""
+        repo.db.flush()
+
+
+def _discard_sql_registration(
+    repo: DatasetRepository,
+    dataset_id: str,
+    version_id: str,
+    was_new_dataset: bool,
+) -> None:
+    """Remove unfinalized SQL data when the upload's final auth check fails."""
+    with repo.db.begin():
+        if was_new_dataset:
+            repo.delete_dataset(dataset_id, commit=False)
+            return
+
+        version = repo.get_version(dataset_id, version_id)
+        if version is None:
+            return
+        if version.data_table_name:
+            from datasets.physical_table import drop_physical_table
+
+            drop_physical_table(repo.db.connection(), version.data_table_name)
+            version.data_table_name = None
+        repo.db.execute(
+            delete(DatasetRow).where(DatasetRow.version_pk == version.version_pk)
+        )
+        repo.db.execute(
+            delete(DatasetColumn).where(DatasetColumn.version_pk == version.version_pk)
+        )
+        repo.db.delete(version)
+        repo.db.flush()
+
+
+
+def _managed_dataset_upload_lock_key(
+    organization_id: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> list[str]:
+    keys = [f"insightflow:managed-upload:hash:{organization_id}:{file_sha256}"]
+    normalized_name = str(dataset_name or "").strip().lower()
+    if normalized_name:
+        keys.append(
+            f"insightflow:managed-upload:name:{organization_id}:{normalized_name}"
+        )
+    if dataset_id:
+        keys.append(
+            f"insightflow:managed-upload:dataset:{organization_id}:{dataset_id}"
+        )
+    return sorted(set(keys))
+
+
+def _acquire_managed_dataset_upload_locks(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> tuple[Any | None, list[str]]:
+    """Hold session locks on a dedicated connection throughout the upload."""
+    if repo.db.bind.dialect.name != "postgresql":
+        return None, []
+    lock_keys = _managed_dataset_upload_lock_key(
+        organization_id, file_sha256, dataset_name, dataset_id
+    )
+    lock_connection = repo.db.get_bind().connect()
+    lock_connection = lock_connection.execution_options(isolation_level="AUTOCOMMIT")
+    acquired: list[str] = []
+    try:
+        for lock_key in lock_keys:
+            lock_connection.execute(
+                text("SELECT pg_advisory_lock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+            acquired.append(lock_key)
+        return lock_connection, acquired
+    except Exception:
+        _release_managed_dataset_upload_locks(lock_connection, acquired)
+        raise
+
+
+def _release_managed_dataset_upload_locks(
+    lock_connection: Any | None,
+    lock_keys: list[str],
+) -> None:
+    if lock_connection is None:
+        return
+    try:
+        for lock_key in reversed(lock_keys):
+            lock_connection.execute(
+                text("SELECT pg_advisory_unlock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+    except Exception:
+        try:
+            lock_connection.execute(text("SELECT pg_advisory_unlock_all()"))
+        except Exception:
+            pass
+    finally:
+        lock_connection.close()
+
+
+def _physical_upload_is_complete(
+    repo: DatasetRepository,
+    version: DatasetVersion,
+) -> bool:
+    """Return True only when persisted physical rows and schema match version metadata."""
+    from datasets.physical_table import PHYSICAL_SCHEMA, ROW_NUMBER_COLUMN
+
+    table_name = str(version.data_table_name or "")
+    if re.fullmatch(r"[a-z0-9_]+", table_name) is None:
+        return False
+    if int(version.row_count or 0) <= 0 or int(version.column_count or 0) <= 0:
+        return False
+
+    qualified_name = f'{PHYSICAL_SCHEMA}."{table_name}"'
+    exists_in_database = repo.db.execute(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": qualified_name},
+    ).scalar_one_or_none()
+    if exists_in_database is None:
+        return False
+
+    all_physical_columns = repo.db.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = :table_name "
+            "ORDER BY ordinal_position"
+        ),
+        {"schema": PHYSICAL_SCHEMA, "table_name": table_name},
+    ).scalars().all()
+    if ROW_NUMBER_COLUMN not in all_physical_columns:
+        return False
+    physical_columns = [
+        name for name in all_physical_columns if name != ROW_NUMBER_COLUMN
+    ]
+
+    physical = repo.db.execute(
+        text(
+            f'SELECT COUNT(*) AS row_count, MIN("{ROW_NUMBER_COLUMN}") AS min_row, '
+            f'MAX("{ROW_NUMBER_COLUMN}") AS max_row, '
+            f'COUNT(DISTINCT "{ROW_NUMBER_COLUMN}") AS distinct_rows '
+            f'FROM "{PHYSICAL_SCHEMA}"."{table_name}"'
+        )
+    ).mappings().one()
+    if (
+        int(physical["row_count"] or 0) != int(version.row_count)
+        or int(physical["min_row"] or 0) != 1
+        or int(physical["max_row"] or 0) != int(version.row_count)
+        or int(physical["distinct_rows"] or 0) != int(version.row_count)
+    ):
+        return False
+    metadata_columns = repo.db.execute(
+        select(DatasetColumn.column_name)
+        .where(DatasetColumn.version_pk == version.version_pk)
+        .order_by(DatasetColumn.column_name)
+    ).scalars().all()
+
+    return (
+        len(physical_columns) == int(version.column_count)
+        and len(metadata_columns) == int(version.column_count)
+        and set(physical_columns) == set(metadata_columns)
+    )
+
+
+def _recover_stale_processing_uploads(
+    repo: DatasetRepository,
+    organization_id: str,
+    *,
+    location_id: str | None = None,
+) -> int:
+    """Recover complete abandoned uploads; clean only versions proven incomplete."""
+    if repo.db.bind.dialect.name != "postgresql":
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=STALE_MANAGED_DATASET_PROCESSING_SECONDS
+    )
+    candidate_query = (
+        select(
+            DatasetVersion.version_pk,
+            DatasetVersion.dataset_id,
+            DatasetVersion.file_hash,
+            Dataset.dataset_name,
+        )
+        .join(Dataset, Dataset.dataset_id == DatasetVersion.dataset_id)
+        .where(
+            Dataset.organization_id == organization_id,
+            DatasetVersion.status == "processing",
+            DatasetVersion.created_at < cutoff,
+            ~exists(
+                select(1)
+                .select_from(text("dataset_change_proposals"))
+                .where(
+                    text(
+                        "dataset_change_proposals.candidate_version_pk "
+                        "= dataset_versions.version_pk"
+                    )
+                )
+                .where(text("dataset_change_proposals.status = 'pending'"))
+            ),
+        )
+    )
+    # Never let a branch-scoped upload or duplicate check recover another
+    # branch's abandoned uploads as a side effect.
+    if location_id is not None:
+        normalized_location_id = str(location_id).strip()
+        if not normalized_location_id:
+            return 0
+        candidate_query = candidate_query.where(text("""
+            EXISTS (
+                SELECT 1 FROM dataset_authorization da
+                WHERE da.organization_id = datasets.organization_id
+                  AND da.dataset_id = datasets.dataset_id
+                  AND da.location_id = :recovery_location_id
+                  AND da.status = 'active'
+                  AND da.protected_original IS TRUE
+            )
+        """)).params(recovery_location_id=normalized_location_id)
+    candidates = repo.db.execute(
+        candidate_query.order_by(DatasetVersion.created_at.asc()).limit(100)
+    ).all()
+    repo.db.rollback()
+
+    recovered = 0
+    for candidate in candidates:
+        recovery_lock_keys = _managed_dataset_upload_lock_key(
+            organization_id,
+            candidate.file_hash,
+            candidate.dataset_name,
+            candidate.dataset_id,
+        )
+        lock_connection = None
+        acquired_lock_keys: list[str] = []
+        try:
+            lock_connection = repo.db.get_bind().connect()
+            lock_connection = lock_connection.execution_options(
+                isolation_level="AUTOCOMMIT"
+            )
+            for lock_key in recovery_lock_keys:
+                acquired = bool(
+                    lock_connection.execute(
+                        text(
+                            "SELECT pg_try_advisory_lock(hashtextextended(:lock_key, 0))"
+                        ),
+                        {"lock_key": lock_key},
+                    ).scalar_one()
+                )
+                if not acquired:
+                    break
+                acquired_lock_keys.append(lock_key)
+        except Exception:
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+            continue
+        if len(acquired_lock_keys) != len(recovery_lock_keys):
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+            continue
+
+        try:
+            with repo.db.begin():
+                version = repo.db.execute(
+                    select(DatasetVersion)
+                    .where(DatasetVersion.version_pk == candidate.version_pk)
+                    .with_for_update(skip_locked=True)
+                ).scalars().first()
+                if (
+                    version is None
+                    or version.status != "processing"
+                    or version.created_at >= cutoff
+                ):
+                    continue
+
+                dataset = repo.db.execute(
+                    select(Dataset)
+                    .where(
+                        Dataset.dataset_id == candidate.dataset_id,
+                        Dataset.organization_id == organization_id,
+                    )
+                    .with_for_update()
+                ).scalars().first()
+                if dataset is None:
+                    continue
+
+                # A process can die after committing every row and column but
+                # before publishing READY. Verify the persisted table first so
+                # recovery never deletes a complete, recoverable upload.
+                if (
+                    not str(version.version_id).startswith("p")
+                    and _physical_upload_is_complete(repo, version)
+                ):
+                    version.status = "ready"
+                    version.failure_reason = None
+                    dataset.status = "ready"
+                    dataset.current_version_id = version.version_id
+                    dataset.version_number = version.version_number
+                    dataset.row_count = version.row_count
+                    dataset.column_count = version.column_count
+                    dataset.schema_hash = version.schema_hash
+                    dataset.file_hash = version.file_hash
+                    recovered += 1
+                    continue
+
+                if version.data_table_name:
+                    from datasets.physical_table import drop_physical_table
+
+                    drop_physical_table(
+                        repo.db.connection(), version.data_table_name
+                    )
+                    version.data_table_name = None
+
+                repo.db.execute(
+                    delete(DatasetRow).where(
+                        DatasetRow.version_pk == version.version_pk
+                    )
+                )
+                repo.db.execute(
+                    delete(DatasetColumn).where(
+                        DatasetColumn.version_pk == version.version_pk
+                    )
+                )
+                version.status = "failed"
+                version.failure_reason = (
+                    "Upload was interrupted before publication and its stored "
+                    "rows or schema did not pass integrity checks. Please upload "
+                    "the CSV again."
+                )
+                version.row_count = 0
+                version.column_count = 0
+
+                # Keep any last published version intact when a later version
+                # was interrupted. Only an unpublished first upload is failed.
+                if dataset.current_version_id is None:
+                    dataset.status = "failed"
+                    dataset.row_count = 0
+                    dataset.column_count = 0
+                    dataset.schema_hash = ""
+                recovered += 1
+        except Exception:
+            repo.db.rollback()
+        finally:
+            _release_managed_dataset_upload_locks(
+                lock_connection, acquired_lock_keys
+            )
+
+    return recovered
+
+
+def _lock_active_upload_assignment(
+    repo: DatasetRepository,
+    context: dict[str, Any],
+) -> None:
+    """Lock the exact upload authority through the version commit."""
+    role = str(context.get("upload_role_id") or "")
+    org = str(context["organization_id"])
+    workspace = str(context["workspace_id"])
+    principal = str(context["principal_id"])
+    location = str(context["location_id"])
+
+    if role == "organization_owner":
+        assignment = repo.db.execute(text("""
+            SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='organization_owner'
+            JOIN role_permissions rp
+              ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+            JOIN locations l ON l.organization_id=oa.organization_id
+              AND l.location_id=:location AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.role_id='organization_owner' AND oa.status='active'
+              AND m.workspace_id=:workspace AND m.status='active'
+            ORDER BY oa.assignment_id LIMIT 1
+            FOR SHARE OF oa, m, mr, rp, l
+        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    elif role == "branch_head":
+        assignment = repo.db.execute(text("""
+            SELECT oa.assignment_id
+            FROM organizational_assignments oa
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+            JOIN member_roles mr
+              ON mr.organization_id=oa.organization_id AND mr.principal_id=oa.principal_id
+             AND mr.role_id='branch_head'
+            JOIN role_permissions rp
+              ON rp.role_id=oa.role_id AND rp.permission_id='dataset.upload'
+            JOIN locations l ON l.organization_id=oa.organization_id
+              AND l.location_id=oa.location_id AND l.status='active'
+            WHERE oa.organization_id=:org AND oa.principal_id=:principal
+              AND oa.location_id=:location AND oa.role_id='branch_head'
+              AND oa.status='active' AND m.workspace_id=:workspace AND m.status='active'
+            ORDER BY oa.assignment_id LIMIT 1
+            FOR SHARE OF oa, m, mr, rp, l
+        """), {"org":org,"workspace":workspace,"principal":principal,"location":location}).scalar_one_or_none()
+    elif role == "manager":
+        assignment = repo.db.execute(text("""
+            SELECT g.grant_id
+            FROM manager_dataset_upload_grants g
+            JOIN organizational_assignments oa
+              ON oa.organization_id=g.organization_id
+             AND oa.principal_id=g.manager_principal_id
+             AND oa.location_id=g.location_id
+             AND oa.role_id='manager' AND oa.status='active'
+            JOIN organization_members m
+              ON m.organization_id=oa.organization_id AND m.principal_id=oa.principal_id
+             AND m.workspace_id=g.workspace_id AND m.status='active'
+            JOIN member_roles mr
+              ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+             AND mr.role_id='manager'
+            JOIN identity_bindings ib
+              ON ib.principal_id=m.principal_id AND ib.status='active'
+             AND ib.provider='supabase' AND ib.provider_subject=:subject
+            JOIN locations l
+              ON l.organization_id=g.organization_id AND l.location_id=g.location_id
+             AND l.status='active'
+            WHERE g.organization_id=:org AND g.workspace_id=:workspace
+              AND g.manager_principal_id=:principal AND g.location_id=:location
+              AND g.revoked_at IS NULL
+            LIMIT 1
+            FOR SHARE OF g, oa, m, mr, ib, l
+        """), {
+            "org": org, "workspace": workspace, "principal": principal,
+            "location": location, "subject": str(context.get("_identity_subject") or ""),
+        }).scalar_one_or_none()
+    else:
+        raise AuthzError("The active role is not authorized to write an original dataset.")
+
+    if assignment is None:
+        raise AuthzError("The upload role or active branch assignment is no longer valid.")
+
+
+
+
+def _find_managed_dataset_upload_conflicts(
+    repo: DatasetRepository,
+    *,
+    organization_id: str,
+    context: dict[str, Any],
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Look up duplicate names/content without receiving the CSV bytes."""
+    duplicate_scope = None
+    duplicate_scope_params: dict[str, Any] = {}
+    if "organization_owner" not in set(context.get("role_ids", [])):
+        # Branch-scoped roles must not learn dataset names or hashes
+        # from another branch in the same organization.
+        duplicate_scope = text("""
+            EXISTS (
+                SELECT 1
+                FROM dataset_authorization da
+                WHERE da.organization_id = :duplicate_org_id
+                  AND da.dataset_id = datasets.dataset_id
+                  AND da.location_id = :duplicate_location_id
+                  AND da.status = 'active'
+                  AND da.protected_original IS TRUE
+            )
+        """)
+        duplicate_scope_params = {
+            "duplicate_org_id": organization_id,
+            "duplicate_location_id": str(context.get("location_id") or ""),
+        }
+
+    if dataset_id is not None:
+        current_dataset = repo.get_by_id(dataset_id)
+        if current_dataset is None or current_dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        query = select(DatasetVersion).where(
+            DatasetVersion.dataset_id == dataset_id,
+            DatasetVersion.file_hash == file_sha256,
+            DatasetVersion.status == "ready",
+        ).order_by(DatasetVersion.version_number.desc())
+        matching_version = repo.db.execute(query).scalars().first()
+        if matching_version is None:
+            return []
+        return [{
+            "dataset_id": current_dataset.dataset_id,
+            "dataset_name": current_dataset.dataset_name,
+            "original_filename": current_dataset.original_filename,
+            "reasons": ["content"],
+        }]
+
+    safe_name = _safe_dataset_name(dataset_name, "upload.csv") if dataset_name is not None else None
+    name_query = select(Dataset).where(
+        Dataset.organization_id == organization_id,
+        Dataset.status.notin_(("deleted", "failed")),
+    )
+    if safe_name is not None:
+        name_query = name_query.where(
+            func.lower(func.trim(Dataset.dataset_name)) == safe_name.lower()
+        )
+
+    dataset_hash_query = select(Dataset).where(
+        Dataset.organization_id == organization_id,
+        Dataset.status.notin_(("deleted", "failed")),
+        Dataset.file_hash == file_sha256,
+    )
+    version_hash_query = (
+        select(Dataset)
+        .join(DatasetVersion, DatasetVersion.dataset_id == Dataset.dataset_id)
+        .where(
+            Dataset.organization_id == organization_id,
+            Dataset.status.notin_(("deleted", "failed")),
+            DatasetVersion.file_hash == file_sha256,
+            DatasetVersion.status == "ready",
+        )
+        .distinct()
+    )
+    if duplicate_scope is not None:
+        name_query = name_query.where(duplicate_scope).params(**duplicate_scope_params)
+        dataset_hash_query = dataset_hash_query.where(duplicate_scope).params(**duplicate_scope_params)
+        version_hash_query = version_hash_query.where(duplicate_scope).params(**duplicate_scope_params)
+
+    conflicts_by_id: dict[str, dict[str, Any]] = {}
+    candidates: list[tuple[Any, str]] = []
+    if safe_name is not None:
+        candidates.extend(
+            (candidate, "name")
+            for candidate in repo.db.execute(
+                name_query.order_by(Dataset.created_at.desc())
+            ).scalars().all()
+        )
+    hash_matches = repo.db.execute(
+        dataset_hash_query.order_by(Dataset.created_at.desc())
+    ).scalars().all()
+    version_matches = repo.db.execute(
+        version_hash_query.order_by(Dataset.created_at.desc())
+    ).scalars().all()
+    candidates.extend((candidate, "content") for candidate in hash_matches)
+    candidates.extend((candidate, "content") for candidate in version_matches)
+    for candidate, reason in candidates:
+        if candidate is None or candidate.status in {"deleted", "failed"}:
+            continue
+        conflict = conflicts_by_id.setdefault(candidate.dataset_id, {
+            "dataset_id": candidate.dataset_id,
+            "dataset_name": candidate.dataset_name,
+            "original_filename": candidate.original_filename,
+            "reasons": [],
+        })
+        if reason not in conflict["reasons"]:
+            conflict["reasons"].append(reason)
+        if candidate.status == "processing":
+            conflict["code"] = "upload_in_progress"
+            if "upload_in_progress" not in conflict["reasons"]:
+                conflict["reasons"].append("upload_in_progress")
+    conflicts = list(conflicts_by_id.values())
+
+    # A pending Manager proposal is a reserved name in its branch even though
+    # its candidate has no dataset authorization until Branch Head approval.
+    if safe_name is not None:
+        pending_proposal_query = """
+            SELECT 1
+            FROM dataset_change_proposals p
+            JOIN datasets d
+              ON d.dataset_id = p.dataset_id
+             AND d.organization_id = p.organization_id
+            WHERE p.organization_id = :org
+              AND p.dataset_kind = 'new'
+              AND p.status = 'pending'
+              AND lower(trim(d.dataset_name)) = :dataset_name
+        """
+        pending_params = {
+            "org": organization_id,
+            "dataset_name": safe_name.lower(),
+        }
+        if duplicate_scope is not None:
+            pending_proposal_query += " AND p.location_id = :location_id"
+            pending_params["location_id"] = str(context.get("location_id") or "")
+        if repo.db.execute(
+            text(pending_proposal_query + " LIMIT 1"), pending_params
+        ).scalar_one_or_none() is not None:
+            conflicts.append({
+                "dataset_id": None,
+                "dataset_name": None,
+                "original_filename": None,
+                "reasons": ["proposal_pending"],
+                "code": "proposal_pending",
+            })
+
+    if duplicate_scope is not None:
+        outside_branch_match = repo.db.execute(
+            text("""
+                SELECT 1
+                FROM datasets d
+                WHERE d.organization_id = :org
+                  AND d.status NOT IN ('deleted', 'failed')
+                  AND (
+                    d.file_hash = :file_hash
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dataset_versions dv
+                        WHERE dv.dataset_id = d.dataset_id
+                          AND dv.file_hash = :file_hash
+                          AND dv.status = 'ready'
+                    )
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM dataset_authorization da
+                    WHERE da.organization_id = d.organization_id
+                      AND da.dataset_id = d.dataset_id
+                      AND da.location_id = :location_id
+                      AND da.status = 'active'
+                      AND da.protected_original IS TRUE
+                  )
+                LIMIT 1
+            """),
+            {
+                "org": organization_id,
+                "file_hash": file_sha256,
+                "location_id": str(context.get("location_id") or ""),
+            },
+        ).scalar_one_or_none()
+        if outside_branch_match is not None:
+            conflicts.append({
+                "dataset_id": None,
+                "dataset_name": None,
+                "original_filename": None,
+                "reasons": ["content_outside_branch"],
+                "code": "content_outside_branch",
+            })
+    return conflicts
+
+
+def check_managed_dataset_duplicates(
+    *,
+    workspace_id: str,
+    token: str,
+    file_sha256: str,
+    dataset_name: str | None = None,
+    dataset_id: str | None = None,
+    location_id: str | None = None,
+) -> dict[str, Any]:
+    """Fast duplicate preflight. Only metadata and a client-computed hash cross the network."""
+    normalized_hash = str(file_sha256 or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized_hash) is None:
+        raise ValueError("A valid SHA-256 file hash is required.")
+
+    claims = _claims(token)
+    if dataset_id is not None:
+        dataset_scope = _authorize_dataset(
+            claims, workspace_id, dataset_id, "dataset.upload"
+        )
+        context = _authorize_upload(
+            claims, workspace_id,
+            location_id=str(dataset_scope.get("location_id") or ""),
+        )
+    else:
+        if dataset_name is None:
+            raise ValueError("Dataset name is required for duplicate checking.")
+        context = _authorize_upload(claims, workspace_id, location_id=location_id)
+
+    organization_id = str(context["organization_id"])
+    from core.db import SessionLocal
+    repo = DatasetRepository(SessionLocal())
+    try:
+        _recover_stale_processing_uploads(
+            repo, organization_id, location_id=str(context.get("location_id") or "")
+        )
+        conflicts = _find_managed_dataset_upload_conflicts(
+            repo,
+            organization_id=organization_id,
+            context=context,
+            file_sha256=normalized_hash,
+            dataset_name=dataset_name,
+            dataset_id=dataset_id,
+        )
+        return {"conflicts": conflicts}
+    finally:
+        repo.db.close()
+
+
+def upload_managed_dataset_stream(
+    *,
+    workspace_id: str,
+    token: str,
+    filename: str,
+    stream: BinaryIO,
+    content_type: str | None,
+    dataset_name: str | None = None,
+    provider: SupabaseDatasetStorageProvider | None = None,
+    dataset_id: str | None = None,
+    replace_dataset_id: str | None = None,
+    confirm_duplicate: bool = False,
+    location_id: str | None = None,
+) -> dict[str, Any]:
+    claims = _claims(token)
+    requested_new_dataset = dataset_id is None
+    if replace_dataset_id is not None:
+        if dataset_id is not None and dataset_id != replace_dataset_id:
+            raise ValueError("Only one replacement dataset may be selected.")
+        dataset_id = replace_dataset_id
+    if dataset_id is not None:
+        # Resolve branch scope from the authoritative source ACL, not request body.
+        dataset_scope = _authorize_dataset(
+            claims, workspace_id, dataset_id, "dataset.upload"
+        )
+        context = _authorize_upload(
+            claims, workspace_id, location_id=str(dataset_scope.get("location_id") or "")
+        )
+    else:
+        context = _authorize_upload(claims, workspace_id, location_id=location_id)
+
+    safe_name = _safe_filename(filename)
+    safe_dataset_name = _safe_dataset_name(dataset_name, safe_name)
+    organization_id = str(context["organization_id"])
+    from core.db import SessionLocal
+    repo = DatasetRepository(SessionLocal())
+    registry = DatasetRegistryService(repo)
+    registration = None
+    stored = None
+    new_dataset = dataset_id is None
+    provider = provider or SupabaseDatasetStorageProvider()
+    base_version_id = None
+    upload_lock_connection = None
+    upload_lock_keys: list[str] = []
+    try:
+        _recover_stale_processing_uploads(
+            repo, organization_id, location_id=str(context.get("location_id") or "")
+        )
+
+        if requested_new_dataset:
+            # Hold a PostgreSQL session lock across conflict checking, row
+            # creation, authorization registration and final publication.
+            incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
+            stream.seek(0)
+            upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
+                repo,
+                organization_id=organization_id,
+                file_sha256=incoming_hash,
+                dataset_name=safe_dataset_name,
+                dataset_id=dataset_id,
+            )
+            conflicts = _find_managed_dataset_upload_conflicts(
+                repo,
+                organization_id=organization_id,
+                context=context,
+                file_sha256=incoming_hash,
+                dataset_name=safe_dataset_name,
+            )
+            replacement_target = _single_replacement_target(conflicts)
+            if replace_dataset_id is None and conflicts:
+                raise DatasetUploadConflict(conflicts)
+            if replace_dataset_id is not None and replacement_target != replace_dataset_id:
+                raise DatasetUploadConflict(conflicts)
+        if dataset_id is not None:
+            if not requested_new_dataset:
+                incoming_hash, _ = registry._hash_stream(stream, MAX_DATASET_BYTES)
+                stream.seek(0)
+                upload_lock_connection, upload_lock_keys = _acquire_managed_dataset_upload_locks(
+                    repo,
+                    organization_id=organization_id,
+                    file_sha256=incoming_hash,
+                    dataset_id=dataset_id,
+                )
+
+            # Read the target only after the serialized lock has been acquired.
+            # A previous request may have published a newer version while this
+            # request was waiting; never derive its next version from stale ORM state.
+            current_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == dataset_id,
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if current_dataset is None:
+                raise FileNotFoundError("Dataset not found.")
+            if current_dataset.status != "ready" or not current_dataset.current_version_id:
+                raise ValueError("The selected dataset is not READY for a new version.")
+
+            base_version_id = current_dataset.current_version_id
+            if not requested_new_dataset:
+                matching_version = repo.db.execute(
+                    select(DatasetVersion).where(
+                        DatasetVersion.dataset_id == dataset_id,
+                        DatasetVersion.file_hash == incoming_hash,
+                        DatasetVersion.status == "ready",
+                    ).order_by(DatasetVersion.version_number.desc())
+                ).scalars().first()
+                if matching_version is not None and not confirm_duplicate:
+                    raise DatasetUploadConflict([{
+                        "dataset_id": current_dataset.dataset_id,
+                        "dataset_name": current_dataset.dataset_name,
+                        "original_filename": current_dataset.original_filename,
+                        "reasons": ["content"],
+                    }])
+        registration = registry.register_csv_stream(
+            file_obj=stream,
+            filename=safe_name,
+            organization_id=organization_id,
+            # Replacement updates data in place but does not rename the
+            # existing managed dataset. Renaming is a separate operation.
+            dataset_name=(
+                str(current_dataset.dataset_name or safe_dataset_name)
+                if replace_dataset_id is not None
+                else (
+                    safe_dataset_name
+                    if dataset_id is None
+                    else str(current_dataset.dataset_name or safe_dataset_name)
+                )
+            ),
+            uploaded_by=str(context.get("principal_id") or claims["uid"]),
+            existing_dataset_id=dataset_id,
+            content_type=content_type or "text/csv",
+            max_bytes=MAX_DATASET_BYTES,
+        )
+        if registration.registration.was_duplicate:
+            duplicate_dataset = registration.registration.dataset
+            _audit_safely(
+                workspace_id, str(claims["uid"]), "dataset.upload", "duplicate_confirmed",
+                resource_id=duplicate_dataset.dataset_id,
+                metadata={"version_id": registration.version.version_id,
+                          "dataset_name": duplicate_dataset.dataset_name},
+            )
+            result = {
+                **_structured_summary(
+                    duplicate_dataset,
+                    len(repo.list_versions(duplicate_dataset.dataset_id)),
+                ),
+                "content_unchanged": True,
+            }
+            if result.get("status") != "ready":
+                raise RuntimeError("An identical dataset exists but is not READY.")
+            return result
+
+        if new_dataset:
+            _register_authorization(
+                claims, workspace_id, registration.registration.dataset.dataset_id,
+                str(context["location_id"]),
+            )
+        if not registration.sample.empty:
+            intelligence = SchemaIntelligenceService(repo, RelationshipRepository(repo.db))
+            intelligence.analyze_dataset(
+                registration.registration.dataset.dataset_id,
+                registration.sample,
+                version_pk=registration.version.version_pk,
+            )
+
+        if dataset_id is not None:
+            repo.db.execute(text("""
+                SELECT dataset_id FROM datasets
+                WHERE dataset_id=:dataset AND organization_id=:org
+                FOR UPDATE
+            """), {"dataset": dataset_id, "org": organization_id}).scalar_one_or_none()
+            current_scope = repo.db.execute(text("""
+                SELECT location_id, status, protected_original
+                FROM dataset_authorization
+                WHERE organization_id=:org AND dataset_id=:dataset
+                FOR SHARE
+            """), {"org": organization_id, "dataset": dataset_id}).mappings().first()
+            if (current_scope is None or current_scope["status"] != "active"
+                    or not current_scope["protected_original"]
+                    or str(current_scope["location_id"] or "") != str(context["location_id"])):
+                raise AuthzError("The original dataset branch assignment changed during upload.")
+
+        _lock_active_upload_assignment(repo, context)
+        if archive_original_enabled():
+            stream.seek(0)
+            stored = provider.upload_stream(
+                organization_id=organization_id,
+                dataset_id=registration.registration.dataset.dataset_id,
+                version_id=registration.version.version_id,
+                stream=stream,
+                original_filename=safe_name,
+                content_type=content_type or "text/csv",
+            )
+        dataset = registry.finalize_version(
+            registration.registration.dataset.dataset_id,
+            registration.version.version_id,
+            storage_provider="supabase_storage" if stored else None,
+            storage_object_id=stored.storage_object_id if stored else None,
+            expected_current_version_id=(base_version_id if not new_dataset else None),
+        )
+        audit_action = (
+            "dataset.upload"
+            if new_dataset
+            else ("dataset.replace" if replace_dataset_id is not None else "dataset.version_upload")
+        )
+        _audit_safely(
+            workspace_id, str(claims["uid"]),
+            audit_action,
+            "succeeded", resource_id=dataset.dataset_id,
+            metadata={
+                "version_id": registration.version.version_id,
+                "previous_version_id": base_version_id,
+                "replacement": replace_dataset_id is not None,
+                "row_count": dataset.row_count,
+                "column_count": dataset.column_count,
+                "storage_mode": "sql_structured",
+            },
+        )
+        result = _structured_summary(dataset, len(repo.list_versions(dataset.dataset_id)))
+        if result.get("status") != "ready":
+            raise RuntimeError("Dataset ingestion finished without a READY publication status.")
+        return result
+    except Exception as exc:
+        repo.db.rollback()
+        if stored is not None:
+            try:
+                provider.delete(
+                    organization_id=organization_id,
+                    dataset_id=registration.registration.dataset.dataset_id if registration else (dataset_id or ""),
+                    version_id=registration.version.version_id if registration else "v1",
+                )
+            except Exception:
+                pass
+        if registration is not None:
+            try:
+                if isinstance(exc, (AuthzError, PermissionDenied)):
+                    _discard_sql_registration(
+                        repo, registration.registration.dataset.dataset_id,
+                        registration.version.version_id, new_dataset,
+                    )
+                else:
+                    _mark_failed_sql_version(
+                        repo, registration.registration.dataset.dataset_id,
+                        registration.version.version_id, new_dataset, str(exc),
+                    )
+            except Exception:
+                pass
+            if new_dataset:
+                _unregister_authorization(workspace_id, registration.registration.dataset.dataset_id)
+        _audit_safely(
+            workspace_id, str(claims["uid"]),
+            "dataset.upload" if new_dataset else (
+                "dataset.replace" if replace_dataset_id is not None else "dataset.version_upload"
+            ),
+            "failed",
+            resource_id=dataset_id,
+            metadata={
+                "previous_version_id": base_version_id,
+                "replacement": replace_dataset_id is not None,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+    finally:
+        _release_managed_dataset_upload_locks(upload_lock_connection, upload_lock_keys)
+        repo.db.close()
+
+
+def upload_managed_dataset(
+    *,
+    workspace_id: str,
+    token: str,
+    filename: str,
+    data: bytes,
+    content_type: str | None,
+    provider: SupabaseDatasetStorageProvider | None = None,
+    dataset_id: str | None = None,
+) -> dict[str, Any]:
+    return upload_managed_dataset_stream(
+        workspace_id=workspace_id,
+        token=token,
+        filename=filename,
+        stream=io.BytesIO(data),
+        content_type=content_type,
+        provider=provider,
+        dataset_id=dataset_id,
+    )
+
+
+
+def delete_managed_dataset(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    provider: SupabaseDatasetStorageProvider | None = None,
+) -> dict[str, Any]:
+    claims = _claims(token)
+    context = _authorization_context(claims, workspace_id)
+    roles = set(context.get("role_ids", []))
+    if "organization_owner" in roles or "branch_head" not in roles:
+        raise PermissionDenied(
+            "Only the assigned Branch Head may delete an original dataset. "
+            "Organization Owners have read-only oversight."
+        )
+    dataset_scope = _authorize_dataset(claims, workspace_id, dataset_id, "dataset.delete")
+    location_id = str(dataset_scope.get("location_id") or "")
+    if not location_id:
+        raise PermissionDenied("Original dataset deletion requires an active branch assignment.")
+    # Deletion requires the exact active Branch Head assignment for this dataset.
+    authorize_dataset_upload_scope(claims, workspace_id, location_id=location_id)
+    organization_id = str(context["organization_id"])
+    from core.db import SessionLocal
+    repo = DatasetRepository(SessionLocal())
+    provider = provider or SupabaseDatasetStorageProvider()
+    try:
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        versions = repo.list_versions(dataset_id)
+
+        # Supabase Storage is outside the SQL transaction. Remove optional
+        # archived originals first; if a storage delete fails, keep the live
+        # structured dataset and its database records intact.
+        for version in versions:
+            if version.storage_provider == "supabase_storage":
+                provider.delete(
+                    organization_id=organization_id,
+                    dataset_id=dataset_id,
+                    version_id=version.version_id,
+                )
+
+        revoke_dataset_working_copies(workspace_id, dataset_id)
+
+        # Soft-delete the logical dataset while removing analytical row data.
+        # Keep version and column metadata as a durable history/tombstone, but
+        # drop each physical table and its JSON-row fallback in the same SQL
+        # transaction. This avoids orphaned physical tables and preserves
+        # version hashes, filenames, sizes, counts, and timestamps for audit.
+        try:
+            locked_dataset = repo.db.execute(
+                select(Dataset)
+                .where(
+                    Dataset.dataset_id == dataset_id,
+                    Dataset.organization_id == organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalars().first()
+            if locked_dataset is None:
+                raise FileNotFoundError("Dataset not found.")
+
+            locked_versions = repo.list_versions(dataset_id)
+            for version in locked_versions:
+                if version.data_table_name:
+                    from datasets.physical_table import drop_physical_table
+
+                    drop_physical_table(repo.db.connection(), version.data_table_name)
+                    version.data_table_name = None
+                repo.db.execute(
+                    delete(DatasetRow).where(
+                        DatasetRow.version_pk == version.version_pk
+                    )
+                )
+                version.status = "deleted"
+
+            # Pending proposals may not publish a version after the source is
+            # deleted. Keep the proposal record but mark it stale for audit.
+            from sqlalchemy import inspect as sqlalchemy_inspect
+
+            if sqlalchemy_inspect(repo.db.bind).has_table("dataset_change_proposals"):
+                repo.db.execute(
+                    text(
+                        "UPDATE dataset_change_proposals "
+                        "SET status = 'stale', reviewed_at = now(), "
+                        "decision_note = COALESCE(decision_note, 'Source dataset deleted') "
+                        "WHERE dataset_id = :dataset_id AND status = 'pending'"
+                    ),
+                    {"dataset_id": dataset_id},
+                )
+
+            locked_dataset.status = "deleted"
+            locked_dataset.current_version_id = None
+            locked_dataset.row_count = 0
+            locked_dataset.column_count = 0
+            locked_dataset.schema_hash = ""
+            repo.db.flush()
+            repo.db.commit()
+        except Exception:
+            repo.db.rollback()
+            raise
+
+        # A stale authorization record cannot restore access because
+        # _authorize_dataset also checks the persisted lifecycle status.
+        _unregister_authorization(workspace_id, dataset_id)
+        _audit_safely(
+            workspace_id,
+            str(claims["uid"]),
+            "dataset.delete",
+            "succeeded",
+            resource_id=dataset_id,
+            metadata={"version_count": len(versions), "history_preserved": True},
+        )
+        return {
+            "dataset_id": dataset_id,
+            "status": "deleted",
+            "version_history_preserved": True,
+        }
+    finally:
+        repo.db.close()
+
+
+def create_managed_working_copy(
+    *,
+    workspace_id: str,
+    token: str,
+    dataset_id: str,
+    provider: SupabaseDatasetStorageProvider | None = None,
+) -> dict[str, Any]:
+    claims = _claims(token)
+    _authorize_dataset(claims, workspace_id, dataset_id, "dataset.create_working_copy")
+    context = _authorization_context(claims, workspace_id)
+    organization_id = str(context["organization_id"])
+    from core.db import SessionLocal
+
+    repo = DatasetRepository(SessionLocal())
+    try:
+        dataset = repo.get_by_id(dataset_id)
+        if dataset is None or dataset.organization_id != organization_id:
+            raise FileNotFoundError("Dataset not found.")
+        version = repo.get_version(dataset_id)
+        if version is None or version.status != "ready":
+            raise FileNotFoundError("Current dataset version is not READY.")
+        working_copy_id = f"wc_{uuid.uuid4().hex}"
+        metadata = create_working_copy(
+            claims,
+            workspace_id,
+            dataset_id,
+            working_copy_id,
+            version.version_id,
+        )
+        _audit_safely(
+            workspace_id,
+            str(claims["uid"]),
+            "working_copy.create",
+            "succeeded",
+            resource_id=working_copy_id,
+            metadata={
+                "source_dataset_id": dataset_id,
+                "source_version": version.version_id,
+            },
+        )
+        # Copy-only roles must not receive original dataset/version identifiers.
+        roles = set(context.get("role_ids", []))
+        result = {
+            key: value for key, value in metadata.items()
+            if key not in {"source_dataset_id", "source_version",
+                           "structured_dataset_id", "structured_version_id"}
+        }
+        result["access_mode"] = "working_copy"
+        if roles.intersection({"organization_owner", "branch_head", "manager"}):
+            result.update({
+                "structured_dataset_id": dataset_id,
+                "structured_version_id": version.version_id,
+            })
+        return result
+    finally:
+        repo.db.close()

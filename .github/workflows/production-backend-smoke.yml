@@ -1,0 +1,100 @@
+name: InsightFlow Production Backend Smoke
+
+on:
+  # Render auto-deploy is disabled. Run this only after manually deploying
+  # the selected release-branch commit, so the SHA check validates reality.
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require authoritative release branch
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Production smoke must be dispatched from main after deployment."
+            exit 1
+          fi
+
+      - name: Verify production health and deployed commit
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+            https://data-analysis-oajs.onrender.com/health
+          echo
+          build_info="$(curl --fail --silent --show-error https://data-analysis-oajs.onrender.com/v1/build-info)"
+          echo "Production build info:"
+          echo "$build_info"
+          export BUILD_INFO="$build_info"
+          export EXPECTED_SHA="${GITHUB_SHA}"
+          python - <<'PY'
+          import json, os
+          info = json.loads(os.environ["BUILD_INFO"])
+          expected = os.environ["EXPECTED_SHA"]
+          actual = info.get("backend_git_sha") or info.get("backend_commit")
+          if actual != expected:
+              raise SystemExit(f"STALE_RENDER_BUILD: expected {expected}, got {actual}")
+          PY
+
+      - name: Verify registration and invitation CORS and auth boundaries
+        run: |
+          set -euo pipefail
+          check_preflight() {
+            local path="$1"
+            local response_file headers_file status
+            response_file="$(mktemp)"
+            headers_file="$(mktemp)"
+            status="$(curl --silent --show-error --output "$response_file" --dump-header "$headers_file" \
+              -X OPTIONS \
+              -H 'Origin: https://pritishmete.github.io' \
+              -H 'Access-Control-Request-Method: POST' \
+              -H 'Access-Control-Request-Headers: authorization,content-type,x-insightflow-workspace-id,x-insightflow-branch-id' \
+              -w '%{http_code}' \
+              "https://data-analysis-oajs.onrender.com$path")"
+            echo "$path OPTIONS status: $status"
+            cat "$headers_file"
+            cat "$response_file"
+            test "$status" = "200"
+            grep -qi '^access-control-allow-origin: https://pritishmete.github.io' "$headers_file"
+          }
+          check_denied() {
+            local method="$1" path="$2" body="${3:-}" response_file status
+            response_file="$(mktemp)"
+            if [[ "$method" == "POST" ]]; then
+              status="$(curl --silent --show-error --output "$response_file" \
+                -X POST -H 'Content-Type: application/json' \
+                -d "$body" -w '%{http_code}' \
+                "https://data-analysis-oajs.onrender.com$path")"
+            else
+              status="$(curl --silent --show-error --output "$response_file" \
+                -X "$method" -w '%{http_code}' \
+                "https://data-analysis-oajs.onrender.com$path")"
+            fi
+            echo "Unauthenticated $method $path status: $status"
+            cat "$response_file"
+            test "$status" = "401" || test "$status" = "403"
+          }
+
+          check_preflight /v1/authz/organizations/register
+          check_preflight /v1/authz/invitations
+          check_preflight /v1/managed-datasets
+          check_preflight /v1/managed-datasets/duplicate-check
+
+          check_denied POST /v1/authz/organizations/register '{"organization_name":"__smoke__"}'
+          check_denied POST /v1/authz/invitations '{"workspace_id":"__smoke__","email":"__smoke__@example.com","role_id":"employee"}'
+          check_denied GET /v1/managed-datasets
+          check_denied POST /v1/managed-datasets/duplicate-check '{"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}'
+
+      - name: Verify diagnostic endpoint rejects invalid credentials
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --output "$response_file" \
+            -H 'Authorization: Bearer invalid-diagnostic-token' \
+            -w '%{http_code}' \
+            https://data-analysis-oajs.onrender.com/v1/authz/provider-diagnostics)"
+          echo "Diagnostic status: $status"
+          cat "$response_file"
+          test "$status" = "401"

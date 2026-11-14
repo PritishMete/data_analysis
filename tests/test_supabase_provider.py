@@ -1,0 +1,521 @@
+import os
+
+import pytest
+from sqlalchemy import text
+
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"), reason="Supabase DATABASE_URL is required"
+)
+
+
+def test_supabase_registration_persists_branch_head_context():
+    from firebase_authz.supabase_provider import register_organization
+    from core.db import SessionLocal
+
+    claims = {
+        "uid": "integration-test-user",
+        "sub": "integration-test-user",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": ["integration-test-user"]}},
+    }
+    result = register_organization(claims, "ABC", "Kolkata Branch A", "ABC-KOL-A")
+    assert result["organization_id"].startswith("org_")
+    assert result["workspace_id"] == result["organization_id"]
+    assert result["role_ids"] == ["branch_head"]
+
+    with SessionLocal() as session:
+        connection = session.connection()
+        row = connection.execute(text("""SELECT o.name, w.workspace_id, m.employee_id, mr.role_id, l.name AS branch_name
+            FROM organizations o
+            JOIN workspaces w ON w.organization_id = o.organization_id
+            JOIN organization_members m ON m.organization_id = o.organization_id
+            JOIN member_roles mr ON mr.organization_id = m.organization_id AND mr.principal_id = m.principal_id
+            JOIN locations l ON l.organization_id = o.organization_id
+            WHERE o.organization_id = :id"""), {"id": result["organization_id"]}).one()
+        assignment = connection.execute(text("""SELECT oa.location_id, oa.role_id, oa.status
+            FROM organizational_assignments oa
+            JOIN identity_bindings ib ON ib.principal_id = oa.principal_id
+            WHERE oa.organization_id = :id AND ib.firebase_uid = :principal"""),
+                                        {"id": result["organization_id"], "principal": claims["uid"]}).one()
+    assert row.name == "ABC"
+    assert row.workspace_id == result["workspace_id"]
+    assert row.employee_id == result["employee_id"]
+    assert row.employee_id == "EMP001"
+    assert row.role_id == "branch_head"
+    assert row.branch_name == "Kolkata Branch A"
+    assert assignment.location_id == result["location_id"]
+    assert assignment.role_id == "branch_head"
+    assert assignment.status == "active"
+
+    with SessionLocal.begin() as session:
+        session.execute(text("DELETE FROM organizations WHERE organization_id = :id"), {"id": result["organization_id"]})
+
+
+def test_supabase_registration_rejects_invalid_organization_or_branch_names():
+    from firebase_authz.supabase_provider import register_organization
+
+    with pytest.raises(ValueError):
+        register_organization({"uid": "u"}, "bad\nname", "Main Branch", "BAD-01")
+    with pytest.raises(ValueError):
+        register_organization({"uid": "u"}, "ABC", "bad\nbranch", "BAD-01")
+
+
+def test_supabase_registration_allows_special_branch_identifier_characters():
+    from firebase_authz.supabase_provider import register_organization
+    from core.db import SessionLocal
+
+    identifier = "tcs@singur_1!#$%^&*+=?"
+    result = register_organization(
+        {"uid": "special-branch-id-test"},
+        "Special Identifier Test",
+        "Singur",
+        identifier,
+    )
+    try:
+        assert result["branch_identifier"] == identifier
+        with SessionLocal() as session:
+            stored = session.execute(
+                text("SELECT branch_identifier FROM locations WHERE location_id=:id"),
+                {"id": result["location_id"]},
+            ).scalar_one()
+        assert stored == identifier
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
+def test_supabase_registration_rolls_back_when_final_registration_stage_fails(monkeypatch):
+    from firebase_authz.supabase_provider import register_organization
+    from core.db import SessionLocal
+
+    def fail_final_stage(name):
+        if name == "DB_COMMIT_COMPLETE":
+            raise RuntimeError("simulated final registration failure")
+
+    monkeypatch.setattr("firebase_authz.registration_diagnostics.stage", fail_final_stage)
+
+    with pytest.raises(RuntimeError, match="simulated final registration failure"):
+        register_organization(
+            {"uid": "registration-rollback-test"},
+            "Rollback Test",
+            "Rollback Branch",
+            "ROLLBACK-TEST",
+        )
+
+    with SessionLocal() as session:
+        assert session.execute(
+            text("SELECT 1 FROM locations WHERE branch_identifier=:id"),
+            {"id": "ROLLBACK-TEST"},
+        ).scalar_one_or_none() is None
+        assert session.execute(
+            text("SELECT 1 FROM organizations WHERE name=:name"),
+            {"name": "Rollback Test"},
+        ).scalar_one_or_none() is None
+
+
+def test_supabase_registration_rejects_existing_active_membership():
+    from firebase_authz.supabase_provider import OrganizationRegistrationConflict, register_organization
+    from core.db import SessionLocal
+
+    result = register_organization(
+        {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
+        "Existing Membership",
+        "Main Branch",
+        "EXISTING-MEMBERSHIP",
+    )
+    try:
+        with pytest.raises(OrganizationRegistrationConflict):
+            register_organization(
+                {"uid": "duplicate-org-user", "sub": "duplicate-org-user"},
+                "Second Organization",
+                "Second Branch",
+                "SECOND-ORG",
+            )
+        with SessionLocal() as session:
+            assert session.execute(
+                text("SELECT count(*) FROM organizations WHERE name=:name"),
+                {"name": "Second Organization"},
+            ).scalar_one() == 0
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
+def test_supabase_registration_rejects_duplicate_active_branch_identifier():
+    from firebase_authz.supabase_provider import register_organization
+    from firebase_authz.service import AuthzError
+    from core.db import SessionLocal
+
+    first = register_organization({"uid": "branch-id-one"}, "Branch ID One", "Kolkata A", "UNIQUE-BRANCH-01")
+    try:
+        with pytest.raises((ValueError, AuthzError)):
+            register_organization({"uid": "branch-id-two"}, "Branch ID Two", "Kolkata B", "UNIQUE-BRANCH-01")
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": first["organization_id"]})
+
+
+def test_dataset_and_working_copy_authorization_is_workspace_scoped():
+    from sqlalchemy import text
+    from core.db import SessionLocal
+    from firebase_authz.supabase_provider import (
+        authorize_dataset,
+        authorize_working_copy,
+        create_working_copy,
+        register_dataset,
+        register_organization,
+    )
+
+    claims = {"uid": "dataset-test-user", "sub": "dataset-test-user",
+              "firebase": {"sign_in_provider": "password", "identities": {"password": ["dataset-test-user"]}}}
+    result = register_organization(claims, "Dataset Test", "Main Branch", "DATASET-TEST")
+    register_dataset(claims, result["workspace_id"], "ds_test", "dataset-test-user")
+    assert authorize_dataset(claims, result["workspace_id"], "ds_test", "dataset.view_original")["authorized"]
+    create_working_copy(claims, result["workspace_id"], "ds_test", "wc_test", "1")
+    assert authorize_working_copy(claims, result["workspace_id"], "wc_test", "working_copy.modify")["authorized"]
+    from firebase_authz.service import AuthzError
+    with pytest.raises(AuthzError):
+        authorize_dataset(claims, "org_other", "ds_test", "dataset.view_original")
+    with SessionLocal.begin() as session:
+        session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_supabase_invitation_acceptance_membership_and_role_are_transactional():
+    import uuid
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import (
+        accept_invitation, create_invitation, mutate_role, pending_invitations,
+        register_organization, set_membership_status,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"invite-owner-{suffix}"
+    guest_uid = f"invite-guest-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"guest-{suffix}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    result = register_organization(owner, "Invitation Test", "Main Branch", "INVITATION-TEST")
+    workspace = result["workspace_id"]
+    try:
+        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        pending = pending_invitations(guest)
+        assert pending[0]["invitation_id"] == invitation["invitation_id"]
+        assert pending[0]["organization_name"] == "Invitation Test"
+        accepted = accept_invitation(guest, workspace, invitation["invitation_id"])
+        assert accepted["accepted"] is True
+        with SessionLocal() as db:
+            row = db.execute(text("""SELECT m.status, mr.role_id FROM organization_members m
+                JOIN identity_bindings b ON b.principal_id=m.principal_id
+                JOIN member_roles mr ON mr.organization_id=m.organization_id AND mr.principal_id=m.principal_id
+                    WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                           {"org": workspace, "uid": guest_uid}).one()
+        assert row.status == "active"
+        assert row.role_id == "employee"
+        assert set_membership_status(owner, workspace, guest_uid, "suspended") is True
+        with pytest.raises(AuthzError):
+            mutate_role(guest, workspace, owner_uid, "manager", True)
+        with pytest.raises(AuthzError):
+            accept_invitation(guest, "org_wrong", invitation["invitation_id"])
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_supabase_invited_member_reports_incomplete_profile_to_auth_gate():
+    import uuid
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        authorization_context,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"profile-owner-{suffix}"
+    guest_uid = f"profile-guest-{suffix}"
+    owner = {
+        "uid": owner_uid,
+        "sub": owner_uid,
+        "email": f"owner-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
+    }
+    guest = {
+        "uid": guest_uid,
+        "sub": guest_uid,
+        "email": f"guest-{suffix}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}},
+    }
+    result = register_organization(owner, f"Profile Gate {suffix}", "Main", f"PROFILE-GATE-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        invitation = create_invitation(owner, workspace, guest["email"], "employee")
+        accept_invitation(guest, workspace, invitation["invitation_id"])
+
+        context = authorization_context(guest, workspace)
+        assert context["membership_status"] == "active"
+        assert context["workspace_id"] == workspace
+        assert context["employee_id"]
+        assert context["role_ids"] == ["employee"]
+        assert context["profile_complete"] is False
+        assert context["workspaces"][0]["membership_status"] == "active"
+        assert context["workspaces"][0]["profile_complete"] is False
+
+        import firebase_authz.routes as routes
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setenv("AUTHZ_PERSISTENCE_PROVIDER", "supabase")
+        monkeypatch.setattr(routes, "verify_id_token", lambda token: guest)
+        try:
+            me_response = routes.me("Bearer test-token")
+        finally:
+            monkeypatch.undo()
+        assert me_response["membership_status"] == "active"
+        assert me_response["workspace_id"] == workspace
+        assert me_response["employee_id"] == context["employee_id"]
+        assert me_response["role_ids"] == ["employee"]
+        assert me_response["profile_complete"] is False
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+
+def test_supabase_invitation_rejects_expired_and_revoked():
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"expiry-owner-{suffix}"
+    guest_uid = f"expiry-guest-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"{owner_uid}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"{guest_uid}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    result = register_organization(owner, f"Expiry Test {suffix}", "Main", f"EXPIRY-{suffix}")
+    workspace = result["workspace_id"]
+    try:
+        expired = create_invitation(
+            owner, workspace, guest["email"], "employee",
+            int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp() * 1000),
+        )
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("UPDATE invitations SET expires_at=now() WHERE invitation_id=:id"),
+                {"id": expired["invitation_id"]},
+            )
+        with pytest.raises(AuthzError, match="expired"):
+            accept_invitation(guest, workspace, expired["invitation_id"])
+
+        revoked = create_invitation(
+            owner, workspace, guest["email"], "employee",
+        )
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("UPDATE invitations SET status='revoked' WHERE invitation_id=:id"),
+                {"id": revoked["invitation_id"]},
+            )
+        with pytest.raises(AuthzError, match="no longer active"):
+            accept_invitation(guest, workspace, revoked["invitation_id"])
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_supabase_invitation_rejects_cross_company_active_member():
+    import uuid
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        create_invitation,
+        register_organization,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_a = {"uid": f"cross-owner-a-{suffix}", "sub": f"cross-owner-a-{suffix}",
+               "email": f"cross-owner-a-{suffix}@example.com",
+               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-a-{suffix}"]}}}
+    owner_b = {"uid": f"cross-owner-b-{suffix}", "sub": f"cross-owner-b-{suffix}",
+               "email": f"cross-owner-b-{suffix}@example.com",
+               "firebase": {"sign_in_provider": "password", "identities": {"password": [f"cross-owner-b-{suffix}"]}}}
+    guest_uid = f"cross-guest-{suffix}"
+    guest = {"uid": guest_uid, "sub": guest_uid, "email": f"cross-guest-{suffix}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [guest_uid]}}}
+    org_a = register_organization(owner_a, f"Cross A {suffix}", "A", f"CROSS-A-{suffix}")
+    org_b = register_organization(owner_b, f"Cross B {suffix}", "B", f"CROSS-B-{suffix}")
+    invitation_a = create_invitation(owner_a, org_a["workspace_id"], guest["email"], "employee")
+    accepted_a = accept_invitation(guest, org_a["workspace_id"], invitation_a["invitation_id"])
+    invitation_b = create_invitation(owner_b, org_b["workspace_id"], guest["email"], "employee")
+    try:
+        with pytest.raises(AuthzError):
+            accept_invitation(guest, org_b["workspace_id"], invitation_b["invitation_id"])
+        with SessionLocal() as session:
+            rows = session.execute(
+                text("""SELECT organization_id, status FROM organization_members
+                        WHERE employee_id=:employee ORDER BY organization_id"""),
+                {"employee": accepted_a["employee_id"]},
+            ).all()
+        assert rows == [(org_a["organization_id"], "active")]
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": org_a["organization_id"]})
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": org_b["organization_id"]})
+
+
+def test_supabase_management_approved_employee_and_delegation_are_scoped():
+    import uuid
+    from firebase_authz.supabase_provider import (
+        accept_invitation, create_invitation, management_snapshot,
+        register_organization, set_approved_employee, set_delegation,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"scope-owner-{suffix}"
+    member_uid = f"scope-member-{suffix}"
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": f"owner-{suffix}@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
+    member = {"uid": member_uid, "sub": member_uid, "email": f"member-{suffix}@example.com",
+              "firebase": {"sign_in_provider": "password", "identities": {"password": [member_uid]}}}
+    result = register_organization(owner, "Scope Test", "Main Branch", "SCOPE-TEST")
+    workspace = result["workspace_id"]
+    try:
+        invitation = create_invitation(owner, workspace, member["email"], "team_lead")
+        accepted_member = accept_invitation(member, workspace, invitation["invitation_id"])
+        assert set_approved_employee(owner, workspace, member_uid, accepted_member["employee_id"]) is True
+        delegation = set_delegation(owner, workspace, member_uid, [member_uid], [], ["dataset.share"], None)
+        assert delegation["delegation_id"].startswith("dlg_")
+        snapshot = management_snapshot(owner, workspace)
+        assert any(row["uid"] == member_uid for row in snapshot["members"])
+        assert snapshot["approved_employees"][0]["uid"] == member_uid
+        assert snapshot["delegations"][0]["delegation_id"] == delegation["delegation_id"]
+        with SessionLocal() as session:
+            count = session.execute(text("""SELECT count(*) FROM approved_employees
+                WHERE organization_id=:org AND workspace_id=:workspace"""),
+                                    {"org": workspace, "workspace": workspace}).scalar_one()
+        assert count == 1
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+def test_supabase_legacy_registration_alias_uses_transactional_provider():
+    from firebase_authz.supabase_provider import register_organization
+    result = register_organization({"uid": "legacy-alias-test", "sub": "legacy-alias-test"}, "Legacy Alias", "Main Branch", "LEGACY-ALIAS")
+    try:
+        assert result["membership_status"] == "active"
+    finally:
+        from core.db import SessionLocal
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})
+
+
+
+
+
+def test_supabase_authorization_context_preserves_suspended_membership():
+    import uuid
+    from firebase_authz.supabase_provider import (
+        accept_invitation,
+        authorization_context,
+        create_invitation,
+        register_organization,
+        set_membership_status,
+    )
+    from core.db import SessionLocal
+
+    suffix = uuid.uuid4().hex
+    owner_uid = f"authz-owner-{suffix}"
+    member_uid = f"authz-suspended-{suffix}"
+    owner = {
+        "uid": owner_uid,
+        "sub": owner_uid,
+        "email": f"{owner_uid}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}},
+    }
+    member = {
+        "uid": member_uid,
+        "sub": member_uid,
+        "email": f"{member_uid}@example.com",
+        "firebase": {"sign_in_provider": "password", "identities": {"password": [member_uid]}},
+    }
+    result = register_organization(
+        owner, f"Suspended Membership {suffix}", "Main Branch", f"SUSPENDED-{suffix}"
+    )
+    try:
+        invitation = create_invitation(
+            owner, result["workspace_id"], member["email"], "employee"
+        )
+        accept_invitation(member, result["workspace_id"], invitation["invitation_id"])
+        assert set_membership_status(
+            owner, result["workspace_id"], member_uid, "approved"
+        ) is True
+        approved_context = authorization_context(member)
+        assert approved_context["membership_status"] == "approved"
+        assert approved_context["workspace_authorized"] is False
+
+        assert set_membership_status(
+            owner, result["workspace_id"], member_uid, "suspended"
+        ) is True
+        context = authorization_context(member)
+        assert context["membership_status"] == "suspended"
+        assert context["authorization_state"] == "suspended"
+        assert context["workspace_authorized"] is False
+        assert context["workspace_id"] == result["workspace_id"]
+        assert context["role_ids"] == []
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(
+                text("DELETE FROM organizations WHERE organization_id=:id"),
+                {"id": result["organization_id"]},
+            )
+
+def test_supabase_account_cleanup_revokes_authorization_metadata_transactionally():
+    from firebase_authz.service import AuthzError
+    from firebase_authz.supabase_provider import accept_invitation, authorization_context, cleanup_account, create_invitation, register_organization
+    from core.db import SessionLocal
+
+    suffix = __import__("uuid").uuid4().hex
+    owner_uid = "cleanup-owner-" + suffix
+    uid = "cleanup-test-user-" + suffix
+    owner = {"uid": owner_uid, "sub": owner_uid, "email": owner_uid + "@example.com",
+             "firebase": {"sign_in_provider": "password", "identities": {"password": [owner_uid]}}}
+    claims = {"uid": uid, "sub": uid, "email": uid + "@example.com",
+              "firebase": {"sign_in_provider": "password", "identities": {"password": [uid]}}}
+    result = register_organization(owner, "Cleanup Test", "Main Branch", "CLEANUP-TEST")
+    invitation = create_invitation(owner, result["workspace_id"], claims["email"], "employee")
+    accept_invitation(claims, result["workspace_id"], invitation["invitation_id"])
+    try:
+        assert cleanup_account(claims, uid) == {"revoked_workspaces": [result["workspace_id"]]}
+        with SessionLocal() as session:
+            row = session.execute(text("""SELECT m.status, b.status AS binding_status
+                FROM organization_members m JOIN identity_bindings b ON b.principal_id=m.principal_id
+                WHERE m.organization_id=:org AND b.firebase_uid=:uid"""),
+                                  {"org": result["organization_id"], "uid": uid}).one()
+        assert row.status == "removed"
+        assert row.binding_status == "inactive"
+        removed_context = authorization_context(claims)
+        assert removed_context["membership_status"] == "removed"
+        assert removed_context["workspace_authorized"] is False
+        with __import__("pytest").raises(AuthzError):
+            cleanup_account(claims, uid + "-other")
+    finally:
+        with SessionLocal.begin() as session:
+            session.execute(text("DELETE FROM organizations WHERE organization_id=:id"), {"id": result["organization_id"]})

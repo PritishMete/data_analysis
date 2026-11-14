@@ -41,6 +41,13 @@ def _resolve_best_column(schema: dict[str, Any], role: str) -> str | None:
     return candidates[0] if candidates else None
 
 
+def _resolve_identifier(schema: dict[str, Any]) -> tuple[str | None, bool]:
+    candidates = list(schema.get("role_index", {}).get("identifier", []))
+    if len(candidates) == 1:
+        return candidates[0], False
+    return None, len(candidates) > 1
+
+
 def _parse_conditions(text: str, schema: dict[str, Any]) -> list[QueryCondition]:
     conditions: list[QueryCondition] = []
 
@@ -87,9 +94,42 @@ def _parse_conditions(text: str, schema: dict[str, Any]) -> list[QueryCondition]
     return conditions
 
 
+def _looks_like_quality_check(text: str) -> bool:
+    return bool(
+        re.search(r"\b(?:check|inspect|find|show|report|identify)\b", text, re.I)
+        and re.search(r"\b(?:missing|null|blank|empty)\b", text, re.I)
+        and re.search(r"\b(?:duplicate|duplicates|duplicated)\b", text, re.I)
+    )
+
+
+def _looks_like_grouped_count(text: str) -> bool:
+    return bool(
+        re.search(r"\b(?:count|how many|number of)\b", text, re.I)
+        and re.search(r"\b(?:each|per|by|group(?:ed)?\s+by)\b", text, re.I)
+    )
+
+
 def parse_query(text: str, schema: dict[str, Any]) -> dict[str, Any]:
     lowered = (text or "").strip()
     query = StructuredQuery(operation="report")
+
+    if _looks_like_quality_check(lowered):
+        query.operation = "quality_check"
+        query.report = "data_quality"
+        identifier_column, ambiguous = _resolve_identifier(schema)
+        if identifier_column:
+            query.identifier_column_id = identifier_column
+        elif ambiguous:
+            query.report = "data_quality_ambiguous_identifier"
+        return query.as_dict()
+
+    if _looks_like_grouped_count(lowered):
+        query.operation = "group"
+        query.report = "count_rows"
+        area_col = _resolve_best_column(schema, "geographic_area")
+        if area_col:
+            query.group_by = [area_col]
+        return query.as_dict()
 
     if re.search(r"\b(count|how many)\b", lowered, re.I):
         query.operation = "count"
@@ -124,4 +164,3 @@ def parse_anonymized_remote_plan(payload: dict[str, Any]) -> dict[str, Any]:
     point.
     """
     return payload
-

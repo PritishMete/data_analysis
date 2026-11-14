@@ -1,0 +1,807 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'supabase_auth_service.dart';
+import '../interop/excel_mutation_authorization.dart';
+
+String insightFlowWorkspaceId = String.fromEnvironment(
+  'INSIGHTFLOW_WORKSPACE_ID',
+);
+
+Future<void> loadInsightFlowWorkspaceId(String uid) async {
+  final prefs = await SharedPreferences.getInstance();
+  final stored = prefs.getString('insightflow.workspace.$uid');
+  final normalized = stored?.trim() ?? '';
+  if (normalized.startsWith('dev_workspace_')) {
+    // Remove workspace identifiers created by the retired frontend-only
+    // registration bypass so they can never be treated as real database state.
+    insightFlowWorkspaceId = '';
+    await prefs.remove('insightflow.workspace.$uid');
+    await prefs.remove('insightflow.dev.organization.$uid');
+    return;
+  }
+  if (normalized.isNotEmpty) {
+    insightFlowWorkspaceId = normalized;
+  }
+}
+
+Future<bool?> reconcileCachedWorkspaceWithRetry({
+  required Future<bool?> Function() resolve,
+  int maxAttempts = 4,
+  Duration initialDelay = const Duration(seconds: 1),
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    final result = await resolve();
+    if (result != null) return result;
+    if (attempt + 1 < maxAttempts) {
+      final seconds = 1 << attempt;
+      await Future<void>.delayed(
+        Duration(milliseconds: initialDelay.inMilliseconds * seconds),
+      );
+    }
+  }
+  return null;
+}
+
+enum InsightFlowOnboardingState {
+  initializing,
+  activeMember,
+  pendingInvitation,
+  profileIncomplete,
+  noMembership,
+  transientFailure,
+  authoritativeDenial,
+}
+
+class InsightFlowOnboardingResolution {
+  const InsightFlowOnboardingResolution(
+    this.state, {
+    this.pendingInvitations = const <Map<String, dynamic>>[],
+    this.roleIds = const <String>[],
+    this.workspaceId,
+  });
+
+  final InsightFlowOnboardingState state;
+  final List<Map<String, dynamic>> pendingInvitations;
+  final List<String> roleIds;
+  final String? workspaceId;
+}
+
+Future<InsightFlowOnboardingResolution?>
+    reconcileInsightFlowOnboardingWithRetry({
+  required Future<InsightFlowOnboardingResolution> Function() resolve,
+  int maxAttempts = 4,
+  Duration initialDelay = const Duration(seconds: 1),
+}) async {
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    final result = await resolve();
+    if (result.state != InsightFlowOnboardingState.transientFailure) {
+      return result;
+    }
+    if (attempt + 1 < maxAttempts) {
+      final seconds = 1 << attempt;
+      await Future<void>.delayed(
+        Duration(milliseconds: initialDelay.inMilliseconds * seconds),
+      );
+    }
+  }
+  return null;
+}
+
+Future<List<Map<String, dynamic>>> fetchInsightFlowPendingInvitations() async {
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  if (session == null || session.accessToken.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  final response = await http
+      .get(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/invitations/pending'),
+        headers: await supabaseAuthHeaders(),
+      )
+      .timeout(const Duration(seconds: 8));
+  if (response.statusCode == 401) {
+    throw _AuthenticationRequiredFailure();
+  }
+  if (response.statusCode == 403) {
+    throw _AuthoritativeAuthorizationFailure();
+  }
+  if (response.statusCode != 200) {
+    throw _TransientAuthorizationFailure();
+  }
+  final decoded = jsonDecode(response.body);
+  if (decoded is! Map || decoded['invitations'] is! List) {
+    throw _TransientAuthorizationFailure();
+  }
+  return (decoded['invitations'] as List)
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+}
+
+class _AuthenticationRequiredFailure implements Exception {}
+
+class _AuthoritativeAuthorizationFailure implements Exception {}
+
+class _TransientAuthorizationFailure implements Exception {}
+
+/// Resolve a landing destination only from backend active-role information.
+/// Conflicting operational roles fail closed; Owner may also retain the
+/// Branch Head role created during organization registration.
+String? resolveInsightFlowLandingRole(Iterable<String> roleIds) {
+  const supported = <String>{
+    'organization_owner', 'branch_head', 'manager', 'team_lead',
+    'employee', 'external_viewer',
+  };
+  final roles = roleIds
+      .map((role) => role.trim().toLowerCase())
+      .where((role) => role.isNotEmpty)
+      .toSet();
+  if (roles.isEmpty || roles.any((role) => !supported.contains(role))) {
+    return null;
+  }
+  if (roles.contains('organization_owner')) {
+    return roles.difference({'organization_owner', 'branch_head'}).isEmpty
+        ? 'organization_owner'
+        : null;
+  }
+  if (roles.length != 1) return null;
+  return roles.single;
+}
+
+List<String> _roleIdsFromAuthorization(Map<String, dynamic> decoded) {
+  final raw = decoded['role_ids'];
+  if (raw is! List) return const <String>[];
+  return raw
+      .map((value) => value.toString().trim().toLowerCase())
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
+Future<InsightFlowOnboardingResolution>
+    resolveInsightFlowOnboardingStateFromBackend(String uid) async {
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  if (session == null || session.accessToken.isEmpty) {
+    return const InsightFlowOnboardingResolution(
+      InsightFlowOnboardingState.transientFailure,
+    );
+  }
+
+  try {
+    final response = await http
+        .get(
+          Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+          headers: {'Authorization': 'Bearer ${session.accessToken}'},
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode == 401) {
+      // A 401 means the bearer token itself is no longer accepted.
+      await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    }
+    if (response.statusCode == 403) {
+      // A 403 is an authorization decision, not a logout instruction.
+      // Keep the valid Supabase identity so the user can retry or contact an
+      // administrator without having to authenticate again.
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    }
+    if (response.statusCode != 200) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
+
+    final decodedJson = jsonDecode(response.body);
+    if (decodedJson is! Map) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
+    final decoded = Map<String, dynamic>.from(decodedJson);
+
+    // The top-level /v1/authz/me contract is the sole authorization source
+    // for post-auth routing. Workspace cache is continuity only.
+    final membershipStatus =
+        decoded['membership_status']?.toString().trim().toLowerCase();
+    final profileComplete = decoded['profile_complete'];
+    final authoritativeWorkspaceId =
+        decoded['workspace_id']?.toString().trim() ?? '';
+    final roleIds = _roleIdsFromAuthorization(decoded);
+    final workspaces = decoded['workspaces'];
+
+    if (membershipStatus == null ||
+        membershipStatus.isEmpty ||
+        workspaces is! List) {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
+
+    if (membershipStatus != 'active' && membershipStatus != 'none') {
+      // Only an explicit no-membership result may enter company registration.
+      // Existing approved memberships remain in onboarding; suspended,
+      // removed, inactive, ambiguous, and unknown states fail closed.
+      if (membershipStatus == 'approved' || membershipStatus == 'invited') {
+        try {
+          final invitations = await fetchInsightFlowPendingInvitations();
+          return InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.pendingInvitation,
+            pendingInvitations: invitations,
+          );
+        } on _AuthenticationRequiredFailure {
+          await InsightFlowSupabaseAuthService.signOut();
+          insightFlowWorkspaceId = '';
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('insightflow.workspace.$uid');
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.authoritativeDenial,
+          );
+        } on _AuthoritativeAuthorizationFailure {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.authoritativeDenial,
+          );
+        } on _TransientAuthorizationFailure {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.transientFailure,
+          );
+        } catch (_) {
+          return const InsightFlowOnboardingResolution(
+            InsightFlowOnboardingState.transientFailure,
+          );
+        }
+      }
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    }
+
+    if (membershipStatus == 'active') {
+      if (authoritativeWorkspaceId.isEmpty) {
+        return const InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.transientFailure,
+        );
+      }
+
+      final activeWorkspaceMatches = workspaces
+          .whereType<Map>()
+          .any(
+            (item) =>
+                item['workspace_id']?.toString().trim() ==
+                    authoritativeWorkspaceId &&
+                item['membership_status']?.toString().trim().toLowerCase() ==
+                    'active',
+          );
+      if (!activeWorkspaceMatches) {
+        return const InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.transientFailure,
+        );
+      }
+
+      await setInsightFlowWorkspaceId(uid, authoritativeWorkspaceId);
+
+      // Missing profile_complete is deliberately treated as incomplete.
+      // Never infer onboarding completion from a missing field or from cache.
+      if (profileComplete != true) {
+        return InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.profileIncomplete,
+          roleIds: roleIds,
+          workspaceId: authoritativeWorkspaceId,
+        );
+      }
+
+      return InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.activeMember,
+        roleIds: roleIds,
+        workspaceId: authoritativeWorkspaceId,
+      );
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('insightflow.workspace.$uid');
+    insightFlowWorkspaceId = '';
+
+    try {
+      final invitations = await fetchInsightFlowPendingInvitations();
+      if (invitations.isNotEmpty) {
+        return InsightFlowOnboardingResolution(
+          InsightFlowOnboardingState.pendingInvitation,
+          pendingInvitations: invitations,
+        );
+      }
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.noMembership,
+      );
+    } on _AuthenticationRequiredFailure {
+      await InsightFlowSupabaseAuthService.signOut();
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    } on _AuthoritativeAuthorizationFailure {
+      // The identity is valid, but invitation authorization was denied.
+      insightFlowWorkspaceId = '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('insightflow.workspace.$uid');
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.authoritativeDenial,
+      );
+    } on _TransientAuthorizationFailure {
+      return const InsightFlowOnboardingResolution(
+        InsightFlowOnboardingState.transientFailure,
+      );
+    }
+  } catch (_) {
+    return const InsightFlowOnboardingResolution(
+      InsightFlowOnboardingState.transientFailure,
+    );
+  }
+}
+
+Future<bool?> resolveInsightFlowWorkspaceFromBackend(String uid) async {
+  final resolution = await resolveInsightFlowOnboardingStateFromBackend(uid);
+  if (resolution.state == InsightFlowOnboardingState.activeMember) {
+    return true;
+  }
+  if (resolution.state == InsightFlowOnboardingState.authoritativeDenial) {
+    return false;
+  }
+  if (resolution.state == InsightFlowOnboardingState.noMembership ||
+      resolution.state == InsightFlowOnboardingState.pendingInvitation) {
+    final prefs = await SharedPreferences.getInstance();
+    insightFlowWorkspaceId = '';
+    await prefs.remove('insightflow.workspace.$uid');
+    // Losing workspace membership removes workspace access, not the user's
+    // Supabase identity. Keep the login available for another invitation or
+    // an administrator-assisted membership repair.
+    return false;
+  }
+  return null;
+}
+
+Future<void> setInsightFlowWorkspaceId(String uid, String workspaceId) async {
+  final normalized = workspaceId.trim();
+  if (normalized.isEmpty) return;
+  insightFlowWorkspaceId = normalized;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('insightflow.workspace.$uid', normalized);
+}
+
+class OrganizationServiceDiagnostic {
+  OrganizationServiceDiagnostic({String? id}) : id = id ?? _newId();
+
+  final String id;
+  String stage = 'REQUEST_STARTED';
+  String? method;
+  String? path;
+  String? backendOrigin;
+  int? httpStatus;
+  String? safeBodySummary;
+  String? errorType;
+  String? errorDetail;
+
+  void start({
+    required String method,
+    required String path,
+    required String backendOrigin,
+  }) {
+    this.method = method;
+    this.path = path;
+    this.backendOrigin = backendOrigin;
+    stage = 'REQUEST_STARTED';
+    httpStatus = null;
+    safeBodySummary = null;
+    errorType = null;
+    errorDetail = null;
+  }
+
+  String get requestLabel => '${method ?? 'REQUEST'} ${path ?? ''}'.trim();
+
+  String get displayText => [
+    'Organization Service Diagnostic',
+    '',
+    'Backend:',
+    backendOrigin ?? 'unknown',
+    '',
+    'Request:',
+    requestLabel,
+    '',
+    'Status:',
+    httpStatus?.toString() ??
+        (stage == 'REQUEST_STARTED' ? 'waiting' : 'no HTTP response'),
+    '',
+    'Result:',
+    stage,
+    if (safeBodySummary != null && safeBodySummary!.isNotEmpty) '',
+    if (safeBodySummary != null && safeBodySummary!.isNotEmpty)
+      'Response: $safeBodySummary',
+    '',
+    'Attempt:',
+    id,
+  ].join('\n');
+
+  static String _newId() {
+    final value = Random.secure().nextInt(0x10000);
+    return 'ORGREQ-${value.toRadixString(16).padLeft(4, '0').toUpperCase()}';
+  }
+}
+
+class OrganizationServiceResponse {
+  const OrganizationServiceResponse(this.response, this.diagnostic);
+  final http.Response response;
+  final OrganizationServiceDiagnostic diagnostic;
+}
+
+class OrganizationServiceRequestException implements Exception {
+  const OrganizationServiceRequestException(this.diagnostic, this.cause);
+  final OrganizationServiceDiagnostic diagnostic;
+  final Object cause;
+}
+
+String _safeOrganizationResponseSummary(String body) {
+  if (body.trim().isEmpty) return 'empty response';
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map) {
+      final safe = <String, String>{};
+      for (final key in const ['code', 'authorization_state']) {
+        final value = decoded[key];
+        if (value != null) safe[key] = value.toString();
+      }
+      final summary = safe.entries.map((e) => '${e.key}=${e.value}').join('; ');
+      if (summary.isNotEmpty) {
+        return summary.length > 240 ? summary.substring(0, 240) : summary;
+      }
+      return 'JSON object response (sensitive fields omitted)';
+    }
+    return 'JSON response';
+  } catch (_) {
+    return 'non-JSON response';
+  }
+}
+
+String? organizationServiceBusinessErrorMessage(http.Response response) {
+  if (response.statusCode != 400) return null;
+  try {
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map) {
+      final detail = decoded['detail']?.toString().trim();
+      if (detail == 'Branch identifier is already in use by an active branch.') {
+        return detail;
+      }
+    }
+  } catch (_) {
+    // Non-JSON 400 responses remain diagnostic-worthy.
+  }
+  return null;
+}
+
+String _classifyOrganizationHttp(int status) {
+  if (status >= 200 && status < 300) return 'HTTP_SUCCESS';
+  if (status == 401) return 'HTTP_401';
+  if (status == 403) return 'HTTP_403';
+  if (status == 404) return 'HTTP_404';
+  if (status == 409) return 'HTTP_409';
+  if (status == 422) return 'HTTP_422';
+  if (status >= 500) return 'HTTP_5XX';
+  return 'UNKNOWN_ERROR';
+}
+
+Future<OrganizationServiceResponse> organizationServiceRequest({
+  required String method,
+  required String path,
+  required Future<http.Response> Function(Map<String, String> headers) send,
+  bool forceRefresh = true,
+  String? contentType,
+}) async {
+  final diagnostic = OrganizationServiceDiagnostic();
+  diagnostic.start(
+    method: method,
+    path: path,
+    backendOrigin: insightFlowBackendBaseUrl,
+  );
+  try {
+    // Organization registration is a protected boundary. Refresh the
+    // Supabase session before constructing the bearer header so a restored
+    // browser session cannot send an expired access token to Render.
+    final session = await InsightFlowSupabaseAuthService.ensureSession();
+    if (session == null || session.accessToken.isEmpty) {
+      throw StateError('Supabase authentication required.');
+    }
+    final headers = await supabaseAuthHeaders();
+    if (contentType != null) headers['Content-Type'] = contentType;
+    // Render may cold-start the free web service before accepting the
+    // request. The verified production startup is ~22s, so 15s incorrectly
+    // classifies a healthy cold start as NETWORK_OR_CORS. Keep the request
+    // bounded, but allow the service enough time to become ready.
+    final response = await send(headers).timeout(const Duration(seconds: 45));
+    diagnostic.httpStatus = response.statusCode;
+    diagnostic.safeBodySummary = _safeOrganizationResponseSummary(
+      response.body,
+    );
+    diagnostic.stage = _classifyOrganizationHttp(response.statusCode);
+    return OrganizationServiceResponse(response, diagnostic);
+  } on TimeoutException catch (error) {
+    diagnostic.stage = 'TIMEOUT';
+    diagnostic.errorType = error.runtimeType.toString();
+    throw OrganizationServiceRequestException(diagnostic, error);
+  } on Exception catch (error) {
+    diagnostic.stage = error.toString().contains('Failed to fetch')
+        ? 'NETWORK_OR_CORS'
+        : 'NETWORK_ERROR';
+    diagnostic.errorType = error.runtimeType.toString();
+    diagnostic.errorDetail = error.toString().contains('Failed to fetch')
+        ? 'Browser reported Failed to fetch; this may be network or CORS.'
+        : 'Browser request failed before an HTTP response was received.';
+    throw OrganizationServiceRequestException(diagnostic, error);
+  }
+}
+
+const String insightFlowBackendBaseUrl = 'https://data-analysis-oajs.onrender.com';
+
+String _safeResourceId(String raw) {
+  final normalized = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
+  final value = normalized.replaceAll(RegExp(r'_+'), '_');
+  return value.isEmpty
+      ? 'active-sheet'
+      : value.substring(0, value.length > 128 ? 128 : value.length);
+}
+
+Future<String> _requireSupabaseAccessToken() async {
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  final token = session?.accessToken;
+  if (token == null || token.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  return token;
+}
+
+Future<void> attachSupabaseAuth(
+  http.BaseRequest request, {
+  String? resourceId,
+  bool forceRefresh = false,
+}) async {
+  final token = InsightFlowSupabaseAuthService.accessToken;
+  if (token == null || token.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  request.headers['Authorization'] = 'Bearer $token';
+  if (insightFlowWorkspaceId.isNotEmpty) {
+    request.headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+  }
+  if (resourceId != null && resourceId.trim().isNotEmpty) {
+    request.headers['X-InsightFlow-Resource-ID'] = _safeResourceId(resourceId);
+  }
+}
+
+Future<Map<String, String>> authHeaders({
+  String? resourceId,
+  bool forceRefresh = false,
+}) async {
+  return supabaseAuthHeaders(resourceId: resourceId);
+}
+
+Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
+  // Protected requests must use the restored/refreshed Supabase session rather
+  // than a possibly expired in-memory access token. This keeps session
+  // restoration consistent for ManagementShell and all legacy Firebase-header
+  // callers without changing the authorization boundary on the backend.
+  final session = await InsightFlowSupabaseAuthService.ensureSession();
+  final token = session?.accessToken;
+  if (token == null || token.isEmpty) {
+    throw StateError('Supabase authentication required.');
+  }
+  final headers = <String, String>{'Authorization': 'Bearer $token'};
+  if (insightFlowWorkspaceId.isNotEmpty) {
+    headers['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+  }
+  if (resourceId != null && resourceId.trim().isNotEmpty) {
+    headers['X-InsightFlow-Resource-ID'] = _safeResourceId(resourceId);
+  }
+  return headers;
+}
+
+Future<String?> _resolveDatasetId(String sourceSheetName) async {
+  final id = await getWorkbookDatasetId(sourceSheetName);
+  if (id == null || id.isEmpty) return null;
+  try {
+    final headers = await authHeaders(resourceId: id);
+    final uid = InsightFlowSupabaseAuthService.currentSupabaseUser?.id;
+    if (uid != null) {
+      await http.post(
+        Uri.parse('$insightFlowBackendBaseUrl/v1/authz/datasets/register'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'workspace_id': insightFlowWorkspaceId,
+          'dataset_id': id,
+          'owner_uid': uid,
+          'protected_original': true,
+        }),
+      );
+    }
+  } catch (_) {}
+  return id;
+}
+
+Future<bool> _checkAuthorization({
+  required String backendBaseUrl,
+  required String action,
+  required String resourceId,
+}) async {
+  final headers = await authHeaders(resourceId: resourceId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/check'),
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'action': action,
+      'resource_id': resourceId,
+    }),
+  );
+  return response.statusCode == 200;
+}
+
+Future<Map<String, dynamic>?> requestWorkingCopy({
+  required String backendBaseUrl,
+  required String datasetId,
+  String? sourceVersion,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty || datasetId.trim().isEmpty) return null;
+  final headers = await authHeaders(resourceId: datasetId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/working-copies'),
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'dataset_id': _safeResourceId(datasetId),
+      if (sourceVersion != null)
+        'source_version': _safeResourceId(sourceVersion),
+    }),
+  );
+  if (response.statusCode != 200) return null;
+  final decoded = jsonDecode(response.body);
+  return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+}
+
+Future<bool> authorizeExcelOperation({
+  required String backendBaseUrl,
+  required String action,
+  required String resourceId,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty) return false;
+  final safeResourceId = _safeResourceId(resourceId);
+
+  if (action == 'data.view' ||
+      action == 'history.view' ||
+      action == 'organization.view') {
+    return _checkAuthorization(
+      backendBaseUrl: backendBaseUrl,
+      action: action,
+      resourceId: safeResourceId,
+    );
+  }
+
+  final datasetId = safeResourceId.startsWith('wc_')
+      ? safeResourceId
+      : await _resolveDatasetId(resourceId);
+  if (datasetId == null) return false;
+
+  if (datasetId.startsWith('wc_')) {
+    final allowed = await _checkAuthorization(
+      backendBaseUrl: backendBaseUrl,
+      action: 'excel.mutate.working_copy',
+      resourceId: datasetId,
+    );
+    if (!allowed) return false;
+    final token = await _requireSupabaseAccessToken();
+    await setExcelMutationAuthorization(
+      idToken: token,
+      workspaceId: insightFlowWorkspaceId,
+      resourceId: datasetId,
+      action: 'excel.mutate.working_copy',
+      backendBaseUrl: backendBaseUrl,
+    );
+    return true;
+  }
+
+  final originalAllowed = await _checkAuthorization(
+    backendBaseUrl: backendBaseUrl,
+    action: 'excel.mutate.original',
+    resourceId: datasetId,
+  );
+  if (originalAllowed) {
+    final token = await _requireSupabaseAccessToken();
+    await setExcelMutationAuthorization(
+      idToken: token,
+      workspaceId: insightFlowWorkspaceId,
+      resourceId: datasetId,
+      action: 'excel.mutate.original',
+      backendBaseUrl: backendBaseUrl,
+    );
+    return true;
+  }
+
+  final copy = await requestWorkingCopy(
+    backendBaseUrl: backendBaseUrl,
+    datasetId: datasetId,
+  );
+  final workingCopyId = copy?['working_copy_id']?.toString();
+  if (workingCopyId == null || workingCopyId.isEmpty) return false;
+
+  final token = await _requireSupabaseAccessToken();
+  await setExcelMutationAuthorization(
+    idToken: token,
+    workspaceId: insightFlowWorkspaceId,
+    resourceId: workingCopyId,
+    action: 'excel.mutate.working_copy',
+    backendBaseUrl: backendBaseUrl,
+  );
+
+  final sourceSheet = resourceId;
+  final copied = await createWorkbookWorkingCopy(
+    sourceSheetName: sourceSheet,
+    workingCopyId: workingCopyId,
+  );
+  final copiedSheet = copied?['sheetName']?.toString();
+  if (copiedSheet == null || copiedSheet.isEmpty) return false;
+
+  // createWorkbookWorkingCopy persists the copied worksheet as the analytical source.
+  final workingAllowed = await _checkAuthorization(
+    backendBaseUrl: backendBaseUrl,
+    action: 'excel.mutate.working_copy',
+    resourceId: workingCopyId,
+  );
+  if (!workingAllowed) return false;
+
+  return true;
+}
+
+Future<bool> authorizeWorkingCopyExcelMutation({
+  required String backendBaseUrl,
+  required String workingCopyId,
+}) async {
+  if (insightFlowWorkspaceId.isEmpty || workingCopyId.trim().isEmpty) {
+    return false;
+  }
+  final safeResourceId = _safeResourceId(workingCopyId);
+  final headers = await authHeaders(resourceId: safeResourceId);
+  final response = await http.post(
+    Uri.parse('$backendBaseUrl/v1/authz/check'),
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'workspace_id': insightFlowWorkspaceId,
+      'action': 'excel.mutate.working_copy',
+      'resource_id': safeResourceId,
+    }),
+  );
+  if (response.statusCode != 200) {
+    return false;
+  }
+  final token = await _requireSupabaseAccessToken();
+  await setExcelMutationAuthorization(
+    idToken: token,
+    workspaceId: insightFlowWorkspaceId,
+    resourceId: safeResourceId,
+    action: 'excel.mutate.working_copy',
+    backendBaseUrl: backendBaseUrl,
+  );
+  return true;
+}

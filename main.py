@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -25,11 +25,45 @@ import pandas as pd
 import io
 import json
 import traceback
-from command_agent import parse_agentic_command, parse_filter_intent, parse_filter_plan
-from categorization_agent import categorize_dataframe, classify_column_operation
+# Defer modules that pull in the heavyweight Google ADK dependency. Their
+# functions are still imported transparently on first use, but importing
+# main:app no longer performs the ADK import chain before Render can bind $PORT.
+def parse_agentic_command(*args, **kwargs):
+    from command_agent import parse_agentic_command as _fn
+    return _fn(*args, **kwargs)
+
+
+def parse_filter_intent(*args, **kwargs):
+    from command_agent import parse_filter_intent as _fn
+    return _fn(*args, **kwargs)
+
+
+def parse_filter_plan(*args, **kwargs):
+    from command_agent import parse_filter_plan as _fn
+    return _fn(*args, **kwargs)
+
+
+def categorize_dataframe(*args, **kwargs):
+    from categorization_agent import categorize_dataframe as _fn
+    return _fn(*args, **kwargs)
+
+
+def classify_column_operation(*args, **kwargs):
+    from categorization_agent import classify_column_operation as _fn
+    return _fn(*args, **kwargs)
+
+
 from currency_utils import convert_amount, currency_format, detect_currency_from_value, parse_amount, normalize_currency
-from location_agent import enrich_rows
-from query_router import handle_smart_query
+
+
+def enrich_rows(*args, **kwargs):
+    from location_agent import enrich_rows as _fn
+    return _fn(*args, **kwargs)
+
+
+def handle_smart_query(*args, **kwargs):
+    from query_router import handle_smart_query as _fn
+    return _fn(*args, **kwargs)
 from ai_privacy import validate_metadata_planner_payload
 from data_cleaner import clean_dataframe
 from learning_bridge import build_learning_event, build_safe_query_abstraction, get_learning_bridge
@@ -41,7 +75,13 @@ from common.order_cleaning import clean_order_fact
 from common.date_dimension import create_date_dimension
 from common.business_analysis import analyze_clean_model
 from common.dashboard import build_dashboard_from_tables
-from common.detail_analysis_agent import enrich_detail_analysis
+# Keep the optional Gemini detail-analysis agent out of module initialization.
+# google-adk pulls in the Google AI Platform stack, which can take long enough
+# on Render's Python 3.14 cold start to prevent Uvicorn from binding $PORT.
+# Import it only when /v2/detail-analysis actually needs the agent.
+async def enrich_detail_analysis(*args, **kwargs):
+    from common.detail_analysis_agent import enrich_detail_analysis as _fn
+    return await _fn(*args, **kwargs)
 from common.chat_reasoning import (
     ALLOWED_OPERATIONS,
     ALLOWED_ROLES,
@@ -234,12 +274,10 @@ def _queue_learning_event(
 # it's backward compatible with every existing caller.
 from core.db import SessionLocal, init_db
 from datasets.repository import DatasetRepository
-from datasets.routes import dataset_registry_router
 from schema_intelligence.routes import schema_intelligence_router
 from query_history.repository import QueryHistoryRepository
 from query_history.routes import query_history_router
 from query_history.service import QueryHistoryService
-from ingestion.routes import ingestion_router
 from plan_cache.repository import PlanCacheRepository
 from plan_cache.routes import plan_cache_router
 from plan_cache.service import PlanCacheService
@@ -247,6 +285,12 @@ from sql_cache.middleware import SqlCacheMiddleware
 from sql_cache.routes import sql_cache_router
 from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
+from firebase_authz.routes import router as authz_router
+from firebase_authz.management_routes import router as management_router
+from dataset_storage.routes import router as managed_dataset_router
+from dataset_storage.service import load_managed_dataset_dataframe
+from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
@@ -254,19 +298,93 @@ from secure_excel.service import list_supported_transforms
 # is harmless there too — it just won't find a .env file and does nothing.
 load_dotenv()
 
-from ai_analyst import (
-    generate_report,
-    generate_structured_report,
-    suggest_analysis_types,
-    explain_business_problems,
-)
+# Keep the heavyweight Google ADK import out of module initialization so
+# Uvicorn can finish loading main:app and bind Render's port promptly.
+async def generate_report(*args, **kwargs):
+    from ai_analyst import generate_report as _generate_report
+    return await _generate_report(*args, **kwargs)
+
+
+async def generate_structured_report(*args, **kwargs):
+    from ai_analyst import generate_structured_report as _generate_structured_report
+    return await _generate_structured_report(*args, **kwargs)
+
+
+async def suggest_analysis_types(*args, **kwargs):
+    from ai_analyst import suggest_analysis_types as _suggest_analysis_types
+    return await _suggest_analysis_types(*args, **kwargs)
+
+
+async def explain_business_problems(*args, **kwargs):
+    from ai_analyst import explain_business_problems as _explain_business_problems
+    return await _explain_business_problems(*args, **kwargs)
 
 app = FastAPI()
 
 
+def _run_production_authz_migrations() -> None:
+    """Ensure the Supabase authorization schema exists before serving requests.
+
+    Render's service-level Build Command can lag behind render.yaml, so the
+    application also performs the existing versioned migration runner during
+    startup when the live service is configured for Supabase authorization.
+    The runner is idempotent and uses a PostgreSQL advisory lock, so this does
+    not create a second migration system or alter migration files.
+    """
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider != "supabase":
+        return
+    if not os.environ.get("DATABASE_URL", "").strip():
+        raise RuntimeError(
+            "[authz] DATABASE_URL is missing; refusing to start with unverified Supabase authorization schema."
+        )
+    try:
+        from tools.run_authz_migrations import run_migrations
+
+        logger.info("[startup] Beginning authorization migration verification.")
+        run_migrations()
+        logger.info("[authz] Production authorization migrations verified successfully.")
+    except Exception:
+        logger.exception("[authz] Production authorization migration verification failed.")
+        raise
+
+
+# Complete required database initialization inside FastAPI startup. A background
+# daemon allowed /health to return success while authz migration verification
+# was still pending or had failed; startup now fails closed instead.
+_PRODUCTION_READY = False
+
+
+def _initialize_production_database() -> None:
+    """Fail closed until required schema verification and DB initialization finish."""
+    global _PRODUCTION_READY
+    _PRODUCTION_READY = False
+    startup_started = time.monotonic()
+    logger.info("[startup] Beginning required production database initialization.")
+    _run_production_authz_migrations()
+    logger.info("[startup] Authorization schema verification finished in %.2fs.", time.monotonic() - startup_started)
+    logger.info("[startup] Beginning application model/table initialization.")
+    init_db()
+    logger.info("[startup] Application model/table initialization finished in %.2fs.", time.monotonic() - startup_started)
+    _PRODUCTION_READY = True
+    logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)
+
+
+app.add_event_handler("startup", _initialize_production_database)
+
+app.add_middleware(FirebaseAuthorizationMiddleware)
+
+
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "data-analysis-api"}
+    # Render must not receive a healthy response until the required startup
+    # migration/schema verification and database initialization have succeeded.
+    if not _PRODUCTION_READY:
+        raise HTTPException(
+            status_code=503,
+            detail="Required database initialization is not ready.",
+        )
+    return {"status": "ok", "service": "data-analysis-api", "database_ready": True}
 
 
 @app.get("/v1/build-info")
@@ -283,29 +401,50 @@ async def build_info():
         frontend_build_id = os.getenv("FRONTEND_BUILD_ID", "unbuilt")
         build_timestamp = None
     return {
-        "backend_commit": os.getenv("BUILD_GIT_SHA", "working-tree"),
-        "backend_git_sha": os.getenv("BUILD_GIT_SHA", "working-tree"),
+        "backend_commit": os.getenv("BUILD_GIT_SHA") or os.getenv("RENDER_GIT_COMMIT") or "working-tree",
+        "backend_git_sha": os.getenv("BUILD_GIT_SHA") or os.getenv("RENDER_GIT_COMMIT") or "working-tree",
         "frontend_build_id": frontend_build_id,
         "build_timestamp": build_timestamp,
     }
 
 # Allow Flutter/Web requests.
-# NOTE (security fix): `allow_origins=["*"]` combined with
-# `allow_credentials=True` is a known-bad CORS combination — browsers
-# reject credentialed wildcard requests outright, and where a proxy doesn't
-# enforce that, it needlessly widens the attack surface for no benefit here:
-# nothing in this API uses cookies (session_id is passed as an explicit
-# multipart Form field, never a cookie — verified: no Set-Cookie/cookie
-# usage anywhere in this file). `allow_credentials` is set to False rather
-# than pinning `allow_origins` to a fixed list, since the real list of
-# production origins isn't something to guess at here — swap in an
-# explicit origins list when that's known, instead of `["*"]`.
+# CORS is restricted to the known production web origin, with localhost
+# development origins allowed through the regex below. The API authenticates
+# with an explicit Authorization header rather than browser cookies.
+_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "INSIGHTFLOW_CORS_ORIGINS",
+        "https://pritishmete.github.io",
+    ).split(",")
+    if origin.strip()
+]
+# Always retain the production GitHub Pages origin even if the Render
+# environment variable is missing, stale, or accidentally contains a path.
+if "https://pritishmete.github.io" not in _CORS_ORIGINS:
+    _CORS_ORIGINS.append("https://pritishmete.github.io")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_CORS_ORIGINS,
+    # Flutter Web sends the Supabase access token in the Authorization header,
+    # not as a cookie. Explicit production origins are used instead of a
+    # wildcard so browser responses remain readable on error responses too.
+    allow_credentials=True,
+    # Keep the production GitHub Pages origin explicit so a missing or
+    # malformed Render CORS environment variable cannot break browser fetches.
+    allow_origin_regex=(
+        r"^(?:https://pritishmete\.github\.io|"
+        r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?)$"
+    ),
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-InsightFlow-Workspace-ID",
+        "X-InsightFlow-Resource-ID",
+        "X-InsightFlow-Location-ID",
+    ],
 )
 
 # ── Centralized Transformation Engine (new, additive) ────────────────────
@@ -1201,7 +1340,7 @@ async def agentic_filter_plan(payload: dict):
 
 
 @app.post("/agentic_command")
-async def agentic_command(payload: dict):
+async def agentic_command(payload: dict, request: Request):
     try:
         text, available_columns, available_sheets = validate_metadata_planner_payload(payload, allow_sheets=True)
     except ValueError as exc:
@@ -1251,6 +1390,31 @@ async def agentic_command(payload: dict):
 
     try:
         result = await parse_agentic_command(text, available_columns, available_sheets)
+
+        # The middleware authorizes the generic analysis.run entry point. The
+        # parsed operation can require a narrower permission, so re-authorize
+        # the actual operation before returning a plan to the Excel client.
+        if getattr(request.state, "firebase_uid", None):
+            action_name = str(result.get("action") or "").strip().lower()
+            action_permission = {
+                "pivot": "pivot.create",
+                "filter": "worksheet.modify",
+                "deduplicate": "worksheet.modify",
+                "color_scale": "worksheet.modify",
+                "add_column": "worksheet.modify",
+                "fill_missing": "worksheet.modify",
+                "multi_step": "worksheet.modify",
+                "categorize": "worksheet.modify",
+            }.get(action_name, "analysis.run")
+            try:
+                authorize_workspace_action(
+                    request.state.firebase_uid,
+                    request.state.workspace_id,
+                    action_permission,
+                    request.state.resource_id,
+                )
+            except (FirebasePermissionDenied, ValueError):
+                raise HTTPException(status_code=403, detail="Permission denied.")
 
         if dataset_id:
             try:
@@ -1354,7 +1518,7 @@ async def agentic_sheet_name(payload: dict):
                 "{\"sheet_name\":\"...\"}. The worksheet name must be understandable to a human and directly reflect the user query. "
                 "Do not use generic names such as Pipeline_Result, Query_Result, Filter_Result, or Sheet1 when the query provides a meaningful subject or condition. "
                 "Use concise words, underscores, and mathematical comparison symbols when useful. Maximum 31 characters. "
-                "Do not use \/ ? * [ ] : or quotes. Never include timestamps. "
+                "Do not use / ? * [ ] : or quotes. Never include timestamps. "
                 "For filters/show requests, name the sheet after exactly what is being shown or the filter condition. "
                 "Examples: 'show me [restaurant] restaurant data' -> [Restaurant]; "
                 "'show restaurants having rating less than 3.9' -> Rating_<3.9; "
@@ -1677,11 +1841,16 @@ async def agentic_categorize(payload: dict):
 
 @app.post("/sentiment_analysis")
 async def sentiment_analysis(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     review_column: str | None = Form(None),
     restaurant_column: str | None = Form(None),
     batch_size: int = Form(150),
     include_details: bool = Form(False),
+    managed_dataset_id: str | None = Form(None),
+    managed_version_id: str | None = Form(None),
+    managed_working_copy_id: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     """Dedicated, router-free endpoint for batched customer-review sentiment.
 
@@ -1690,10 +1859,23 @@ async def sentiment_analysis(
     sentiment request into a generic network-looking failure in the client.
     """
     try:
-        contents = await file.read()
-        df, _excel_context = _load_context_aware_dataframe(
-            file.filename, contents, None, None, None
-        )
+        if managed_working_copy_id or managed_dataset_id:
+            if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
+                raise HTTPException(status_code=401, detail="Authentication and workspace authorization are required.")
+            df = load_managed_dataset_dataframe(
+                workspace_id=workspace_id,
+                token=authorization[7:].strip(),
+                dataset_id=managed_dataset_id,
+                version_id=managed_version_id,
+                working_copy_id=managed_working_copy_id,
+            )
+        else:
+            if file is None:
+                raise HTTPException(status_code=400, detail="A CSV file or managed dataset is required.")
+            contents = await file.read()
+            df, _excel_context = _load_context_aware_dataframe(
+                file.filename, contents, None, None, None
+            )
         from sentiment_agent import analyze_sentiment
         result = await analyze_sentiment(
             df,
@@ -1728,12 +1910,17 @@ async def sentiment_analysis(
 
 @app.post("/smart_query")
 async def smart_query(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     text: str = Form(...),
     available_sheets: str = Form("[]"),
     sheet_name: str | None = Form(None),
     active_cell: str | None = Form(None),
     dataset_range: str | None = Form(None),
+    managed_dataset_id: str | None = Form(None),
+    managed_version_id: str | None = Form(None),
+    managed_working_copy_id: str | None = Form(None),
+    authorization: str | None = Header(default=None),
+    workspace_id: str | None = Header(default=None, alias="X-InsightFlow-Workspace-ID"),
 ):
     """
     Single entry point for natural-language requests. The router agent decides
@@ -1768,15 +1955,29 @@ async def smart_query(
     # means that failure mode is now caught here instead of surfacing as an
     # unexplained dropped connection.
     try:
-        contents = await file.read()
-        try:
-            df, excel_context = _load_context_aware_dataframe(
-                file.filename, contents, sheet_name, active_cell, dataset_range
+        if managed_working_copy_id or managed_dataset_id:
+            if not authorization or not authorization.startswith("Bearer ") or not workspace_id:
+                return JSONResponse(status_code=401, content={"success": False, "error": "Authentication and workspace authorization are required."})
+            df = load_managed_dataset_dataframe(
+                workspace_id=workspace_id,
+                token=authorization[7:].strip(),
+                dataset_id=managed_dataset_id,
+                version_id=managed_version_id,
+                working_copy_id=managed_working_copy_id,
             )
-        except (ValueError, ExcelContextError) as e:
-            return JSONResponse(status_code=200, content=json_safe(
-                smart_query_error_response(str(e), error_type="DATA_LOAD_FAILED")
-            ))
+            excel_context = None
+        else:
+            if file is None:
+                return JSONResponse(status_code=400, content={"success": False, "error": "A CSV file or managed dataset is required."})
+            contents = await file.read()
+            try:
+                df, excel_context = _load_context_aware_dataframe(
+                    file.filename, contents, sheet_name, active_cell, dataset_range
+                )
+            except (ValueError, ExcelContextError) as e:
+                return JSONResponse(status_code=200, content=json_safe(
+                    smart_query_error_response(str(e), error_type="DATA_LOAD_FAILED")
+                ))
 
         try:
             sheets = json.loads(available_sheets)
@@ -2202,10 +2403,32 @@ async def powerbi_business_analysis(
             value for value in known_region_labels
             if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", query or "", re.IGNORECASE)
         ]
+        product_table_for_filters = model.get("dim_product", {})
+        product_category_column_for_filters = next(
+            (
+                column for column in product_table_for_filters.get("columns", [])
+                if str(column).casefold() == "category"
+            ),
+            None,
+        )
+        known_category_labels = sorted(
+            {
+                str(row[product_category_column_for_filters]).strip()
+                for row in product_table_for_filters.get("rows", [])
+                if product_category_column_for_filters
+                and row.get(product_category_column_for_filters) is not None
+                and str(row[product_category_column_for_filters]).strip()
+            },
+            key=lambda value: (-len(value), value.casefold()),
+        )
+        mentioned_categories = [
+            value for value in known_category_labels
+            if re.search(rf"(?<![\w]){re.escape(value)}(?![\w])", query or "", re.IGNORECASE)
+        ]
         dashboard_filters = {
             "year": requested_filters.get("year") or (re.search(r"\b(20\d{2})\b", query or "").group(1) if query and re.search(r"\b20\d{2}\b", query) else None),
             "region": requested_filters.get("business_region", requested_filters.get("region")),
-            "category": requested_filters.get("category"),
+            "category": requested_filters.get("category") or (mentioned_categories[0] if len(mentioned_categories) == 1 else None),
             "product": requested_filters.get("product"),
             "product_id": requested_filters.get("product_id"),
         }
@@ -2469,15 +2692,15 @@ if ai_router is not None:
 # (datasets, dataset_columns, dataset_relationships, query_history) if they
 # don't already exist; safe to call on every process start.
 # ---------------------------------------------------------
-init_db()
-app.include_router(dataset_registry_router)
 app.include_router(schema_intelligence_router)
 app.include_router(query_history_router)
-app.include_router(ingestion_router)
 app.include_router(plan_cache_router)
 app.include_router(sql_cache_router)
 app.include_router(memory_engine_router)
 app.include_router(secure_excel_router)
+app.include_router(authz_router)
+app.include_router(management_router)
+app.include_router(managed_dataset_router)
 
 try:
     # Prefer the dedicated Flutter Detail Analysis build when it exists.

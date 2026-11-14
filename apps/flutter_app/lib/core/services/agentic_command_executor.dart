@@ -26,25 +26,42 @@ String _normalize(String value) => value
     .replaceAll(RegExp(r'\s+'), ' ');
 
 String? _matchColumn(List<String> availableColumns, List<String> candidates) {
-  final normalized = <String, String>{
-    for (final col in availableColumns) _normalize(col): col,
-  };
+  final names = availableColumns
+      .map((col) => {'raw': col, 'normalized': _normalize(col), 'singular': _singularColumnName(col)})
+      .toList();
+
+  // Deterministic precedence: exact normalized header, then singular/plural.
   for (final candidate in candidates) {
     final wanted = _normalize(candidate);
-    final exact = normalized[wanted];
-    if (exact != null) return exact;
+    final exact = names.where((x) => x['normalized'] == wanted).toList();
+    if (exact.length == 1) return exact.single['raw'] as String;
   }
-  // Be tolerant of real-world headers such as "Has Online Delivery?",
-  // "Online Delivery Available", or "Provides Table Booking".
+  for (final candidate in candidates) {
+    final wanted = _singularColumnName(candidate);
+    final inflection = names.where((x) => x['singular'] == wanted).toList();
+    if (inflection.length == 1) return inflection.single['raw'] as String;
+  }
+
+  // Candidate aliases are semantic fallbacks only. A generic alias such as
+  // "price" must not select between marked_price and discounted_price.
   for (final candidate in candidates) {
     final wantedWords = _normalize(candidate).split(' ').where((w) => w.isNotEmpty).toSet();
     if (wantedWords.isEmpty) continue;
-    for (final col in availableColumns) {
-      final words = _normalize(col).split(' ').where((w) => w.isNotEmpty).toSet();
-      if (wantedWords.every(words.contains)) return col;
-    }
+    final semantic = names.where((x) {
+      final words = (x['normalized'] as String).split(' ').where((w) => w.isNotEmpty).toSet();
+      return wantedWords.every(words.contains);
+    }).toList();
+    if (semantic.length == 1) return semantic.single['raw'] as String;
   }
   return null;
+}
+
+String _singularColumnName(String value) {
+  var normalized = _normalize(value);
+  if (normalized.endsWith('ies') && normalized.length > 3) return normalized.substring(0, normalized.length - 3) + 'y';
+  if (normalized.endsWith('es') && RegExp(r'(ches|shes|xes|zes|sses)$').hasMatch(normalized)) return normalized.substring(0, normalized.length - 2);
+  if (normalized.endsWith('s') && !normalized.endsWith('ss') && normalized.length > 2) return normalized.substring(0, normalized.length - 1);
+  return normalized;
 }
 
 bool _looksLikeFilterQuery(String text) {
@@ -275,6 +292,224 @@ Map<String, dynamic>? _buildLocalCategorizationPlan(String userText, List<String
   };
 }
 
+Map<String, dynamic>? _buildLocalPivotPlan(
+  String userText,
+  List<String> availableColumns,
+) {
+  final lower = userText.toLowerCase();
+  final normalizedText = _normalize(userText);
+  final explicitPivot = RegExp(r'\bpivot\s*table\b|\bpivottable\b', caseSensitive: false).hasMatch(lower);
+  if (!explicitPivot || availableColumns.isEmpty) return null;
+
+  String opFromText(String? raw, {String fallback = 'sum'}) {
+    final op = _normalize(raw ?? '');
+    return switch (op) {
+      'average' || 'avg' || 'mean' => 'average',
+      'max' || 'maximum' || 'highest' => 'max',
+      'min' || 'minimum' || 'lowest' => 'min',
+      'count' || 'number of' => 'count',
+      'total' || 'sum' => 'sum',
+      _ => fallback,
+    };
+  }
+
+  List<String> allColumnMatches(String hint) {
+    final wanted = _normalize(hint);
+    if (wanted.isEmpty) return const <String>[];
+    final exact = availableColumns.where((c) => _normalize(c) == wanted).toList();
+    if (exact.isNotEmpty) return exact;
+    final compactWanted = wanted.replaceAll(' ', '');
+    final compact = availableColumns
+        .where((c) => _normalize(c).replaceAll(' ', '') == compactWanted)
+        .toList();
+    if (compact.isNotEmpty) return compact;
+    final inflection = availableColumns
+        .where((c) => _singularColumnName(c) == _singularColumnName(hint))
+        .toList();
+    if (inflection.isNotEmpty) return inflection;
+    final wantedWords = wanted.split(' ').where((w) => w.isNotEmpty).toSet();
+    return availableColumns.where((c) {
+      final words = _normalize(c).split(' ').where((w) => w.isNotEmpty).toSet();
+      return wantedWords.every(words.contains);
+    }).toList();
+  }
+
+  String? findColumn(String hint) {
+    final matches = allColumnMatches(hint);
+    return matches.length == 1 ? matches.single : null;
+  }
+
+  Map<String, dynamic>? ambiguousMeasure(String requested, List<String> candidates) {
+    if (candidates.length <= 1) return null;
+    return {
+      'action': 'pivot',
+      'confidence': 0.99,
+      'needsClarification': true,
+      'message':
+          'The PivotTable measure "$requested" is ambiguous. Choose one of: ${candidates.join(', ')}.',
+      'pivot': {
+        'rowFields': const <String>[],
+        'valueFields': const <Map<String, String>>[],
+        'ambiguousMeasure': requested,
+        'candidates': candidates,
+      },
+    };
+  }
+
+  final rowFields = <String>[];
+  final columnFields = <String>[];
+  final filterFields = <String>[];
+
+  final rowsAsMatch = RegExp(
+    r'\bwith\s+(.+?)\s+as\s+rows?\b',
+    caseSensitive: false,
+  ).firstMatch(lower);
+  if (rowsAsMatch != null) {
+    rowFields.addAll(
+      rowsAsMatch.group(1)!.split(RegExp(r'\s*(?:,| and )\s*', caseSensitive: false))
+          .map((part) => findColumn(part.trim()))
+          .whereType<String>(),
+    );
+  }
+
+  final byMatch = RegExp(
+    r'\bby\s+([a-z0-9_ ?-]+?)(?:\s+with\b|\s+using\b|\s*,|\s*$)',
+    caseSensitive: false,
+  ).firstMatch(lower);
+  if (rowFields.isEmpty && byMatch != null) {
+    final byField = findColumn(byMatch.group(1)!.trim());
+    if (byField != null) rowFields.add(byField);
+  }
+
+  if (rowFields.isEmpty) {
+    final candidate = availableColumns.firstWhere((column) {
+      final normalizedColumn = _normalize(column);
+      final firstWord = normalizedColumn.split(' ').first;
+      return normalizedText.contains(normalizedColumn) ||
+          RegExp(r'\b' + RegExp.escape(firstWord) + r's?\b', caseSensitive: false).hasMatch(lower);
+    }, orElse: () => '');
+    if (candidate.isNotEmpty) rowFields.add(candidate);
+  }
+
+  final columnsAsMatch = RegExp(
+    r'\b(?:and\s+)?(.+?)\s+as\s+columns?\b',
+    caseSensitive: false,
+  ).allMatches(lower);
+  for (final match in columnsAsMatch) {
+    final picked = match.group(1)!.split(RegExp(r'\s*(?:,| and )\s*', caseSensitive: false))
+        .map((part) => findColumn(part.trim().replaceFirst(RegExp(r'^with\s+', caseSensitive: false), '')))
+        .whereType<String>();
+    columnFields.addAll(picked);
+  }
+
+  final filterAsMatch = RegExp(
+    r'\b(.+?)\s+as\s+filters?\b',
+    caseSensitive: false,
+  ).allMatches(lower);
+  for (final match in filterAsMatch) {
+    filterFields.addAll(match.group(1)!.split(RegExp(r'\s*(?:,| and )\s*', caseSensitive: false))
+        .map((part) => findColumn(part.trim()))
+        .whereType<String>());
+  }
+
+  final valueFields = <Map<String, String>>[];
+  for (final column in availableColumns) {
+    final normalizedColumn = _normalize(column);
+    final escaped = RegExp.escape(normalizedColumn);
+    final before = RegExp(
+      r'\b(total|sum|average|avg|mean|max|maximum|min|minimum|count|number of)\s+(?:of\s+)?' +
+          escaped +
+          r'\b',
+      caseSensitive: false,
+    ).firstMatch(normalizedText);
+    final after = RegExp(
+      r'\b' +
+          escaped +
+          r'\s+(?:as\s+values?\s+)?(?:using\s+)?(total|sum|average|avg|mean|max|maximum|min|minimum|count)\b',
+      caseSensitive: false,
+    ).firstMatch(normalizedText);
+    final valuesMatch = RegExp(
+      r'\b' + escaped + r'\s+as\s+values?\b',
+      caseSensitive: false,
+    ).firstMatch(normalizedText);
+    if (before != null || after != null || valuesMatch != null) {
+      final op = opFromText(before?.group(1) ?? after?.group(1), fallback: 'sum');
+      valueFields.add({'field': column, 'op': op});
+    }
+  }
+
+  if (valueFields.isEmpty) {
+    final usingMatch = RegExp(
+      r'\b(?:using|with)\s+(sum|total|average|avg|mean|max|maximum|min|minimum|count)\b',
+      caseSensitive: false,
+    ).firstMatch(lower);
+    final valueAsMatch = RegExp(
+      r'\b(?:and\s+)?([a-z0-9_ ?-]+?)\s+as\s+values?\b',
+      caseSensitive: false,
+    ).firstMatch(lower);
+    if (valueAsMatch != null) {
+      final requested = valueAsMatch.group(1)!.trim();
+      final candidates = allColumnMatches(requested);
+      final ambiguous = ambiguousMeasure(requested, candidates);
+      if (ambiguous != null) return ambiguous;
+      if (candidates.length == 1) {
+        valueFields.add({
+          'field': candidates.single,
+          'op': opFromText(usingMatch?.group(1), fallback: 'sum'),
+        });
+      }
+    }
+  }
+
+  if (valueFields.isEmpty) {
+    final genericPriceRequested = RegExp(r'\bprice\b', caseSensitive: false).hasMatch(normalizedText);
+    if (genericPriceRequested) {
+      final priceCandidates = availableColumns.where((c) => _normalize(c).split(' ').contains('price')).toList();
+      final ambiguous = ambiguousMeasure('price', priceCandidates);
+      if (ambiguous != null) return ambiguous;
+    }
+  }
+
+  final distinctRows = rowFields.toSet().toList();
+  columnFields.removeWhere(distinctRows.contains);
+  filterFields.removeWhere((field) => distinctRows.contains(field) || columnFields.contains(field));
+
+  if (distinctRows.isEmpty) return null;
+  if (valueFields.isEmpty) {
+    return {
+      'action': 'pivot', 'confidence': 0.99, 'needsClarification': true,
+      'message': 'Which measure should the PivotTable use (for example, count, total cost, or average rating)?',
+      'pivot': {'rowFields': distinctRows, 'columnFields': columnFields.toSet().toList(), 'valueFields': const <Map<String, String>>[]},
+    };
+  }
+
+  final explicitUsingMatch = RegExp(
+    r'\busing\s+(sum|total|average|avg|mean|max|maximum|min|minimum|count)\b',
+    caseSensitive: false,
+  ).firstMatch(lower);
+  if (explicitUsingMatch != null) {
+    final op = opFromText(explicitUsingMatch.group(1));
+    for (final value in valueFields) {
+      value['op'] = op;
+    }
+  }
+
+  final topMatch = RegExp(r'\btop\s+(\d+)\b', caseSensitive: false).firstMatch(lower);
+  final limit = topMatch == null ? null : int.tryParse(topMatch.group(1)!);
+  return {
+    'action': 'pivot',
+    'confidence': 0.99,
+    'message': 'Using the existing local PivotTable engine.',
+    'pivot': {
+      'rowFields': distinctRows,
+      'columnFields': columnFields.toSet().toList(),
+      'valueFields': valueFields,
+      'filterFields': filterFields.toSet().toList(),
+      if (limit != null && limit > 0) 'limit': limit,
+      if (lower.contains('top ')) 'sortByValue': 'descending',
+    },
+  };
+}
 Future<Map<String, dynamic>> parseAgenticCommand({
   required String userText,
   required List<String> availableColumns,
@@ -309,6 +544,10 @@ Future<Map<String, dynamic>> parseAgenticCommand({
           if (targetCurrency != null && !wantsAllColumns) "targetCurrency": targetCurrency,
         },
       };
+    }
+    final localPivot = _buildLocalPivotPlan(userText, availableColumns);
+    if (localPivot != null) {
+      return localPivot;
     }
     final localCategorization = _buildLocalCategorizationPlan(userText, availableColumns);
     if (localCategorization != null) {

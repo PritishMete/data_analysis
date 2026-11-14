@@ -1,0 +1,530 @@
+InsightFlow branch reconciliation audit
+Generated locally from origin/main, origin/insightflow, origin/gh-pages
+
+=== branch heads ===
+=== file inventory counts ===
+main files=456
+insightflow files=674
+gh-pages files=67
+=== top-level differences main vs insightflow ===
+M	.env.example
+A	.github/workflows/excel-addin-deploy.yml
+M	.github/workflows/flutter-web-pages.yml
+M	.github/workflows/insightflow-backend-ci.yml
+A	.github/workflows/management-cell-responsive-ci.yml
+A	.github/workflows/management-cell-validation.yml
+A	.github/workflows/postgres-dataset-security.yml
+A	.github/workflows/production-authz-migrations.yml
+A	.github/workflows/production-backend-smoke.yml
+M	.gitignore
+A	MANAGED_DATASET_STORAGE.md
+M	README.md
+A	RELEASE_PROCESS.md
+D	apps/flutter_app/lib/features/analysis/analysis_screen.dart
+D	apps/flutter_app/lib/features/auth/auth_screen.dart
+D	apps/flutter_app/lib/features/auth/onboarding_screen.dart
+D	apps/flutter_app/lib/features/pipelines/pipeline_screen.dart
+D	apps/flutter_app/lib/features/pipelines/widgets/column_splitter.dart
+D	apps/flutter_app/lib/features/pipelines/widgets/pivot_builder.dart
+D	apps/flutter_app/lib/features/pipelines/widgets/table_builder.dart
+D	apps/flutter_app/lib/tech_background.dart
+D	apps/flutter_app/lib/widgets/insightflow_floating_brand.dart
+D	apps/flutter_app/test/agentic_command_executor_test.dart
+D	apps/flutter_app/test/tech_background_test.dart
+D	apps/flutter_app/web/deploy.ps1
+D	apps/flutter_app/web/excel_secure_aggregation.js
+D	apps/flutter_app/web/index.html
+M	core/db.py
+A	data_workspace/__init__.py
+A	data_workspace/corrections.py
+A	data_workspace/models.py
+A	database.rules.json
+A	dataset_storage/__init__.py
+A	dataset_storage/manager_grants.py
+A	dataset_storage/proposals.py
+A	dataset_storage/provider.py
+A	dataset_storage/routes.py
+A	dataset_storage/service.py
+M	datasets/models.py
+A	datasets/physical_table.py
+M	datasets/repository.py
+M	datasets/schemas.py
+M	datasets/service.py
+D	docs/CONTRIBUTING.md
+A	docs/MULTI_DEVICE_LOGIN.md
+M	docs/REPOSITORY_STRUCTURE.md
+A	docs/UNIVERSAL_IDENTITY.md
+A	firebase.json
+A	firebase_authz/FIRST_OWNER_BOOTSTRAP.md
+A	firebase_authz/__init__.py
+A	firebase_authz/management_domain.py
+A	firebase_authz/management_routes.py
+A	firebase_authz/middleware.py
+A	firebase_authz/profile_domain.py
+A	firebase_authz/profile_validation.py
+A	firebase_authz/registration_diagnostics.py
+A	firebase_authz/routes.py
+A	firebase_authz/schema.py
+A	firebase_authz/service.py
+A	firebase_authz/supabase_admin.py
+A	firebase_authz/supabase_auth.py
+M	firebase_authz/supabase_provider.py
+R100	apps/flutter_app/.gitignore	flutter_detail_source/.gitignore
+R100	apps/flutter_app/.metadata	flutter_detail_source/.metadata
+A	flutter_detail_source/FIREBASE_AUTH_SETUP.md
+R096	apps/flutter_app/analysis_options.yaml	flutter_detail_source/analysis_options.yaml
+R077	apps/flutter_app/build_detail_analysis.ps1	flutter_detail_source/build_detail_analysis.ps1
+R082	apps/flutter_app/lib/app_colors.dart	flutter_detail_source/lib/app_colors.dart
+R100	apps/flutter_app/lib/constants/glass_defaults.dart	flutter_detail_source/lib/constants/glass_defaults.dart
+R100	apps/flutter_app/lib/constants/glass_shadow.dart	flutter_detail_source/lib/constants/glass_shadow.dart
+A	flutter_detail_source/lib/core/auth/auth_diagnostic.dart
+A	flutter_detail_source/lib/core/auth/authenticated_http.dart
+A	flutter_detail_source/lib/core/auth/insightflow_auth_service.dart
+A	flutter_detail_source/lib/core/auth/supabase_auth_service.dart
+R100	apps/flutter_app/lib/core/interop/excel_interop.dart	flutter_detail_source/lib/core/interop/excel_interop.dart
+R086	apps/flutter_app/lib/core/interop/excel_interop_stub.dart	flutter_detail_source/lib/core/interop/excel_interop_stub.dart
+R089	apps/flutter_app/lib/core/interop/excel_interop_web.dart	flutter_detail_source/lib/core/interop/excel_interop_web.dart
+A	flutter_detail_source/lib/core/interop/excel_mutation_authorization.dart
+A	flutter_detail_source/lib/core/interop/excel_mutation_authorization_stub.dart
+A	flutter_detail_source/lib/core/interop/excel_mutation_authorization_web.dart
+R100	apps/flutter_app/lib/core/interop/office_host.dart	flutter_detail_source/lib/core/interop/office_host.dart
+R100	apps/flutter_app/lib/core/interop/office_host_stub.dart	flutter_detail_source/lib/core/interop/office_host_stub.dart
+R100	apps/flutter_app/lib/core/interop/office_host_web.dart	flutter_detail_source/lib/core/interop/office_host_web.dart
+A	flutter_detail_source/lib/core/profile/profile_form_widgets.dart
+A	flutter_detail_source/lib/core/profile/profile_geo_data.dart
+R100	apps/flutter_app/lib/core/security/outbound_privacy_guard.dart	flutter_detail_source/lib/core/security/outbound_privacy_guard.dart
+R100	apps/flutter_app/lib/core/security/privacy_mode.dart	flutter_detail_source/lib/core/security/privacy_mode.dart
+R100	apps/flutter_app/lib/core/services/agentic_cleaning_service.dart	flutter_detail_source/lib/core/services/agentic_cleaning_service.dart
+R078	apps/flutter_app/lib/core/services/agentic_command_executor.dart	flutter_detail_source/lib/core/services/agentic_command_executor.dart
+R100	apps/flutter_app/lib/core/services/ai_command_executor.dart	flutter_detail_source/lib/core/services/ai_command_executor.dart
+A	flutter_detail_source/lib/core/services/backend_heartbeat.dart
+R100	apps/flutter_app/lib/core/services/business_analysis_context.dart	flutter_detail_source/lib/core/services/business_analysis_context.dart
+R100	apps/flutter_app/lib/core/services/chat_reasoning_service.dart	flutter_detail_source/lib/core/services/chat_reasoning_service.dart
+R100	apps/flutter_app/lib/core/services/conversation_state_service.dart	flutter_detail_source/lib/core/services/conversation_state_service.dart
+R100	apps/flutter_app/lib/core/services/currency_registry.dart	flutter_detail_source/lib/core/services/currency_registry.dart
+R100	apps/flutter_app/lib/core/services/data_cleaning_service.dart	flutter_detail_source/lib/core/services/data_cleaning_service.dart
+R100	apps/flutter_app/lib/core/services/file_upload_handler.dart	flutter_detail_source/lib/core/services/file_upload_handler.dart
+R100	apps/flutter_app/lib/core/services/file_upload_handler_fixed.dart	flutter_detail_source/lib/core/services/file_upload_handler_fixed.dart
+R100	apps/flutter_app/lib/core/services/local_categorization_service.dart	flutter_detail_source/lib/core/services/local_categorization_service.dart
+R100	apps/flutter_app/lib/core/services/local_llm_service.dart	flutter_detail_source/lib/core/services/local_llm_service.dart
+R100	apps/flutter_app/lib/core/services/local_pipeline_service.dart	flutter_detail_source/lib/core/services/local_pipeline_service.dart
+R100	apps/flutter_app/lib/core/services/location_detection_service.dart	flutter_detail_source/lib/core/services/location_detection_service.dart
+R100	apps/flutter_app/lib/core/services/powerbi_detail_analysis_service.dart	flutter_detail_source/lib/core/services/powerbi_detail_analysis_service.dart
+A	flutter_detail_source/lib/core/services/secure_excel_local_service.dart
+A	flutter_detail_source/lib/core/services/secure_excel_local_service_stub.dart
+A	flutter_detail_source/lib/core/services/secure_excel_local_service_web.dart
+A	flutter_detail_source/lib/core/services/synthetic_data_result_decoder.dart
+R100	apps/flutter_app/lib/core/services/system_build_id.dart	flutter_detail_source/lib/core/services/system_build_id.dart
+R100	apps/flutter_app/lib/core/services/system_build_id_stub.dart	flutter_detail_source/lib/core/services/system_build_id_stub.dart
+R100	apps/flutter_app/lib/core/services/system_build_id_web.dart	flutter_detail_source/lib/core/services/system_build_id_web.dart
+R100	apps/flutter_app/lib/core/services/system_diagnostics_service.dart	flutter_detail_source/lib/core/services/system_diagnostics_service.dart
+R100	apps/flutter_app/lib/core/services/transformation_manager.dart	flutter_detail_source/lib/core/services/transformation_manager.dart
+R100	apps/flutter_app/lib/detail_analysis_main.dart	flutter_detail_source/lib/detail_analysis_main.dart
+R100	apps/flutter_app/lib/detail_analysis_router.dart	flutter_detail_source/lib/detail_analysis_router.dart
+R100	apps/flutter_app/lib/embedded_report_scroll.dart	flutter_detail_source/lib/embedded_report_scroll.dart
+A	flutter_detail_source/lib/features/analysis/ai_analytics_workspace.dart
+A	flutter_detail_source/lib/features/analysis/analysis_screen.dart
+A	flutter_detail_source/lib/features/analysis/analytics_reference_workspace.dart
+A	flutter_detail_source/lib/features/analysis/analytics_visual_icons.dart
+R100	apps/flutter_app/lib/features/analysis/widgets/describe_matrix.dart	flutter_detail_source/lib/features/analysis/widgets/describe_matrix.dart
+=== workflow differences ===
+diff --git a/.github/workflows/flutter-web-pages.yml b/.github/workflows/flutter-web-pages.yml
+index 22005da9..a4fe3e2c 100644
+--- a/.github/workflows/flutter-web-pages.yml
++++ b/.github/workflows/flutter-web-pages.yml
+@@ -2,17 +2,16 @@ name: Build and publish InsightFlow Flutter web
+ 
+ on:
+   push:
+-    branches: [main]
++    branches: [insightflow]
+     paths:
+-      - 'apps/flutter_app/**'
++      - 'flutter_detail_source/**'
+       - '.github/workflows/flutter-web-pages.yml'
+-  workflow_dispatch:
+ 
+ permissions:
+   contents: write
++  pages: write
++  id-token: write
+ 
+-# Only one gh-pages publisher may run at a time. Rapid UI commits otherwise race
+-# on the gh-pages branch and cause non-fast-forward publish failures.
+ concurrency:
+   group: insightflow-flutter-pages
+   cancel-in-progress: true
+@@ -20,6 +19,7 @@ concurrency:
+ jobs:
+   build-and-publish:
+     runs-on: ubuntu-latest
++    environment: github-pages
+     timeout-minutes: 45
+ 
+     steps:
+@@ -33,12 +33,104 @@ jobs:
+           cache: true
+ 
+       - name: Install Flutter dependencies
+-        working-directory: apps/flutter_app
++        working-directory: flutter_detail_source
+         run: flutter pub get
+ 
++      - name: Run auth and onboarding regression tests
++        working-directory: flutter_detail_source
++        run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart test/google_oauth_entrypoint_test.dart
++
++      - name: Analyze changed auth and onboarding files
++        working-directory: flutter_detail_source
++        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart test/google_oauth_entrypoint_test.dart
++
++      - name: Stamp production web build identity
++        working-directory: flutter_detail_source
++        shell: bash
++        env:
++          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
++        run: |
++          set -euo pipefail
++          test -n "${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}"
++          sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" web/index.html
++          sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" web/index.html
++
++      - name: Validate production web build configuration
++        shell: bash
++        env:
++          INSIGHTFLOW_FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
++          INSIGHTFLOW_FIREBASE_WEB_APP_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
++          INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
++          INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
++          INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
++          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
++          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
++          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
++          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
++        run: |
++          set -euo pipefail
++          required=(
++            INSIGHTFLOW_FIREBASE_WEB_API_KEY
++            INSIGHTFLOW_FIREBASE_WEB_APP_ID
++            INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID
++            INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID
++            INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN
++            INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
++            INSIGHTFLOW_SUPABASE_URL
++            INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY
++          )
++          for name in "${required[@]}"; do
++            if [ -z "${!name:-}" ]; then
++              echo "::error::Missing required build configuration: ${name}"
++              exit 1
++            fi
++          done
++          test "${INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
++
+       - name: Build Flutter web
+-        working-directory: apps/flutter_app
+-        run: flutter build web --release --base-href /data_analysis/
++        working-directory: flutter_detail_source
++        env:
++          INSIGHTFLOW_FIREBASE_WEB_API_KEY: ${{ secrets.INSIGHTFLOW_FIREBASE_WEB_API_KEY }}
++          INSIGHTFLOW_FIREBASE_WEB_APP_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_APP_ID }}
++          INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID }}
++          INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID: insightflow-5a23d
++          INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN }}
++          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
++          INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
++          INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
++          INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
++          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
++        run: |
++          set -euo pipefail
++          clean_env() { printf '%s' "${!1:-}" | tr -d '\r\n'; }
++          build_args=(
++            build web --release --no-wasm-dry-run --base-href "/data_analysis/"
++            --dart-define "INSIGHTFLOW_FIREBASE_WEB_API_KEY=$(clean_env INSIGHTFLOW_FIREBASE_WEB_API_KEY)"
++            --dart-define "INSIGHTFLOW_FIREBASE_WEB_APP_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_APP_ID)"
++            --dart-define "INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID)"
++            --dart-define "INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID)"
++            --dart-define "INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=$(clean_env INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN)"
++            --dart-define "INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID=$(clean_env INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID)"
++            --dart-define "INSIGHTFLOW_WORKSPACE_ID=$(clean_env INSIGHTFLOW_WORKSPACE_ID)"
++            --dart-define "INSIGHTFLOW_SUPABASE_URL=$(clean_env INSIGHTFLOW_SUPABASE_URL)"
++            --dart-define "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
++            --dart-define "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
++          )
++          flutter "${build_args[@]}"
++
++      - name: Verify generated web bundle
++        working-directory: flutter_detail_source
++        shell: bash
++        run: |
++          set -euo pipefail
++          test -f build/web/index.html
++          test -f build/web/flutter_bootstrap.js
++          test -f build/web/main.dart.js
++          grep -q "${GITHUB_SHA}" build/web/index.html
++          grep -q "Continue with Google" build/web/main.dart.js
++          grep -R -q "profile_complete" build/web
++          grep -R -q "membership_status" build/web
++          grep -R -q "/v1/authz/me" build/web
+ 
+       - name: Checkout published gh-pages
+         uses: actions/checkout@v4
+@@ -59,7 +151,18 @@ jobs:
+           rm -f gh-pages-publish/main.dart.js
+           rm -f gh-pages-publish/index.html
+           rm -f gh-pages-publish/version.json
+-          cp -R apps/flutter_app/build/web/. gh-pages-publish/
++          cp -R flutter_detail_source/build/web/. gh-pages-publish/
++
++      - name: Verify published source build identity
++        shell: bash
++        run: |
++          set -euo pipefail
++          test -f gh-pages-publish/flutter_bootstrap.js
++          test -f gh-pages-publish/main.dart.js
++          grep -q "${GITHUB_SHA}" gh-pages-publish/index.html
++          grep -q "Continue with Google" gh-pages-publish/main.dart.js
++          grep -R -q "profile_complete" gh-pages-publish
++          grep -R -q "membership_status" gh-pages-publish
+ 
+       - name: Commit and publish
+         working-directory: gh-pages-publish
+@@ -73,5 +176,40 @@ jobs:
+             echo "No published Flutter changes."
+             exit 0
+           fi
+-          git commit -m "deploy: publish latest InsightFlow Flutter web"
++          git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
+           git push origin gh-pages
++
++
++      - name: Upload complete GitHub Pages artifact
++        uses: actions/upload-pages-artifact@v3
++        with:
++          path: gh-pages-publish
++
++      - name: Deploy GitHub Pages artifact
++        id: deployment
++        uses: actions/deploy-pages@v4
++
++      - name: Verify live Google sign-in bundle
++        shell: bash
++        env:
++          PAGES_URL: https://pritishmete.github.io/data_analysis
++        run: |
++          set -euo pipefail
++          for attempt in $(seq 1 18); do
++            index_url="${PAGES_URL}/index.html?verify=${GITHUB_SHA}-${attempt}"
++            index_html="$(curl --fail --silent --show-error --location "${index_url}")"
++            if grep -q "${GITHUB_SHA}" <<<"${index_html}"; then
++              bundle_path="$(grep -o 'main.dart.js?[^\"]*' <<<"${index_html}" | head -n 1)"
++              if [ -n "${bundle_path}" ]; then
++                bundle_js="$(curl --fail --silent --show-error --location "${PAGES_URL}/${bundle_path}")"
++                if grep -q "Continue with Google" <<<"${bundle_js}"; then
++                  echo "Live Pages bundle verified for ${GITHUB_SHA}."
++                  exit 0
++                fi
++              fi
++            fi
++            echo "Waiting for live Pages deployment (attempt ${attempt}/18)."
++            sleep 10
++          done
++          echo "::error::Live Pages did not expose the expected build SHA and Google sign-in entry point."
++          exit 1
+=== render differences ===
+diff --git a/render.yaml b/render.yaml
+index 7ef3a5ca..dfa9c6ff 100644
+--- a/render.yaml
++++ b/render.yaml
+@@ -1,10 +1,27 @@
+ services:
+   - type: web
+-    name: data-analysis-api
++    name: data_analysis
+     runtime: python
++    branch: feature/employee-management-cell
++    autoDeployTrigger: off
++    # Keep production migrations out of the build phase; the app runs and verifies them at startup.
+     buildCommand: pip install -r requirements.txt
+     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+     healthCheckPath: /health
+     envVars:
+       - key: INSIGHTFLOW_PRIVACY_MODE
+         value: local_only
++      - key: SUPABASE_PROJECT_REF
++        value: zfdgwnipdyrpbardqoql
++      - key: AUTHZ_PERSISTENCE_PROVIDER
++        value: supabase
++      - key: AUTHN_PROVIDER_MODE
++        value: supabase
++      - key: INSIGHTFLOW_AUTH_REQUIRED
++        value: "true"
++      - key: INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT
++        value: https://pritishmete.github.io/data_analysis/employee-invite
++      - key: DATABASE_URL
++        sync: false
++      - key: SUPABASE_SECRET_KEY
++        sync: false
+=== Flutter main tree ===
+.gitignore
+.metadata
+analysis_options.yaml
+build_detail_analysis.ps1
+lib/app_colors.dart
+lib/constants/glass_defaults.dart
+lib/constants/glass_shadow.dart
+lib/core/interop/excel_interop.dart
+lib/core/interop/excel_interop_stub.dart
+lib/core/interop/excel_interop_web.dart
+lib/core/interop/office_host.dart
+lib/core/interop/office_host_stub.dart
+lib/core/interop/office_host_web.dart
+lib/core/security/outbound_privacy_guard.dart
+lib/core/security/privacy_mode.dart
+lib/core/services/agentic_cleaning_service.dart
+lib/core/services/agentic_command_executor.dart
+lib/core/services/ai_command_executor.dart
+lib/core/services/business_analysis_context.dart
+lib/core/services/chat_reasoning_service.dart
+lib/core/services/conversation_state_service.dart
+lib/core/services/currency_registry.dart
+lib/core/services/data_cleaning_service.dart
+lib/core/services/file_upload_handler.dart
+lib/core/services/file_upload_handler_fixed.dart
+lib/core/services/local_categorization_service.dart
+lib/core/services/local_llm_service.dart
+lib/core/services/local_pipeline_service.dart
+lib/core/services/location_detection_service.dart
+lib/core/services/powerbi_detail_analysis_service.dart
+lib/core/services/system_build_id.dart
+lib/core/services/system_build_id_stub.dart
+lib/core/services/system_build_id_web.dart
+lib/core/services/system_diagnostics_service.dart
+lib/core/services/transformation_manager.dart
+lib/detail_analysis_main.dart
+lib/detail_analysis_router.dart
+lib/embedded_report_scroll.dart
+lib/features/analysis/analysis_screen.dart
+lib/features/analysis/widgets/describe_matrix.dart
+lib/features/analysis/widgets/overview_metrics.dart
+lib/features/analysis/widgets/preview_tables.dart
+lib/features/analysis/widgets/quality_report.dart
+lib/features/analysis/widgets/runtime_logs.dart
+lib/features/analysis/widgets/terminal_widgets.dart
+lib/features/auth/auth_screen.dart
+lib/features/auth/onboarding_screen.dart
+lib/features/dashboard/ai_report_model.dart
+lib/features/dashboard/analyze_fab.dart
+lib/features/dashboard/app_bar_actions.dart
+lib/features/dashboard/data_screen.dart
+lib/features/dashboard/execute_pipeline_fab.dart
+lib/features/dashboard/navigation_tabs.dart
+lib/features/dashboard/report_tab.dart
+lib/features/dashboard/widgets/app_bar_actions.dart
+lib/features/dashboard/widgets/navigation_tabs.dart
+lib/features/data_cleaning/cleaning_screen.dart
+lib/features/neural_chat/chat_console.dart
+lib/features/pipelines/pipeline_screen.dart
+lib/features/pipelines/widgets/color_coding.dart
+lib/features/pipelines/widgets/column_splitter.dart
+lib/features/pipelines/widgets/conditional_filter.dart
+lib/features/pipelines/widgets/deduplicate_picker.dart
+lib/features/pipelines/widgets/lookup_builder.dart
+lib/features/pipelines/widgets/metrics_builder.dart
+lib/features/pipelines/widgets/pivot_builder.dart
+lib/features/pipelines/widgets/shared/glass_picker_sheet.dart
+lib/features/pipelines/widgets/source_router.dart
+lib/features/pipelines/widgets/table_builder.dart
+lib/features/pipelines/widgets/target_attributes.dart
+lib/features/pivot_workspace/pivot_editor.dart
+lib/liquid_glass_setup.dart
+lib/liquid_glass_widgets.dart
+lib/main.dart
+lib/models/transformation_result.dart
+lib/src/renderer/RENDERER_ATTRIBUTION.md
+lib/src/renderer/_env_io.dart
+lib/src/renderer/_env_web.dart
+lib/src/renderer/glass_glow.dart
+lib/src/renderer/internal/glass_drag_builder.dart
+=== Flutter insightflow tree ===
+.gitignore
+.metadata
+FIREBASE_AUTH_SETUP.md
+analysis_options.yaml
+build_detail_analysis.ps1
+lib/app_colors.dart
+lib/constants/glass_defaults.dart
+lib/constants/glass_shadow.dart
+lib/core/auth/auth_diagnostic.dart
+lib/core/auth/authenticated_http.dart
+lib/core/auth/insightflow_auth_service.dart
+lib/core/auth/supabase_auth_service.dart
+lib/core/interop/excel_interop.dart
+lib/core/interop/excel_interop_stub.dart
+lib/core/interop/excel_interop_web.dart
+lib/core/interop/excel_mutation_authorization.dart
+lib/core/interop/excel_mutation_authorization_stub.dart
+lib/core/interop/excel_mutation_authorization_web.dart
+lib/core/interop/office_host.dart
+lib/core/interop/office_host_stub.dart
+lib/core/interop/office_host_web.dart
+lib/core/profile/profile_form_widgets.dart
+lib/core/profile/profile_geo_data.dart
+lib/core/security/outbound_privacy_guard.dart
+lib/core/security/privacy_mode.dart
+lib/core/services/agentic_cleaning_service.dart
+lib/core/services/agentic_command_executor.dart
+lib/core/services/ai_command_executor.dart
+lib/core/services/backend_heartbeat.dart
+lib/core/services/business_analysis_context.dart
+lib/core/services/chat_reasoning_service.dart
+lib/core/services/conversation_state_service.dart
+lib/core/services/currency_registry.dart
+lib/core/services/data_cleaning_service.dart
+lib/core/services/file_upload_handler.dart
+lib/core/services/file_upload_handler_fixed.dart
+lib/core/services/local_categorization_service.dart
+lib/core/services/local_llm_service.dart
+lib/core/services/local_pipeline_service.dart
+lib/core/services/location_detection_service.dart
+lib/core/services/powerbi_detail_analysis_service.dart
+lib/core/services/secure_excel_local_service.dart
+lib/core/services/secure_excel_local_service_stub.dart
+lib/core/services/secure_excel_local_service_web.dart
+lib/core/services/synthetic_data_result_decoder.dart
+lib/core/services/system_build_id.dart
+lib/core/services/system_build_id_stub.dart
+lib/core/services/system_build_id_web.dart
+lib/core/services/system_diagnostics_service.dart
+lib/core/services/transformation_manager.dart
+lib/detail_analysis_main.dart
+lib/detail_analysis_router.dart
+lib/embedded_report_scroll.dart
+lib/features/analysis/ai_analytics_workspace.dart
+lib/features/analysis/analysis_screen.dart
+lib/features/analysis/analytics_reference_workspace.dart
+lib/features/analysis/analytics_visual_icons.dart
+lib/features/analysis/widgets/describe_matrix.dart
+lib/features/analysis/widgets/overview_metrics.dart
+lib/features/analysis/widgets/preview_tables.dart
+lib/features/analysis/widgets/quality_report.dart
+lib/features/analysis/widgets/runtime_logs.dart
+lib/features/analysis/widgets/terminal_widgets.dart
+lib/features/auth/account_management_screen.dart
+lib/features/auth/auth_gate.dart
+lib/features/auth/auth_glass_widgets.dart
+lib/features/auth/authorization_management_screen.dart
+lib/features/auth/company_registration_screen.dart
+lib/features/auth/employee_invitation_password_setup_screen.dart
+lib/features/auth/employee_profile_onboarding_screen.dart
+lib/features/auth/google_web_sign_in_button.dart
+lib/features/auth/google_web_sign_in_button_stub.dart
+lib/features/auth/google_web_sign_in_button_web.dart
+lib/features/auth/managed_dataset_access_workspace.dart
+lib/features/auth/management_navigation.dart
+lib/features/auth/management_shell.dart
+lib/features/auth/organization_onboarding_screen.dart
+lib/features/auth/sign_in_screen.dart
+lib/features/auth/sign_up_screen.dart
+lib/features/dashboard/ai_report_model.dart

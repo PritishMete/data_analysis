@@ -129,6 +129,7 @@ def list_supported_transforms() -> dict[str, Any]:
             "search",
             "count",
             "report",
+            "quality_check",
         ],
         "supported_operators": [
             "equals",

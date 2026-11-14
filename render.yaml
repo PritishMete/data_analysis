@@ -1,10 +1,27 @@
 services:
   - type: web
-    name: data-analysis-api
+    name: data_analysis
     runtime: python
+    branch: main
+    autoDeployTrigger: off
+    # Keep production migrations out of the build phase; the app runs and verifies them at startup.
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: INSIGHTFLOW_PRIVACY_MODE
         value: local_only
+      - key: SUPABASE_PROJECT_REF
+        value: zfdgwnipdyrpbardqoql
+      - key: AUTHZ_PERSISTENCE_PROVIDER
+        value: supabase
+      - key: AUTHN_PROVIDER_MODE
+        value: supabase
+      - key: INSIGHTFLOW_AUTH_REQUIRED
+        value: "true"
+      - key: INSIGHTFLOW_EMPLOYEE_INVITE_REDIRECT
+        value: https://pritishmete.github.io/data_analysis/employee-invite
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

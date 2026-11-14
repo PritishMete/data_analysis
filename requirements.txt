@@ -9,13 +9,17 @@ scikit-learn
 pydantic
 google-generativeai
 google-adk
+firebase-admin>=6.9.0
 python-dotenv
 duckdb
 sqlalchemy>=2.0
-psycopg2-binary
-psycopg[binary]>=3.2,<4
+psycopg[binary]
+PyJWT>=2.8
 # Location enrichment uses the Python standard-library HTTP client; no extra geocoder dependency is required.
 google-genai
 
-# Browser acceptance helper imports Playwright.
-playwright
+supabase>=2.20,<3
+phonenumbers==9.0.40
+pycountry==26.2.16
+# Keep Starlette's legacy startup-handler API available until main.py migrates to lifespan.
+starlette<1.0

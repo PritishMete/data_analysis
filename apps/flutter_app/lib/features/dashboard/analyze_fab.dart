@@ -3,15 +3,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'data_screen.dart';
-
-/// Shared *shape* values (blur/thickness/lighting) across the dock buttons
-/// — lifted from `vault_search_and_bottom_bar.dart`'s `_barSettings`.
-const double kDockThickness = 24;
-const double kDockBlur = 20;
-const double kDockChromaticAberration = 0.12;
-const double kDockLightIntensity = 0.5;
-const double kDockRefractiveIndex = 1.25;
-const double kDockSaturation = 1.2;
+import '../../widgets/shared/dock_glass_material.dart';
+import '../../app_colors.dart';
 
 /// Circular floating action button that triggers data analysis.
 ///
@@ -29,7 +22,7 @@ class ScanButton extends StatelessWidget {
   const ScanButton({super.key, required this.state});
 
   static const double _size = 56;
-  static const Color _accent = Color(0xFF22D3EE);
+  static const Color _accent = kAppBackgroundColor;
 
   bool get _hasSource {
     if (state.dataSourceMode == DataSourceMode.uploadedFile) {
@@ -80,21 +73,15 @@ class ScanButton extends StatelessWidget {
                 shape: const LiquidOval(),
                 useOwnLayer: true,
                 quality: GlassQuality.minimal,
-                settings: LiquidGlassSettings(
-                  thickness: kDockThickness,
-                  blur: kDockBlur,
-                  chromaticAberration: kDockChromaticAberration,
-                  lightIntensity: kDockLightIntensity,
-                  refractiveIndex: kDockRefractiveIndex,
-                  saturation: kDockSaturation,
+                settings: dockGlassSettings(
                   // High alpha here just deepens the tint on top of the
                   // opaque base — it's no longer doing the work of hiding
                   // the background by itself.
                   glassColor: fillColor.withValues(alpha: 0.85),
                 ),
-                glowColor: CupertinoColors.white.withValues(alpha: 0.5),
-                glowRadius: 1.2,
-                interactionScale: 1.08,
+                glowColor: kDockWhiteGlow.withValues(alpha: kDockGlowAlpha),
+                glowRadius: kDockGlowRadius,
+                interactionScale: kDockInteractionScale,
                 child: Center(
                   child: state.isLoading
                       ? const CupertinoActivityIndicator(color: CupertinoColors.white)

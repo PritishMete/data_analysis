@@ -3,11 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'core/auth/supabase_auth_service.dart';
+import 'features/auth/auth_gate.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'features/dashboard/data_screen.dart';
 import 'features/auth/auth_screen.dart';
 import 'core/interop/office_host.dart';
+import 'core/services/backend_heartbeat.dart';
 
 
 class AuthGate extends StatefulWidget {
@@ -45,30 +48,42 @@ void alarmDispatcher() {}
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
-  runApp(const ElectricAIApp());
+
+  // Supabase Auth is the only supported authentication provider.
+  // A provider initialization failure is handled by AuthGate as a signed-out
+  // state; it must never switch the application to a different identity system.
+  try {
+    await InsightFlowSupabaseAuthService.initialize();
+    InsightFlowSupabaseAuthService.logSafeStatus();
+  } catch (error, stackTrace) {
+    debugPrint('[supabase-auth] initialization failed: ${error.runtimeType}');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  runApp(const InsightFlowApp());
 }
 
-class ElectricAIApp extends StatelessWidget {
-  const ElectricAIApp({super.key});
+class InsightFlowApp extends StatelessWidget {
+  const InsightFlowApp({super.key});
 
   /// Detect if device has low available memory.
-  /// 
+  ///
   /// Returns:
   /// - `true` on Android (assume memory-constrained, disable shaders)
   /// - `false` on web (no shader memory constraints)
   /// - `false` on iOS/desktop (sufficient memory for shaders)
-  /// 
+  ///
   /// This prevents OutOfMemory crashes by using BackdropFilter-only
   /// (GlassQuality.minimal) rendering on constrained devices.
   bool _isLowMemoryDevice() {
     // Web has no memory constraints from shader rendering
     // (web uses Skia/CanvasKit which handles shaders differently)
     if (kIsWeb) return false;
-    
+
     // dart:io is only available on native platforms (Android, iOS, desktop)
     // On web, this code path never executes
     if (!Platform.isAndroid) return false;
-    
+
     // Conservative: assume Android phones may be memory-constrained
     // (typical Android heap: 256-512MB; shaders can add 40-60MB overhead)
     return true;
@@ -92,7 +107,7 @@ class ElectricAIApp extends StatelessWidget {
     final officeHost = isRunningInsideOffice;
     final lowMemory = _isLowMemoryDevice();
     final shouldForceMinimal = officeHost || lowMemory || kIsWeb;
-    
+
     return LiquidGlassWidgets.wrap(
       adaptiveQuality: !shouldForceMinimal,
       theme: GlassThemeData(
@@ -109,10 +124,13 @@ class ElectricAIApp extends StatelessWidget {
             ambientStrength: 0.4,
             lightIntensity: 0.8,
           ),
-          quality: shouldForceMinimal ? GlassQuality.minimal : GlassQuality.standard,
+          quality: shouldForceMinimal
+              ? GlassQuality.minimal
+              : GlassQuality.standard,
         ),
       ),
       child: CupertinoApp(
+        title: 'InsightFlow',
         debugShowCheckedModeBanner: false,
         theme: const CupertinoThemeData(brightness: Brightness.dark),
         // CupertinoApp only wires up Cupertino localizations by default.
@@ -129,7 +147,9 @@ class ElectricAIApp extends StatelessWidget {
           data: ThemeData(
             brightness: Brightness.dark,
             useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFF020715), // deep navy, matches glass_settings.dart
+            scaffoldBackgroundColor: const Color(
+              0xFF020715,
+            ), // deep navy, matches glass_settings.dart
             fontFamily: 'SFPro', // swap out the old 'Courier' tech-console font
           ),
           // MaterialApp normally inserts a ScaffoldMessenger above the
@@ -138,7 +158,12 @@ class ElectricAIApp extends StatelessWidget {
           // (e.g. showError/showNotification in data_screen.dart) throws
           // "No ScaffoldMessenger widget found".
           child: ScaffoldMessenger(
-            child: child!,
+            // CupertinoApp can provide a null child during its first builder
+            // pass. Keep startup renderable instead of turning that transient
+            // state into a release-only null-check crash and blank page.
+            child: BackendHeartbeatHost(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
         home: const AuthGate(),
@@ -146,3 +171,4 @@ class ElectricAIApp extends StatelessWidget {
     );
   }
 }
+

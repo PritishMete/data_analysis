@@ -1,0 +1,1116 @@
+import 'dart:convert';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../app_colors.dart';
+import '../../core/auth/authenticated_http.dart';
+import '../../core/auth/supabase_auth_service.dart';
+import '../../core/profile/profile_form_widgets.dart';
+import '../../core/profile/profile_geo_data.dart';
+import 'auth_glass_widgets.dart';
+
+class CompanyRegistrationScreen extends StatefulWidget {
+  const CompanyRegistrationScreen({super.key, required this.onCompleted});
+
+  /// Called after the backend confirms registration so AuthGate can resolve
+  /// the new membership and role before granting workspace access.
+  final Future<void> Function() onCompleted;
+
+  @override
+  State<CompanyRegistrationScreen> createState() =>
+      _CompanyRegistrationScreenState();
+}
+
+class _CompanyRegistrationScreenState
+    extends State<CompanyRegistrationScreen> {
+  final _organization = TextEditingController();
+  final _branch = TextEditingController();
+  final _branchIdentifier = TextEditingController();
+  final _fullName = TextEditingController();
+  final _phone = TextEditingController();
+  final _address1 = TextEditingController();
+  final _address2 = TextEditingController();
+  final _postal = TextEditingController();
+  final _proofNumber = TextEditingController();
+
+  List<ProfileOption> _countries = const [];
+  List<ProfileOption> _states = const [];
+  List<ProfileOption> _proofs = const [];
+  ProfileOption? _country;
+  ProfileOption? _state;
+  ProfileOption? _phoneCountry;
+  ProfileOption? _proofType;
+
+  int _step = 0;
+  bool _loading = true;
+  bool _busy = false;
+  String? _message;
+  bool _error = false;
+  OrganizationServiceDiagnostic? _organizationDiagnostic;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      _organization,
+      _branch,
+      _branchIdentifier,
+      _fullName,
+      _phone,
+      _address1,
+      _address2,
+      _postal,
+      _proofNumber,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
+    final metadata = user?.userMetadata ?? const <String, dynamic>{};
+    final suggested = (metadata['full_name'] ??
+            metadata['name'] ??
+            metadata['display_name'] ??
+            '')
+        .toString()
+        .trim();
+    if (suggested.isNotEmpty) _fullName.text = suggested;
+
+    try {
+      await ProfileGeoData.ensureInitialized();
+      _countries = ProfileGeoData.countryOptions();
+    } catch (_) {
+      _error = true;
+      _message = 'Country and state data could not be initialized.';
+    }
+
+    if (mounted) setState(() => _loading = false);
+  }
+
+  String? get _email =>
+      InsightFlowSupabaseAuthService.currentSupabaseUser?.email?.trim();
+
+  bool get _emailConfirmed =>
+      InsightFlowSupabaseAuthService.currentSupabaseUser?.emailConfirmedAt !=
+      null;
+
+  void _fail(String message) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = true;
+      _message = message;
+    });
+  }
+
+  String? _phoneE164() {
+    final dial =
+        _phoneCountry?.subtitle.replaceAll(RegExp(r'\s+'), '') ?? '';
+    final national = _phone.text.replaceAll(RegExp(r'\D'), '');
+    if (dial.isEmpty || national.length < 4 || national.length > 15) {
+      return null;
+    }
+    return dial + national;
+  }
+
+  Future<void> _pickCountry() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'Country',
+      options: _countries,
+      selectedValue: _country?.value,
+      showOptionSubtitle: false,
+    );
+    if (choice == null) return;
+    setState(() {
+      _country = choice;
+      _proofType = null;
+      _states = ProfileGeoData.subdivisionOptions(choice.value);
+      _state = _states.isEmpty
+          ? ProfileGeoData.notApplicableState()
+          : null;
+      _proofs = ProfileGeoData.idProofOptions(choice.value);
+    });
+  }
+
+  Future<void> _pickState() async {
+    if (_country == null) {
+      _fail('Select a country before selecting the state.');
+      return;
+    }
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'State / Province / Region',
+      options: _states,
+      selectedValue: _state?.value,
+    );
+    if (choice != null) setState(() => _state = choice);
+  }
+
+  Future<void> _pickPhoneCountry() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'Phone country code',
+      options: _countries.where((item) => item.subtitle.isNotEmpty).toList(),
+      selectedValue: _phoneCountry?.value,
+    );
+    if (choice != null) setState(() => _phoneCountry = choice);
+  }
+
+  Future<void> _pickProof() async {
+    final choice = await showProfileOptionPicker(
+      context,
+      title: 'ID Proof Type',
+      options: _proofs,
+      selectedValue: _proofType?.value,
+    );
+    if (choice != null) setState(() => _proofType = choice);
+  }
+
+  bool _profileValid() =>
+      _fullName.text.trim().isNotEmpty &&
+      _email?.isNotEmpty == true &&
+      _emailConfirmed &&
+      _phoneE164() != null &&
+      _address1.text.trim().isNotEmpty &&
+      _postal.text.trim().isNotEmpty &&
+      _country != null &&
+      _state != null &&
+      _proofType != null &&
+      _proofNumber.text.trim().isNotEmpty;
+
+  void _next() {
+    if (_step == 0 &&
+        (_organization.text.trim().isEmpty ||
+            _branch.text.trim().isEmpty ||
+            _branchIdentifier.text.trim().isEmpty)) {
+      _fail('Enter company name, branch name, and branch identifier.');
+      return;
+    }
+
+    if (_step == 1 && !_profileValid()) {
+      _fail('Complete every required Branch Head profile field, including a valid phone number.');
+      return;
+    }
+
+    setState(() {
+      _message = null;
+      _error = false;
+      _step += 1;
+    });
+  }
+
+  Future<bool> _recoverRegistrationIfCommitted() async {
+    final uid = InsightFlowSupabaseAuthService.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return false;
+    try {
+      final resolution = await reconcileInsightFlowOnboardingWithRetry(
+        resolve: () => resolveInsightFlowOnboardingStateFromBackend(uid),
+      );
+      if (resolution == null ||
+          (resolution.state != InsightFlowOnboardingState.activeMember &&
+              resolution.state != InsightFlowOnboardingState.profileIncomplete)) {
+        return false;
+      }
+      // A request timeout can happen after the database transaction commits.
+      // Reconcile from the backend instead of asking the user to register a
+      // second time and receiving a misleading duplicate-registration error.
+      await widget.onCompleted();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _register() async {
+    if (_busy) return;
+
+    final phone = _phoneE164();
+    if (!_profileValid() || phone == null) {
+      _fail('Complete the Branch Head profile, including a valid phone number, before registering.');
+      return;
+    }
+
+    // Lock the entire registration operation, including session and identity
+    // preflight, so repeated taps cannot race into duplicate registrations.
+    setState(() {
+      _busy = true;
+      _error = false;
+      _message = null;
+    });
+
+    try {
+      final session = await InsightFlowSupabaseAuthService.ensureSession(
+        timeout: const Duration(seconds: 8),
+      );
+      final user = session == null
+          ? null
+          : InsightFlowSupabaseAuthService.currentSupabaseUser;
+      if (session == null || user == null) {
+        throw StateError('Your authenticated Supabase session could not be restored.');
+      }
+
+      final authoritative =
+          await InsightFlowSupabaseAuthService.fetchAuthoritativeUser();
+      if (authoritative == null || authoritative.id != user.id) {
+        throw StateError('Your authenticated Supabase session could not be verified.');
+      }
+      if (authoritative.emailConfirmedAt == null) {
+        throw StateError('Your authenticated email is not confirmed. Sign in again.');
+      }
+
+      final request = await organizationServiceRequest(
+        method: 'POST',
+        path: '/v1/authz/organizations/register',
+        contentType: 'application/json',
+        send: (headers) => http.post(
+          Uri.parse(
+            '$insightFlowBackendBaseUrl/v1/authz/organizations/register',
+          ),
+          headers: headers,
+          body: jsonEncode({
+            'organization_name': _organization.text.trim(),
+            'branch_name': _branch.text.trim(),
+            'branch_identifier': _branchIdentifier.text,
+            'full_name': _fullName.text.trim(),
+            'phone': phone,
+            'phone_country_calling_code': _phoneCountry!.subtitle,
+            'phone_national_number':
+                _phone.text.replaceAll(RegExp(r'\D'), ''),
+            'address_line1': _address1.text.trim(),
+            'address_line2': _address2.text.trim(),
+            'country_code': _country!.value,
+            'country': _country!.label,
+            'state_code': _state!.value,
+            'state': _state!.label,
+            'postal_code': _postal.text.trim(),
+            'id_proof_type': _proofType!.value,
+            'id_proof_number': _proofNumber.text.trim(),
+          }),
+        ),
+      );
+
+      _organizationDiagnostic = request.diagnostic;
+      final response = request.response;
+      dynamic decoded;
+      try {
+        decoded = response.body.trim().isEmpty
+            ? <String, dynamic>{}
+            : jsonDecode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
+
+      final detail =
+          decoded is Map ? decoded['detail']?.toString().trim() : null;
+      final businessError =
+          organizationServiceBusinessErrorMessage(response);
+      if (businessError != null) throw StateError(businessError);
+      if (response.statusCode == 401) {
+        throw StateError('InsightFlow authentication could not be verified.');
+      }
+      if (response.statusCode == 403) {
+        throw StateError(
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'Your authenticated identity is not authorized to register an organization.',
+        );
+      }
+      if (response.statusCode == 409) {
+        throw StateError(
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'This company registration conflicts with existing identity data.',
+        );
+      }
+      if (response.statusCode == 422) {
+        throw StateError('Organization registration request was rejected by the server.');
+      }
+      if (response.statusCode >= 500) {
+        throw StateError("InsightFlow's organization service returned a server error.");
+      }
+      if (response.statusCode != 200) {
+        throw StateError(
+          detail?.isNotEmpty == true
+              ? detail!
+              : 'InsightFlow could not create the organization.',
+        );
+      }
+
+      final workspaceId =
+          decoded is Map ? decoded['workspace_id']?.toString() : null;
+      final assignedEmployeeId =
+          decoded is Map ? decoded['employee_id']?.toString().trim() : null;
+      if (workspaceId == null || workspaceId.isEmpty ||
+          assignedEmployeeId == null || assignedEmployeeId.isEmpty) {
+        throw StateError(
+          'InsightFlow could not create the organization. The server returned an incomplete response.',
+        );
+      }
+
+      await setInsightFlowWorkspaceId(user.id, workspaceId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Your Employee ID is $assignedEmployeeId')),
+      );
+
+      // Do not choose a landing screen from the registration response or a
+      // cached workspace ID. Re-run AuthGate's backend-authoritative
+      // membership/role resolution before showing any authenticated area.
+      await widget.onCompleted();
+    } on OrganizationServiceRequestException catch (error) {
+      _organizationDiagnostic = error.diagnostic;
+      if (await _recoverRegistrationIfCommitted()) return;
+      _fail('InsightFlow couldn’t reach the organization service.');
+    } catch (error) {
+      if (await _recoverRegistrationIfCommitted()) return;
+      _fail(
+        error is StateError
+            ? error.message
+            : 'Company registration could not be completed.',
+      );
+    }
+  }
+
+  Widget _field(
+    String label,
+    TextEditingController controller, {
+    String? placeholder,
+    bool required = true,
+    TextInputType type = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+    String? helper,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthGlassFieldLabel(label + (required ? ' *' : '')),
+        SizedBox(
+          height: kProfileFieldHeight,
+          child: GlassTextField(
+            controller: controller,
+            placeholder: placeholder ?? label,
+            enabled: !_busy,
+            keyboardType: type,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+            inputFormatters: inputFormatters,
+          ),
+        ),
+        if (helper != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            helper,
+            style: const TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 9,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _emailField() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassFieldLabel('EMAIL *'),
+          SizedBox(
+            height: kProfileFieldHeight,
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: GlassQuality.minimal,
+              settings: TechColors.fieldGlass,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+              padding: const EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  (_email ?? 'Missing authenticated email') +
+                      (_emailConfirmed
+                          ? '  •  EMAIL CONFIRMED'
+                          : '  •  EMAIL NOT CONFIRMED'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _emailConfirmed
+                        ? TechColors.statusGreen
+                        : TechColors.statusRed,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _employeeIdInfo() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassFieldLabel('EMPLOYEE ID'),
+          SizedBox(
+            height: kProfileFieldHeight,
+            child: GlassContainer(
+              useOwnLayer: true,
+              quality: GlassQuality.minimal,
+              settings: TechColors.fieldGlass,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'AUTO-GENERATED',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _profileStep() => LayoutBuilder(
+        builder: (context, constraints) {
+          final rows = <List<Widget>>[
+            [_field('Full Name', _fullName), _employeeIdInfo()],
+            [_emailField(), _phoneInputRow()],
+            [
+              _field('Address Line 1', _address1),
+              ProfileSelectField(
+                label: 'Country *',
+                value: _country?.label,
+                placeholder: _countries.isEmpty
+                    ? 'Loading countries…'
+                    : 'Select country',
+                onTap: _busy ? null : _pickCountry,
+              ),
+            ],
+            [
+              ProfileSelectField(
+                label: 'State / Province / Region *',
+                value: _state?.label,
+                placeholder: _country == null
+                    ? 'Select country first'
+                    : _states.isEmpty
+                        ? 'Not applicable for this country'
+                        : 'Select state / province / region',
+                onTap: _busy || (_country != null && _states.isEmpty)
+                    ? null
+                    : _pickState,
+              ),
+              _field('PIN / Postal Code', _postal, placeholder: 'Postal code'),
+            ],
+            [
+              ProfileSelectField(
+                label: 'ID Proof Type *',
+                value: _proofType?.label,
+                placeholder: 'Select government document',
+                onTap: _busy ? null : _pickProof,
+              ),
+              _field(
+                'ID Proof Number',
+                _proofNumber,
+                placeholder: 'Government ID number',
+              ),
+            ],
+          ];
+
+          if (constraints.maxWidth < 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final row in rows) ...[
+                  row[0],
+                  const SizedBox(height: 10),
+                  if (row[1] is! SizedBox) ...[
+                    row[1],
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final row in rows) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: row[0]),
+                    const SizedBox(width: 12),
+                    Expanded(child: row[1]),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          );
+        },
+      );
+
+  Widget _phoneInputRow() {
+    final countryCode = ProfileSelectField(
+      label: 'COUNTRY CODE *',
+      value: _phoneCountry == null
+          ? null
+          : _phoneCountry!.label + '  ' + _phoneCountry!.subtitle,
+      placeholder: 'Select calling code',
+      onTap: _busy ? null : _pickPhoneCountry,
+    );
+    final nationalNumber = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthGlassFieldLabel('PHONE NUMBER *'),
+        SizedBox(
+          height: kProfileFieldHeight,
+          child: GlassTextField(
+            controller: _phone,
+            placeholder: 'Phone number',
+            enabled: !_busy,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+          ),
+        ),
+      ],
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 1, child: countryCode),
+        const SizedBox(width: 10),
+        Expanded(flex: 2, child: nationalNumber),
+      ],
+    );
+  }
+
+  Widget _reviewStep() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const AuthGlassMessage(
+            text:
+                'Review the Branch Head profile. The registering account becomes the initial Branch Head; Manager is assigned separately. Email is already confirmed; phone is stored in E.164 format and is not phone-verified during onboarding.',
+            error: false,
+          ),
+          const SizedBox(height: 12),
+          _review('COMPANY', _organization.text.trim()),
+          _review('BRANCH', _branch.text.trim()),
+          _review('BRANCH ID', _branchIdentifier.text.trim()),
+          _review('BRANCH HEAD', _fullName.text.trim()),
+          _review('EMPLOYEE ID', 'AUTO-GENERATED'),
+          _review('EMAIL', (_email ?? '—') + '  ✓'),
+          _review('PHONE', _phoneE164() ?? '—'),
+          _review('ADDRESS LINE 1', _address1.text.trim()),
+          _review('STATE', _state?.label ?? ''),
+          _review('COUNTRY', _country?.label ?? ''),
+          _review('PIN / POSTAL CODE', _postal.text.trim()),
+          _review(
+            'ID PROOF',
+            (_proofType?.label ?? '') + '  ' + _mask(_proofNumber.text),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'ID PROOF • PROVIDED. InsightFlow does not perform ID-proof verification.',
+            style: TextStyle(
+              color: TechColors.textMuted,
+              fontSize: 9,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      );
+
+  Widget _review(String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: GlassContainer(
+          useOwnLayer: true,
+          quality: GlassQuality.minimal,
+          settings: TechColors.fieldGlass,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 116,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TechColors.textMuted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  value.isEmpty ? '—' : value,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  String _mask(String value) {
+    final compact = value.replaceAll(RegExp(r'\s+'), '');
+    if (compact.length <= 4) return compact;
+    return ('X' * (compact.length - 4)) +
+        compact.substring(compact.length - 4);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const AuthGlassScaffold(
+        title: 'REGISTER / COMPANY',
+        subtitle: 'Loading profile data…',
+        children: [Center(child: CupertinoActivityIndicator())],
+      );
+    }
+
+    final authenticated =
+        InsightFlowSupabaseAuthService.currentSupabaseUser != null;
+
+    return AuthGlassScaffold(
+      wideContent: true,
+      brandedLayout: true,
+      fitViewport: true,
+      title: 'BRANCH HEAD / WORKSPACE',
+      subtitle: authenticated
+          ? 'Create your InsightFlow workspace and register its first branch.'
+          : 'Verify your account to securely set up the workspace.',
+      children: [
+        if (!authenticated)
+          GlassButton.custom(
+            onTap: _busy
+                ? () {}
+                : () => InsightFlowSupabaseAuthService.signInWithOAuth(
+                      OAuthProvider.google,
+                    ),
+            enabled: !_busy,
+            width: double.infinity,
+            height: 44,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            label: 'Continue with Google',
+            child: const Text('Continue with Google'),
+          )
+        else ...[
+          _stepIndicator(),
+          const SizedBox(height: 18),
+          _stepIntro(),
+          if (_step == 0)
+            _companyBody()
+          else if (_step == 1)
+            _profileStep()
+          else
+            _reviewStep(),
+          if (_message != null) ...[
+            const SizedBox(height: 10),
+            AuthGlassMessage(text: _message!, error: _error),
+          ],
+          if (_organizationDiagnostic != null) ...[
+            const SizedBox(height: 10),
+            AuthGlassMessage(
+              text: _organizationDiagnostic!.displayText,
+              error: _organizationDiagnostic!.stage != 'HTTP_SUCCESS',
+            ),
+          ],
+          const SizedBox(height: 14),
+          _navigation(),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _busy ? null : InsightFlowSupabaseAuthService.signOut,
+            child: const Text('Cancel onboarding'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _companyBody() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: TechColors.fieldGlass,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+            padding: const EdgeInsets.all(13),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(CupertinoIcons.checkmark_seal_fill,
+                    color: kAuthAccent, size: 19),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Email confirmed',
+                        style: TextStyle(
+                          color: TechColors.textPrimary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _email ?? 'Your verified Supabase account',
+                        style: const TextStyle(
+                          color: TechColors.textMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Your account is verified. Next, tell us which organization and branch you will lead.',
+                        style: TextStyle(
+                          color: TechColors.textMuted,
+                          fontSize: 10,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _field(
+            'Company / Organization Name',
+            _organization,
+            placeholder: 'e.g. Acme Analytics',
+          ),
+          const SizedBox(height: 13),
+          _field(
+            'Branch Name',
+            _branch,
+            placeholder: 'e.g. Kolkata Operations',
+            helper: 'This is the branch you will lead as its initial Branch Head.',
+          ),
+          const SizedBox(height: 13),
+          _field(
+            'Unique Branch Identifier',
+            _branchIdentifier,
+            placeholder: 'e.g. KOL-OPS-001',
+            helper: 'A unique business identifier for this branch. Special characters are allowed.',
+          ),
+          const SizedBox(height: 13),
+          GlassContainer(
+            useOwnLayer: true,
+            quality: GlassQuality.minimal,
+            settings: TechColors.sectionGlass,
+            shape: const LiquidRoundedSuperellipse(borderRadius: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.info_circle,
+                    color: TechColors.borderActive, size: 16),
+                SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'You will become the first Branch Head for this branch. Team members and managers can be added later from the Management Cell.',
+                    style: TextStyle(
+                      color: TechColors.textMuted,
+                      fontSize: 10,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+  Widget _stepIndicator() {
+    const labels = ['Workspace', 'Your profile', 'Review'];
+    const details = [
+      'Company and branch',
+      'Branch Head details',
+      'Confirm and create',
+    ];
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: GlassQuality.minimal,
+      settings: TechColors.sectionGlass,
+      shape: const LiquidRoundedSuperellipse(borderRadius: 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.square_stack_3d_up_fill,
+                  color: kAuthAccent, size: 17),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'WORKSPACE SETUP',
+                  style: TextStyle(
+                    color: TechColors.textPrimary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              Text(
+                'STEP ${_step + 1} OF 3',
+                style: const TextStyle(
+                  color: kAuthAccent,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: List.generate(3, (index) {
+              final complete = index < _step;
+              final active = index == _step;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 7),
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: complete || active
+                          ? kAuthAccent
+                          : Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 13),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(3, (index) {
+              final complete = index < _step;
+              final active = index == _step;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: complete || active
+                              ? kAuthAccent.withValues(alpha: 0.16)
+                              : Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: complete || active
+                                ? kAuthAccent.withValues(alpha: 0.65)
+                                : Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        child: complete
+                            ? const Icon(CupertinoIcons.check_mark,
+                                color: kAuthAccent, size: 12)
+                            : Text(
+                                '${index + 1}',
+                                style: TextStyle(
+                                  color: active
+                                      ? kAuthAccent
+                                      : TechColors.textMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              labels[index],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: active || complete
+                                    ? TechColors.textPrimary
+                                    : TechColors.textMuted,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              details[index],
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: TechColors.textMuted,
+                                fontSize: 9,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepIntro() {
+    const titles = [
+      'Create your workspace',
+      'Set up your Branch Head profile',
+      'Review before you launch',
+    ];
+    const descriptions = [
+      'Start with your organization, then register the first branch you will lead.',
+      'Add the identity and contact details required to secure your branch workspace.',
+      'Check the details below. Once you create the workspace, you will enter the Management Cell.',
+    ];
+    final icons = [
+      CupertinoIcons.building_2_fill,
+      CupertinoIcons.person_crop_circle_badge_checkmark,
+      CupertinoIcons.checkmark_shield_fill,
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: kAuthAccent.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: kAuthAccent.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Icon(icons[_step], color: kAuthAccent, size: 22),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titles[_step],
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  descriptions[_step],
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.64),
+                    fontSize: 12,
+                    height: 1.55,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navigation() => Row(
+        children: [
+          if (_step > 0)
+            Expanded(
+              child: TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _step -= 1;
+                          _message = null;
+                          _error = false;
+                        }),
+                child: const Text('Back'),
+              ),
+            ),
+          if (_step > 0) const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: GlassButton.custom(
+              onTap: _busy
+                  ? () {}
+                  : (_step == 2 ? _register : _next),
+              enabled: !_busy,
+              width: double.infinity,
+              height: kProfileFieldHeight,
+              shape: const LiquidRoundedSuperellipse(borderRadius: 14),
+              label: _step == 2
+                   ? (_busy ? 'Registering…' : 'Register Company')
+                  : 'Continue',
+              child: Text(
+                _step == 2
+                   ? (_busy ? 'Registering…' : 'Register Company')
+                    : 'Continue',
+              ),
+            ),
+          ),
+        ],
+      );
+}

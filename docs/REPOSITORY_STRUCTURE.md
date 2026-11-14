@@ -1,36 +1,42 @@
-# Repository Structure
+# InsightFlow repository structure
 
-## Source of truth
+This repository uses two intentionally different permanent branches:
 
-`main` contains maintained source code, project configuration, tests and documentation. `gh-pages` is a deployment-output branch and must contain only the compiled Flutter Web site.
+## `main`
 
-## Current layout
+The single source-of-truth branch. Open this branch in Android Studio or
+VS Code. It contains the complete repository source, including:
 
-- `apps/flutter_app/`: the single Flutter application for Android, Windows and Web.
-- Repository root Python modules and domain packages: FastAPI backend. The current Render entry point is `main:app`, so the backend remains at the root for now.
-- `common/`, `core/`, `datasets/`, `ingestion/`, `memory_engine/`, `plan_cache/`, `query_history/`, `schema_intelligence/`, `secure_excel/`, and `sql_cache/`: backend packages grouped by responsibility.
-- `frontend/`: existing browser-facing assets.
-- `tests/` and root-level `test_*.py`: Python tests. New tests should be added under `tests/` when practical; legacy root-level tests should be relocated only with import and CI configuration updates.
-- `tools/`: developer scripts and utilities.
-- `docs/`: architecture, setup, deployment and contributor documentation.
-- `.github/workflows/`: CI and publishing automation.
+```text
+apps/flutter_app/
+├── android/       # Android Studio project
+├── ios/           # iOS host project
+├── macos/         # macOS host project, when supported
+├── windows/       # Windows host project, when supported
+├── web/            # Flutter Web bootstrap and host assets
+├── lib/            # InsightFlow application code
+├── test/           # Flutter tests
+└── pubspec.yaml   # Flutter dependencies and scripts
 
-## Flutter development
+backend source     # FastAPI/Python services at repository root (kept here
+                   # temporarily because Render and Python imports use root paths)
+docs/              # Developer and architecture documentation
+.github/           # CI and GitHub Pages workflows
+```
 
-Open `apps/flutter_app/` directly in Android Studio. Use the same project for Android, Windows and Web targets. Flutter Web publishing builds from this directory and publishes the generated artifact to `gh-pages`.
+Do not edit generated files on `gh-pages`. Make source changes on `main` (or a
+short-lived feature branch from `main`) and let the
+workflow publish the web build.
 
-## Backend development
+## `gh-pages`
 
-Run commands from the repository root. The existing deployment configuration expects `requirements.txt` and `main.py` at the root. Do not move these files or backend packages independently; a future backend move must update the Render root directory, dependency installation, Python import paths, tests and all related workflows as one coordinated change.
+Generated Flutter Web deployment output only. It is maintained by
+`.github/workflows/flutter-web-pages.yml` and is not an Android Studio source
+branch.
 
-## Excel integration
+## Development rules
 
-The `secure_excel/` directory is the Python backend's secure Excel query subsystem. Do not mistake it for a separately packaged Office add-in. If an Office.js add-in is added as a distinct application, place its manifest, package configuration, task-pane UI and JavaScript/TypeScript source in a dedicated `apps/excel_addin/` directory.
-
-## Git branch policy
-
-- `main`: canonical maintained source.
-- `gh-pages`: generated static publication files only.
-- `feature/*`, `fix/*`, `chore/*`: short-lived branches for active changes.
-- No new `backup/*` branches.
-- Merge or explicitly reconcile branch changes before deleting development branches.
+1. Create short-lived feature branches from `main` for application changes.
+2. Merge verified changes into `main` before publishing.
+3. Never commit secrets, local environment files, or generated build output to
+   `main`.

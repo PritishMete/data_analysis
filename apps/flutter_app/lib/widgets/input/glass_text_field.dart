@@ -7,6 +7,7 @@ import '../../types/glass_quality.dart';
 import '../shared/adaptive_glass.dart';
 import '../../theme/glass_theme_helpers.dart';
 import '../../theme/glass_theme.dart';
+import '../../theme/glow_design_system.dart';
 
 /// A glass text field widget following Apple's input field design.
 ///
@@ -693,7 +694,9 @@ class _GlassTextFieldState extends State<GlassTextField> {
               left: resolvedPadding.left,
               right: resolvedPadding.right,
             ),
-            child: Align(alignment: Alignment.center, child: rowContent),
+            // Expand the editable surface to the entire fixed-height glass
+            // field so taps near its top/bottom still place the text cursor.
+            child: SizedBox.expand(child: rowContent),
           )
         : Padding(padding: widget.padding, child: rowContent);
 
@@ -736,6 +739,14 @@ class _GlassTextFieldState extends State<GlassTextField> {
       child: _wrapWithGlow(textFieldContent, isDark),
     );
 
+    // Keep the chat/input surface softly lit even when it is idle.
+    glassWidget = DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: [GlowDesignSystem.ambientShadow(context)],
+      ),
+      child: glassWidget,
+    );
+
     // GlassGlowLayer is now automatically provided by GlassGlow internally.
 
     // iOS 26: animate scale on press — field squishes/inflates on tap, springs back on release.
@@ -753,6 +764,17 @@ class _GlassTextFieldState extends State<GlassTextField> {
         onPointerDown: (_) => setState(() => _isPressed = true),
         onPointerUp: (_) => setState(() => _isPressed = false),
         onPointerCancel: (_) => setState(() => _isPressed = false),
+        child: glassWidget,
+      );
+    }
+
+    if (widget.height != null && widget.enabled && !widget.readOnly) {
+      // The horizontal padding and rounded glass margins remain tappable. A
+      // tap in those margins focuses the editor; taps on text still reach the
+      // native editor first so caret placement remains accurate.
+      glassWidget = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _focusNode.requestFocus,
         child: glassWidget,
       );
     }
