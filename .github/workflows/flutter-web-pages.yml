@@ -196,19 +196,19 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 18); do
-            index_url="\${PAGES_URL}/index.html?verify=\${GITHUB_SHA}-\${attempt}"
-            index_html="$(curl --fail --silent --show-error --location "\${index_url}")"
-            if grep -q "\${GITHUB_SHA}" <<<"\${index_html}"; then
-              bundle_path="$(grep -o 'main.dart.js?[^\"]*' <<<"\${index_html}" | head -n 1)"
-              if [ -n "\${bundle_path}" ]; then
-                bundle_js="$(curl --fail --silent --show-error --location "\${PAGES_URL}/\${bundle_path}")"
-                if grep -q "Continue with Google" <<<"\${bundle_js}"; then
-                  echo "Live Pages bundle verified for \${GITHUB_SHA}."
+            index_url="${PAGES_URL}/index.html?verify=${GITHUB_SHA}-${attempt}"
+            index_html="$(curl --fail --silent --show-error --location "${index_url}")"
+            if grep -q "${GITHUB_SHA}" <<<"${index_html}"; then
+              bundle_path="$(grep -o 'main.dart.js?[^\"]*' <<<"${index_html}" | head -n 1)"
+              if [ -n "${bundle_path}" ]; then
+                bundle_js="$(curl --fail --silent --show-error --location "${PAGES_URL}/${bundle_path}")"
+                if grep -q "Continue with Google" <<<"${bundle_js}"; then
+                  echo "Live Pages bundle verified for ${GITHUB_SHA}."
                   exit 0
                 fi
               fi
             fi
-            echo "Waiting for live Pages deployment (attempt \${attempt}/18)."
+            echo "Waiting for live Pages deployment (attempt ${attempt}/18)."
             sleep 10
           done
           echo "::error::Live Pages did not expose the expected build SHA and Google sign-in entry point."
