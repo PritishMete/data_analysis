@@ -123,14 +123,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f build/web/index.html
-          test -f build/web/flutter_bootstrap.js
-          test -f build/web/main.dart.js
-          grep -q "${GITHUB_SHA}" build/web/index.html
-          grep -q "Continue with Google" build/web/main.dart.js
-          grep -R -q "profile_complete" build/web
-          grep -R -q "membership_status" build/web
-          grep -R -q "/v1/authz/me" build/web
+          assert_file() {
+            local label="$1" file="$2"
+            if test -f "$file"; then echo "PASS: ${label} (${file})"; else echo "FAIL: ${label} (${file} missing)"; exit 1; fi
+          }
+          assert_text() {
+            local label="$1" expected="$2" file="$3"
+            if grep -Fq -- "$expected" "$file"; then
+              echo "PASS: ${label} (${file})"
+            else
+              echo "FAIL: ${label} (${file}); expected literal: ${expected}"
+              echo "Observed diagnostic (matching lines, if any):"
+              grep -FnE 'build|Google|profile|membership|authz' "$file" | head -n 20 || true
+              exit 1
+            fi
+          }
+          assert_file "generated index" build/web/index.html
+          assert_file "Flutter bootstrap" build/web/flutter_bootstrap.js
+          assert_file "compiled Dart bundle" build/web/main.dart.js
+          assert_text "exact source commit marker" "${GITHUB_SHA}" build/web/index.html
+          assert_text "Google sign-in entry point" "Continue with Google" build/web/main.dart.js
+          assert_text "profile completion auth marker" "profile_complete" build/web/main.dart.js
+          assert_text "membership status auth marker" "membership_status" build/web/main.dart.js
+          assert_text "authorization API integration" "/v1/authz/me" build/web/main.dart.js
 
       - name: Checkout published gh-pages
         uses: actions/checkout@v4
