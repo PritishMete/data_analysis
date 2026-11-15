@@ -118,6 +118,14 @@ jobs:
           sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" build/web/index.html
           sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" build/web/index.html
 
+      - name: Generate GitHub Pages SPA fallback
+        working-directory: apps/flutter_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/web/index.html build/web/404.html
+          cmp -s build/web/index.html build/web/404.html
+
       - name: Verify generated web bundle
         working-directory: apps/flutter_app
         shell: bash
@@ -139,10 +147,13 @@ jobs:
             fi
           }
           assert_file "generated index" build/web/index.html
+          assert_file "GitHub Pages SPA fallback" build/web/404.html
           assert_file "Flutter bootstrap" build/web/flutter_bootstrap.js
           assert_file "compiled Dart bundle" build/web/main.dart.js
           assert_text "exact source commit marker" "${GITHUB_SHA}" build/web/index.html
-          if grep -R -Fq -- "Google sign-in" build/web; then
+          assert_text "SPA fallback source commit marker" "${GITHUB_SHA}" build/web/404.html
+          cmp -s build/web/index.html build/web/404.html
+          if grep -R -Fq -- "Continue with Google" build/web; then
             echo "PASS: compiled Google authentication entry point (build/web)"
           else
             echo "FAIL: compiled Google authentication entry point (build/web); expected Google auth diagnostic text"
@@ -171,6 +182,7 @@ jobs:
           rm -f gh-pages-publish/flutter_service_worker.js
           rm -f gh-pages-publish/main.dart.js
           rm -f gh-pages-publish/index.html
+          rm -f gh-pages-publish/404.html
           rm -f gh-pages-publish/version.json
           cp -R apps/flutter_app/build/web/. gh-pages-publish/
 
@@ -180,7 +192,9 @@ jobs:
           set -euo pipefail
           test -f gh-pages-publish/flutter_bootstrap.js
           test -f gh-pages-publish/main.dart.js
+          test -f gh-pages-publish/404.html
           grep -q "${GITHUB_SHA}" gh-pages-publish/index.html
+          grep -q "${GITHUB_SHA}" gh-pages-publish/404.html
           grep -q "Continue with Google" gh-pages-publish/main.dart.js
           grep -R -q "profile_complete" gh-pages-publish
           grep -R -q "membership_status" gh-pages-publish
