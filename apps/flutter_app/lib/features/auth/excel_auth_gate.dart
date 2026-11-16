@@ -142,7 +142,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   Future<void> _handoffAuthenticatedSession() async {
     if (_handoffStarted || _completed || !mounted) return;
     final session = InsightFlowSupabaseAuthService.currentSession;
-    if (session == null || session.refreshToken.isEmpty) return;
+    if (session == null) return;
+    final refreshToken = session.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) return;
 
     _handoffStarted = true;
     try {
@@ -159,7 +161,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       }
 
       final rotatedSession = InsightFlowSupabaseAuthService.currentSession;
-      final handoffToken = rotatedSession?.refreshToken ?? session.refreshToken;
+      final handoffToken = rotatedSession?.refreshToken ?? refreshToken;
+      if (handoffToken == null || handoffToken.isEmpty) {
+        throw StateError('InsightFlow did not return a refresh token.');
+      }
       ExcelAuthBridge.completeDialog(handoffToken);
       if (mounted) setState(() => _completed = true);
     } catch (_) {
