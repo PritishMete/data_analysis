@@ -120,6 +120,7 @@ class DatabaseRateLimiter:
 
     def __init__(self, engine):
         self.engine = engine
+        self._initialized = False
 
     def initialize(self) -> None:
         with self.engine.begin() as connection:
@@ -130,8 +131,14 @@ class DatabaseRateLimiter:
                     request_count INTEGER NOT NULL
                 )
             """))
+        self._initialized = True
 
     def allow(self, key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+        # Test clients and lightweight ASGI embedders may not run FastAPI's
+        # startup hooks. Ensure the limiter remains usable in those contexts;
+        # production startup still creates the table before serving traffic.
+        if not self._initialized:
+            self.initialize()
         now = int(time.time())
         window = now - (now % window_seconds)
         with self.engine.begin() as connection:
