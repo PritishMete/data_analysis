@@ -5,16 +5,35 @@
   var MESSAGE_VERSION = 1;
   var DIALOG_FLAG = "excelAuthDialog";
   var DIALOG_SESSION_KEY = "insightflow.excel.auth.dialog";
+  var DIALOG_STATE_PARAM = "excelAuthState";
+  var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
+
+  function createState() {
+    if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
+      throw new Error("Secure sign-in state generation is unavailable.");
+    }
+    var bytes = new Uint8Array(24);
+    global.crypto.getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function (value) {
+      return value.toString(16).padStart(2, "0");
+    }).join("");
+  }
 
   function restoreDialogFlag() {
     try {
       var params = new URLSearchParams(global.location.search || "");
       if (params.get(DIALOG_FLAG) === "1") {
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
+        var incomingState = params.get(DIALOG_STATE_PARAM);
+        if (incomingState) {
+          global.sessionStorage.setItem(DIALOG_STATE_SESSION_KEY, incomingState);
+        }
         return;
       }
       if (global.sessionStorage.getItem(DIALOG_SESSION_KEY) === "1") {
         params.set(DIALOG_FLAG, "1");
+        var savedState = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
+        if (savedState) params.set(DIALOG_STATE_PARAM, savedState);
         var query = params.toString();
         var nextUrl = global.location.pathname +
           (query ? "?" + query : "") + (global.location.hash || "");
@@ -37,7 +56,15 @@
       }
 
       var url = new URL(global.location.href);
+      var expectedState;
+      try {
+        expectedState = createState();
+      } catch (error) {
+        reject(error);
+        return;
+      }
       url.searchParams.set(DIALOG_FLAG, "1");
+      url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
       url.hash = "";
 
       var dialog = null;
@@ -71,13 +98,17 @@
             global.Office.EventType.DialogMessageReceived,
             function (eventArgs) {
               try {
-                if (eventArgs.origin &&
-                    eventArgs.origin !== global.location.origin) {
+                if (eventArgs.origin !== global.location.origin) {
                   throw new Error("The sign-in response came from an untrusted origin.");
                 }
-                var message = JSON.parse(eventArgs.message || "{}");
+                if (typeof eventArgs.message !== "string" ||
+                    eventArgs.message.length > 8192) {
+                  throw new Error("The sign-in response was invalid.");
+                }
+                var message = JSON.parse(eventArgs.message);
                 if (message.type !== MESSAGE_TYPE ||
                     message.version !== MESSAGE_VERSION ||
+                    message.state !== expectedState ||
                     typeof message.refreshToken !== "string" ||
                     message.refreshToken.length < 20 ||
                     message.refreshToken.length > 4096) {
@@ -122,14 +153,27 @@
       throw new Error("This page is not running inside an Excel sign-in dialog.");
     }
 
+    var params = new URLSearchParams(global.location.search || "");
+    var state = params.get(DIALOG_STATE_PARAM);
+    if (!state) {
+      try {
+        state = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
+      } catch (_) {}
+    }
+    if (!state || state.length > 128) {
+      throw new Error("The Excel sign-in request could not be verified.");
+    }
+
     global.Office.context.ui.messageParent(JSON.stringify({
       type: MESSAGE_TYPE,
       version: MESSAGE_VERSION,
+      state: state,
       refreshToken: refreshToken
     }));
 
     try {
       global.sessionStorage.removeItem(DIALOG_SESSION_KEY);
+      global.sessionStorage.removeItem(DIALOG_STATE_SESSION_KEY);
     } catch (_) {}
   }
 
