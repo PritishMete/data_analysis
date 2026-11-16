@@ -143,11 +143,9 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Analyze Firebase Auth Flutter sources
+      - name: Analyze Supabase Auth Flutter sources
         run: >-
           dart analyze
-          lib/firebase_options.dart
-          lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/auth/supabase_auth_service.dart
 
@@ -167,7 +165,6 @@ jobs:
           lib/features/auth/management_navigation.dart
           lib/features/auth/managed_dataset_access_workspace.dart
           lib/features/dashboard/data_screen.dart
-          lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/auth/supabase_auth_service.dart
           lib/core/interop/excel_mutation_authorization.dart
@@ -197,7 +194,6 @@ jobs:
           lib/features/auth/management_navigation.dart
           test/management_shell_contract_test.dart
           test/management_skeleton_responsive_test.dart
-          lib/core/auth/insightflow_auth_service.dart
           lib/core/auth/authenticated_http.dart
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
@@ -211,7 +207,7 @@ jobs:
       - name: Run Flutter Auth tests
         run: >-
           flutter test
-          test/firebase_auth_service_test.dart
+          test/supabase_only_auth_contract_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/supabase_multi_device_session_test.dart
@@ -232,8 +228,4 @@ jobs:
         run: >-
           flutter build web --release
           --no-wasm-dry-run
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_API_KEY=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_APP_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=ci-placeholder
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID=insightflow-5a23d
-          --dart-define=INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN=ci-placeholder.firebaseapp.com
+          --base-href=/data_analysis/
