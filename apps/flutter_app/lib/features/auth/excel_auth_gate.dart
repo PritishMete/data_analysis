@@ -79,7 +79,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       if (!mounted) return;
       setState(() {
         _error = error is StateError
-            ? error.message
+            ? error.message.toString()
             : InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     } finally {
