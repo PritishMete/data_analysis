@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/flutter_app/**'
+      - 'docs/EXCEL_AUTHENTICATION.md'
       - '.github/workflows/flutter-web-pages.yml'
 
 permissions:
