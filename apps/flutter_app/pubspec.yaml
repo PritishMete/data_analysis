@@ -33,8 +33,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  firebase_core: ^4.15.0
-  firebase_auth: ^6.7.0
   supabase_flutter: ^2.10.3
   country_codes_plus: 5.2.1
 
