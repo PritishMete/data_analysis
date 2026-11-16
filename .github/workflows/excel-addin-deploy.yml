@@ -4,7 +4,7 @@ run-name: Flutter Pages deploy ${{ github.sha }}
 
 on:
   push:
-    branches: [feature/data-workspace]
+    branches: [main]
     paths:
       - 'apps/flutter_app/**'
       - 'firebase_authz/**'
@@ -69,6 +69,9 @@ jobs:
 
       - name: Flutter tests
         run: flutter test
+
+      - name: Excel authentication bridge tests
+        run: node test/excel_auth_bridge_test.js
 
       - name: Taskpane-local secure query tests
         run: node test/excel_secure_query_test.js
