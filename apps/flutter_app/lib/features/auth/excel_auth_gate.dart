@@ -148,7 +148,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
 
     _handoffStarted = true;
     try {
-      final user = await InsightFlowSupabaseAuthService.fetchAuthoritativeUser(
+      final user = await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
         timeout: const Duration(seconds: 8),
       );
       if (!mounted) return;
@@ -160,8 +160,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         return;
       }
 
-      final rotatedSession = InsightFlowSupabaseAuthService.currentSession;
-      final handoffToken = rotatedSession?.refreshToken ?? refreshToken;
+      // Refresh before handoff so a token left behind by a previously closed
+      // dialog cannot be replayed into the task pane.
+      final handoffToken =
+          InsightFlowSupabaseAuthService.currentSession?.refreshToken;
       if (handoffToken == null || handoffToken.isEmpty) {
         throw StateError('InsightFlow did not return a refresh token.');
       }
