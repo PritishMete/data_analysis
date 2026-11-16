@@ -7,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/interop/office_host.dart';
 import 'management_shell.dart';
 import 'managed_dataset_access_workspace.dart';
 import '../dashboard/data_screen.dart';
@@ -15,6 +16,7 @@ import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'employee_profile_onboarding_screen.dart';
 import 'sign_in_screen.dart';
+import 'excel_auth_gate.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
 class AuthGate extends StatelessWidget {
@@ -51,6 +53,9 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (Uri.base.queryParameters['excelAuthDialog'] == '1') {
+      return const ExcelAuthDialogGate();
+    }
     final redirectError = _redirectErrorMessage();
     if (redirectError != null) {
       return _SupabaseRedirectErrorScreen(message: redirectError);
@@ -65,7 +70,11 @@ class AuthGate extends StatelessWidget {
           return const _AuthError();
         }
         final user = InsightFlowSupabaseAuthService.currentUser;
-        if (user == null) return const SignInScreen();
+        if (user == null) {
+          return isRunningInsideOffice
+              ? const ExcelAuthGate()
+              : const SignInScreen();
+        }
         if (!user.emailVerified) {
           return const _SupabaseEmailVerificationScreen();
         }
