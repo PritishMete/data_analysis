@@ -23,6 +23,7 @@
     try {
       var params = new URLSearchParams(global.location.search || "");
       if (params.get(DIALOG_FLAG) === "1") {
+        global.__isInsightFlowExcelAuthDialog = true;
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
         var incomingState = params.get(DIALOG_STATE_PARAM);
         if (incomingState) {
@@ -31,6 +32,7 @@
         return;
       }
       if (global.sessionStorage.getItem(DIALOG_SESSION_KEY) === "1") {
+        global.__isInsightFlowExcelAuthDialog = true;
         params.set(DIALOG_FLAG, "1");
         var savedState = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
         if (savedState) params.set(DIALOG_STATE_PARAM, savedState);
