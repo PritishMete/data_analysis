@@ -40,6 +40,8 @@ def _database_url() -> str:
     override = os.environ.get("DATABASE_URL")
     if override:
         return override
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+        raise RuntimeError("DATABASE_URL is required when running on Render.")
     return f"sqlite:///{_default_sqlite_path().as_posix()}"
 
 

@@ -11,6 +11,8 @@ services:
     envVars:
       - key: INSIGHTFLOW_PRIVACY_MODE
         value: local_only
+      - key: INSIGHTFLOW_ENV
+        value: production
       - key: SUPABASE_PROJECT_REF
         value: zfdgwnipdyrpbardqoql
       - key: AUTHZ_PERSISTENCE_PROVIDER

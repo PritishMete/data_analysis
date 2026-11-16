@@ -272,7 +272,7 @@ def _queue_learning_event(
 # packages so /agentic_command below can optionally use them — see the
 # dataset_id-gated block inside that route for exactly what changed and why
 # it's backward compatible with every existing caller.
-from core.db import SessionLocal, init_db
+from core.db import SessionLocal, init_db, engine
 from datasets.repository import DatasetRepository
 from schema_intelligence.routes import schema_intelligence_router
 from query_history.repository import QueryHistoryRepository
@@ -292,6 +292,12 @@ from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
 from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
+from security_hardening import (
+    DatabaseRateLimiter,
+    RateLimitMiddleware,
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 # Load environment variables from .env (GOOGLE_API_KEY, etc.)
 # On Render, these are set directly in the dashboard instead, but load_dotenv()
@@ -319,7 +325,23 @@ async def explain_business_problems(*args, **kwargs):
     from ai_analyst import explain_business_problems as _explain_business_problems
     return await _explain_business_problems(*args, **kwargs)
 
-app = FastAPI()
+_production_environment = bool(
+    os.getenv("RENDER")
+    or os.getenv("RENDER_SERVICE_ID")
+    or os.getenv("INSIGHTFLOW_ENV", "").strip().lower() == "production"
+)
+_docs_enabled = os.getenv("INSIGHTFLOW_ENABLE_OPENAPI", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+if _production_environment and not _docs_enabled:
+    _docs_enabled = False
+
+app = FastAPI(
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
+_rate_limiter = DatabaseRateLimiter(engine)
 
 
 def _run_production_authz_migrations() -> None:
@@ -365,6 +387,7 @@ def _initialize_production_database() -> None:
     logger.info("[startup] Authorization schema verification finished in %.2fs.", time.monotonic() - startup_started)
     logger.info("[startup] Beginning application model/table initialization.")
     init_db()
+    _rate_limiter.initialize()
     logger.info("[startup] Application model/table initialization finished in %.2fs.", time.monotonic() - startup_started)
     _PRODUCTION_READY = True
     logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)
@@ -372,6 +395,10 @@ def _initialize_production_database() -> None:
 
 app.add_event_handler("startup", _initialize_production_database)
 
+# These middleware run before FastAPI/Starlette parses JSON or multipart bodies.
+app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
@@ -407,36 +434,38 @@ async def build_info():
         "build_timestamp": build_timestamp,
     }
 
-# Allow Flutter/Web requests.
-# CORS is restricted to the known production web origin, with localhost
-# development origins allowed through the regex below. The API authenticates
-# with an explicit Authorization header rather than browser cookies.
+# Allow Flutter/Web requests. Production and development origins are separate
+# so localhost is never accepted by the deployed service accidentally.
 _CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "INSIGHTFLOW_CORS_ORIGINS",
-        "https://pritishmete.github.io",
+        "https://pritishmete.github.io"
+        if _production_environment
+        else "https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000",
     ).split(",")
     if origin.strip()
 ]
-# Always retain the production GitHub Pages origin even if the Render
-# environment variable is missing, stale, or accidentally contains a path.
-if "https://pritishmete.github.io" not in _CORS_ORIGINS:
+# Production always retains the verified GitHub Pages origin. Development may
+# opt into it explicitly through INSIGHTFLOW_CORS_ORIGINS.
+if _production_environment and "https://pritishmete.github.io" not in _CORS_ORIGINS:
     _CORS_ORIGINS.append("https://pritishmete.github.io")
+if _production_environment:
+    _CORS_ORIGINS = [
+        origin for origin in _CORS_ORIGINS
+        if origin.startswith("https://") and "localhost" not in origin and "127.0.0.1" not in origin
+    ]
+
+_cors_regex = None if _production_environment else (
+    r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$"
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
-    # Flutter Web sends the Supabase access token in the Authorization header,
-    # not as a cookie. Explicit production origins are used instead of a
-    # wildcard so browser responses remain readable on error responses too.
-    allow_credentials=True,
-    # Keep the production GitHub Pages origin explicit so a missing or
-    # malformed Render CORS environment variable cannot break browser fetches.
-    allow_origin_regex=(
-        r"^(?:https://pritishmete\.github\.io|"
-        r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)?)$"
-    ),
+    # Bearer-token authentication does not require browser credentials/cookies.
+    allow_credentials=False,
+    allow_origin_regex=_cors_regex,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Authorization",
