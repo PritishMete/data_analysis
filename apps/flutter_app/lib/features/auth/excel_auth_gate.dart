@@ -158,7 +158,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         return;
       }
 
-      ExcelAuthBridge.completeDialog(session.refreshToken);
+      final rotatedSession = InsightFlowSupabaseAuthService.currentSession;
+      final handoffToken = rotatedSession?.refreshToken ?? session.refreshToken;
+      ExcelAuthBridge.completeDialog(handoffToken);
       if (mounted) setState(() => _completed = true);
     } catch (_) {
       if (!mounted) return;
