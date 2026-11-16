@@ -8,6 +8,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../core/interop/office_host.dart';
+import '../../core/interop/excel_auth_bridge.dart';
 import 'management_shell.dart';
 import 'managed_dataset_access_workspace.dart';
 import '../dashboard/data_screen.dart';
@@ -57,7 +58,7 @@ class AuthGate extends StatelessWidget {
     if (redirectError != null) {
       return _SupabaseRedirectErrorScreen(message: redirectError);
     }
-    if (Uri.base.queryParameters['excelAuthDialog'] == '1') {
+    if (ExcelAuthBridge.isAuthDialog) {
       return const ExcelAuthDialogGate();
     }
     return StreamBuilder<AuthState>(
