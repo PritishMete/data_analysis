@@ -36,13 +36,22 @@ jobs:
         working-directory: apps/flutter_app
         run: flutter pub get
 
+      - name: Set up Node for Excel auth bridge tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test Excel authentication bridge
+        working-directory: apps/flutter_app
+        run: node test/excel_auth_bridge_test.js
+
       - name: Run auth and onboarding regression tests
         working-directory: apps/flutter_app
         run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart test/google_oauth_entrypoint_test.dart test/main_auth_gate_entrypoint_test.dart
 
       - name: Analyze changed auth and onboarding files
         working-directory: apps/flutter_app
-        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/sign_in_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart test/google_oauth_entrypoint_test.dart
+        run: flutter analyze --no-fatal-infos lib/core/auth/authenticated_http.dart lib/core/auth/supabase_auth_service.dart lib/features/auth/auth_gate.dart lib/features/auth/excel_auth_gate.dart lib/core/interop/excel_auth_bridge.dart lib/core/interop/excel_auth_bridge_web.dart lib/features/auth/sign_in_screen.dart lib/features/auth/employee_profile_onboarding_screen.dart test/onboarding_auth_flow_contract_test.dart test/google_oauth_entrypoint_test.dart
 
       - name: Validate production web build configuration
         shell: bash
