@@ -4,7 +4,7 @@ run-name: Flutter Pages deploy ${{ github.sha }}
 
 on:
   push:
-    branches: [main]
+    branches: [feature/data-workspace]
     paths:
       - 'apps/flutter_app/**'
       - 'firebase_authz/**'
