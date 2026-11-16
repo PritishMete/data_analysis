@@ -9,6 +9,7 @@
 
   <!-- Office.js MUST come first -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="excel_auth_bridge.js"></script>
 
   <!-- Local worksheet engines load before Flutter. Secure query execution is
        entirely in-page and never posts workbook rows to a server. -->
@@ -25,80 +26,54 @@
 </head>
 <body>
 <script>
-  function patchHistory() {
-    var noop = function () {};
-    var fakeHistory = {
-      replaceState: noop,
-      pushState: noop,
-      go: noop,
-      back: noop,
-      forward: noop,
-      length: 0,
-      state: null,
-      scrollRestoration: "auto",
-    };
-    try {
-      History.prototype.replaceState = noop;
-      History.prototype.pushState = noop;
-    } catch (e) {}
-    try {
-      Object.defineProperty(window, "history", {
-        get: function () { return fakeHistory; },
-        configurable: true,
-      });
-    } catch (e) {}
-  }
-
-  patchHistory();
-
   var flutterStarted = false;
 
   function startFlutter() {
-    if (flutterStarted) {
-      return;
-    }
+    if (flutterStarted) return;
     flutterStarted = true;
 
-    patchHistory();
-
-    // Cache-bust the Flutter bootstrap and compiled entrypoint per deployment.
-    // Office task panes can retain a previous Flutter web bundle after gh-pages
-    // has received a new build. CI replaces the marker with the source commit.
+    // Flutter reads buildConfig while evaluating the bootstrap script, so it
+    // must be installed before the script is appended to the document.
     var buildCommit = "__INSIGHTFLOW_BUILD_COMMIT__";
+    window._flutter = window._flutter || {};
+    window._flutter.buildConfig = {
+      builds: [{
+        compileTarget: "dart2js",
+        renderer: "canvaskit",
+        mainJsPath: "main.dart.js?build=" + buildCommit
+      }]
+    };
+
     var script = document.createElement("script");
     script.src = "flutter_bootstrap.js?build=" + buildCommit;
-    script.onload = function () {
-      _flutter.buildConfig = {
-        builds: [
-          {
-            compileTarget: "dart2js",
-            renderer: "canvaskit",
-            mainJsPath: "main.dart.js?build=" + buildCommit,
-          },
-        ],
-      };
-    };
     document.head.appendChild(script);
   }
 
-  // Office.js is optional for the normal browser deployment. Do not make the
-  // entire Flutter application depend on Office.onReady, which may be absent
-  // or fail outside an Office host. When Office is available, keep the host
-  // signal and callback behavior for Excel integrations.
+  // Office's runtime must identify the host before Flutter starts. In an
+  // ordinary browser Office.js is optional, so fall back quickly if the
+  // Office readiness callback is unavailable.
   if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+    var officeReady = false;
+    var fallback = window.setTimeout(function () {
+      if (officeReady) return;
+      window.__isOfficeHost = false;
+      startFlutter();
+    }, 2000);
+
     Office.onReady(function (info) {
+      officeReady = true;
+      window.clearTimeout(fallback);
+      var hostName = info && info.host ? String(info.host).toLowerCase() : "";
+      window.__isOfficeHost = hostName === "excel";
       if (typeof window._onOfficeReady === "function") {
         window._onOfficeReady();
       }
-      console.log("Office.onReady fired. Host:", info.host, "Platform:", info.platform);
-      window.__isOfficeHost = !!(info && info.host);
       startFlutter();
     });
+  } else {
+    window.__isOfficeHost = false;
+    startFlutter();
   }
-
-  // Start immediately for ordinary browsers; the idempotent Office callback
-  // above can still enrich the host state when Office.js becomes ready.
-  startFlutter();
 </script>
 </body>
 </html>
