@@ -3,12 +3,45 @@
 <head>
   <base href="/data_analysis/">
   <meta charset="UTF-8">
-  <meta name="detail-analysis-build-id" content="2e7b9f40351c66817388bc069a0a9d4098086f86">
+  <meta name="detail-analysis-build-id" content="c682acd7abbb6ced5ada4c1b14242668d3414506">
   <meta name="google-signin-client_id" content="791927014116-q7fn5ki7os8qtf2i3orm5rqk54b8e46i.apps.googleusercontent.com">
   <title>InsightFlow</title>
 
   <!-- Office.js MUST come first -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script>
+    // Some Office WebView environments expose a partial or missing History
+    // object. Supabase's PKCE callback parser calls replaceState during
+    // startup, so provide a no-navigation compatibility object when the
+    // browser does not provide the standard methods. Normal browsers keep
+    // their native History implementation unchanged.
+    (function ensureHistoryApi() {
+      try {
+        if (window.history &&
+            typeof window.history.replaceState === "function" &&
+            typeof window.history.pushState === "function") {
+          return;
+        }
+        var fallback = {
+          length: 1,
+          state: null,
+          scrollRestoration: "auto",
+          replaceState: function (state) { this.state = state; },
+          pushState: function (state) { this.state = state; },
+          go: function () {},
+          back: function () {},
+          forward: function () {}
+        };
+        Object.defineProperty(window, "history", {
+          value: fallback,
+          configurable: true,
+          enumerable: true
+        });
+      } catch (error) {
+        console.error("InsightFlow history compatibility initialization failed.");
+      }
+    })();
+  </script>
   <script src="excel_auth_bridge.js"></script>
 
   <!-- Local worksheet engines load before Flutter. Secure query execution is
@@ -34,7 +67,7 @@
 
     // Flutter reads buildConfig while evaluating the bootstrap script, so it
     // must be installed before the script is appended to the document.
-    var buildCommit = "2e7b9f40351c66817388bc069a0a9d4098086f86";
+    var buildCommit = "c682acd7abbb6ced5ada4c1b14242668d3414506";
     window._flutter = window._flutter || {};
     window._flutter.buildConfig = {
       builds: [{
