@@ -1,0 +1,43 @@
+name: Excel Auth PostgreSQL Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  postgres-handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: excel_handoff_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d excel_handoff_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      EXCEL_HANDOFF_TEST_DATABASE_URL: postgresql+psycopg://postgres:test-only-password@localhost:5432/excel_handoff_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+      - name: Run PostgreSQL handoff integration tests
+        run: pytest -q -rs tests/integration/test_excel_handoff_postgres.py

@@ -2728,6 +2728,8 @@ app.include_router(sql_cache_router)
 app.include_router(memory_engine_router)
 app.include_router(secure_excel_router)
 app.include_router(authz_router)
+from excel_auth_handoff.routes import router as excel_auth_handoff_router
+app.include_router(excel_auth_handoff_router)
 app.include_router(management_router)
 app.include_router(managed_dataset_router)
 

@@ -28,6 +28,7 @@ PUBLIC_PREFIXES = (
     "/redoc",
     "/openapi.json",
     "/v1/authz",
+    "/v1/excel-auth/handoff",
 )
 # Route-level policy is deliberately kept server-side. The client can supply
 # workspace/resource context, but it cannot choose the permission required for
