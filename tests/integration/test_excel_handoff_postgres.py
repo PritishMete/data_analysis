@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import claim, complete, create
+from core.excel_handoff_store import claim, cleanup, complete, create
 
 
 DATABASE_URL = os.environ["EXCEL_HANDOFF_TEST_DATABASE_URL"]
@@ -61,6 +61,13 @@ def test_migration_security_and_constraints(engine):
         assert db.execute(text(
             "SELECT has_table_privilege('public', 'excel_handoff.transactions', 'SELECT')"
         )).scalar_one() is False
+        for role in ("anon", "authenticated"):
+            assert db.execute(text(
+                "SELECT has_schema_privilege(:role, 'excel_handoff', 'USAGE')"
+            ), {"role": role}).scalar_one() is False
+            assert db.execute(text(
+                "SELECT has_table_privilege(:role, 'excel_handoff.transactions', 'SELECT')"
+            ), {"role": role}).scalar_one() is False
         assert db.execute(text(
             "SELECT 1 FROM pg_indexes WHERE schemaname='excel_handoff' "
             "AND indexname='excel_handoff_expiry'"
@@ -134,6 +141,73 @@ def test_rollback_does_not_create_transaction(engine):
         assert db.execute(text(
             "SELECT 1 FROM excel_handoff.transactions WHERE id=:id"
         ), {"id": transaction}).scalar_one_or_none() is None
+
+
+def test_cleanup_removes_expired_transactions(engine):
+    Session = session_factory(engine)
+    transaction = uuid4()
+    with Session.begin() as db:
+        assert create(db, transaction, "u" * 43, "v" * 43)
+        db.execute(text(
+            "UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' "
+            "WHERE id=:id"
+        ), {"id": transaction})
+        cleanup(db)
+    with Session.begin() as db:
+        assert db.execute(text(
+            "SELECT 1 FROM excel_handoff.transactions WHERE id=:id"
+        ), {"id": transaction}).scalar_one_or_none() is None
+
+
+def test_completion_and_cancellation_race_has_one_committed_state(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "s" * 43, "t" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def finish():
+        with Session.begin() as db:
+            barrier.wait()
+            outcomes.append(complete(db, transaction, completion_secret, "refresh-token"))
+
+    def abort():
+        with Session.begin() as db:
+            barrier.wait()
+            db.execute(text(
+                "UPDATE excel_handoff.transactions SET status='cancelled', ciphertext=NULL "
+                "WHERE id=:id AND status='pending' RETURNING id"
+            ), {"id": transaction})
+            outcomes.append(True)
+
+    first, second = threading.Thread(target=finish), threading.Thread(target=abort)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+    with Session.begin() as db:
+        status, ciphertext = db.execute(text(
+            "SELECT status, ciphertext FROM excel_handoff.transactions WHERE id=:id"
+        ), {"id": transaction}).one()
+    assert status in {"completed", "cancelled"}
+    assert (status == "completed") == (ciphertext is not None)
+
+
+def test_claim_rollback_allows_next_claim(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "g" * 43, "h" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+        assert complete(db, transaction, completion_secret, "refresh-token")
+
+    with pytest.raises(RuntimeError):
+        with Session.begin() as db:
+            assert claim(db, transaction, claim_secret) == "refresh-token"
+            raise RuntimeError("claim rollback test")
+    with Session.begin() as db:
+        assert claim(db, transaction, claim_secret) == "refresh-token"
 
 
 def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
