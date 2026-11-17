@@ -28,6 +28,18 @@ The dialog route is selected only by the `excelAuthDialog=1` query flag. A norma
 
 The dialog is a separate Office-managed browser/webview context. It does not gain access to a user's private Chrome profile or its cookies. A user who already has a valid Excel task-pane session will not see the dialog; a user with only a Chrome website session may need to authenticate in the Office dialog once.
 
+## Manifest and registration
+
+The add-in-only XML template is at
+`apps/flutter_app/excel/InsightFlow.addin.xml`. It points to the deployed
+GitHub Pages task pane and the deployed 192px/512px icon assets. Its GUID is a
+clearly marked placeholder and must be replaced before organizational
+deployment; the repository does not invent the tenant-owned add-in identity.
+
+Before deployment, confirm the stable Add-in GUID, publisher details, icon
+branding, and Microsoft 365 registration method. The task-pane URL is:
+`https://pritishmete.github.io/data_analysis/`.
+
 ## Build and test
 
 The GitHub Pages workflow runs:
