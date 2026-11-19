@@ -10,6 +10,7 @@ function harness(search, initialStorage = {}) {
   const historyCalls = [];
   let assigned = '';
   let parentMessage = '';
+  let issuedSession = null;
   const location = {
     href: 'https://pritishmete.github.io/data_analysis/' + search,
     origin: 'https://pritishmete.github.io',
@@ -42,8 +43,10 @@ function harness(search, initialStorage = {}) {
     window, URL, URLSearchParams, Promise, Error, JSON, Uint8Array,
     TextEncoder, Date, Math, setTimeout: (fn) => { fn(); return 1; },
     fetch: async (url, options) => {
-      if (String(url).includes('/auth/v1/token?grant_type=pkce')) {
-        return { ok: true, json: async () => ({ access_token: 'a'.repeat(40), refresh_token: 'r'.repeat(40) }) };
+      if (String(url).includes('/auth/v1/token?grant_type=pkce') ||
+          String(url).includes('/auth/v1/token?grant_type=password')) {
+        issuedSession = { access_token: 'a'.repeat(40), refresh_token: 'r'.repeat(40) };
+        return { ok: true, json: async () => issuedSession };
       }
       if (String(url).includes('/browser/bind')) return { ok: true, json: async () => ({ generation: 1 }) };
       if (String(url).includes('/browser/candidate')) return { ok: true, json: async () => ({ state: 'candidate_pending_approval' }) };
@@ -61,7 +64,8 @@ function harness(search, initialStorage = {}) {
   return {
     window, values, historyCalls,
     get assigned() { return assigned; },
-    get parentMessage() { return parentMessage; }
+    get parentMessage() { return parentMessage; },
+    get issuedSession() { return issuedSession; }
   };
 }
 
@@ -114,6 +118,22 @@ async function run() {
     }
   }
 
+  {
+    const h = harness('?excelHandoff=tx-4');
+    const config = {
+      transactionId: 'tx-4', pairingCode: '0123-4567-89AB-CDEF',
+      generation: 1, supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'public-key', apiBase: 'https://api.example'
+    };
+    h.window.InsightFlowExcelAuth.prepareBrowser(JSON.stringify(config));
+    const result = await h.window.InsightFlowExcelAuth.passwordSignIn(JSON.stringify({
+      ...config, email: 'person@example.com', password: 'not-a-real-password'
+    }));
+    assert.equal(result, 'completed');
+    assert.equal(h.values.has('insightflow.excel.v2.browser'), false);
+    assert.equal(h.issuedSession.access_token, '');
+    assert.equal(h.issuedSession.refresh_token, '');
+  }
   console.log('Excel v2 authentication bridge tests passed.');
 }
 

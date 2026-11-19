@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create, digest, retry, cancel
+from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create, digest, retry, cancel, status
 
 DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL")
 if not DATABASE_URL:
@@ -191,7 +191,7 @@ def test_pairing_expiration_and_generation_retry_invalidate_old_browser(session)
         assert bind_browser(db, tx2, code2, old_browser, uuid4()) == 1
     new_code = "ABCD-EFGH-JKMN-PQRS"
     with session.begin() as db:
-        assert retry(db, tx2, caps2["retry"], new_code, uuid4())
+        assert retry(db, tx2, caps2["retry"], new_code, uuid4()) == 2
     with session.begin() as db:
         assert not candidate(db, tx2, old_browser, 1, uuid4(),
                              "00000000-0000-0000-0000-000000000001", "old@example.com")
@@ -220,6 +220,25 @@ def test_cancel_clears_staged_refresh_token(session):
                          {"id": tx}).one()
         assert row.status == "cancelled" and row.ciphertext is None
         assert claim(db, tx, caps["claim"]) is None
+
+
+
+def test_status_expiry_clears_completed_ciphertext(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "s" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+        db.execute(text("UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=:id"),
+                   {"id": tx})
+    with session.begin() as db:
+        result = status(db, tx, caps["status"])
+        assert result["status"] == "expired"
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+    assert row.status == "expired" and row.ciphertext is None
 
 
 def test_expiry_clears_unclaimed_ciphertext(session):

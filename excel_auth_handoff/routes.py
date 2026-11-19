@@ -196,7 +196,7 @@ def candidate(payload: CandidateRequest, db: Session = Depends(get_db)):
 def browser_status(payload: BrowserStatusRequest, db: Session = Depends(get_db)):
     try:
         result = store.browser_status(db, payload.transaction_id, payload.browser_capability)
-        db.rollback()
+        _commit(db)
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
@@ -209,7 +209,7 @@ def browser_status(payload: BrowserStatusRequest, db: Session = Depends(get_db))
 def get_status(payload: StatusRequest, db: Session = Depends(get_db)):
     try:
         result = store.status(db, payload.transaction_id, payload.status_capability)
-        db.rollback()
+        _commit(db)
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc

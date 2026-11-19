@@ -5,11 +5,11 @@ website's normal Supabase authentication flow.
 
 ## Token lifecycle
 
-- The browser completes Supabase OAuth PKCE in one top-level browser context. Its
-  PKCE verifier must survive the provider redirect in the browser's session-scoped
-  verifier storage. Configure the transient browser auth client with
-  `persistSession: false` and `autoRefreshToken: false`; do not persist access or
-  refresh tokens in localStorage or sessionStorage.
+- The browser performs Supabase OAuth PKCE in one top-level browser context. Its
+  PKCE verifier is held in sessionStorage across the provider redirect. The bridge
+  calls Supabase Auth's PKCE token endpoint directly; it does not create a persistent
+  browser Supabase client. Access and refresh tokens remain in a transient JavaScript
+  session object only and are never written to localStorage or sessionStorage.
 - The browser posts its access token to `browser/candidate`. The API validates it
   using the existing Supabase JWKS/Auth /user verifier. The API stores the resulting
   UID and generation; it never accepts a browser-supplied UID as identity.
@@ -29,10 +29,11 @@ website's normal Supabase authentication flow.
   failure it must clear only its local session and require a new handoff.
 - A lost claim response is never replayed. The user starts a new sign-in.
 
-The refresh token is not verifiably bound to the access token without consuming or
-rotating it through Supabase. Therefore final UID verification after `setSession`
-is mandatory. The browser client must clear its in-memory session after successful
-staging. The backend never logs request bodies or token material.
+The refresh token is not independently verifiable without consuming or rotating it
+through Supabase. Therefore final UID verification after `setSession` is mandatory.
+The bridge clears the access and refresh token fields from its transient session
+object after each handoff attempt. The backend never logs request bodies or token
+material.
 
 ## Expiration and cancellation
 
@@ -69,7 +70,13 @@ cannot bypass v2 approval. Migration `0038_excel_auth_pairing.sql` is additive t
   verifier.
 
 The production backend database connection must use PostgreSQL. SQLite is rejected
-for v2 because its locking semantics are not accepted for one-time claims. Confirm
+for v2 because its locking semantics are not accepted for one-time claims. The
+connected InsightFlow Supabase project is active, but its project metadata does not
+expose the Auth access-token lifetime or refresh-token settings. Verify that the
+configured access-token lifetime exceeds the maximum approval window before rollout.
+If the access token expires before browser/complete, the backend rejects the request
+and the user must begin a new sign-in; the backend never refreshes it. This design
+does not depend on parent-refresh-token reuse. Confirm
 the deployed database role has only the required access to the private schema.
 Do not apply migration 0038 until the production database role and migration 0037
 state have been independently verified.
@@ -79,3 +86,39 @@ state have been independently verified.
 The backend API does not itself prove Windows Excel Desktop compatibility. Office
 Dialog and external browser behavior, including redirect/callback handling, must be
 accepted on the actual supported Excel Desktop host before release.
+
+## Windows Excel Desktop acceptance checklist
+
+Use the real signed add-in manifest and the deployed backend only after the approved
+production migration and server secrets have been configured. Do not treat browser
+tests or Flutter Web tests as Excel acceptance.
+
+1. Sideload the manifest into Windows Excel Desktop and open a workbook.
+2. With an existing valid session, confirm the add-in restores the user and reaches
+   the workspace only after the authoritative Supabase user check.
+3. Sign out locally, reload the task pane, create a new handoff and copy the browser
+   link. Open it in Chrome or Edge, enter the displayed pairing code and sign in by
+   email/password. Approve the displayed email in Excel and verify workspace access.
+4. Repeat using Google OAuth. Confirm the provider callback returns to the same
+   browser tab, the authorization code is removed from the address bar, and Excel
+   receives only the completion notification from Office Dialog.
+5. Sign in with a different account than intended, verify the email shown in Excel,
+   reject it and confirm no session is established.
+6. Approve only after verifying the exact UID/email shown. Confirm the app's final
+   getUser() identity matches the approved UID.
+7. Reload the task pane while a browser login is pending. Confirm the transaction
+   resumes without generating a second claim.
+8. Close the browser before candidate submission, then retry with a newly generated
+   pairing code. Confirm the previous browser capability is rejected.
+9. Let a transaction expire and verify it cannot be claimed and its ciphertext is
+   cleared by the status/cleanup path.
+10. Complete login, log out from Excel, close Excel, reopen the workbook and verify
+    local logout and existing-session restoration behavior separately.
+11. Repeat with the Office Dialog fallback. Close the dialog mid-flow and verify
+    the transaction can be cancelled or restarted without any token in a dialog
+    message.
+
+Record the Windows version, Excel build/channel, manifest version, browser version,
+backend commit, Supabase access-token lifetime, test timestamps and outcome for each
+case. The current manifest still contains the documented placeholder add-in GUID;
+replace it with the stable owner-assigned GUID before formal sideload acceptance.
