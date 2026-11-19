@@ -70,6 +70,7 @@ CREATE INDEX IF NOT EXISTS excel_handoff_create_rate_window
 
 REVOKE ALL ON SCHEMA excel_handoff FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL TABLES IN SCHEMA excel_handoff FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA excel_handoff FROM PUBLIC, anon, authenticated;
 ALTER TABLE excel_handoff.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE excel_handoff.create_rate_limits ENABLE ROW LEVEL SECURITY;
 

@@ -28,6 +28,8 @@ website's normal Supabase authentication flow.
   `getUser` and compares the actual UID with the approved UID. On mismatch or
   failure it must clear only its local session and require a new handoff.
 - A lost claim response is never replayed. The user starts a new sign-in.
+- Excel logout clears the task-pane handoff capability and signs out with Supabase
+  local scope only; it does not revoke sessions in other InsightFlow clients.
 
 The refresh token is not independently verifiable without consuming or rotating it
 through Supabase. Therefore final UID verification after `setSession` is mandatory.

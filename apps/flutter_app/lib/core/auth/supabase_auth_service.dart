@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../interop/excel_auth_bridge.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class InsightFlowSupabaseConfig {
@@ -309,8 +311,12 @@ class InsightFlowSupabaseAuthService {
   /// Ends only this installation's Supabase session.
   static Future<void> signOut() => signOutCurrentDevice();
 
-  static Future<void> signOutCurrentDevice() =>
-      client.auth.signOut(scope: localSignOutScope);
+  static Future<void> signOutCurrentDevice() async {
+    // Clear only the Excel handoff capabilities in this webview. Supabase
+    // local scope keeps unrelated browser/device sessions signed in.
+    ExcelAuthBridge.clearExcelTransaction();
+    await client.auth.signOut(scope: localSignOutScope);
+  }
 
   /// Ends every other Supabase Auth session while keeping this one active.
   ///
