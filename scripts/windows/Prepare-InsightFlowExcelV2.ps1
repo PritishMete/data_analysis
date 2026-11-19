@@ -22,7 +22,7 @@ function New-RandomBytes([int]$Count) {
 }
 function Wait-Url([string]$Url, [int]$Seconds = 45) {
     for ($i = 0; $i -lt $Seconds; $i++) {
-        try { $response = Invoke-WebRequest -Uri $Url -TimeoutSec 3; if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) { return } }
+        try { $response = Invoke-WebRequest -Uri $Url -TimeoutSec 3; if ($response.StatusCode -eq 200) { return } }
         catch { Start-Sleep -Seconds 1 }
     }
     throw "URL did not become reachable: $Url"
@@ -55,7 +55,7 @@ if (-not [guid]::TryParse($AddinGuid, [ref]$parsedGuid) -or $parsedGuid -eq [gui
 $AddinGuid = $parsedGuid.ToString()
 
 if (-not $SupabaseUrl) { $SupabaseUrl = Read-Host "Development Supabase project URL (https://<project-ref>.supabase.co)" }
-if ($SupabaseUrl -notmatch '^https://[a-z0-9-]+\.supabase\.co/?$') { throw "Use a dedicated development Supabase project URL." }
+if ($SupabaseUrl -notmatch '^https://[a-z0-9-]+\.supabase\.co/?$' -or $SupabaseUrl -match 'zfdgwnipdyrpbardqoql') { throw "Use a dedicated development Supabase project, not the connected production project." }
 $SupabaseUrl = $SupabaseUrl.TrimEnd("/")
 if (-not $SupabasePublishableKey) { $SupabasePublishableKey = Read-Host "Development Supabase publishable key (sb_publishable_... or legacy anon key)" }
 if ([string]::IsNullOrWhiteSpace($SupabasePublishableKey) -or $SupabasePublishableKey -match 'service_role') { throw "A Supabase publishable/anon key is required. A service-role key is forbidden." }
@@ -100,6 +100,7 @@ if ($LASTEXITCODE -ne 0) { throw "mkcert certificate creation failed." }
 
 $xmlText = Get-Content -Raw -Path $manifest
 $xmlText = [regex]::Replace($xmlText, '<Id>[^<]+</Id>', "<Id>$AddinGuid</Id>", 1)
+$xmlText = $xmlText.Replace('https://localhost:3000/', "https://localhost:$PanePort/").Replace('https://localhost:3000</AppDomain>', "https://localhost:$PanePort</AppDomain>")
 [xml]$xmlCheck = $xmlText
 if ($xmlCheck.OfficeApp.Id -ne $AddinGuid -or $xmlCheck.OfficeApp.DefaultSettings.SourceLocation.DefaultValue -ne "https://localhost:$PanePort/") { throw "Generated local manifest failed validation." }
 Set-Content -Path $runtimeManifest -Value $xmlText -Encoding UTF8
@@ -108,7 +109,11 @@ Push-Location $repo
 try {
     & python -c "import fastapi, sqlalchemy, psycopg, cryptography"
     if ($LASTEXITCODE -ne 0) { throw "Backend Python dependencies are missing. Install them with: python -m pip install -r requirements.txt" }
-    $backendArgs = @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "$BackendPort", "--ssl-certfile", $certFile, "--ssl-keyfile", $keyFile)
+    & python -c "import uvicorn"
+    if ($LASTEXITCODE -ne 0) { throw "Uvicorn is missing. Install the repository requirements first." }
+    $quotedCert = '"' + $certFile + '"'
+    $quotedKey = '"' + $keyFile + '"'
+    $backendArgs = @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "$BackendPort", "--ssl-certfile", $quotedCert, "--ssl-keyfile", $quotedKey)
     $backend = Start-Process -FilePath "python" -ArgumentList $backendArgs -WorkingDirectory $repo -PassThru
 } finally { Pop-Location }
 
@@ -124,7 +129,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "flutter pub get failed." }
     & flutter build web --release --base-href "/" "--dart-define=INSIGHTFLOW_BACKEND_URL=https://localhost:$BackendPort" "--dart-define=INSIGHTFLOW_SUPABASE_URL=$SupabaseUrl" "--dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$SupabasePublishableKey" "--dart-define=INSIGHTFLOW_AUTH_REDIRECT_URL=https://localhost:$PanePort/"
     if ($LASTEXITCODE -ne 0) { throw "Flutter Web release build failed." }
-    $pane = Start-Process -FilePath "npx" -ArgumentList @("--yes", "http-server", "build/web", "-a", "127.0.0.1", "-p", "$PanePort", "-S", "-C", $certFile, "-K", $keyFile) -WorkingDirectory $flutterDir -PassThru
+    $paneArgs = @("--yes", "http-server", "build/web", "-a", "127.0.0.1", "-p", "$PanePort", "-S", "-C", $quotedCert, "-K", $quotedKey)
+    $pane = Start-Process -FilePath "npx" -ArgumentList $paneArgs -WorkingDirectory $flutterDir -PassThru
 } finally { Pop-Location }
 
 Wait-Url "https://localhost:$PanePort/" 60
