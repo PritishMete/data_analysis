@@ -311,9 +311,12 @@ class InsightFlowSupabaseAuthService {
   /// Ends only this installation's Supabase session.
   static Future<void> signOut() => signOutCurrentDevice();
 
-  static Future<void> signOutCurrentDevice() async {
-    // Clear only the Excel handoff capabilities in this webview. Supabase
-    // local scope keeps unrelated browser/device sessions signed in.
+  static Future<void> signOutCurrentDevice() =>
+      client.auth.signOut(scope: localSignOutScope);
+
+  /// Clears the Excel handoff state and signs out only this Excel webview.
+  /// Other InsightFlow browser/device sessions remain active.
+  static Future<void> signOutExcelSession() async {
     ExcelAuthBridge.clearExcelTransaction();
     await client.auth.signOut(scope: localSignOutScope);
   }

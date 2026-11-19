@@ -144,8 +144,6 @@ def create_handoff(
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
-    response.headers["Cache-Control"] = "no-store, private"
-    response.headers["Pragma"] = "no-cache"
     return {
         "transaction_id": str(transaction), "generation": 1, "expires_in": 600,
         "pairing_code": pairing, "claim_capability": values["claim"],

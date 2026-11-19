@@ -248,7 +248,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
           verifiedUser.id != approvedUid ||
           generation != status['generation'] ||
           generation != _transaction!['generation']) {
-        await InsightFlowSupabaseAuthService.signOutCurrentDevice();
+        await InsightFlowSupabaseAuthService.signOutExcelSession();
         throw StateError('The claimed session did not match the account approved in Excel.');
       }
       ExcelAuthBridge.clearExcelTransaction();
@@ -260,7 +260,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     } catch (error) {
       // Claim is irreversible even if the response was lost or local session
       // establishment failed. Never replay it; require a fresh transaction.
-      await InsightFlowSupabaseAuthService.signOutCurrentDevice();
+      await InsightFlowSupabaseAuthService.signOutExcelSession();
       ExcelAuthBridge.clearExcelTransaction();
       if (mounted) setState(() {
         _transaction = null;
