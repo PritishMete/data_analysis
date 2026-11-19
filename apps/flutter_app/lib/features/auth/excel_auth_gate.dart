@@ -236,11 +236,13 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
           .timeout(const Duration(seconds: 20));
       final session = response.session;
       if (session == null) throw StateError('Supabase did not establish the Excel session.');
-      final user = await InsightFlowSupabaseAuthService.client.auth
+      final userResponse = await InsightFlowSupabaseAuthService.client.auth
           .getUser(session.accessToken)
           .timeout(const Duration(seconds: 12));
+      final verifiedUser = userResponse.user;
       if (approvedUid == null ||
-          user.user.id != approvedUid ||
+          verifiedUser == null ||
+          verifiedUser.id != approvedUid ||
           generation != _status?['approved_generation']) {
         await InsightFlowSupabaseAuthService.signOutCurrentDevice();
         throw StateError('The claimed session did not match the account approved in Excel.');
