@@ -162,8 +162,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "flutter pub get failed." }
     & flutter build web --release --base-href "/" "--dart-define=INSIGHTFLOW_BACKEND_URL=https://localhost:$BackendPort" "--dart-define=INSIGHTFLOW_SUPABASE_URL=$SupabaseUrl" "--dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$SupabasePublishableKey" "--dart-define=INSIGHTFLOW_AUTH_REDIRECT_URL=https://localhost:$PanePort/"
     if ($LASTEXITCODE -ne 0) { throw "Flutter Web release build failed." }
-    $paneArgs = @("--yes", "http-server", "build/web", "-a", "127.0.0.1", "-p", "$PanePort", "-S", "-C", $quotedCert, "-K", $quotedKey)
-    $pane = Start-Process -FilePath "npx" -ArgumentList $paneArgs -WorkingDirectory $flutterDir -PassThru
+    $paneCommand = "npx --yes http-server build/web -a 127.0.0.1 -p $PanePort -S -C `"$certFile`" -K `"$keyFile`""
+    $pane = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $paneCommand) -WorkingDirectory $flutterDir -PassThru
 } finally { Pop-Location }
 
 Wait-Url "https://localhost:$PanePort/" 60
