@@ -58,7 +58,7 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
         return False
     db.execute(text("INSERT INTO excel_handoff.create_rate_limits(ip_digest) VALUES (:ip)"),
                {"ip": ip_digest})
-    db.execute(text("""
+    inserted = db.execute(text("""
       INSERT INTO excel_handoff.transactions
        (id, protocol_version, status, claim_digest, completion_digest,
         status_capability_digest, approval_capability_digest,
@@ -69,6 +69,7 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
         :cancel, :retry, :pairing, clock_timestamp()+interval '3 minutes',
         :instance, :idempotency, clock_timestamp()+interval '10 minutes', clock_timestamp())
       ON CONFLICT DO NOTHING
+      RETURNING id
     """), {
       "id": transaction, "claim": digest(secrets["claim"]),
       "completion": digest(secrets["completion"]),
@@ -76,14 +77,9 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
       "cancel": digest(secrets["cancel"]), "retry": digest(secrets["retry"]),
       "pairing": pairing_digest(pairing_code), "instance": digest(excel_instance),
       "idempotency": key_digest,
-    })
-    if key_digest is not None:
-        exists = db.execute(text("""
-          SELECT 1 FROM excel_handoff.transactions
-          WHERE protocol_version=2 AND create_idempotency_digest=:key
-        """), {"key": key_digest}).scalar_one_or_none()
-        if exists:
-            return "duplicate"
+    }).scalar_one_or_none()
+    if inserted is None:
+        return "duplicate"
     return True
 
 
