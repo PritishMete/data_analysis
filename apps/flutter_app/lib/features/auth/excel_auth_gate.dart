@@ -496,11 +496,13 @@ class _ExcelAuthBrowserGateState extends State<ExcelAuthBrowserGate> {
     });
     try {
       ExcelAuthBridge.prepareBrowser(jsonEncode(_browserConfig()));
-      await ExcelAuthBridge.passwordSignIn(jsonEncode({
+      final passwordRequest = ExcelAuthBridge.passwordSignIn(jsonEncode({
         ..._browserConfig(),
         'email': _email.text.trim(),
         'password': _password.text,
       }));
+      _password.clear();
+      await passwordRequest;
       if (mounted) setState(() => _notice = 'Account submitted. Waiting for approval in Excel…');
     } catch (error) {
       if (mounted) setState(() {

@@ -184,6 +184,8 @@
       headers: { "apikey": browser.publishableKey, "Content-Type": "application/json" },
       body: JSON.stringify({ email: input.email, password: input.password })
     });
+    input.password = "";
+    raw = "";
     var session = await response.json();
     if (!response.ok || !session.access_token || !session.refresh_token) {
       throw new Error("Email or password could not be verified.");
