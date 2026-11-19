@@ -191,7 +191,9 @@ def test_pairing_expiration_and_generation_retry_invalidate_old_browser(session)
         assert bind_browser(db, tx2, code2, old_browser, uuid4()) == 1
     new_code = "ABCD-EFGH-JKMN-PQRS"
     with session.begin() as db:
-        assert retry(db, tx2, caps2["retry"], new_code, uuid4()) == 2
+        assert retry(db, tx2, caps2["retry"], new_code, uuid4(), 1) == 2
+    with session.begin() as db:
+        assert retry(db, tx2, caps2["retry"], "QRST-UVWX-YZ23-4567", uuid4(), 1) is None
     with session.begin() as db:
         assert not candidate(db, tx2, old_browser, 1, uuid4(),
                              "00000000-0000-0000-0000-000000000001", "old@example.com")

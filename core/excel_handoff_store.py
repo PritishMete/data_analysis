@@ -300,7 +300,8 @@ def retry(db: Session, transaction: UUID, capability: str, pairing_code: str,
         AND expires_at>clock_timestamp()
       RETURNING id
     """), {"id": transaction, "cap": digest(capability),
-           "pairing": pairing_digest(pairing_code), "request": request_id})
+           "pairing": pairing_digest(pairing_code), "request": request_id,
+           "expected_generation": expected_generation})
     return result.scalar_one_or_none() is not None
 
 

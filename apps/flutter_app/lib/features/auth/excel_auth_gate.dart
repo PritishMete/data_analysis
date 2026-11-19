@@ -353,6 +353,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       final result = await _post('retry', {
         'transaction_id': _transaction!['transaction_id'],
         'retry_capability': _transaction!['retry_capability'],
+        'generation': _transaction!['generation'],
         'request_id': _secureUuid(),
       });
       _transaction!['pairing_code'] = result['pairing_code'];

@@ -115,6 +115,7 @@ class CancelRequest(BaseModel):
 class RetryRequest(BaseModel):
     transaction_id: UUID
     retry_capability: Secret
+    generation: Annotated[int, Field(ge=1)]
     request_id: UUID
 
 
