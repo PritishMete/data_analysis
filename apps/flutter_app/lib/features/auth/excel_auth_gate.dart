@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/auth/excel_handoff_lifecycle.dart';
 import '../../core/interop/excel_auth_bridge.dart';
 
 const _excelApiBase = String.fromEnvironment(
@@ -277,17 +278,16 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   Future<void> _cancelHandoff() async {
     _pollTimer?.cancel();
     final current = _transaction;
-    if (current != null) {
-      try {
+    await cancelExcelHandoffSafely(
+      cancelRemote: () async {
+        if (current == null) return;
         await _post('cancel', {
           'transaction_id': current['transaction_id'],
           'cancel_capability': current['cancel_capability'],
         });
-      } catch (_) {
-        // Local cancellation still clears this instance's capabilities.
-      }
-    }
-    ExcelAuthBridge.clearExcelTransaction();
+      },
+      clearLocalCapabilities: ExcelAuthBridge.clearExcelTransaction,
+    );
     if (mounted) setState(() {
       _transaction = null;
       _status = null;
