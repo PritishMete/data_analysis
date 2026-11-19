@@ -144,6 +144,8 @@ def create_handoff(
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
     return {
         "transaction_id": str(transaction), "generation": 1, "expires_in": 600,
         "pairing_code": pairing, "claim_capability": values["claim"],
@@ -263,7 +265,7 @@ def complete(payload: CompleteRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/claim")
-def claim(payload: ClaimRequest, db: Session = Depends(get_db)):
+def claim(payload: ClaimRequest, response: Response, db: Session = Depends(get_db)):
     try:
         token = store.claim(db, payload.transaction_id, payload.claim_capability)
         _commit(db)
@@ -272,17 +274,21 @@ def claim(payload: ClaimRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
     if token is None:
         raise _unavailable()
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
     return {"refresh_token": token}
 
 
 @router.post("/cancel")
 def cancel(payload: CancelRequest, db: Session = Depends(get_db)):
     try:
-        store.cancel(db, payload.transaction_id, payload.cancel_capability)
+        cancelled = store.cancel(db, payload.transaction_id, payload.cancel_capability)
         _commit(db)
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if not cancelled:
+        raise _unavailable()
     return {"state": "cancelled"}
 
 
@@ -290,12 +296,16 @@ def cancel(payload: CancelRequest, db: Session = Depends(get_db)):
 def retry(payload: RetryRequest, response: Response, db: Session = Depends(get_db)):
     pairing = _pairing()
     try:
-        ok = store.retry(db, payload.transaction_id, payload.retry_capability,
-                         pairing, payload.request_id)
+        generation = store.retry(
+            db, payload.transaction_id, payload.retry_capability,
+            pairing, payload.request_id, payload.generation,
+        )
         _commit(db)
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
-    if not ok:
+    if generation is None:
         raise _unavailable()
-    return {"pairing_code": pairing}
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    return {"pairing_code": pairing, "generation": generation}

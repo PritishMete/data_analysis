@@ -90,15 +90,20 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
 def bind_browser(db: Session, transaction: UUID, pairing_code: str,
                  browser_capability: str, request_id: UUID) -> int | None:
     require_postgres(db)
+    browser_digest = digest(browser_capability)
+    pairing_hash = pairing_digest(pairing_code)
     existing = db.execute(text("""
-      SELECT generation FROM excel_handoff.transactions
-      WHERE id=:id AND protocol_version=2 AND status='browser_bound'
-        AND bind_request_id=:request AND browser_capability_digest=:browser
+      SELECT status, generation, bind_request_id, browser_capability_digest
+      FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2
+        AND (pairing_digest=:pairing OR browser_capability_digest=:browser)
       FOR UPDATE
-    """), {"id": transaction, "request": request_id,
-           "browser": digest(browser_capability)}).scalar_one_or_none()
-    if existing is not None:
-        return int(existing)
+    """), {"id": transaction, "pairing": pairing_hash,
+           "browser": browser_digest}).mappings().one_or_none()
+    if (existing is not None and existing["status"] == "browser_bound"
+            and existing["bind_request_id"] == request_id
+            and existing["browser_capability_digest"] == browser_digest):
+        return int(existing["generation"])
     result = db.execute(text("""
       UPDATE excel_handoff.transactions
       SET status='browser_bound', browser_capability_digest=:browser,
@@ -108,8 +113,8 @@ def bind_browser(db: Session, transaction: UUID, pairing_code: str,
         AND expires_at>clock_timestamp() AND pairing_expires_at>clock_timestamp()
         AND pairing_attempts<5 AND pairing_digest=:pairing
       RETURNING generation
-    """), {"browser": digest(browser_capability), "request": request_id,
-           "id": transaction, "pairing": pairing_digest(pairing_code)})
+    """), {"browser": browser_digest, "request": request_id,
+           "id": transaction, "pairing": pairing_hash})
     generation = result.scalar_one_or_none()
     if generation is not None:
         return int(generation)
@@ -126,13 +131,15 @@ def candidate(db: Session, transaction: UUID, browser: str, generation: int,
               request_id: UUID, uid: str, email: str) -> bool:
     require_postgres(db)
     existing = db.execute(text("""
-      SELECT candidate_uid, candidate_generation FROM excel_handoff.transactions
-      WHERE id=:id AND protocol_version=2 AND status='candidate_pending_approval'
-        AND candidate_request_id=:request AND browser_capability_digest=:browser
+      SELECT status, candidate_uid, candidate_generation, candidate_request_id
+      FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND browser_capability_digest=:browser
       FOR UPDATE
-    """), {"id": transaction, "request": request_id, "browser": digest(browser)}).one_or_none()
-    if existing is not None:
-        return str(existing.candidate_uid) == uid and existing.candidate_generation == generation
+    """), {"id": transaction, "browser": digest(browser)}).mappings().one_or_none()
+    if (existing is not None and existing["status"] == "candidate_pending_approval"
+            and existing["candidate_request_id"] == request_id):
+        return (str(existing["candidate_uid"]) == uid
+                and existing["candidate_generation"] == generation)
     result = db.execute(text("""
       UPDATE excel_handoff.transactions
       SET status='candidate_pending_approval', candidate_uid=:uid,
@@ -296,7 +303,7 @@ def cancel(db: Session, transaction: UUID, capability: str) -> bool:
 
 
 def retry(db: Session, transaction: UUID, capability: str, pairing_code: str,
-          request_id: UUID) -> bool:
+          request_id: UUID, expected_generation: int) -> int | None:
     require_postgres(db)
     result = db.execute(text("""
       UPDATE excel_handoff.transactions SET generation=generation+1,
@@ -310,12 +317,13 @@ def retry(db: Session, transaction: UUID, capability: str, pairing_code: str,
         last_activity_at=clock_timestamp()
       WHERE id=:id AND protocol_version=2 AND retry_capability_digest=:cap
         AND status IN ('pending','browser_bound') AND candidate_uid IS NULL
-        AND expires_at>clock_timestamp()
-      RETURNING id
+        AND generation=:expected_generation AND expires_at>clock_timestamp()
+      RETURNING generation
     """), {"id": transaction, "cap": digest(capability),
            "pairing": pairing_digest(pairing_code), "request": request_id,
            "expected_generation": expected_generation})
-    return result.scalar_one_or_none() is not None
+    generation = result.scalar_one_or_none()
+    return int(generation) if generation is not None else None
 
 
 def cleanup(db: Session) -> None:
