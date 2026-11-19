@@ -107,10 +107,10 @@ $env:BUILD_GIT_SHA = "local-$head"
 $env:AUTHZ_PERSISTENCE_PROVIDER = "supabase"
 Remove-Item Env:RENDER,Env:RENDER_SERVICE_ID -ErrorAction SilentlyContinue
 
-New-Item -ItemType Directory -Path $certDir,$catalogDir -Force | Out-Null
 $backend = $null
 $pane = $null
 try {
+New-Item -ItemType Directory -Path $certDir,$catalogDir -Force | Out-Null
 & mkcert -install
 if ($LASTEXITCODE -ne 0) { throw "mkcert could not install its local development CA. Re-run elevated if Windows prompts for trust installation." }
 & mkcert -cert-file $certFile -key-file $keyFile localhost 127.0.0.1 ::1
