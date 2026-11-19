@@ -93,6 +93,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Migration 0038 failed. Stop and inspect the disposable database." }
     $table = (& psql -h 127.0.0.1 -p 5432 -U $DbUser -d $DbName -Atqc "SELECT to_regclass('excel_handoff.transactions')").Trim()
     if ($table -ne "excel_handoff.transactions") { throw "Excel handoff table verification failed after migrations." }
+} catch {
+    $dbPassword = $null
+    $dbPasswordSecure = $null
+    throw
 } finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
 
 $dbUserEscaped = [uri]::EscapeDataString($DbUser)
