@@ -40,7 +40,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
       - name: Run PostgreSQL handoff integration tests
-        run: pytest -q -rs tests/integration/test_excel_handoff_postgres.py
+        run: pytest -q -rs tests/integration/test_excel_handoff_postgres.py tests/test_excel_handoff_routes.py
 
       - name: Set up Node for the Excel browser bridge
         uses: actions/setup-node@v4
@@ -70,7 +70,8 @@ jobs:
           lib/core/interop/excel_auth_bridge_web.dart
           lib/core/interop/excel_auth_bridge_stub.dart
           test/excel_auth_gate_test.dart
+          test/supabase_auth_logout_test.dart
 
       - name: Run Excel auth gate widget tests
         working-directory: apps/flutter_app
-        run: flutter test test/excel_auth_gate_test.dart
+        run: flutter test test/excel_auth_gate_test.dart test/supabase_auth_logout_test.dart
