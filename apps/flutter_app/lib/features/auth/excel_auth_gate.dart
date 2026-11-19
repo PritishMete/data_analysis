@@ -270,6 +270,29 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   }
 
 
+  Future<void> _cancelHandoff() async {
+    _pollTimer?.cancel();
+    final current = _transaction;
+    if (current != null) {
+      try {
+        await _post('cancel', {
+          'transaction_id': current['transaction_id'],
+          'cancel_capability': current['cancel_capability'],
+        });
+      } catch (_) {
+        // Local cancellation still clears this instance's capabilities.
+      }
+    }
+    ExcelAuthBridge.clearExcelTransaction();
+    if (mounted) setState(() {
+      _transaction = null;
+      _status = null;
+      _busy = false;
+      _error = null;
+      _notice = 'Excel sign-in cancelled. You can start again when ready.';
+    });
+  }
+
   Future<void> _startNewTransaction() async {
     _pollTimer?.cancel();
     ExcelAuthBridge.clearExcelTransaction();
@@ -374,6 +397,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
           ? _retry
           : null,
       onNew: _transaction == null || _status?['status'] == 'expired' || _error != null ? _startNewTransaction : null,
+      onCancel: _transaction != null && _status?['status'] != 'completed' ? _cancelHandoff : null,
     );
   }
 }
@@ -539,6 +563,7 @@ class _ExcelStatus extends StatelessWidget {
     this.onReject,
     this.onRetry,
     this.onNew,
+    this.onCancel,
     this.child,
   });
 
@@ -555,6 +580,7 @@ class _ExcelStatus extends StatelessWidget {
   final VoidCallback? onReject;
   final VoidCallback? onRetry;
   final VoidCallback? onNew;
+  final VoidCallback? onCancel;
   final Widget? child;
 
   @override
@@ -622,6 +648,10 @@ class _ExcelStatus extends StatelessWidget {
                   if (onNew != null) ...[
                     const SizedBox(height: 10),
                     OutlinedButton(onPressed: onNew, child: const Text('Start a new sign-in')),
+                  ],
+                  if (onCancel != null) ...[
+                    const SizedBox(height: 10),
+                    TextButton(onPressed: onCancel, child: const Text('Cancel Excel sign-in')),
                   ],
                 ],
               ),
