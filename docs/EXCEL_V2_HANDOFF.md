@@ -149,7 +149,7 @@ psql "postgresql://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_te
 Set backend configuration in the same PowerShell window. Generate fresh local-only secrets; do not reuse production values:
 
 ```powershell
-$env:DATABASE_URL = "postgresql+psycopg2://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_test"
+$env:DATABASE_URL = "postgresql+psycopg://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_test"
 $env:INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY = python -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
 $env:INSIGHTFLOW_EXCEL_HANDOFF_PAIRING_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
 $env:SUPABASE_URL = "https://<PROJECT_REF>.supabase.co"
