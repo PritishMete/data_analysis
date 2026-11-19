@@ -102,6 +102,24 @@ def test_one_time_claim_is_serialized_by_postgres(session):
     assert row.status == "claimed" and row.ciphertext is None
 
 
+def test_concurrent_create_rate_limit_is_atomic(session):
+    ip = hashlib.sha256(b"concurrent-rate-limit-test-ip").digest()
+    barrier = threading.Barrier(11)
+    results = []
+    def worker(index):
+        values = {name: name + str(index) + "-secret-" + ("x" * 40)
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        with session.begin() as db:
+            barrier.wait()
+            results.append(create(db, uuid4(), values, "0123-4567-89AB-CDEF",
+                                  "parallel-instance-" + str(index), ip))
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(11)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert results.count(True) == 10
+    assert results.count(False) == 1
+
+
 def test_pairing_attempt_limit(session):
     tx, _, _ = make_transaction(session)
     for index in range(5):

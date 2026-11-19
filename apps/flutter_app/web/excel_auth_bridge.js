@@ -76,6 +76,12 @@
         config.transactionId !== getTransactionId()) {
       throw new Error("The Excel sign-in request is incomplete or does not match this browser tab.");
     }
+    var supabaseOrigin = new URL(config.supabaseUrl);
+    var apiOrigin = new URL(config.apiBase);
+    if (supabaseOrigin.protocol !== "https:" || apiOrigin.protocol !== "https:" ||
+        supabaseOrigin.username || supabaseOrigin.password || apiOrigin.username || apiOrigin.password) {
+      throw new Error("Excel sign-in requires trusted HTTPS endpoints.");
+    }
     var value = {
       transactionId: config.transactionId,
       pairingCode: config.pairingCode.toUpperCase(),
@@ -174,6 +180,7 @@
   }
 
   async function submitCandidate(browser, session) {
+    try {
     var bound = await post(browser, "/browser/bind", {
       transaction_id: browser.transactionId,
       pairing_code: browser.pairingCode,
@@ -192,6 +199,11 @@
     });
     // Access and refresh tokens live only in this async call's memory.
     await waitForExcelApproval(browser, session);
+    } finally {
+      // Do not retain the Supabase session object after this handoff attempt.
+      session.access_token = "";
+      session.refresh_token = "";
+    }
   }
 
   async function waitForExcelApproval(browser, session) {

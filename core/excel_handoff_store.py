@@ -38,6 +38,10 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
            idempotency_key: str | None = None) -> bool | str:
     require_postgres(db)
     cleanup(db)
+    # Serialize rate-limit accounting per hashed source IP. The digest is never
+    # reversible to an address and the transaction lock closes concurrent bursts.
+    lock_key = int.from_bytes(ip_digest[:8], "big", signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
     key_digest = digest(idempotency_key) if idempotency_key else None
     if key_digest is not None:
         exists = db.execute(text("""

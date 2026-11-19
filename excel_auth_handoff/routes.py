@@ -123,6 +123,7 @@ def create_handoff(
     payload: CreateRequest,
     request: Request,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=128)],
+    response: Response,
     db: Session = Depends(get_db),
 ):
     transaction = uuid4()
@@ -140,6 +141,8 @@ def create_handoff(
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
     return {
         "transaction_id": str(transaction), "generation": 1, "expires_in": 600,
         "pairing_code": pairing, "claim_capability": values["claim"],
@@ -283,7 +286,7 @@ def cancel(payload: CancelRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/retry")
-def retry(payload: RetryRequest, db: Session = Depends(get_db)):
+def retry(payload: RetryRequest, response: Response, db: Session = Depends(get_db)):
     pairing = _pairing()
     try:
         ok = store.retry(db, payload.transaction_id, payload.retry_capability,

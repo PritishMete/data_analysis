@@ -246,7 +246,8 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       if (approvedUid == null ||
           verifiedUser == null ||
           verifiedUser.id != approvedUid ||
-          generation != _status?['approved_generation']) {
+          generation != status['generation'] ||
+          generation != _transaction!['generation']) {
         await InsightFlowSupabaseAuthService.signOutCurrentDevice();
         throw StateError('The claimed session did not match the account approved in Excel.');
       }
@@ -355,7 +356,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
         'request_id': _secureUuid(),
       });
       _transaction!['pairing_code'] = result['pairing_code'];
-      _transaction!['generation'] = (_transaction!['generation'] as int? ?? 1) + 1;
+      _transaction!['generation'] = result['generation'];
       _transaction!['claim_attempted'] = false;
       _status = null;
       _persistTransaction();

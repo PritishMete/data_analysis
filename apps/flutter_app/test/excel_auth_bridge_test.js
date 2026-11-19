@@ -107,6 +107,7 @@ async function run() {
     assert.equal(await h.window.InsightFlowExcelAuth.resumeOAuth(), true);
     assert.equal(h.values.has('insightflow.excel.v2.browser'), false);
     assert.equal(h.values.has('insightflow.excel.v2.pkce.verifier'), false);
+    assert.equal(h.values.get('insightflow.excel.v2.browser'), undefined);
     const messages = h.parentMessage ? JSON.parse(h.parentMessage) : null;
     if (messages) {
       assert.deepEqual(Object.keys(messages).sort(), ['state', 'transactionId', 'type', 'version']);
