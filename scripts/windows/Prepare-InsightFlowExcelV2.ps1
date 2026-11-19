@@ -59,7 +59,7 @@ Write-Host "Commit: $head"
 
 if ([string]::IsNullOrWhiteSpace($AddinGuid)) { throw "Supply the exact owner-approved stable add-in GUID with -AddinGuid. This script will not generate or prompt for an add-in identity." }
 $parsedGuid = [guid]::Empty
-if (-not [guid]::TryParse($AddinGuid, [ref]$parsedGuid) -or $parsedGuid -eq [guid]::Empty) { throw "A valid owner-approved GUID is required. Obtain the exact value from the add-in owner; do not generate one here." }
+if (-not [guid]::TryParse($AddinGuid, [ref]$parsedGuid) -or $parsedGuid -eq [guid]::Empty -or $parsedGuid.ToString() -eq "00000000-0000-0000-0000-000000000001") { throw "A valid owner-approved GUID is required. The tracked placeholder is not accepted; obtain the exact value from the add-in owner." }
 $AddinGuid = $parsedGuid.ToString()
 
 if (-not $SupabaseUrl) { $SupabaseUrl = Read-Host "Development Supabase project URL (https://<project-ref>.supabase.co)" }
