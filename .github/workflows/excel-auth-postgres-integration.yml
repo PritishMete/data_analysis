@@ -71,7 +71,8 @@ jobs:
           lib/core/interop/excel_auth_bridge_stub.dart
           test/excel_auth_gate_test.dart
           test/supabase_auth_logout_test.dart
+          test/excel_handoff_lifecycle_test.dart
 
       - name: Run Excel auth gate widget tests
         working-directory: apps/flutter_app
-        run: flutter test test/excel_auth_gate_test.dart test/supabase_auth_logout_test.dart
+        run: flutter test test/excel_auth_gate_test.dart test/supabase_auth_logout_test.dart test/excel_handoff_lifecycle_test.dart
