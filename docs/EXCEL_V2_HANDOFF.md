@@ -45,7 +45,7 @@ A claim already committed is terminal and cannot be cancelled or replayed.
 
 All endpoints are POST under `/v2/excel-auth/handoff`:
 
-- `create`
+- `create` (requires an `Idempotency-Key`; duplicate keys return a safe outcome-unknown conflict and never return capabilities)
 - `browser/bind`
 - `browser/candidate`
 - `status`

@@ -34,8 +34,18 @@ def require_postgres(db: Session) -> None:
 
 
 def create(db: Session, transaction: UUID, secrets: dict[str, str],
-           pairing_code: str, excel_instance: str, ip_digest: bytes) -> bool:
+           pairing_code: str, excel_instance: str, ip_digest: bytes,
+           idempotency_key: str | None = None) -> bool | str:
     require_postgres(db)
+    cleanup(db)
+    key_digest = digest(idempotency_key) if idempotency_key else None
+    if key_digest is not None:
+        exists = db.execute(text("""
+          SELECT 1 FROM excel_handoff.transactions
+          WHERE protocol_version=2 AND create_idempotency_digest=:key
+        """), {"key": key_digest}).scalar_one_or_none()
+        if exists:
+            return "duplicate"
     db.execute(text("""
       DELETE FROM excel_handoff.create_rate_limits
       WHERE created_at < clock_timestamp() - interval '1 hour'
@@ -54,17 +64,26 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
         status_capability_digest, approval_capability_digest,
         cancel_capability_digest, retry_capability_digest,
         pairing_digest, pairing_expires_at, excel_instance_digest,
-        expires_at, last_activity_at)
+        create_idempotency_digest, expires_at, last_activity_at)
       VALUES (:id, 2, 'pending', :claim, :completion, :status, :approval,
         :cancel, :retry, :pairing, clock_timestamp()+interval '3 minutes',
-        :instance, clock_timestamp()+interval '10 minutes', clock_timestamp())
+        :instance, :idempotency, clock_timestamp()+interval '10 minutes', clock_timestamp())
+      ON CONFLICT DO NOTHING
     """), {
       "id": transaction, "claim": digest(secrets["claim"]),
       "completion": digest(secrets["completion"]),
       "status": digest(secrets["status"]), "approval": digest(secrets["approval"]),
       "cancel": digest(secrets["cancel"]), "retry": digest(secrets["retry"]),
       "pairing": pairing_digest(pairing_code), "instance": digest(excel_instance),
+      "idempotency": key_digest,
     })
+    if key_digest is not None:
+        exists = db.execute(text("""
+          SELECT 1 FROM excel_handoff.transactions
+          WHERE protocol_version=2 AND create_idempotency_digest=:key
+        """), {"key": key_digest}).scalar_one_or_none()
+        if exists:
+            return "duplicate"
     return True
 
 

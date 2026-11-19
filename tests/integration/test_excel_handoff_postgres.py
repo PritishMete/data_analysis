@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import os
 import threading
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create
+from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create, digest, retry, cancel
 
 DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL")
 if not DATABASE_URL:
@@ -52,7 +53,7 @@ def make_transaction(Session):
             for key in ("claim", "completion", "status", "approval", "cancel", "retry")}
     code = "0123-4567-89AB-CDEF"
     with Session.begin() as db:
-        assert create(db, tx, caps, code, "instance-identifier-0001", b"i" * 32)
+        assert create(db, tx, caps, code, "instance-identifier-0001", hashlib.sha256(str(tx).encode()).digest())
     return tx, caps, code
 
 
@@ -122,6 +123,85 @@ def test_claim_capability_is_authority_not_excel_instance_id(session):
         assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
     with session.begin() as db:
         assert claim(db, tx, caps["claim"]) == "refresh-token"
+
+
+def test_create_idempotency_key_and_rate_limit(session):
+    key = "excel-create-request-0123456789"
+    tx = uuid4()
+    caps = {name: name + "-secret-" + ("x" * 48)
+            for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+    code = "0123-4567-89AB-CDEF"
+    ip = hashlib.sha256(b"idempotency-test-ip").digest()
+    with session.begin() as db:
+        assert create(db, tx, caps, code, "excel-instance-000001", ip, key) is True
+    with session.begin() as db:
+        assert create(db, uuid4(), caps, code, "excel-instance-000002", ip, key) == "duplicate"
+    with session.begin() as db:
+        count = db.execute(text("""
+          SELECT count(*) FROM excel_handoff.transactions
+          WHERE create_idempotency_digest=:key
+        """), {"key": digest(key)}).scalar_one()
+    assert count == 1
+
+    limited_ip = hashlib.sha256(b"rate-limit-test-ip").digest()
+    for index in range(10):
+        values = {name: name + str(index) + "-x" * 40
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        with session.begin() as db:
+            assert create(db, uuid4(), values, code, "rate-instance-" + str(index), limited_ip)
+    with session.begin() as db:
+        values = {name: name + "-limit-x" * 8
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        assert create(db, uuid4(), values, code, "rate-instance-over", limited_ip) is False
+
+
+def test_pairing_expiration_and_generation_retry_invalidate_old_browser(session):
+    tx, caps, code = make_transaction(session)
+    with session.begin() as db:
+        db.execute(text("""
+          UPDATE excel_handoff.transactions
+          SET pairing_expires_at=clock_timestamp()-interval '1 second'
+          WHERE id=:id
+        """), {"id": tx})
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, "old-browser-" + "x" * 40, uuid4()) is None
+
+    # A fresh transaction demonstrates a valid browser bind followed by retry.
+    tx2, caps2, code2 = make_transaction(session)
+    old_browser = "old-browser-" + "a" * 40
+    with session.begin() as db:
+        assert bind_browser(db, tx2, code2, old_browser, uuid4()) == 1
+    new_code = "ABCD-EFGH-JKMN-PQRS"
+    with session.begin() as db:
+        assert retry(db, tx2, caps2["retry"], new_code, uuid4())
+    with session.begin() as db:
+        assert not candidate(db, tx2, old_browser, 1, uuid4(),
+                             "00000000-0000-0000-0000-000000000001", "old@example.com")
+    new_browser = "new-browser-" + "b" * 40
+    with session.begin() as db:
+        assert bind_browser(db, tx2, new_code, new_browser, uuid4()) == 2
+    with session.begin() as db:
+        assert not candidate(db, tx2, new_browser, 1, uuid4(),
+                             "00000000-0000-0000-0000-000000000001", "old@example.com")
+    with session.begin() as db:
+        assert candidate(db, tx2, new_browser, 2, uuid4(),
+                         "00000000-0000-0000-0000-000000000002", "new@example.com")
+
+
+def test_cancel_clears_staged_refresh_token(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "z" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+        assert row.status == "cancelled" and row.ciphertext is None
+        assert claim(db, tx, caps["claim"]) is None
 
 
 def test_expiry_clears_unclaimed_ciphertext(session):

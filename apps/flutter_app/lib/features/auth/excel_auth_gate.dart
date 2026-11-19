@@ -55,11 +55,15 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     super.dispose();
   }
 
-  Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _post(
+    String path,
+    Map<String, dynamic> body, {
+    Map<String, String> extraHeaders = const {},
+  }) async {
     final response = await http
         .post(
           Uri.parse('$_excelApiBase/v2/excel-auth/handoff/$path'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', ...extraHeaders},
           body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 15));
@@ -110,7 +114,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       if (_transaction == null) {
         final created = await _post('create', {
           'excel_instance_id': _secureId(),
-        });
+        }, extraHeaders: {'Idempotency-Key': _secureUuid()});
         _transaction = created;
         _persistTransaction();
       }
@@ -303,7 +307,8 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       _notice = null;
     });
     try {
-      final created = await _post('create', {'excel_instance_id': _secureId()});
+      final created = await _post('create', {'excel_instance_id': _secureId()},
+          extraHeaders: {'Idempotency-Key': _secureUuid()});
       _transaction = created;
       _persistTransaction();
       if (mounted) setState(() => _busy = false);

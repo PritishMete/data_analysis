@@ -6,7 +6,7 @@ import secrets
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -119,12 +119,21 @@ class RetryRequest(BaseModel):
 
 
 @router.post("/create", status_code=201)
-def create_handoff(payload: CreateRequest, request: Request, db: Session = Depends(get_db)):
+def create_handoff(
+    payload: CreateRequest,
+    request: Request,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=128)],
+    db: Session = Depends(get_db),
+):
     transaction = uuid4()
     values = {key: _secret() for key in ("claim", "completion", "status", "approval", "cancel", "retry")}
     pairing = _pairing()
     try:
-        if not store.create(db, transaction, values, pairing, payload.excel_instance_id, _ip_digest(request)):
+        created = store.create(db, transaction, values, pairing, payload.excel_instance_id, _ip_digest(request), idempotency_key)
+        if created == "duplicate":
+            db.rollback()
+            raise HTTPException(status_code=409, detail="create_outcome_unknown: start a new Excel sign-in request.")
+        if not created:
             db.rollback()
             raise HTTPException(status_code=429, detail="Too many Excel sign-in attempts. Try again later.")
         _commit(db)

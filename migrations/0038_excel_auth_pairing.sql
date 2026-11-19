@@ -4,6 +4,7 @@ BEGIN;
 -- are rejected by the v2 API. No production database is changed by this file.
 ALTER TABLE excel_handoff.transactions
   ADD COLUMN IF NOT EXISTS protocol_version smallint NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS create_idempotency_digest bytea,
   ADD COLUMN IF NOT EXISTS generation integer NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS status_capability_digest bytea,
   ADD COLUMN IF NOT EXISTS approval_capability_digest bytea,
@@ -41,6 +42,7 @@ ALTER TABLE excel_handoff.transactions
   ADD CONSTRAINT excel_handoff_generation_check CHECK (generation > 0),
   ADD CONSTRAINT excel_handoff_pairing_attempts_check CHECK (pairing_attempts BETWEEN 0 AND 5),
   ADD CONSTRAINT excel_handoff_capability_lengths_check CHECK (
+    (create_idempotency_digest IS NULL OR octet_length(create_idempotency_digest)=32) AND
     (status_capability_digest IS NULL OR octet_length(status_capability_digest)=32) AND
     (approval_capability_digest IS NULL OR octet_length(approval_capability_digest)=32) AND
     (cancel_capability_digest IS NULL OR octet_length(cancel_capability_digest)=32) AND
@@ -50,6 +52,9 @@ ALTER TABLE excel_handoff.transactions
     (excel_instance_digest IS NULL OR octet_length(excel_instance_digest)=32)
   );
 
+CREATE UNIQUE INDEX IF NOT EXISTS excel_handoff_create_idempotency_unique
+  ON excel_handoff.transactions (create_idempotency_digest)
+  WHERE protocol_version=2 AND create_idempotency_digest IS NOT NULL;
 CREATE INDEX IF NOT EXISTS excel_handoff_v2_expiry
   ON excel_handoff.transactions (expires_at) WHERE protocol_version=2;
 CREATE INDEX IF NOT EXISTS excel_handoff_v2_state
