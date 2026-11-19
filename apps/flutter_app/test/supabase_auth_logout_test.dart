@@ -10,7 +10,9 @@ void main() {
       var excelStateCleared = false;
 
       await performInsightFlowLocalSignOut(
-        signOut: (scope) async => observedScope = scope,
+        signOut: (scope) async {
+          observedScope = scope;
+        },
       );
 
       expect(observedScope, SignOutScope.local);
