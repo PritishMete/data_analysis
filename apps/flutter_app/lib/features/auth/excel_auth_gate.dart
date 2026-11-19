@@ -366,7 +366,11 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       onOpenDialog: _transaction == null ? null : _openDialog,
       onApprove: candidate ? () => _approve('approve') : null,
       onReject: candidate ? () => _approve('reject') : null,
-      onRetry: _transaction != null && _status?['candidate_uid'] == null && _status?['status'] != 'completed' ? _retry : null,
+      onRetry: _transaction != null &&
+              _status?['candidate_uid'] == null &&
+              const ['pending', 'browser_bound'].contains(_status?['status'])
+          ? _retry
+          : null,
       onNew: _transaction == null || _status?['status'] == 'expired' || _error != null ? _startNewTransaction : null,
     );
   }

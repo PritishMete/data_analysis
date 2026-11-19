@@ -56,6 +56,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Get Flutter dependencies
+        working-directory: apps/flutter_app
+        run: flutter pub get
+
       - name: Analyze Excel auth integration sources
         working-directory: apps/flutter_app
         run: >-
@@ -69,6 +73,4 @@ jobs:
 
       - name: Run Excel auth gate widget tests
         working-directory: apps/flutter_app
-        run: |
-          flutter pub get
-          flutter test test/excel_auth_gate_test.dart
+        run: flutter test test/excel_auth_gate_test.dart
