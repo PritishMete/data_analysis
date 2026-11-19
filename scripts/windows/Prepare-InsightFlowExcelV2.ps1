@@ -57,7 +57,7 @@ Write-Host "Repository: $repo"
 Write-Host "Branch: $branch"
 Write-Host "Commit: $head"
 
-if (-not $AddinGuid) { $AddinGuid = Read-Host "Enter owner-confirmed stable add-in GUID (generate with [guid]::NewGuid().ToString())" }
+if ([string]::IsNullOrWhiteSpace($AddinGuid)) { throw "Supply the exact owner-approved stable add-in GUID with -AddinGuid. This script will not generate or prompt for an add-in identity." }
 $parsedGuid = [guid]::Empty
 if (-not [guid]::TryParse($AddinGuid, [ref]$parsedGuid) -or $parsedGuid -eq [guid]::Empty) { throw "A valid owner-confirmed GUID is required. Generate it with [guid]::NewGuid().ToString()" }
 $AddinGuid = $parsedGuid.ToString()
