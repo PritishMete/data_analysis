@@ -73,6 +73,12 @@ class CandidateRequest(BaseModel):
     access_token: Token
 
 
+
+class BrowserStatusRequest(BaseModel):
+    transaction_id: UUID
+    browser_capability: Secret
+
+
 class StatusRequest(BaseModel):
     transaction_id: UUID
     status_capability: Secret
@@ -128,7 +134,7 @@ def create_handoff(payload: CreateRequest, request: Request, db: Session = Depen
     return {
         "transaction_id": str(transaction), "generation": 1, "expires_in": 600,
         "pairing_code": pairing, "claim_capability": values["claim"],
-        "completion_capability": values["completion"], "status_capability": values["status"],
+        "status_capability": values["status"],
         "approval_capability": values["approval"], "cancel_capability": values["cancel"],
         "retry_capability": values["retry"],
     }
@@ -171,6 +177,20 @@ def candidate(payload: CandidateRequest, db: Session = Depends(get_db)):
     if not ok:
         raise _unavailable()
     return {"state": "candidate_pending_approval", "generation": payload.generation}
+
+
+
+@router.post("/browser/status")
+def browser_status(payload: BrowserStatusRequest, db: Session = Depends(get_db)):
+    try:
+        result = store.browser_status(db, payload.transaction_id, payload.browser_capability)
+        db.rollback()
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if result is None:
+        raise _unavailable()
+    return result
 
 
 @router.post("/status")

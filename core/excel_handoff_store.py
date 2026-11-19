@@ -1,7 +1,7 @@
 """PostgreSQL-only v2 Excel handoff state transitions.
 
-The caller owns and commits each request transaction. Never return claimed
-material until the transaction that marks it claimed has committed.
+The caller owns and commits each request transaction. A claim is committed
+before its response is sent; a lost response must never be replayed.
 """
 from __future__ import annotations
 
@@ -71,6 +71,14 @@ def create(db: Session, transaction: UUID, secrets: dict[str, str],
 def bind_browser(db: Session, transaction: UUID, pairing_code: str,
                  browser_capability: str, request_id: UUID) -> int | None:
     require_postgres(db)
+    existing = db.execute(text("""
+      SELECT generation FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND status='browser_bound'
+        AND bind_request_id=:request AND browser_capability_digest=:browser
+    """), {"id": transaction, "request": request_id,
+           "browser": digest(browser_capability)}).scalar_one_or_none()
+    if existing is not None:
+        return int(existing)
     result = db.execute(text("""
       UPDATE excel_handoff.transactions
       SET status='browser_bound', browser_capability_digest=:browser,
@@ -97,6 +105,13 @@ def bind_browser(db: Session, transaction: UUID, pairing_code: str,
 def candidate(db: Session, transaction: UUID, browser: str, generation: int,
               request_id: UUID, uid: str, email: str) -> bool:
     require_postgres(db)
+    existing = db.execute(text("""
+      SELECT candidate_uid, candidate_generation FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND status='candidate_pending_approval'
+        AND candidate_request_id=:request AND browser_capability_digest=:browser
+    """), {"id": transaction, "request": request_id, "browser": digest(browser)}).one_or_none()
+    if existing is not None:
+        return str(existing.candidate_uid) == uid and existing.candidate_generation == generation
     result = db.execute(text("""
       UPDATE excel_handoff.transactions
       SET status='candidate_pending_approval', candidate_uid=:uid,
@@ -113,19 +128,56 @@ def candidate(db: Session, transaction: UUID, browser: str, generation: int,
 
 def status(db: Session, transaction: UUID, capability: str) -> dict | None:
     require_postgres(db)
+    cap = digest(capability)
+    db.execute(text("""
+      UPDATE excel_handoff.transactions SET status='expired', ciphertext=NULL,
+        pairing_digest=NULL, browser_capability_digest=NULL
+      WHERE id=:id AND protocol_version=2 AND status_capability_digest=:cap
+        AND expires_at<=clock_timestamp()
+        AND status IN ('pending','browser_bound','candidate_pending_approval','approved','completed')
+    """), {"id": transaction, "cap": cap})
     row = db.execute(text("""
       SELECT status, generation, candidate_uid, candidate_email,
         candidate_generation, approved_uid, approved_generation, expires_at
       FROM excel_handoff.transactions
       WHERE id=:id AND protocol_version=2 AND status_capability_digest=:cap
-    """), {"id": transaction, "cap": digest(capability)}).mappings().one_or_none()
+    """), {"id": transaction, "cap": cap}).mappings().one_or_none()
     return None if row is None else dict(row)
+
+
+def browser_status(db: Session, transaction: UUID, browser: str) -> dict | None:
+    require_postgres(db)
+    cap = digest(browser)
+    db.execute(text("""
+      UPDATE excel_handoff.transactions SET status='expired', ciphertext=NULL,
+        pairing_digest=NULL, browser_capability_digest=NULL
+      WHERE id=:id AND protocol_version=2 AND browser_capability_digest=:cap
+        AND expires_at<=clock_timestamp()
+        AND status IN ('pending','browser_bound','candidate_pending_approval','approved','completed')
+    """), {"id": transaction, "cap": cap})
+    row = db.execute(text("""
+      SELECT status, generation, candidate_uid, candidate_email,
+             candidate_generation, approved_uid, approved_generation
+      FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND browser_capability_digest=:browser
+    """), {"id": transaction, "browser": cap}).mappings().one_or_none()
+    if row is None:
+        # Completion clears the browser capability; the browser does not need
+        # a post-completion poll because browser/complete returns success.
+        return None
+    return {
+      "state": row["status"], "generation": row["generation"],
+      "candidate_uid": str(row["candidate_uid"]) if row["candidate_uid"] else None,
+      "candidate_email": row["candidate_email"],
+      "candidate_generation": row["candidate_generation"],
+      "approved_uid": str(row["approved_uid"]) if row["approved_uid"] else None,
+      "approved_generation": row["approved_generation"],
+    }
 
 
 def approve(db: Session, transaction: UUID, capability: str, uid: str,
             generation: int, decision: str, request_id: UUID) -> bool:
     require_postgres(db)
-    # Exact retries are idempotent; a different decision cannot replace one.
     existing = db.execute(text("""
       SELECT status, approval_request_id, candidate_uid, candidate_generation
       FROM excel_handoff.transactions
@@ -156,6 +208,13 @@ def approve(db: Session, transaction: UUID, capability: str, uid: str,
 def complete(db: Session, transaction: UUID, browser: str, generation: int,
              request_id: UUID, uid: str, refresh_token: str) -> bool:
     require_postgres(db)
+    existing = db.execute(text("""
+      SELECT status, completion_request_id, approved_uid, approved_generation
+      FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND approved_uid=:uid
+    """), {"id": transaction, "uid": uid}).mappings().one_or_none()
+    if existing and existing["status"] == "completed" and existing["completion_request_id"] == request_id:
+        return existing["approved_generation"] == generation
     sealed = seal_refresh_token(transaction, refresh_token, "refresh")
     result = db.execute(text("""
       UPDATE excel_handoff.transactions
@@ -228,8 +287,6 @@ def retry(db: Session, transaction: UUID, capability: str, pairing_code: str,
 
 def cleanup(db: Session) -> None:
     require_postgres(db)
-    # No remote refresh is performed, so expiry can safely clear every
-    # unclaimed ciphertext. Claim is the only irreversible delivery point.
     db.execute(text("""
       UPDATE excel_handoff.transactions SET status='expired',
         pairing_digest=NULL, browser_capability_digest=NULL, ciphertext=NULL
