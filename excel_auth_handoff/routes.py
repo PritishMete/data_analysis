@@ -1,82 +1,48 @@
 from __future__ import annotations
 
-import json
-import os
-import urllib.error
-import urllib.request
+import hashlib
+import ipaddress
+import secrets
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.db import get_db
-from core.excel_handoff_store import cancel, claim, complete, create
+from core import excel_handoff_store as store
 from firebase_authz.supabase_auth import (
-    AuthenticationRequired,
-    SupabaseAuthUnavailable,
-    verify_supabase_access_token,
+    AuthenticationRequired, SupabaseAuthUnavailable, verify_supabase_access_token,
 )
 
-router = APIRouter(prefix="/v1/excel-auth/handoff", tags=["excel-auth"])
-Capability = Annotated[str, Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
+router = APIRouter(prefix="/v2/excel-auth/handoff", tags=["excel-auth"])
+Secret = Annotated[str, Field(min_length=40, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
+Token = Annotated[str, Field(min_length=20, max_length=8192)]
+Pairing = Annotated[str, Field(min_length=19, max_length=19, pattern=r"^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$")]
 
 
-class HandoffRequest(BaseModel):
-    transaction_id: UUID
-    claim_capability: Capability
-    completion_capability: Capability
+def _secret() -> str:
+    return secrets.token_urlsafe(32)
 
 
-class CompleteRequest(BaseModel):
-    transaction_id: UUID
-    completion_capability: Capability
-    access_token: Annotated[str, Field(min_length=20, max_length=8192)]
-    refresh_token: Annotated[str, Field(min_length=20, max_length=8192)]
+def _pairing() -> str:
+    alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    raw = secrets.token_bytes(10)
+    value = "".join(alphabet[(int.from_bytes(raw, "big") >> (75 - 5*i)) & 31] for i in range(16))
+    return "-".join(value[i:i+4] for i in range(0, 16, 4))
 
 
-class ClaimRequest(BaseModel):
-    transaction_id: UUID
-    claim_capability: Capability
-
-
-class CancelRequest(ClaimRequest):
-    pass
-
-
-def _project_url() -> str:
-    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-    ref = os.getenv("SUPABASE_PROJECT_REF", "").strip()
-    return url or (f"https://{ref}.supabase.co" if ref else "")
-
-
-def _refresh_pair(refresh_token: str) -> tuple[str, str]:
-    url = _project_url()
-    key = (os.getenv("SUPABASE_PUBLISHABLE_KEY") or
-           os.getenv("INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY") or "").strip()
-    if not url or not key:
-        raise RuntimeError("Supabase authentication is unavailable.")
-    request = urllib.request.Request(
-        f"{url}/auth/v1/token?grant_type=refresh_token",
-        data=json.dumps({"refresh_token": refresh_token}).encode(),
-        headers={"apikey": key, "Content-Type": "application/json"},
-        method="POST",
-    )
+def _ip_digest(request: Request) -> bytes:
+    host = request.client.host if request.client else "unknown"
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            payload = json.loads(response.read())
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError,
-            json.JSONDecodeError) as exc:
-        raise AuthenticationRequired("Supabase session could not be refreshed.") from exc
-    access = str(payload.get("access_token") or "")
-    rotated = str(payload.get("refresh_token") or "")
-    if not access or not rotated:
-        raise AuthenticationRequired("Supabase session could not be refreshed.")
-    return access, rotated
+        normalized = str(ipaddress.ip_address(host))
+    except ValueError:
+        normalized = "unknown"
+    return hashlib.sha256(normalized.encode()).digest()
 
 
-def _commit_or_fail(db: Session) -> None:
+def _commit(db: Session) -> None:
     try:
         db.commit()
     except Exception:
@@ -84,47 +50,219 @@ def _commit_or_fail(db: Session) -> None:
         raise
 
 
+def _unavailable() -> HTTPException:
+    return HTTPException(status_code=404, detail="Excel sign-in request is unavailable.")
+
+
+class CreateRequest(BaseModel):
+    excel_instance_id: Annotated[str, Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
+
+
+class BindRequest(BaseModel):
+    transaction_id: UUID
+    pairing_code: Pairing
+    browser_capability: Secret
+    request_id: UUID
+
+
+class CandidateRequest(BaseModel):
+    transaction_id: UUID
+    browser_capability: Secret
+    generation: Annotated[int, Field(ge=1)]
+    request_id: UUID
+    access_token: Token
+
+
+class StatusRequest(BaseModel):
+    transaction_id: UUID
+    status_capability: Secret
+
+
+class ApproveRequest(BaseModel):
+    transaction_id: UUID
+    approval_capability: Secret
+    candidate_uid: UUID
+    generation: Annotated[int, Field(ge=1)]
+    decision: str = Field(pattern="^(approve|reject)$")
+    request_id: UUID
+
+
+class CompleteRequest(BaseModel):
+    transaction_id: UUID
+    browser_capability: Secret
+    generation: Annotated[int, Field(ge=1)]
+    request_id: UUID
+    access_token: Token
+    refresh_token: Token
+
+
+class ClaimRequest(BaseModel):
+    transaction_id: UUID
+    claim_capability: Secret
+
+
+class CancelRequest(BaseModel):
+    transaction_id: UUID
+    cancel_capability: Secret
+
+
+class RetryRequest(BaseModel):
+    transaction_id: UUID
+    retry_capability: Secret
+    request_id: UUID
+
+
 @router.post("/create", status_code=201)
-def create_handoff(payload: HandoffRequest, db: Session = Depends(get_db)):
-    if not create(db, payload.transaction_id, payload.claim_capability,
-                  payload.completion_capability):
-        raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
-    _commit_or_fail(db)
-    return {"transaction_id": str(payload.transaction_id), "expires_in": 180}
-
-
-@router.post("/complete", status_code=204)
-def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
+def create_handoff(payload: CreateRequest, request: Request, db: Session = Depends(get_db)):
+    transaction = uuid4()
+    values = {key: _secret() for key in ("claim", "completion", "status", "approval", "cancel", "retry")}
+    pairing = _pairing()
     try:
-        original = verify_supabase_access_token(payload.access_token)
-        refreshed_access, rotated_refresh = _refresh_pair(payload.refresh_token)
-        refreshed = verify_supabase_access_token(refreshed_access)
-        if original.get("uid") != refreshed.get("uid"):
-            raise AuthenticationRequired("Supabase session identity mismatch.")
-        if not complete(db, payload.transaction_id, payload.completion_capability,
-                        rotated_refresh):
+        if not store.create(db, transaction, values, pairing, payload.excel_instance_id, _ip_digest(request)):
             db.rollback()
-            raise HTTPException(status_code=400, detail="Authentication handoff unavailable.")
-        _commit_or_fail(db)
+            raise HTTPException(status_code=429, detail="Too many Excel sign-in attempts. Try again later.")
+        _commit(db)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    return {
+        "transaction_id": str(transaction), "generation": 1, "expires_in": 600,
+        "pairing_code": pairing, "claim_capability": values["claim"],
+        "completion_capability": values["completion"], "status_capability": values["status"],
+        "approval_capability": values["approval"], "cancel_capability": values["cancel"],
+        "retry_capability": values["retry"],
+    }
+
+
+@router.post("/browser/bind")
+def bind(payload: BindRequest, db: Session = Depends(get_db)):
+    try:
+        generation = store.bind_browser(db, payload.transaction_id, payload.pairing_code,
+                                        payload.browser_capability, payload.request_id)
+        _commit(db)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if generation is None:
+        raise _unavailable()
+    return {"state": "browser_bound", "generation": generation}
+
+
+@router.post("/browser/candidate")
+def candidate(payload: CandidateRequest, db: Session = Depends(get_db)):
+    try:
+        identity = verify_supabase_access_token(payload.access_token)
+        uid = str(identity.get("uid") or "")
+        email = str(identity.get("email") or "")
+        if not uid:
+            raise AuthenticationRequired("Supabase identity is invalid.")
+        ok = store.candidate(db, payload.transaction_id, payload.browser_capability,
+                             payload.generation, payload.request_id, uid, email)
+        _commit(db)
     except AuthenticationRequired as exc:
         db.rollback()
-        raise HTTPException(status_code=401, detail="Authentication could not be verified.") from exc
-    except (RuntimeError, SupabaseAuthUnavailable) as exc:
+        raise HTTPException(status_code=401, detail="The signed-in account could not be verified.") from exc
+    except SupabaseAuthUnavailable as exc:
         db.rollback()
-        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable.") from exc
+        raise HTTPException(status_code=503, detail="Account verification is temporarily unavailable.") from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if not ok:
+        raise _unavailable()
+    return {"state": "candidate_pending_approval", "generation": payload.generation}
+
+
+@router.post("/status")
+def get_status(payload: StatusRequest, db: Session = Depends(get_db)):
+    try:
+        result = store.status(db, payload.transaction_id, payload.status_capability)
+        db.rollback()
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if result is None:
+        raise _unavailable()
+    result["candidate_uid"] = str(result["candidate_uid"]) if result["candidate_uid"] else None
+    result["approved_uid"] = str(result["approved_uid"]) if result["approved_uid"] else None
+    result["expires_at"] = result["expires_at"].isoformat()
+    return result
+
+
+@router.post("/approve")
+def approve(payload: ApproveRequest, db: Session = Depends(get_db)):
+    try:
+        ok = store.approve(db, payload.transaction_id, payload.approval_capability,
+                           str(payload.candidate_uid), payload.generation,
+                           payload.decision, payload.request_id)
+        _commit(db)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if not ok:
+        raise _unavailable()
+    return {"state": "approved" if payload.decision == "approve" else "rejected",
+            "generation": payload.generation}
+
+
+@router.post("/browser/complete")
+def complete(payload: CompleteRequest, db: Session = Depends(get_db)):
+    try:
+        identity = verify_supabase_access_token(payload.access_token)
+        uid = str(identity.get("uid") or "")
+        if not uid:
+            raise AuthenticationRequired("Supabase identity is invalid.")
+        ok = store.complete(db, payload.transaction_id, payload.browser_capability,
+                            payload.generation, payload.request_id, uid, payload.refresh_token)
+        _commit(db)
+    except AuthenticationRequired as exc:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="The signed-in account could not be verified.") from exc
+    except SupabaseAuthUnavailable as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Account verification is temporarily unavailable.") from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if not ok:
+        raise _unavailable()
+    return {"state": "completed", "generation": payload.generation}
 
 
 @router.post("/claim")
-def claim_handoff(payload: ClaimRequest, db: Session = Depends(get_db)):
-    token = claim(db, payload.transaction_id, payload.claim_capability)
-    if token is None:
+def claim(payload: ClaimRequest, db: Session = Depends(get_db)):
+    try:
+        token = store.claim(db, payload.transaction_id, payload.claim_capability)
+        _commit(db)
+    except RuntimeError as exc:
         db.rollback()
-        raise HTTPException(status_code=404, detail="Authentication handoff unavailable.")
-    _commit_or_fail(db)
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if token is None:
+        raise _unavailable()
     return {"refresh_token": token}
 
 
-@router.post("/cancel", status_code=204)
-def cancel_handoff(payload: CancelRequest, db: Session = Depends(get_db)):
-    cancel(db, payload.transaction_id, payload.claim_capability)
-    _commit_or_fail(db)
+@router.post("/cancel")
+def cancel(payload: CancelRequest, db: Session = Depends(get_db)):
+    try:
+        store.cancel(db, payload.transaction_id, payload.cancel_capability)
+        _commit(db)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    return {"state": "cancelled"}
+
+
+@router.post("/retry")
+def retry(payload: RetryRequest, db: Session = Depends(get_db)):
+    pairing = _pairing()
+    try:
+        ok = store.retry(db, payload.transaction_id, payload.retry_capability,
+                         pairing, payload.request_id)
+        _commit(db)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Excel sign-in is temporarily unavailable.") from exc
+    if not ok:
+        raise _unavailable()
+    return {"pairing_code": pairing}
