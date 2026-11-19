@@ -90,144 +90,209 @@ The backend API does not itself prove Windows Excel Desktop compatibility. Offic
 Dialog and external browser behavior, including redirect/callback handling, must be
 accepted on the actual supported Excel Desktop host before release.
 
-## Windows Excel Desktop acceptance checklist
+## Local Windows Excel Desktop acceptance
 
-Use the real signed add-in manifest and the deployed backend only after the approved
-production migration and server secrets have been configured. Do not treat browser
-tests or Flutter Web tests as Excel acceptance.
+This is the first Windows acceptance stage and is local-only. It uses a fresh
+disposable PostgreSQL database, local migrations `0037` and `0038`, a locally
+running HTTPS backend, a localhost task pane, and the generated runtime
+manifest. Render deployment and production database migrations are not
+prerequisites for local Windows acceptance; production rollout is a separate
+later stage.
 
-1. Sideload the manifest into Windows Excel Desktop and open a workbook.
-2. With an existing valid session, confirm the add-in restores the user and reaches
-   the workspace only after the authoritative Supabase user check.
-3. Sign out locally, reload the task pane, create a new handoff and copy the browser
-   link. Open it in Chrome or Edge, enter the displayed pairing code and sign in by
-   email/password. Approve the displayed email in Excel and verify workspace access.
-4. Repeat using Google OAuth. Confirm the provider callback returns to the same
-   browser tab, the authorization code is removed from the address bar, and Excel
-   receives only the completion notification from Office Dialog.
-5. Sign in with a different account than intended, verify the email shown in Excel,
-   reject it and confirm no session is established.
-6. Approve only after verifying the exact UID/email shown. Confirm the app's final
-   getUser() identity matches the approved UID.
-7. Reload the task pane while a browser login is pending. Confirm the transaction
-   resumes without generating a second claim.
-8. Close the browser before candidate submission, then retry with a newly generated
-   pairing code. Confirm the previous browser capability is rejected.
-9. Let a transaction expire and verify it cannot be claimed and its ciphertext is
-   cleared by the status/cleanup path.
-10. Complete login, log out from Excel, close Excel, reopen the workbook and verify
-    local logout and existing-session restoration behavior separately.
-11. Repeat with the Office Dialog fallback. Close the dialog mid-flow and verify
-    the transaction can be cancelled or restarted without any token in a dialog
-    message.
+### Local prerequisites
 
-Record the Windows version, Excel build/channel, manifest version, browser version,
-backend commit, Supabase access-token lifetime, test timestamps and outcome for each
-case. The current manifest still contains the documented placeholder add-in GUID;
-replace it with the stable owner-assigned GUID before formal sideload acceptance.
+The local procedure requires:
 
-## Windows Excel Desktop test build (local-only)
+- Windows 11.
+- Microsoft Excel Desktop and Edge WebView2.
+- Compatible Flutter stable and Dart SDK versions.
+- Python and the repository Python dependencies.
+- Node.js/npm.
+- PostgreSQL 16 client and server.
+- `mkcert`.
 
-This procedure uses a disposable local PostgreSQL database and a locally running backend. It does not require a Render deployment or production database migration. Do not point the test build at the current Render backend yet: the Render service still tracks `main`, while the v2 API is only in this pull request.
+The preparation script checks required command-line tools, but it does not
+establish that Excel Desktop or Edge WebView2 is installed.
 
-### Required local tools
+### Verify the exact checkout before preparation
 
-- Windows 11, Microsoft Excel Desktop (Microsoft 365), and Edge WebView2
-- Flutter stable (matching the repository's Dart SDK constraint), Python, Node.js/npm
-- PostgreSQL 16 with `psql`, and the repository's Python requirements
-- `mkcert` to create a locally trusted HTTPS certificate
-
-### 1. Prepare a disposable database and backend
-
-From the repository root, create a new empty local database (do not reuse a production database). Apply the migrations in order:
+From the repository root, run:
 
 ```powershell
-psql "postgresql://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_test" -v ON_ERROR_STOP=1 -f migrations/0037_excel_auth_handoff.sql
-psql "postgresql://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_test" -v ON_ERROR_STOP=1 -f migrations/0038_excel_auth_pairing.sql
+git fetch origin excel-v2-session-handoff
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/excel-v2-session-handoff
+git diff --check
 ```
 
-Set backend configuration in the same PowerShell window. Generate fresh local-only secrets; do not reuse production values:
+Stop if the local `HEAD` differs from `origin/excel-v2-session-handoff`, or if
+the working tree is not the exact state intended for testing. The preparation
+script prints the current branch and `HEAD`, but does not fetch, synchronize,
+compare, pull, rebase, or switch branches.
+
+### Run the preparation script
+
+Run the script from the repository root with the exact owner-approved GUID and
+development Supabase configuration:
 
 ```powershell
-$env:DATABASE_URL = "postgresql+psycopg://postgres:<LOCAL_PASSWORD>@127.0.0.1:5432/insightflow_excel_test"
-$env:INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY = python -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
-$env:INSIGHTFLOW_EXCEL_HANDOFF_PAIRING_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
-$env:SUPABASE_URL = "https://<PROJECT_REF>.supabase.co"
-$env:SUPABASE_PUBLISHABLE_KEY = "<SUPABASE_PUBLISHABLE_KEY>"
+.\scripts\windows\Prepare-InsightFlowExcelV2.ps1 `
+  -SupabaseUrl '<development Supabase URL>' `
+  -SupabasePublishableKey '<development publishable key>' `
+  -AddinGuid '<owner-approved GUID>'
 ```
 
-`SUPABASE_AUTH_ISSUER` is optional and defaults to `<SUPABASE_URL>/auth/v1`. `SUPABASE_AUTH_AUDIENCE` is optional and defaults to `authenticated`. The backend requires `DATABASE_URL` to resolve to PostgreSQL. Do not set a Supabase service-role key for this flow.
+The script requires PostgreSQL 16, verifies that PostgreSQL is reachable,
+requires unused backend and task-pane ports, creates a fresh disposable
+database, and refuses to modify an existing database. It applies migration
+`0037` followed by migration `0038`, generates local-only secrets, creates
+local HTTPS certificates, generates the runtime manifest, builds the task pane,
+starts the backend and task-pane server, and verifies their health.
 
-Create and trust a localhost certificate, then start the backend with HTTPS:
+`mkcert -install` installs a local development certificate authority into the
+Windows trust store. Windows elevation or a trust confirmation may be required.
+
+The script writes the generated runtime manifest to:
+
+```text
+%LOCALAPPDATA%\InsightFlow\ExcelV2\OfficeAddins\InsightFlow.localtest.addin.xml
+```
+
+It substitutes the approved GUID and local pane URL into that runtime copy. It
+does not modify either tracked manifest.
+
+After backend startup and health verification, the script clears backend-related
+environment variables from the current PowerShell process. It also performs
+this cleanup in documented error paths. This does not delete or alter the
+environment inherited by an already-running backend child process.
+
+A successful run leaves the fresh disposable PostgreSQL database in place. The
+owner must remove it manually after testing, when its contents are no longer
+needed:
 
 ```powershell
-mkcert -install
-mkcert localhost 127.0.0.1 ::1
-uvicorn main:app --host 127.0.0.1 --port 8000 --ssl-certfile localhost+2.pem --ssl-keyfile localhost+2-key.pem
+dropdb -h 127.0.0.1 -p 5432 -U postgres insightflow_excel_test
 ```
 
-Run the backend from the repository root. Confirm `https://localhost:8000/health` responds before building the task pane.
+The example uses the default `-DbUser postgres` and
+`-DbName insightflow_excel_test`. If either parameter was customized when
+running the script, substitute the exact customized values. The script does
+not drop the database automatically.
 
-### 2. Build the Flutter task pane
+### Local authentication and OAuth prerequisites
 
-In a second PowerShell window:
+Use a dedicated development Supabase project and its publishable/anonymous key.
+In Supabase Auth URL Configuration, add the exact local redirect
+`https://localhost:3000/` or a narrowly scoped localhost pattern. Keep the
+production Site URL unchanged.
 
-```powershell
-cd apps/flutter_app
-flutter pub get
-flutter build web --release --base-href / `
-  --dart-define=INSIGHTFLOW_BACKEND_URL=https://localhost:8000 `
-  --dart-define=INSIGHTFLOW_SUPABASE_URL=https://<PROJECT_REF>.supabase.co `
-  --dart-define=INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=<SUPABASE_PUBLISHABLE_KEY> `
-  --dart-define=INSIGHTFLOW_AUTH_REDIRECT_URL=https://localhost:3000/
+For Google OAuth, configure `https://localhost:3000` as the Authorized
+JavaScript origin. Configure the Google Authorized redirect URI as the Supabase
+provider callback, normally
+`https://<PROJECT_REF>.supabase.co/auth/v1/callback`. The provider callback is
+not the task-pane redirect. Keep production OAuth settings unchanged during
+local testing.
+
+Local acceptance requires the owner-approved stable add-in GUID. The tracked
+`apps/flutter_app/excel/InsightFlow.localtest.addin.xml` is only the source
+template. The script substitutes the approved GUID and local pane URL into the
+generated runtime copy. Local acceptance does not require editing either
+tracked manifest.
+
+The approved stable GUID must be incorporated separately into the normal
+`InsightFlow.addin.xml` distribution manifest before production distribution.
+That production-manifest change is not part of local acceptance.
+
+### Local HTTPS hosting and network-share sideloading
+
+Use the generated runtime manifest at:
+
+```text
+%LOCALAPPDATA%\InsightFlow\ExcelV2\OfficeAddins\InsightFlow.localtest.addin.xml
 ```
 
-Serve `apps/flutter_app/build/web` over HTTPS. From that directory, or by supplying its path:
+For the add-in-only XML manifest, use Microsoft's Windows network-share catalog
+method:
 
-```powershell
-npx --yes http-server build/web -a 127.0.0.1 -p 3000 -S -C ..\..\localhost+2.pem -K ..\..\localhost+2-key.pem
-```
-
-The certificate must be trusted by Windows and include `localhost`. Office add-ins should use HTTPS even during local development.
-
-### 3. Use the prepared local manifest
-
-Use `apps/flutter_app/excel/InsightFlow.localtest.addin.xml` for the Windows local test. It is already configured with `https://localhost:3000/` as its `SourceLocation` and includes localhost as an `AppDomain`. Its icon and support URLs remain on GitHub Pages. The normal `InsightFlow.addin.xml` is unchanged and still points to the existing GitHub Pages deployment.
-
-Both manifests currently contain the same syntactically formatted placeholder `<Id>`, not an owner-confirmed add-in identity. Before sideloading, the owner must generate or confirm one stable, unique GUID and replace the placeholder in **both** manifests with that same value. Do not generate a production identity by guessing.
-
-### 4. Sideload into Windows Excel Desktop
-
-For the add-in-only XML manifest, use Microsoft's Windows network-share catalog method:
-
-1. Create a local folder such as `C:\OfficeAddins` and share it as `\\localhost\InsightFlowAddins`.
-2. Add that share as a trusted Office catalog under `HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\{catalog-guid}`. Set `Id` to the same catalog GUID, `Url` to `\\localhost\InsightFlowAddins`, and `Flags` to DWORD `1`. The catalog GUID is separate from the add-in's `<Id>`.
-3. Copy the temporary local manifest into the shared folder.
-4. Close all Office applications, reopen Excel, then choose **Home > Add-ins > Advanced > Shared Folder** and add InsightFlow.
-5. If Excel/WebView2 prompts for localhost loopback access, allow it for the local test environment.
+1. Create a local folder such as `C:\OfficeAddins` and share it as
+   `\\localhost\InsightFlowAddins`.
+2. Register that share as a trusted Office catalog under
+   `HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\{catalog-guid}`.
+   Set `Id` to the catalog GUID, `Url` to `\\localhost\InsightFlowAddins`, and
+   `Flags` to DWORD `1`. The catalog GUID is separate from the add-in's `<Id>`.
+3. Copy only the generated runtime manifest from
+   `%LOCALAPPDATA%\InsightFlow\ExcelV2\OfficeAddins\InsightFlow.localtest.addin.xml`
+   into the shared folder. Never copy the tracked template directly.
+4. Close all Office applications, reopen Excel, then choose **Home > Add-ins >
+   Advanced > Shared Folder** and add InsightFlow.
+5. If Excel or WebView2 prompts for localhost loopback access, allow it for the
+   local test environment.
 
 Network-share sideloading is for Windows testing, not production distribution.
 
-### 5. Configure authentication redirects
+### Local Windows acceptance sequence
 
-Use a dedicated development Supabase project if available. In Supabase Auth URL Configuration, add the exact local app redirect `https://localhost:3000/` (or the narrowly scoped `https://localhost:3000/**` pattern). Keep the production Site URL unchanged.
+Record the exact commit, Excel build/channel, Edge WebView2 version, browser,
+runtime manifest path, approved GUID, and evidence for every case:
 
-For Google OAuth, the Google Cloud Web OAuth client needs the local app origin `https://localhost:3000` under Authorized JavaScript origins. Its Authorized redirect URI remains the Supabase provider callback URL shown in the Supabase Google provider settings, normally `https://<PROJECT_REF>.supabase.co/auth/v1/callback`; it is not the task-pane URL. Enable Google in the Supabase provider settings and use the matching client ID/secret there. Do not change production OAuth settings without owner approval.
+1. Open the workbook and confirm the localhost task pane loads over HTTPS.
+2. Complete email/password login and verify the authenticated Excel identity.
+3. Complete Google OAuth, verify the browser-to-Excel return flow, and confirm the authorization code is removed from the browser address bar.
+4. Restore an existing Excel session and verify its identity.
+5. Attempt login with the wrong browser account and confirm rejection.
+6. Approve the exact displayed candidate identity and complete the one-time claim. Confirm the final authenticated UID matches the explicitly approved UID.
+7. Reload the task pane during a pending handoff and verify safe behavior.
+8. Close the browser before completion and verify retry, cancellation, and expiry. Confirm expired transactions cannot be claimed and staged ciphertext is cleared.
+9. Cancel a pending handoff while the backend is unavailable and confirm local capabilities are cleared safely.
+10. Log out locally, restart Excel, and verify session behavior. Confirm Excel-local logout does not sign out other InsightFlow clients.
+11. Exercise the Office Dialog fallback where supported.
 
-### 6. Windows acceptance sequence
+### Local shutdown and cleanup
 
-Record the Windows version, Excel build/channel, Edge WebView2 version, manifest GUID, browser, backend commit and test result for each case:
+Stop the backend and task-pane processes using the PIDs printed by the script.
+Then remove the disposable database manually with `dropdb` as shown above.
+Database cleanup is separate from process shutdown and is not performed
+automatically by the preparation script.
 
-1. Open the workbook and confirm the task pane loads over HTTPS.
-2. Restore a valid existing session and confirm the authoritative user check succeeds.
-3. Sign out locally, then complete email/password browser login and approve the exact displayed account in Excel.
-4. Repeat with Google OAuth; confirm the same browser tab returns to the task pane callback and the authorization code is removed from the address bar.
-5. Sign in with the wrong account, reject it in Excel and confirm no session is established.
-6. Reload the task pane while a handoff is pending; verify recovery without a second claim.
-7. Close the browser before completion; retry with a fresh pairing code and verify the old capability is rejected.
-8. Let a handoff expire and verify it cannot be claimed.
-9. Cancel a pending handoff while offline or with the backend unavailable; confirm local Excel capabilities are cleared, then verify the server-side transaction expires and cannot be claimed.
-10. Sign out from Excel, close Excel completely, reopen the workbook and verify the local session is gone while sessions in other clients remain active.
-11. Repeat the supported path using the Office Dialog fallback.
+## Production Windows Excel Desktop acceptance checklist
 
-Automated CI is not a substitute for this Windows Excel Desktop acceptance. The production backend remains on `main` until a separately approved deployment, so this local test backend is required for v2 acceptance before release.
+Use the real signed distribution manifest and deployed backend only after the
+approved production migration, database target, role permissions, server
+secrets, OAuth configuration, and deployment have been verified.
+
+Production acceptance requires:
+
+- An approved production database and migration plan.
+- Verification that migration `0037` is present before `0038`.
+- Verification of the actual production `DATABASE_URL` target and role.
+- Verified grants, schema permissions, and RLS behavior.
+- Approved production encryption, pairing, Supabase, and OAuth configuration.
+- The stable owner-assigned GUID in the normal `InsightFlow.addin.xml`
+  distribution manifest.
+- The actual deployed backend and signed/approved distribution manifest.
+- Real Windows Excel Desktop acceptance before release.
+
+The production database blocker remains explicit. The connected Supabase project
+migration history has no `0037_excel_auth_handoff.sql` record and no
+`excel_handoff` schema. The Render workspace has no managed PostgreSQL
+instance, so the actual Render runtime `DATABASE_URL` target and role remain
+unverified. Do not apply production migrations or change Render configuration
+until the target, migration history, roles, grants, RLS behavior, and production
+secrets are independently verified and approved.
+
+The normal distribution manifest is separate from the generated local runtime
+manifest. Local acceptance must not modify either tracked manifest.
+
+Post-deployment Windows acceptance must include:
+
+1. Restore an existing session and verify the authoritative user identity.
+2. Complete email/password login.
+3. Complete Google OAuth.
+4. Verify wrong-account rejection, explicit approval, and final identity
+   verification.
+5. Verify pending-handoff recovery, expiry, and cancellation.
+6. Verify logout and session isolation from other clients.
+7. Exercise the Office Dialog fallback where supported.
+
+Automated CI is not a substitute for real Windows Excel Desktop acceptance.
