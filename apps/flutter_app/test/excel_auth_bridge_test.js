@@ -146,6 +146,18 @@ async function run() {
     assert.equal(h.issuedSession.access_token, '');
     assert.equal(h.issuedSession.refresh_token, '');
   }
+
+  {
+    const h = harness('?excelHandoff=tx-5&error=access_denied', {
+      'insightflow.excel.v2.pkce.verifier': 'stale-verifier'
+    });
+    await assert.rejects(
+      h.window.InsightFlowExcelAuth.resumeOAuth(),
+      /cancelled or could not be completed/
+    );
+    assert.equal(h.values.has('insightflow.excel.v2.pkce.verifier'), false);
+  }
+
   console.log('Excel v2 authentication bridge tests passed.');
 }
 

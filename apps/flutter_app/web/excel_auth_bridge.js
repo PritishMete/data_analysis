@@ -154,6 +154,7 @@
     var code = pendingOAuthCode;
     pendingOAuthCode = null;
     if (!code) {
+      global.sessionStorage.removeItem(VERIFIER_KEY);
       if (callbackError) throw new Error("Google sign-in was cancelled or could not be completed.");
       return false;
     }
