@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_auth_service.dart';
 import '../../core/interop/excel_auth_bridge.dart';
