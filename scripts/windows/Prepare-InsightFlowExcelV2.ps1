@@ -117,7 +117,9 @@ $xmlText = Get-Content -Raw -Path $manifest
 $xmlText = [regex]::Replace($xmlText, '<Id>[^<]+</Id>', "<Id>$AddinGuid</Id>", 1)
 $xmlText = $xmlText.Replace('https://localhost:3000/', "https://localhost:$PanePort/").Replace('https://localhost:3000</AppDomain>', "https://localhost:$PanePort</AppDomain>")
 [xml]$xmlCheck = $xmlText
-if ($xmlCheck.OfficeApp.Id -ne $AddinGuid -or $xmlCheck.OfficeApp.DefaultSettings.SourceLocation.DefaultValue -ne "https://localhost:$PanePort/") { throw "Generated local manifest failed validation." }
+$idNode = $xmlCheck.SelectSingleNode("/*[local-name()='OfficeApp']/*[local-name()='Id']")
+$sourceNode = $xmlCheck.SelectSingleNode("/*[local-name()='OfficeApp']/*[local-name()='DefaultSettings']/*[local-name()='SourceLocation']")
+if ($null -eq $idNode -or $idNode.InnerText -ne $AddinGuid -or $null -eq $sourceNode -or $sourceNode.GetAttribute("DefaultValue") -ne "https://localhost:$PanePort/") { throw "Generated local manifest failed validation." }
 Set-Content -Path $runtimeManifest -Value $xmlText -Encoding UTF8
 
 Push-Location $repo
