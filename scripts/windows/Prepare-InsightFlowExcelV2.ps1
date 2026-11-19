@@ -135,6 +135,13 @@ try {
     $backendArgs = @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "$BackendPort", "--ssl-certfile", $quotedCert, "--ssl-keyfile", $quotedKey)
     $backend = Start-Process -FilePath "python" -ArgumentList $backendArgs -WorkingDirectory $repo -PassThru
 } finally { Pop-Location }
+} catch {
+    Stop-ProcessTree $backend
+    Clear-BackendEnvironment
+    $dbPassword = $null
+    $dbPasswordEscaped = $null
+    throw "Certificate, manifest or backend startup preparation failed. $($_.Exception.Message)"
+}
 
 try { Wait-Url "https://localhost:$BackendPort/health" 60 }
 catch {
