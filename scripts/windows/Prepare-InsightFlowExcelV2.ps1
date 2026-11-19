@@ -80,6 +80,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Migration 0037 failed. Stop and inspect the disposable database." }
     & psql -h 127.0.0.1 -p 5432 -U $DbUser -d $DbName -v ON_ERROR_STOP=1 -f $migration38
     if ($LASTEXITCODE -ne 0) { throw "Migration 0038 failed. Stop and inspect the disposable database." }
+    $table = (& psql -h 127.0.0.1 -p 5432 -U $DbUser -d $DbName -Atqc "SELECT to_regclass('excel_handoff.transactions')").Trim()
+    if ($table -ne "excel_handoff.transactions") { throw "Excel handoff table verification failed after migrations." }
 } finally { Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue }
 
 $dbUserEscaped = [uri]::EscapeDataString($DbUser)
@@ -91,6 +93,8 @@ $env:SUPABASE_URL = $SupabaseUrl
 $env:SUPABASE_PUBLISHABLE_KEY = $SupabasePublishableKey
 $env:INSIGHTFLOW_CORS_ORIGINS = "https://localhost:$PanePort,http://localhost:$PanePort,https://127.0.0.1:$PanePort,http://127.0.0.1:$PanePort"
 $env:BUILD_GIT_SHA = "local-$head"
+$env:AUTHZ_PERSISTENCE_PROVIDER = "supabase"
+Remove-Item Env:RENDER,Env:RENDER_SERVICE_ID -ErrorAction SilentlyContinue
 
 New-Item -ItemType Directory -Path $certDir,$catalogDir -Force | Out-Null
 & mkcert -install
