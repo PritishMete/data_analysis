@@ -185,7 +185,7 @@ flutter build web --release --base-href / `
 Serve `apps/flutter_app/build/web` over HTTPS. From that directory, or by supplying its path:
 
 ```powershell
-npx --yes http-server build/web -a 127.0.0.1 -p 3000 -S -C ..\..\..\localhost+2.pem -K ..\..\..\localhost+2-key.pem
+npx --yes http-server build/web -a 127.0.0.1 -p 3000 -S -C ..\..\localhost+2.pem -K ..\..\localhost+2-key.pem
 ```
 
 The certificate must be trusted by Windows and include `localhost`. Office add-ins should use HTTPS even during local development.
