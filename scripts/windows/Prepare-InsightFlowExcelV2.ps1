@@ -142,7 +142,10 @@ catch {
 
 Clear-BackendEnvironment
 $dbPassword = $null
+$dbPasswordEscaped = $null
 $dbPasswordSecure = $null
+$backend = $null
+$pane = $null
 
 try {
 Push-Location $flutterDir
