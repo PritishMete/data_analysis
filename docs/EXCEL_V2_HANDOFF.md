@@ -78,10 +78,11 @@ expose the Auth access-token lifetime or refresh-token settings. Verify that the
 configured access-token lifetime exceeds the maximum approval window before rollout.
 If the access token expires before browser/complete, the backend rejects the request
 and the user must begin a new sign-in; the backend never refreshes it. This design
-does not depend on parent-refresh-token reuse. Confirm
-the deployed database role has only the required access to the private schema.
-Do not apply migration 0038 until the production database role and migration 0037
-state have been independently verified.
+does not depend on parent-refresh-token reuse. The migrations also expect the PostgreSQL roles `anon` and `authenticated` to exist
+(as they do in Supabase). Confirm those roles exist, the actual `DATABASE_URL` points
+to the intended database, migration 0037 is present, and the deployed backend role
+has only the required access to the private schema. Do not apply migration 0038 until
+these production database facts have been independently verified.
 
 ## Host limitations
 
