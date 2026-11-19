@@ -15,8 +15,15 @@
     var clean = new URLSearchParams();
     if (initialParams.get("excelHandoff")) clean.set("excelHandoff", initialParams.get("excelHandoff"));
     if (initialParams.get("excelAuthDialog") === "1") clean.set("excelAuthDialog", "1");
-    global.history.replaceState(global.history.state, "", global.location.pathname +
-      (clean.toString() ? "?" + clean.toString() : "") + (global.location.hash || ""));
+    var cleanUrl = global.location.pathname +
+      (clean.toString() ? "?" + clean.toString() : "") + (global.location.hash || "");
+    if (global.__insightflowNativeHistory === false) {
+      pendingOAuthCode = null;
+      callbackError = "This host cannot safely remove the OAuth callback code. Start again in Chrome or Edge.";
+      if (typeof global.location.replace === "function") global.location.replace(cleanUrl);
+    } else {
+      global.history.replaceState(global.history.state, "", cleanUrl);
+    }
   }
 
   function randomToken(bytes) {

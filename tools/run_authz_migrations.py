@@ -29,7 +29,12 @@ EXPECTED_TABLES = {
 
 
 def migration_files() -> list[Path]:
-    return sorted(MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    # Excel handoff migrations have their own approval and release lifecycle.
+    # Keep them out of the organization/authorization startup migration runner.
+    return sorted(
+        path for path in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql")
+        if "_excel_auth_" not in path.stem
+    )
 
 
 def require_database_url() -> str:

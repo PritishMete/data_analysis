@@ -10,7 +10,9 @@ from sqlalchemy.orm import sessionmaker
 
 from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create
 
-DATABASE_URL = os.environ["EXCEL_HANDOFF_TEST_DATABASE_URL"]
+DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL")
+if not DATABASE_URL:
+    pytest.skip("requires the dedicated PostgreSQL Excel handoff service", allow_module_level=True)
 ROOT = Path(__file__).parents[2]
 
 

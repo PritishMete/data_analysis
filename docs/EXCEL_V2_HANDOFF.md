@@ -57,7 +57,7 @@ All endpoints are POST under `/v2/excel-auth/handoff`:
 
 The v1 router is not mounted by this version, so its direct-token completion path
 cannot bypass v2 approval. Migration `0038_excel_auth_pairing.sql` is additive to
-`0037_excel_auth_handoff.sql`. Neither migration is applied to production by CI.
+`0037_excel_auth_handoff.sql`. The general organization/authorization startup migration runner explicitly excludes these Excel-specific files. Neither migration is applied to production by CI.
 
 ## Required server settings
 
