@@ -190,14 +190,11 @@ npx --yes http-server build/web -a 127.0.0.1 -p 3000 -S -C ..\..\localhost+2.pem
 
 The certificate must be trusted by Windows and include `localhost`. Office add-ins should use HTTPS even during local development.
 
-### 3. Create a temporary local manifest
+### 3. Use the prepared local manifest
 
-Copy, do not overwrite, `apps/flutter_app/excel/InsightFlow.addin.xml`. In the temporary copy only:
-- Change the `DefaultSettings/SourceLocation` from the GitHub Pages URL to `https://localhost:3000/`.
-- Add `https://localhost:3000` as an `AppDomain`.
-- Leave the existing icon and support URLs unchanged.
+Use `apps/flutter_app/excel/InsightFlow.localtest.addin.xml` for the Windows local test. It is already configured with `https://localhost:3000/` as its `SourceLocation` and includes localhost as an `AppDomain`. Its icon and support URLs remain on GitHub Pages. The normal `InsightFlow.addin.xml` is unchanged and still points to the existing GitHub Pages deployment.
 
-The checked-in manifest remains configured for GitHub Pages. The current `<Id>` is a syntactically formatted placeholder, not an owner-confirmed add-in identity. Before sideloading, the owner must confirm or generate one stable, unique add-in GUID and use it consistently in the test and future distribution manifests. Do not generate a production identity by guessing.
+Both manifests currently contain the same syntactically formatted placeholder `<Id>`, not an owner-confirmed add-in identity. Before sideloading, the owner must generate or confirm one stable, unique GUID and replace the placeholder in **both** manifests with that same value. Do not generate a production identity by guessing.
 
 ### 4. Sideload into Windows Excel Desktop
 
