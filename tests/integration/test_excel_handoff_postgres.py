@@ -208,6 +208,41 @@ def test_pairing_expiration_and_generation_retry_invalidate_old_browser(session)
                          "00000000-0000-0000-0000-000000000002", "new@example.com")
 
 
+
+def test_handoff_mutations_are_idempotent_for_the_same_request_ids(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "i" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    bind_id = uuid4()
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, browser, bind_id) == 1
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, browser, bind_id) == 1
+
+    candidate_id = uuid4()
+    with session.begin() as db:
+        assert candidate(db, tx, browser, 1, candidate_id, uid, "person@example.com")
+    with session.begin() as db:
+        assert candidate(db, tx, browser, 1, candidate_id, uid, "person@example.com")
+
+    approval_id = uuid4()
+    with session.begin() as db:
+        assert approve(db, tx, caps["approval"], uid, 1, "approve", approval_id)
+    with session.begin() as db:
+        assert approve(db, tx, caps["approval"], uid, 1, "approve", approval_id)
+
+    completion_id = uuid4()
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, completion_id, uid, "refresh-token")
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, completion_id, uid, "refresh-token")
+
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+
+
 def test_cancel_clears_staged_refresh_token(session):
     tx, caps, code = make_transaction(session)
     browser = "browser-" + "z" * 48

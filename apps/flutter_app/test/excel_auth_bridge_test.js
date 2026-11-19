@@ -91,6 +91,15 @@ async function run() {
     const browser = JSON.parse(h.values.get('insightflow.excel.v2.browser'));
     assert.equal(browser.pairingCode, '0123-4567-89AB-CDEF');
     assert.equal(browser.browserCapability.length >= 40, true);
+    assert.ok(browser.bindRequestId);
+    assert.ok(browser.candidateRequestId);
+    assert.ok(browser.completionRequestId);
+    const sameBrowser = h.window.InsightFlowExcelAuth.prepareBrowser(JSON.stringify({
+      transactionId: 'tx-2', pairingCode: '0123-4567-89AB-CDEF',
+      generation: 1, supabaseUrl: 'https://project.supabase.co',
+      publishableKey: 'public-key', apiBase: 'https://api.example'
+    }));
+    assert.equal(JSON.parse(h.values.get('insightflow.excel.v2.browser')).browserCapability, browser.browserCapability);
     assert.equal(JSON.stringify(browser).includes('refresh_token'), false);
     await h.window.InsightFlowExcelAuth.startGoogle();
     assert.match(h.assigned, /code_challenge_method=s256/);
@@ -102,7 +111,10 @@ async function run() {
       transactionId: 'tx-3', pairingCode: '0123-4567-89AB-CDEF',
       generation: 1, supabaseUrl: 'https://project.supabase.co',
       publishableKey: 'public-key', apiBase: 'https://api.example',
-      browserCapability: 'browser-capability-value'
+      browserCapability: 'browser-capability-value',
+      bindRequestId: 'bind-request-uuid',
+      candidateRequestId: 'candidate-request-uuid',
+      completionRequestId: 'completion-request-uuid'
     };
     const h = harness('?excelHandoff=tx-3&code=callback-code', {
       'insightflow.excel.v2.browser': JSON.stringify(stored),

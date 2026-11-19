@@ -82,9 +82,22 @@
         supabaseOrigin.username || supabaseOrigin.password || apiOrigin.username || apiOrigin.password) {
       throw new Error("Excel sign-in requires trusted HTTPS endpoints.");
     }
+    var pairingCode = config.pairingCode.toUpperCase();
+    var existing = loadBrowser();
+    if (existing && existing.transactionId === config.transactionId &&
+        (existing.pairingCode === pairingCode || existing.pairingCodeUsed === pairingCode)) {
+      existing.bindRequestId = existing.bindRequestId || uuid();
+      existing.candidateRequestId = existing.candidateRequestId || uuid();
+      existing.completionRequestId = existing.completionRequestId || uuid();
+      global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(existing));
+      return existing;
+    }
     var value = {
       transactionId: config.transactionId,
-      pairingCode: config.pairingCode.toUpperCase(),
+      pairingCode: pairingCode,
+      bindRequestId: uuid(),
+      candidateRequestId: uuid(),
+      completionRequestId: uuid(),
       generation: Number(config.generation || 1),
       supabaseUrl: config.supabaseUrl.replace(/\/$/, ""),
       publishableKey: config.publishableKey,
@@ -165,7 +178,7 @@
 
   async function passwordSignIn(raw) {
     var input = typeof raw === "string" ? JSON.parse(raw) : raw;
-    var browser = loadBrowser() || browserFromConfig(input);
+    var browser = browserFromConfig(input);
     var response = await fetch(browser.supabaseUrl + "/auth/v1/token?grant_type=password", {
       method: "POST", credentials: "omit", cache: "no-store",
       headers: { "apikey": browser.publishableKey, "Content-Type": "application/json" },
@@ -181,20 +194,23 @@
 
   async function submitCandidate(browser, session) {
     try {
-    var bound = await post(browser, "/browser/bind", {
-      transaction_id: browser.transactionId,
-      pairing_code: browser.pairingCode,
-      browser_capability: browser.browserCapability,
-      request_id: uuid()
-    });
-    browser.generation = bound.generation;
-    browser.pairingCode = "";
-    global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(browser));
+    if (browser.pairingCode) {
+      var bound = await post(browser, "/browser/bind", {
+        transaction_id: browser.transactionId,
+        pairing_code: browser.pairingCode,
+        browser_capability: browser.browserCapability,
+        request_id: browser.bindRequestId
+      });
+      browser.generation = bound.generation;
+      browser.pairingCodeUsed = browser.pairingCode;
+      browser.pairingCode = "";
+      global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(browser));
+    }
     await post(browser, "/browser/candidate", {
       transaction_id: browser.transactionId,
       browser_capability: browser.browserCapability,
       generation: browser.generation,
-      request_id: uuid(),
+      request_id: browser.candidateRequestId,
       access_token: session.access_token
     });
     // Access and refresh tokens live only in this async call's memory.
@@ -223,14 +239,21 @@
             state.approved_generation !== browser.generation) {
           throw new Error("Excel approval does not match this signed-in account.");
         }
-        await post(browser, "/browser/complete", {
+        var completionBody = {
           transaction_id: browser.transactionId,
           browser_capability: browser.browserCapability,
           generation: browser.generation,
-          request_id: uuid(),
+          request_id: browser.completionRequestId,
           access_token: session.access_token,
           refresh_token: session.refresh_token
-        });
+        };
+        try {
+          await post(browser, "/browser/complete", completionBody);
+        } catch (_) {
+          // The same request id is safe to retry: complete is row-locked and
+          // idempotent, and the backend never consumes the refresh token.
+          await post(browser, "/browser/complete", completionBody);
+        }
         global.sessionStorage.removeItem(BROWSER_KEY);
         global.sessionStorage.removeItem(VERIFIER_KEY);
         if (isDialog() && global.Office && global.Office.context &&

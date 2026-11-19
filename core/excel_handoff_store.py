@@ -94,6 +94,7 @@ def bind_browser(db: Session, transaction: UUID, pairing_code: str,
       SELECT generation FROM excel_handoff.transactions
       WHERE id=:id AND protocol_version=2 AND status='browser_bound'
         AND bind_request_id=:request AND browser_capability_digest=:browser
+      FOR UPDATE
     """), {"id": transaction, "request": request_id,
            "browser": digest(browser_capability)}).scalar_one_or_none()
     if existing is not None:
@@ -128,6 +129,7 @@ def candidate(db: Session, transaction: UUID, browser: str, generation: int,
       SELECT candidate_uid, candidate_generation FROM excel_handoff.transactions
       WHERE id=:id AND protocol_version=2 AND status='candidate_pending_approval'
         AND candidate_request_id=:request AND browser_capability_digest=:browser
+      FOR UPDATE
     """), {"id": transaction, "request": request_id, "browser": digest(browser)}).one_or_none()
     if existing is not None:
         return str(existing.candidate_uid) == uid and existing.candidate_generation == generation
@@ -201,6 +203,7 @@ def approve(db: Session, transaction: UUID, capability: str, uid: str,
       SELECT status, approval_request_id, candidate_uid, candidate_generation
       FROM excel_handoff.transactions
       WHERE id=:id AND protocol_version=2 AND approval_capability_digest=:cap
+      FOR UPDATE
     """), {"id": transaction, "cap": digest(capability)}).mappings().one_or_none()
     if existing and existing["approval_request_id"] == request_id:
         expected = "approved" if decision == "approve" else "rejected"
@@ -231,6 +234,7 @@ def complete(db: Session, transaction: UUID, browser: str, generation: int,
       SELECT status, completion_request_id, approved_uid, approved_generation
       FROM excel_handoff.transactions
       WHERE id=:id AND protocol_version=2 AND approved_uid=:uid
+      FOR UPDATE
     """), {"id": transaction, "uid": uid}).mappings().one_or_none()
     if existing and existing["status"] == "completed" and existing["completion_request_id"] == request_id:
         return existing["approved_generation"] == generation
@@ -271,6 +275,15 @@ def claim(db: Session, transaction: UUID, capability: str) -> str | None:
 
 def cancel(db: Session, transaction: UUID, capability: str) -> bool:
     require_postgres(db)
+    existing = db.execute(text("""
+      SELECT status FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2 AND cancel_capability_digest=:cap
+      FOR UPDATE
+    """), {"id": transaction, "cap": digest(capability)}).scalar_one_or_none()
+    if existing == "cancelled":
+        return True
+    if existing is None:
+        return False
     result = db.execute(text("""
       UPDATE excel_handoff.transactions SET status='cancelled',
         cancelled_at=clock_timestamp(), ciphertext=NULL, pairing_digest=NULL,
