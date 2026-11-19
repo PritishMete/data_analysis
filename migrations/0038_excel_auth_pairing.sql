@@ -52,6 +52,15 @@ ALTER TABLE excel_handoff.transactions
     (excel_instance_digest IS NULL OR octet_length(excel_instance_digest)=32)
   );
 
+-- Retire every pre-v2 transaction before exposing the v2 API. In particular,
+-- no v1 completed-but-unclaimed refresh token remains claimable or encrypted.
+UPDATE excel_handoff.transactions
+SET status = CASE WHEN status IN ('pending','completed') THEN 'cancelled' ELSE status END,
+    ciphertext = NULL,
+    cancelled_at = CASE WHEN status IN ('pending','completed') THEN clock_timestamp() ELSE cancelled_at END,
+    last_activity_at = clock_timestamp()
+WHERE protocol_version = 1;
+
 CREATE UNIQUE INDEX IF NOT EXISTS excel_handoff_create_idempotency_unique
   ON excel_handoff.transactions (create_idempotency_digest)
   WHERE protocol_version=2 AND create_idempotency_digest IS NOT NULL;

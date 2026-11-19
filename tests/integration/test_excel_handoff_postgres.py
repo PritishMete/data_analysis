@@ -28,6 +28,12 @@ def engine():
           END $$;
         """)
         connection.exec_driver_sql((ROOT / "migrations/0037_excel_auth_handoff.sql").read_text())
+        connection.exec_driver_sql("""
+          INSERT INTO excel_handoff.transactions
+            (id, claim_digest, completion_digest, status, ciphertext)
+          VALUES ('00000000-0000-0000-0000-000000000099', decode(repeat('11',32),'hex'),
+            decode(repeat('22',32),'hex'), 'completed', decode('deadbeef','hex'))
+        """)
         connection.exec_driver_sql((ROOT / "migrations/0038_excel_auth_pairing.sql").read_text())
     yield engine
     with engine.begin() as connection:
@@ -64,6 +70,19 @@ def prepare_approved(Session, tx, caps, code, browser, uid):
         assert candidate(db, tx, browser, 1, uuid4(), uid, "person@example.com")
     with Session.begin() as db:
         assert approve(db, tx, caps["approval"], uid, 1, "approve", uuid4())
+
+
+
+def test_v1_rows_are_retired_and_ciphertext_is_cleared(session):
+    with session.begin() as db:
+        row = db.execute(text("""
+          SELECT protocol_version,status,ciphertext
+          FROM excel_handoff.transactions
+          WHERE id='00000000-0000-0000-0000-000000000099'
+        """)).one()
+    assert row.protocol_version == 1
+    assert row.status == "cancelled"
+    assert row.ciphertext is None
 
 
 def test_candidate_approval_and_wrong_account_rejection(session):
