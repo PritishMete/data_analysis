@@ -20,6 +20,14 @@ function New-RandomBytes([int]$Count) {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     return ,$bytes
 }
+function Stop-ProcessTree($Process) {
+    if ($null -ne $Process -and -not $Process.HasExited) {
+        & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
+    }
+}
+function Clear-BackendEnvironment {
+    Remove-Item Env:DATABASE_URL,Env:INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY,Env:INSIGHTFLOW_EXCEL_HANDOFF_PAIRING_KEY,Env:SUPABASE_URL,Env:SUPABASE_PUBLISHABLE_KEY,Env:INSIGHTFLOW_CORS_ORIGINS,Env:BUILD_GIT_SHA,Env:AUTHZ_PERSISTENCE_PROVIDER -ErrorAction SilentlyContinue
+}
 function Wait-Url([string]$Url, [int]$Seconds = 45) {
     for ($i = 0; $i -lt $Seconds; $i++) {
         try { $response = Invoke-WebRequest -Uri $Url -TimeoutSec 3; if ($response.StatusCode -eq 200) { return } }
@@ -62,6 +70,9 @@ if ([string]::IsNullOrWhiteSpace($SupabasePublishableKey) -or $SupabasePublishab
 
 $pgVersion = (& psql --version)
 if ($pgVersion -notmatch 'PostgreSQL\)\s+16\.') { throw "Install PostgreSQL 16 client tools. Detected: $pgVersion" }
+foreach ($port in @($BackendPort,$PanePort)) {
+    if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue) { throw "Port $port is already in use. Stop the existing process or choose another port." }
+}
 & pg_isready -h 127.0.0.1 -p 5432 | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Local PostgreSQL is not accepting connections on 127.0.0.1:5432." }
 
@@ -123,10 +134,17 @@ try {
 
 try { Wait-Url "https://localhost:$BackendPort/health" 60 }
 catch {
-    if ($backend -and -not $backend.HasExited) { Stop-Process -Id $backend.Id -Force }
+    Stop-ProcessTree $backend
+    Clear-BackendEnvironment
+    $dbPassword = $null
     throw "Local HTTPS backend did not start. Check dependencies and local DB settings. $($_.Exception.Message)"
 }
 
+Clear-BackendEnvironment
+$dbPassword = $null
+$dbPasswordSecure = $null
+
+try {
 Push-Location $flutterDir
 try {
     & flutter pub get
@@ -138,6 +156,11 @@ try {
 } finally { Pop-Location }
 
 Wait-Url "https://localhost:$PanePort/" 60
+} catch {
+    Stop-ProcessTree $pane
+    Stop-ProcessTree $backend
+    throw "Windows test environment setup failed. Started services were stopped. $($_.Exception.Message)"
+}
 Write-Host ""
 Write-Host "LOCAL EXCEL V2 TEST ENVIRONMENT READY" -ForegroundColor Green
 Write-Host "Backend:        https://localhost:$BackendPort/health"
@@ -148,4 +171,6 @@ Write-Host "Backend PID:    $($backend.Id)"
 Write-Host "Pane PID:       $($pane.Id)"
 Write-Host "Database:       127.0.0.1:5432/$DbName (local disposable PostgreSQL 16)"
 Write-Host "Local keys and DB password are process environment only. Do not paste them into logs or commit them."
-Write-Host "Keep this PowerShell window open. Stop the two child processes after acceptance."
+Write-Host "Stop services after acceptance with:"
+Write-Host "  taskkill.exe /PID $($pane.Id) /T /F"
+Write-Host "  taskkill.exe /PID $($backend.Id) /T /F"
