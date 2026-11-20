@@ -234,6 +234,28 @@ def approve(db: Session, transaction: UUID, capability: str, uid: str,
     return result.scalar_one_or_none() is not None
 
 
+def can_complete(db: Session, transaction: UUID, browser: str,
+                 generation: int) -> bool:
+    """Lock and validate the completion target before consuming a refresh token."""
+    require_postgres(db)
+    row = db.execute(text("""
+      SELECT status, generation, approved_generation, browser_capability_digest,
+             expires_at, ciphertext
+      FROM excel_handoff.transactions
+      WHERE id=:id AND protocol_version=2
+      FOR UPDATE
+    """), {"id": transaction}).mappings().one_or_none()
+    return bool(
+        row
+        and row["status"] == "approved"
+        and row["generation"] == generation
+        and row["approved_generation"] == generation
+        and row["browser_capability_digest"] == digest(browser)
+        and row["ciphertext"] is None
+        and row["expires_at"] > db.execute(text("SELECT clock_timestamp()")).scalar_one()
+    )
+
+
 def complete(db: Session, transaction: UUID, browser: str, generation: int,
              request_id: UUID, uid: str, refresh_token: str) -> bool:
     require_postgres(db)
