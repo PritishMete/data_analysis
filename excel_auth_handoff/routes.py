@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from core.db import get_db
 from core import excel_handoff_store as store
 from firebase_authz.supabase_auth import (
-    AuthenticationRequired, SupabaseAuthUnavailable, verify_supabase_access_token,
+    AuthenticationRequired, SupabaseAuthUnavailable, refresh_supabase_session,
+    verify_supabase_access_token,
 )
 
 router = APIRouter(prefix="/v2/excel-auth/handoff", tags=["excel-auth"])
@@ -245,8 +246,14 @@ def complete(payload: CompleteRequest, db: Session = Depends(get_db)):
         uid = str(identity.get("uid") or "")
         if not uid:
             raise AuthenticationRequired("Supabase identity is invalid.")
+        refreshed = refresh_supabase_session(payload.refresh_token)
+        refreshed_identity = verify_supabase_access_token(refreshed["access_token"])
+        refreshed_uid = str(refreshed_identity.get("uid") or "")
+        if refreshed_uid != uid:
+            raise AuthenticationRequired("Refreshed Supabase identity does not match the approved account.")
         ok = store.complete(db, payload.transaction_id, payload.browser_capability,
-                            payload.generation, payload.request_id, uid, payload.refresh_token)
+                            payload.generation, payload.request_id, uid,
+                            refreshed["refresh_token"])
         _commit(db)
     except AuthenticationRequired as exc:
         db.rollback()
