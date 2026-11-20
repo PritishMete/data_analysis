@@ -246,6 +246,10 @@ def complete(payload: CompleteRequest, db: Session = Depends(get_db)):
         uid = str(identity.get("uid") or "")
         if not uid:
             raise AuthenticationRequired("Supabase identity is invalid.")
+        if not store.can_complete(db, payload.transaction_id, payload.browser_capability,
+                                  payload.generation):
+            db.rollback()
+            raise _unavailable()
         refreshed = refresh_supabase_session(payload.refresh_token)
         refreshed_identity = verify_supabase_access_token(refreshed["access_token"])
         refreshed_uid = str(refreshed_identity.get("uid") or "")
