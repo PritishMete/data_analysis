@@ -52,6 +52,22 @@ ALTER TABLE excel_handoff.transactions
     (excel_instance_digest IS NULL OR octet_length(excel_instance_digest)=32)
   );
 
+-- These invariants apply to v2 rows after legacy rows have been retired.
+-- State-transition predicates remain enforced by the row-locked store methods.
+ALTER TABLE excel_handoff.transactions
+  ADD CONSTRAINT excel_handoff_v2_identity_check CHECK (
+    protocol_version = 1 OR status NOT IN ('approved','completed','claimed') OR
+    (approved_uid IS NOT NULL AND approved_generation IS NOT NULL
+     AND candidate_uid = approved_uid
+     AND candidate_generation = generation
+     AND approved_generation = generation)
+  ),
+  ADD CONSTRAINT excel_handoff_v2_ciphertext_check CHECK (
+    protocol_version = 1 OR
+    ((ciphertext IS NULL OR status = 'completed')
+     AND (status <> 'completed' OR ciphertext IS NOT NULL))
+  );
+
 -- Retire every pre-v2 transaction before exposing the v2 API. In particular,
 -- no v1 completed-but-unclaimed refresh token remains claimable or encrypted.
 UPDATE excel_handoff.transactions
