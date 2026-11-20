@@ -54,12 +54,12 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (ExcelAuthBridge.browserHandoffId.isNotEmpty || ExcelAuthBridge.isAuthDialog) {
+      return const ExcelAuthBrowserGate();
+    }
     final redirectError = _redirectErrorMessage();
     if (redirectError != null) {
       return _SupabaseRedirectErrorScreen(message: redirectError);
-    }
-    if (ExcelAuthBridge.isAuthDialog) {
-      return const ExcelAuthDialogGate();
     }
     return StreamBuilder<AuthState>(
       stream: InsightFlowSupabaseAuthService.authStateChanges,

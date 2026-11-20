@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  Replace the placeholder Id with the stable GUID assigned to this add-in
-  before Microsoft 365 deployment. Do not reuse this placeholder in production.
+  Stable InsightFlow Excel add-in identifier.
+  Keep this Id unchanged across all future manifest versions and deployments.
 -->
 <OfficeApp
   xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
-  <Id>00000000-0000-0000-0000-000000000001</Id>
+  <Id>d0880c1c-3998-4527-ad6a-f1242da95b27</Id>
   <Version>1.0.0.0</Version>
   <ProviderName>InsightFlow</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>

@@ -15,6 +15,7 @@ duckdb
 sqlalchemy>=2.0
 psycopg[binary]
 PyJWT>=2.8
+cryptography>=42.0.0
 # Location enrichment uses the Python standard-library HTTP client; no extra geocoder dependency is required.
 google-genai
 

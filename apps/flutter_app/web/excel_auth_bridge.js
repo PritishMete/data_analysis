@@ -1,189 +1,329 @@
 (function (global) {
   "use strict";
 
-  var MESSAGE_TYPE = "insightflow.excel.auth";
-  var MESSAGE_VERSION = 1;
-  var DIALOG_FLAG = "excelAuthDialog";
-  var DIALOG_SESSION_KEY = "insightflow.excel.auth.dialog";
-  var DIALOG_STATE_PARAM = "excelAuthState";
-  var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
+  var API_SUFFIX = "/v2/excel-auth/handoff";
+  var EXCEL_KEY = "insightflow.excel.v2.transaction";
+  var BROWSER_KEY = "insightflow.excel.v2.browser";
+  var VERIFIER_KEY = "insightflow.excel.v2.pkce.verifier";
+  var initialParams = new URLSearchParams(global.location.search || "");
+  var pendingOAuthCode = initialParams.get("code");
+  var callbackError = initialParams.get("error_description") || initialParams.get("error") || "";
+  global.__isInsightFlowExcelAuthDialog = initialParams.get("excelAuthDialog") === "1";
 
-  function createState() {
-    if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
-      throw new Error("Secure sign-in state generation is unavailable.");
+  if (pendingOAuthCode || callbackError) {
+    // The authorization code is removed before Flutter/Supabase bootstrap.
+    var clean = new URLSearchParams();
+    if (initialParams.get("excelHandoff")) clean.set("excelHandoff", initialParams.get("excelHandoff"));
+    if (initialParams.get("excelAuthDialog") === "1") clean.set("excelAuthDialog", "1");
+    var cleanUrl = global.location.pathname +
+      (clean.toString() ? "?" + clean.toString() : "") + (global.location.hash || "");
+    if (global.__insightflowNativeHistory === false) {
+      pendingOAuthCode = null;
+      callbackError = "This host cannot safely remove the OAuth callback code. Start again in Chrome or Edge.";
+      if (typeof global.location.replace === "function") global.location.replace(cleanUrl);
+    } else {
+      global.history.replaceState(global.history.state, "", cleanUrl);
     }
-    var bytes = new Uint8Array(24);
+  }
+
+  function randomToken(bytes) {
+    if (!global.crypto || !global.crypto.getRandomValues) throw new Error("Secure browser authentication is unavailable.");
+    var data = new Uint8Array(bytes);
+    global.crypto.getRandomValues(data);
+    var binary = "";
+    for (var i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  function uuid() {
+    if (global.crypto && global.crypto.randomUUID) return global.crypto.randomUUID();
+    var bytes = new Uint8Array(16);
     global.crypto.getRandomValues(bytes);
-    return Array.prototype.map.call(bytes, function (value) {
-      return value.toString(16).padStart(2, "0");
-    }).join("");
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    var hex = Array.prototype.map.call(bytes, function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+    return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
   }
 
-  function restoreDialogFlag() {
+  function apiUrl(config, path) { return config.apiBase.replace(/\/$/, "") + API_SUFFIX + path; }
+
+  async function post(config, path, body) {
+    var response = await fetch(apiUrl(config, path), {
+      method: "POST", credentials: "omit", cache: "no-store",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    var payload = {};
+    try { payload = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(payload.detail || "Excel sign-in request failed.");
+    return payload;
+  }
+
+  function loadBrowser() {
+    try { return JSON.parse(global.sessionStorage.getItem(BROWSER_KEY) || "null"); }
+    catch (_) { return null; }
+  }
+
+  function getTransactionId() {
+    return new URLSearchParams(global.location.search || "").get("excelHandoff") || "";
+  }
+
+  function isDialog() { return global.__isInsightFlowExcelAuthDialog === true; }
+
+  function browserFromConfig(raw) {
+    var config = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!config || !config.transactionId || !config.pairingCode ||
+        !config.supabaseUrl || !config.publishableKey || !config.apiBase ||
+        config.transactionId !== getTransactionId()) {
+      throw new Error("The Excel sign-in request is incomplete or does not match this browser tab.");
+    }
+    var supabaseOrigin = new URL(config.supabaseUrl);
+    var apiOrigin = new URL(config.apiBase);
+    if (supabaseOrigin.protocol !== "https:" || apiOrigin.protocol !== "https:" ||
+        supabaseOrigin.username || supabaseOrigin.password || apiOrigin.username || apiOrigin.password) {
+      throw new Error("Excel sign-in requires trusted HTTPS endpoints.");
+    }
+    var pairingCode = config.pairingCode.toUpperCase();
+    var existing = loadBrowser();
+    if (existing && existing.transactionId === config.transactionId &&
+        (existing.pairingCode === pairingCode || existing.pairingCodeUsed === pairingCode)) {
+      existing.bindRequestId = existing.bindRequestId || uuid();
+      existing.candidateRequestId = existing.candidateRequestId || uuid();
+      existing.completionRequestId = existing.completionRequestId || uuid();
+      global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(existing));
+      return existing;
+    }
+    var value = {
+      transactionId: config.transactionId,
+      pairingCode: pairingCode,
+      bindRequestId: uuid(),
+      candidateRequestId: uuid(),
+      completionRequestId: uuid(),
+      generation: Number(config.generation || 1),
+      supabaseUrl: config.supabaseUrl.replace(/\/$/, ""),
+      publishableKey: config.publishableKey,
+      apiBase: config.apiBase.replace(/\/$/, ""),
+      browserCapability: randomToken(32)
+    };
+    global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(value));
+    return value;
+  }
+
+  async function copyText(value) {
+    if (global.navigator.clipboard && global.navigator.clipboard.writeText) {
+      await global.navigator.clipboard.writeText(value);
+      return true;
+    }
+    var field = document.createElement("textarea");
+    field.value = value;
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    var copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw new Error("Copy is unavailable in this browser.");
+    return true;
+  }
+
+  async function sha256Base64Url(value) {
+    var hash = await global.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    var data = new Uint8Array(hash);
+    var binary = "";
+    data.forEach(function (b) { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  async function startGoogle() {
+    var browser = loadBrowser();
+    if (!browser) throw new Error("Enter the Excel pairing code first.");
+    var verifier = randomToken(32);
+    global.sessionStorage.setItem(VERIFIER_KEY, verifier);
+    var challenge = await sha256Base64Url(verifier);
+    var redirect = global.location.origin + global.location.pathname +
+      "?excelHandoff=" + encodeURIComponent(browser.transactionId) +
+      (isDialog() ? "&excelAuthDialog=1" : "");
+    var authorize = new URL(browser.supabaseUrl + "/auth/v1/authorize");
+    authorize.searchParams.set("provider", "google");
+    authorize.searchParams.set("redirect_to", redirect);
+    authorize.searchParams.set("code_challenge", challenge);
+    authorize.searchParams.set("code_challenge_method", "s256");
+    global.location.assign(authorize.toString());
+  }
+
+  async function exchangeOAuthCode() {
+    var code = pendingOAuthCode;
+    pendingOAuthCode = null;
+    if (!code) {
+      global.sessionStorage.removeItem(VERIFIER_KEY);
+      if (callbackError) throw new Error("Google sign-in was cancelled or could not be completed.");
+      return false;
+    }
+    var browser = loadBrowser();
+    var verifier = global.sessionStorage.getItem(VERIFIER_KEY);
+    global.sessionStorage.removeItem(VERIFIER_KEY);
+    if (!browser || !verifier || !getTransactionId() || getTransactionId() !== browser.transactionId) {
+      throw new Error("The browser sign-in could not be matched to its Excel request. Start again.");
+    }
+    var response = await fetch(browser.supabaseUrl + "/auth/v1/token?grant_type=pkce", {
+      method: "POST", credentials: "omit", cache: "no-store",
+      headers: { "apikey": browser.publishableKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ auth_code: code, code_verifier: verifier })
+    });
+    var session = await response.json();
+    if (!response.ok || !session.access_token || !session.refresh_token) {
+      throw new Error("Google sign-in could not be exchanged. Start a new sign-in.");
+    }
+    await submitCandidate(browser, session);
+    return true;
+  }
+
+  async function passwordSignIn(raw) {
+    var input = typeof raw === "string" ? JSON.parse(raw) : raw;
+    var browser = browserFromConfig(input);
+    var response = await fetch(browser.supabaseUrl + "/auth/v1/token?grant_type=password", {
+      method: "POST", credentials: "omit", cache: "no-store",
+      headers: { "apikey": browser.publishableKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: input.email, password: input.password })
+    });
+    input.password = "";
+    raw = "";
+    var session = await response.json();
+    if (!response.ok || !session.access_token || !session.refresh_token) {
+      throw new Error("Email or password could not be verified.");
+    }
+    await submitCandidate(browser, session);
+    return "completed";
+  }
+
+  async function submitCandidate(browser, session) {
     try {
-      var params = new URLSearchParams(global.location.search || "");
-      if (params.get(DIALOG_FLAG) === "1") {
-        global.__isInsightFlowExcelAuthDialog = true;
-        global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
-        var incomingState = params.get(DIALOG_STATE_PARAM);
-        if (incomingState) {
-          global.sessionStorage.setItem(DIALOG_STATE_SESSION_KEY, incomingState);
-        }
-        return;
-      }
-      if (global.sessionStorage.getItem(DIALOG_SESSION_KEY) === "1") {
-        global.__isInsightFlowExcelAuthDialog = true;
-        params.set(DIALOG_FLAG, "1");
-        var savedState = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
-        if (savedState) params.set(DIALOG_STATE_PARAM, savedState);
-        var query = params.toString();
-        var nextUrl = global.location.pathname +
-          (query ? "?" + query : "") + (global.location.hash || "");
-        global.history.replaceState(global.history.state, "", nextUrl);
-      }
-    } catch (_) {
-      // Storage can be unavailable in locked-down Office webviews. The initial
-      // dialog URL still carries the flag for password-based authentication.
+    if (browser.pairingCode) {
+      var bound = await post(browser, "/browser/bind", {
+        transaction_id: browser.transactionId,
+        pairing_code: browser.pairingCode,
+        browser_capability: browser.browserCapability,
+        request_id: browser.bindRequestId
+      });
+      browser.generation = bound.generation;
+      browser.pairingCodeUsed = browser.pairingCode;
+      browser.pairingCode = "";
+      global.sessionStorage.setItem(BROWSER_KEY, JSON.stringify(browser));
+    }
+    await post(browser, "/browser/candidate", {
+      transaction_id: browser.transactionId,
+      browser_capability: browser.browserCapability,
+      generation: browser.generation,
+      request_id: browser.candidateRequestId,
+      access_token: session.access_token
+    });
+    // Access and refresh tokens live only in this async call's memory.
+    await waitForExcelApproval(browser, session);
+    } finally {
+      // Do not retain the Supabase session object after this handoff attempt.
+      session.access_token = "";
+      session.refresh_token = "";
     }
   }
 
-  function openSignInDialog() {
+  async function waitForExcelApproval(browser, session) {
+    var deadline = Date.now() + 8 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+      var state = await post(browser, "/browser/status", {
+        transaction_id: browser.transactionId,
+        browser_capability: browser.browserCapability
+      });
+      if (state.generation !== browser.generation) throw new Error("This browser sign-in attempt is stale.");
+      if (["rejected", "cancelled", "expired", "failed"].indexOf(state.state) >= 0) {
+        throw new Error("The Excel sign-in request was rejected or expired.");
+      }
+      if (state.state === "approved") {
+        if (!state.approved_uid || state.approved_uid !== state.candidate_uid ||
+            state.approved_generation !== browser.generation) {
+          throw new Error("Excel approval does not match this signed-in account.");
+        }
+        var completionBody = {
+          transaction_id: browser.transactionId,
+          browser_capability: browser.browserCapability,
+          generation: browser.generation,
+          request_id: browser.completionRequestId,
+          access_token: session.access_token,
+          refresh_token: session.refresh_token
+        };
+        try {
+          await post(browser, "/browser/complete", completionBody);
+        } catch (_) {
+          // The same request id is safe to retry: complete is row-locked and
+          // idempotent, and the backend never consumes the refresh token.
+          await post(browser, "/browser/complete", completionBody);
+        }
+        global.sessionStorage.removeItem(BROWSER_KEY);
+        global.sessionStorage.removeItem(VERIFIER_KEY);
+        if (isDialog() && global.Office && global.Office.context &&
+            global.Office.context.ui && typeof global.Office.context.ui.messageParent === "function") {
+          global.Office.context.ui.messageParent(JSON.stringify({
+            type: "insightflow.excel.auth.v2", version: 2,
+            transactionId: browser.transactionId, state: "completed"
+          }));
+        }
+        return "completed";
+      }
+    }
+    throw new Error("Excel approval timed out. Start a new sign-in.");
+  }
+
+  function openOfficeDialog(url) {
     return new Promise(function (resolve, reject) {
-      if (!global.Office ||
-          !global.Office.context ||
-          !global.Office.context.ui ||
+      if (!global.Office || !global.Office.context || !global.Office.context.ui ||
           typeof global.Office.context.ui.displayDialogAsync !== "function") {
-        reject(new Error("Excel sign-in dialog is unavailable in this Office host."));
+        reject(new Error("Office sign-in dialog is unavailable in this host."));
         return;
       }
-
-      var url = new URL(global.location.href);
-      var expectedState;
-      try {
-        expectedState = createState();
-      } catch (error) {
-        reject(error);
-        return;
-      }
-      url.searchParams.set(DIALOG_FLAG, "1");
-      url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
-      url.hash = "";
-
-      var dialog = null;
+      var dialog;
       var settled = false;
-      function finish(error, refreshToken) {
+      function finish(error, value) {
         if (settled) return;
         settled = true;
-        if (error) {
-          reject(error);
-        } else {
-          resolve(refreshToken);
-        }
+        if (error) reject(error); else resolve(value);
       }
-
-      global.Office.context.ui.displayDialogAsync(
-        url.toString(),
-        { height: 80, width: 60, displayInIframe: false },
-        function (result) {
-          if (!result ||
-              result.status !== global.Office.AsyncResultStatus.Succeeded ||
-              !result.value) {
-            var message = result && result.error && result.error.message
-              ? result.error.message
-              : "Excel could not open the InsightFlow sign-in window.";
-            finish(new Error(message));
-            return;
-          }
-
-          dialog = result.value;
-          dialog.addEventHandler(
-            global.Office.EventType.DialogMessageReceived,
-            function (eventArgs) {
-              try {
-                if (eventArgs.origin !== global.location.origin) {
-                  throw new Error("The sign-in response came from an untrusted origin.");
-                }
-                if (typeof eventArgs.message !== "string" ||
-                    eventArgs.message.length > 8192) {
-                  throw new Error("The sign-in response was invalid.");
-                }
-                var message = JSON.parse(eventArgs.message);
-                if (message.type !== MESSAGE_TYPE ||
-                    message.version !== MESSAGE_VERSION ||
-                    message.state !== expectedState ||
-                    typeof message.refreshToken !== "string" ||
-                    message.refreshToken.length < 20 ||
-                    message.refreshToken.length > 4096) {
-                  throw new Error("The sign-in response was invalid.");
-                }
-                finish(null, message.refreshToken);
-                if (dialog) dialog.close();
-              } catch (error) {
-                finish(error instanceof Error ? error : new Error("Invalid sign-in response."));
-                if (dialog) dialog.close();
-              }
-            }
-          );
-
-          dialog.addEventHandler(
-            global.Office.EventType.DialogEventReceived,
-            function (eventArgs) {
-              if (!settled) {
-                finish(new Error(
-                  eventArgs && eventArgs.error === 12006
-                    ? "The sign-in window was closed before authentication finished."
-                    : "The InsightFlow sign-in window was closed."
-                ));
-              }
-            }
-          );
+      global.Office.context.ui.displayDialogAsync(url, {
+        height: 80, width: 60, displayInIframe: false
+      }, function (result) {
+        if (!result || result.status !== global.Office.AsyncResultStatus.Succeeded || !result.value) {
+          finish(new Error("Excel could not open the sign-in dialog."));
+          return;
         }
-      );
+        dialog = result.value;
+        dialog.addEventHandler(global.Office.EventType.DialogMessageReceived, function (event) {
+          try {
+            if (event.origin !== global.location.origin) throw new Error("Untrusted dialog origin.");
+            var message = JSON.parse(event.message || "{}");
+            if (message.type !== "insightflow.excel.auth.v2" ||
+                message.version !== 2 || message.state !== "completed") {
+              throw new Error("Invalid sign-in dialog response.");
+            }
+            finish(null, message.state);
+            dialog.close();
+          } catch (error) { finish(error); dialog.close(); }
+        });
+        dialog.addEventHandler(global.Office.EventType.DialogEventReceived, function () {
+          finish(new Error("The sign-in dialog was closed."));
+        });
+      });
     });
   }
 
-  function completeDialog(refreshToken) {
-    if (typeof refreshToken !== "string" ||
-        refreshToken.length < 20 ||
-        refreshToken.length > 4096) {
-      throw new Error("A valid InsightFlow session is required.");
-    }
-    if (!global.Office ||
-        !global.Office.context ||
-        !global.Office.context.ui ||
-        typeof global.Office.context.ui.messageParent !== "function") {
-      throw new Error("This page is not running inside an Excel sign-in dialog.");
-    }
-
-    var params = new URLSearchParams(global.location.search || "");
-    var state = params.get(DIALOG_STATE_PARAM);
-    if (!state) {
-      try {
-        state = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
-      } catch (_) {}
-    }
-    if (!state || state.length > 128) {
-      throw new Error("The Excel sign-in request could not be verified.");
-    }
-
-    global.Office.context.ui.messageParent(JSON.stringify({
-      type: MESSAGE_TYPE,
-      version: MESSAGE_VERSION,
-      state: state,
-      refreshToken: refreshToken
-    }));
-
-    try {
-      global.sessionStorage.removeItem(DIALOG_SESSION_KEY);
-      global.sessionStorage.removeItem(DIALOG_STATE_SESSION_KEY);
-    } catch (_) {}
-  }
-
   global.InsightFlowExcelAuth = {
-    openSignInDialog: openSignInDialog,
-    completeDialog: completeDialog,
-    restoreDialogFlag: restoreDialogFlag
+    getTransactionId: getTransactionId,
+    isDialog: isDialog,
+    saveExcelTransaction: function (value) { global.sessionStorage.setItem(EXCEL_KEY, value); },
+    loadExcelTransaction: function () { return global.sessionStorage.getItem(EXCEL_KEY) || ""; },
+    clearExcelTransaction: function () { global.sessionStorage.removeItem(EXCEL_KEY); },
+    copyText: copyText,
+    prepareBrowser: browserFromConfig,
+    startGoogle: startGoogle,
+    passwordSignIn: passwordSignIn,
+    resumeOAuth: exchangeOAuthCode,
+    openOfficeDialog: openOfficeDialog
   };
-
-  restoreDialogFlag();
 })(window);

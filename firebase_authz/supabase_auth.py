@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from functools import lru_cache
 from typing import Any
@@ -93,6 +94,44 @@ def _fetch_supabase_user(token: str, subject: str | None = None) -> dict[str, An
 def _confirmed_supabase_user(token: str, subject: str) -> bool:
     """Read confirmed state from Supabase Auth, never from client claims."""
     return bool(_fetch_supabase_user(token, subject).get("email_confirmed_at"))
+
+
+def refresh_supabase_session(refresh_token: str) -> dict[str, Any]:
+    """Exchange a refresh token with Supabase Auth without logging token material."""
+    if not refresh_token:
+        raise AuthenticationRequired("Supabase refresh token required.")
+    project_url = _project_url()
+    key = _publishable_key()
+    if not project_url or not key:
+        raise SupabaseAuthUnavailable("Supabase authentication is not configured.")
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }).encode("ascii")
+    request = urllib.request.Request(
+        f"{project_url}/auth/v1/token?grant_type=refresh_token",
+        data=body,
+        headers={
+            "apikey": key,
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code in (400, 401, 403):
+            raise AuthenticationRequired("Supabase refresh token is invalid.") from exc
+        raise SupabaseAuthUnavailable("Supabase Auth is temporarily unavailable.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError, ConnectionError,
+            json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise SupabaseAuthUnavailable("Supabase Auth is temporarily unavailable.") from exc
+    access_token = str(payload.get("access_token") or "")
+    rotated_refresh_token = str(payload.get("refresh_token") or "")
+    if not access_token or not rotated_refresh_token:
+        raise SupabaseAuthUnavailable("Supabase returned an incomplete refreshed session.")
+    return {"access_token": access_token, "refresh_token": rotated_refresh_token}
 
 
 def verify_supabase_access_token(token: str, require_email_verified: bool = True) -> dict[str, Any]:

@@ -470,6 +470,7 @@ app.add_middleware(
     allow_headers=[
         "Authorization",
         "Content-Type",
+        "Idempotency-Key",
         "X-InsightFlow-Workspace-ID",
         "X-InsightFlow-Resource-ID",
         "X-InsightFlow-Location-ID",

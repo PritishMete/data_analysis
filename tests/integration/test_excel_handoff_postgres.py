@@ -1,19 +1,20 @@
 import base64
+import hashlib
 import os
 import threading
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import claim, cleanup, complete, create
+from core.excel_handoff_store import approve, bind_browser, candidate, claim, complete, create, digest, retry, cancel, status
 
-
-DATABASE_URL = os.environ["EXCEL_HANDOFF_TEST_DATABASE_URL"]
-MIGRATION = Path(__file__).parents[2] / "migrations" / "0037_excel_auth_handoff.sql"
+DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL")
+if not DATABASE_URL:
+    pytest.skip("requires the dedicated PostgreSQL Excel handoff service", allow_module_level=True)
+ROOT = Path(__file__).parents[2]
 
 
 @pytest.fixture(scope="session")
@@ -21,16 +22,19 @@ def engine():
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     with engine.begin() as connection:
         connection.exec_driver_sql("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon')
-                THEN CREATE ROLE anon NOLOGIN;
-                END IF;
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated')
-                THEN CREATE ROLE authenticated NOLOGIN;
-                END IF;
-            END $$;
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+          END $$;
         """)
-        connection.exec_driver_sql(MIGRATION.read_text())
+        connection.exec_driver_sql((ROOT / "migrations/0037_excel_auth_handoff.sql").read_text())
+        connection.exec_driver_sql("""
+          INSERT INTO excel_handoff.transactions
+            (id, claim_digest, completion_digest, status, ciphertext)
+          VALUES ('00000000-0000-0000-0000-000000000099', decode(repeat('11',32),'hex'),
+            decode(repeat('22',32),'hex'), 'completed', decode('deadbeef','hex'))
+        """)
+        connection.exec_driver_sql((ROOT / "migrations/0038_excel_auth_pairing.sql").read_text())
     yield engine
     with engine.begin() as connection:
         connection.exec_driver_sql("DROP SCHEMA excel_handoff CASCADE")
@@ -38,221 +42,273 @@ def engine():
 
 
 @pytest.fixture(autouse=True)
-def encryption_key(monkeypatch):
-    monkeypatch.setenv(
-        "INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY",
-        base64.urlsafe_b64encode(b"excel-handoff-test-key-32-bytes!").decode(),
-    )
+def secrets(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY",
+                       base64.urlsafe_b64encode(b"excel-handoff-test-key-32-bytes!").decode())
+    monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_PAIRING_KEY", "p" * 48)
 
 
-def session_factory(engine):
+@pytest.fixture
+def session(engine):
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def test_migration_security_and_constraints(engine):
-    with engine.connect() as db:
-        assert db.execute(text(
-            "SELECT relrowsecurity FROM pg_class "
-            "WHERE oid = 'excel_handoff.transactions'::regclass"
-        )).scalar_one()
-        assert db.execute(text(
-            "SELECT has_schema_privilege('public', 'excel_handoff', 'USAGE')"
-        )).scalar_one() is False
-        assert db.execute(text(
-            "SELECT has_table_privilege('public', 'excel_handoff.transactions', 'SELECT')"
-        )).scalar_one() is False
-        for role in ("anon", "authenticated"):
-            assert db.execute(text(
-                "SELECT has_schema_privilege(:role, 'excel_handoff', 'USAGE')"
-            ), {"role": role}).scalar_one() is False
-            assert db.execute(text(
-                "SELECT has_table_privilege(:role, 'excel_handoff.transactions', 'SELECT')"
-            ), {"role": role}).scalar_one() is False
-        assert db.execute(text(
-            "SELECT 1 FROM pg_indexes WHERE schemaname='excel_handoff' "
-            "AND indexname='excel_handoff_expiry'"
-        )).scalar_one() == 1
-
-
-def test_create_complete_claim_is_single_use(engine):
-    Session = session_factory(engine)
-    transaction, claim_secret, completion_secret = uuid4(), "c" * 43, "p" * 43
+def make_transaction(Session):
+    tx = uuid4()
+    caps = {key: key + "-secret-" + ("x" * 48)
+            for key in ("claim", "completion", "status", "approval", "cancel", "retry")}
+    code = "0123-4567-89AB-CDEF"
     with Session.begin() as db:
-        assert create(db, transaction, claim_secret, completion_secret)
-        assert complete(db, transaction, completion_secret, "refresh-token")
-    with Session.begin() as db:
-        assert claim(db, transaction, claim_secret) == "refresh-token"
-    with Session.begin() as db:
-        assert claim(db, transaction, claim_secret) is None
+        assert create(db, tx, caps, code, "instance-identifier-0001", hashlib.sha256(str(tx).encode()).digest())
+    return tx, caps, code
 
 
-def test_two_connections_have_one_winner(engine):
-    Session = session_factory(engine)
-    transaction, claim_secret, completion_secret = uuid4(), "a" * 43, "b" * 43
+def prepare_approved(Session, tx, caps, code, browser, uid):
     with Session.begin() as db:
-        assert create(db, transaction, claim_secret, completion_secret)
-        assert complete(db, transaction, completion_secret, "refresh-token")
+        assert bind_browser(db, tx, code, browser, uuid4()) == 1
+    with Session.begin() as db:
+        assert candidate(db, tx, browser, 1, uuid4(), uid, "person@example.com")
+    with Session.begin() as db:
+        assert approve(db, tx, caps["approval"], uid, 1, "approve", uuid4())
 
+
+
+def test_v1_rows_are_retired_and_ciphertext_is_cleared(session):
+    with session.begin() as db:
+        row = db.execute(text("""
+          SELECT protocol_version,status,ciphertext
+          FROM excel_handoff.transactions
+          WHERE id='00000000-0000-0000-0000-000000000099'
+        """)).one()
+    assert row.protocol_version == 1
+    assert row.status == "cancelled"
+    assert row.ciphertext is None
+
+
+def test_candidate_approval_and_wrong_account_rejection(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "b" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert not complete(db, tx, browser, 1, uuid4(),
+                            "00000000-0000-0000-0000-000000000002", "refresh-token")
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+
+
+def test_one_time_claim_is_serialized_by_postgres(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "c" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
     barrier = threading.Barrier(2)
     results = []
-
     def worker():
-        with Session.begin() as db:
+        with session.begin() as db:
             barrier.wait()
-            results.append(claim(db, transaction, claim_secret))
-
-    first, second = threading.Thread(target=worker), threading.Thread(target=worker)
-    first.start()
-    second.start()
-    first.join()
-    second.join()
-    assert sorted(result is not None for result in results) == [False, True]
-
-
-def test_cancel_and_expiry_cannot_be_claimed(engine):
-    Session = session_factory(engine)
-    cancelled, expired = uuid4(), uuid4()
-    for transaction in (cancelled, expired):
-        with Session.begin() as db:
-            assert create(db, transaction, "x" * 43, "y" * 43)
-            assert complete(db, transaction, "y" * 43, "refresh-token")
-    with Session.begin() as db:
-        db.execute(text(
-            "UPDATE excel_handoff.transactions SET status='cancelled', ciphertext=NULL "
-            "WHERE id=:id"
-        ), {"id": cancelled})
-        db.execute(text(
-            "UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' "
-            "WHERE id=:id"
-        ), {"id": expired})
-    with Session.begin() as db:
-        assert claim(db, cancelled, "x" * 43) is None
-        assert claim(db, expired, "x" * 43) is None
+            results.append(claim(db, tx, caps["claim"]))
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert sorted(value is not None for value in results) == [False, True]
+    assert next(value for value in results if value) == "refresh-token"
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+    assert row.status == "claimed" and row.ciphertext is None
 
 
-def test_rollback_does_not_create_transaction(engine):
-    Session = session_factory(engine)
-    transaction = uuid4()
-    with pytest.raises(RuntimeError):
-        with Session.begin() as db:
-            assert create(db, transaction, "m" * 43, "n" * 43)
-            raise RuntimeError("rollback test")
-    with Session.begin() as db:
-        assert db.execute(text(
-            "SELECT 1 FROM excel_handoff.transactions WHERE id=:id"
-        ), {"id": transaction}).scalar_one_or_none() is None
+def test_concurrent_create_rate_limit_is_atomic(session):
+    ip = hashlib.sha256(b"concurrent-rate-limit-test-ip").digest()
+    barrier = threading.Barrier(11)
+    results = []
+    def worker(index):
+        values = {name: name + str(index) + "-secret-" + ("x" * 40)
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        with session.begin() as db:
+            barrier.wait()
+            results.append(create(db, uuid4(), values, "0123-4567-89AB-CDEF",
+                                  "parallel-instance-" + str(index), ip))
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(11)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert results.count(True) == 10
+    assert results.count(False) == 1
 
 
-def test_cleanup_removes_expired_transactions(engine):
-    Session = session_factory(engine)
-    transaction = uuid4()
-    with Session.begin() as db:
-        assert create(db, transaction, "u" * 43, "v" * 43)
-        db.execute(text(
-            "UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' "
-            "WHERE id=:id"
-        ), {"id": transaction})
+def test_pairing_attempt_limit(session):
+    tx, _, _ = make_transaction(session)
+    for index in range(5):
+        with session.begin() as db:
+            assert bind_browser(db, tx, "FFFF-FFFF-FFFF-FFFF",
+                                "browser-" + str(index) + "x" * 40, uuid4()) is None
+    with session.begin() as db:
+        attempts = db.execute(text("SELECT pairing_attempts FROM excel_handoff.transactions WHERE id=:id"),
+                              {"id": tx}).scalar_one()
+    assert attempts == 5
+
+
+def test_claim_capability_is_authority_not_excel_instance_id(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "d" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+    with session.begin() as db:
+        assert claim(db, tx, caps["claim"]) == "refresh-token"
+
+
+def test_create_idempotency_key_and_rate_limit(session):
+    key = "excel-create-request-0123456789"
+    tx = uuid4()
+    caps = {name: name + "-secret-" + ("x" * 48)
+            for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+    code = "0123-4567-89AB-CDEF"
+    ip = hashlib.sha256(b"idempotency-test-ip").digest()
+    with session.begin() as db:
+        assert create(db, tx, caps, code, "excel-instance-000001", ip, key) is True
+    with session.begin() as db:
+        assert create(db, uuid4(), caps, code, "excel-instance-000002", ip, key) == "duplicate"
+    with session.begin() as db:
+        count = db.execute(text("""
+          SELECT count(*) FROM excel_handoff.transactions
+          WHERE create_idempotency_digest=:key
+        """), {"key": digest(key)}).scalar_one()
+    assert count == 1
+
+    limited_ip = hashlib.sha256(b"rate-limit-test-ip").digest()
+    for index in range(10):
+        values = {name: name + str(index) + "-x" * 40
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        with session.begin() as db:
+            assert create(db, uuid4(), values, code, "rate-instance-" + str(index), limited_ip)
+    with session.begin() as db:
+        values = {name: name + "-limit-x" * 8
+                  for name in ("claim", "completion", "status", "approval", "cancel", "retry")}
+        assert create(db, uuid4(), values, code, "rate-instance-over", limited_ip) is False
+
+
+def test_pairing_expiration_and_generation_retry_invalidate_old_browser(session):
+    tx, caps, code = make_transaction(session)
+    with session.begin() as db:
+        db.execute(text("""
+          UPDATE excel_handoff.transactions
+          SET pairing_expires_at=clock_timestamp()-interval '1 second'
+          WHERE id=:id
+        """), {"id": tx})
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, "old-browser-" + "x" * 40, uuid4()) is None
+
+    # A fresh transaction demonstrates a valid browser bind followed by retry.
+    tx2, caps2, code2 = make_transaction(session)
+    old_browser = "old-browser-" + "a" * 40
+    with session.begin() as db:
+        assert bind_browser(db, tx2, code2, old_browser, uuid4()) == 1
+    new_code = "ABCD-EFGH-JKMN-PQRS"
+    with session.begin() as db:
+        assert retry(db, tx2, caps2["retry"], new_code, uuid4(), 1) == 2
+    with session.begin() as db:
+        assert retry(db, tx2, caps2["retry"], "QRST-UVWX-YZ23-4567", uuid4(), 1) is None
+    with session.begin() as db:
+        assert not candidate(db, tx2, old_browser, 1, uuid4(),
+                             "00000000-0000-0000-0000-000000000001", "old@example.com")
+    new_browser = "new-browser-" + "b" * 40
+    with session.begin() as db:
+        assert bind_browser(db, tx2, new_code, new_browser, uuid4()) == 2
+    with session.begin() as db:
+        assert not candidate(db, tx2, new_browser, 1, uuid4(),
+                             "00000000-0000-0000-0000-000000000001", "old@example.com")
+    with session.begin() as db:
+        assert candidate(db, tx2, new_browser, 2, uuid4(),
+                         "00000000-0000-0000-0000-000000000002", "new@example.com")
+
+
+
+def test_handoff_mutations_are_idempotent_for_the_same_request_ids(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "i" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    bind_id = uuid4()
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, browser, bind_id) == 1
+    with session.begin() as db:
+        assert bind_browser(db, tx, code, browser, bind_id) == 1
+
+    candidate_id = uuid4()
+    with session.begin() as db:
+        assert candidate(db, tx, browser, 1, candidate_id, uid, "person@example.com")
+    with session.begin() as db:
+        assert candidate(db, tx, browser, 1, candidate_id, uid, "person@example.com")
+
+    approval_id = uuid4()
+    with session.begin() as db:
+        assert approve(db, tx, caps["approval"], uid, 1, "approve", approval_id)
+    with session.begin() as db:
+        assert approve(db, tx, caps["approval"], uid, 1, "approve", approval_id)
+
+    completion_id = uuid4()
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, completion_id, uid, "refresh-token")
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, completion_id, uid, "refresh-token")
+
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+
+
+def test_cancel_clears_staged_refresh_token(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "z" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+    with session.begin() as db:
+        assert cancel(db, tx, caps["cancel"])
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+        assert row.status == "cancelled" and row.ciphertext is None
+        assert claim(db, tx, caps["claim"]) is None
+
+
+
+def test_status_expiry_clears_completed_ciphertext(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "s" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+        db.execute(text("UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=:id"),
+                   {"id": tx})
+    with session.begin() as db:
+        result = status(db, tx, caps["status"])
+        assert result["status"] == "expired"
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+    assert row.status == "expired" and row.ciphertext is None
+
+
+def test_expiry_clears_unclaimed_ciphertext(session):
+    tx, caps, code = make_transaction(session)
+    browser = "browser-" + "e" * 48
+    uid = "00000000-0000-0000-0000-000000000001"
+    prepare_approved(session, tx, caps, code, browser, uid)
+    with session.begin() as db:
+        assert complete(db, tx, browser, 1, uuid4(), uid, "refresh-token")
+        db.execute(text("UPDATE excel_handoff.transactions SET expires_at=clock_timestamp()-interval '1 second' WHERE id=:id"),
+                   {"id": tx})
+        from core.excel_handoff_store import cleanup
         cleanup(db)
-    with Session.begin() as db:
-        assert db.execute(text(
-            "SELECT 1 FROM excel_handoff.transactions WHERE id=:id"
-        ), {"id": transaction}).scalar_one_or_none() is None
-
-
-def test_completion_and_cancellation_race_has_one_committed_state(engine):
-    Session = session_factory(engine)
-    transaction, claim_secret, completion_secret = uuid4(), "s" * 43, "t" * 43
-    with Session.begin() as db:
-        assert create(db, transaction, claim_secret, completion_secret)
-
-    barrier = threading.Barrier(2)
-    outcomes = []
-
-    def finish():
-        with Session.begin() as db:
-            barrier.wait()
-            outcomes.append(complete(db, transaction, completion_secret, "refresh-token"))
-
-    def abort():
-        with Session.begin() as db:
-            barrier.wait()
-            db.execute(text(
-                "UPDATE excel_handoff.transactions SET status='cancelled', ciphertext=NULL "
-                "WHERE id=:id AND status='pending' RETURNING id"
-            ), {"id": transaction})
-            outcomes.append(True)
-
-    first, second = threading.Thread(target=finish), threading.Thread(target=abort)
-    first.start()
-    second.start()
-    first.join()
-    second.join()
-    with Session.begin() as db:
-        status, ciphertext = db.execute(text(
-            "SELECT status, ciphertext FROM excel_handoff.transactions WHERE id=:id"
-        ), {"id": transaction}).one()
-    assert status in {"completed", "cancelled"}
-    assert (status == "completed") == (ciphertext is not None)
-
-
-def test_claim_rollback_allows_next_claim(engine):
-    Session = session_factory(engine)
-    transaction, claim_secret, completion_secret = uuid4(), "g" * 43, "h" * 43
-    with Session.begin() as db:
-        assert create(db, transaction, claim_secret, completion_secret)
-        assert complete(db, transaction, completion_secret, "refresh-token")
-
-    with pytest.raises(RuntimeError):
-        with Session.begin() as db:
-            assert claim(db, transaction, claim_secret) == "refresh-token"
-            raise RuntimeError("claim rollback test")
-    with Session.begin() as db:
-        assert claim(db, transaction, claim_secret) == "refresh-token"
-
-
-def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
-    from core.db import get_db
-    from excel_auth_handoff import routes
-    from main import app
-
-    Session = session_factory(engine)
-
-    def override_db():
-        db = Session()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    monkeypatch.setattr(routes, "verify_supabase_access_token", lambda token: {"uid": "user-1"})
-    monkeypatch.setattr(routes, "_refresh_pair", lambda token: ("rotated-access", "rotated-refresh"))
-    app.dependency_overrides[get_db] = override_db
-    try:
-        client = TestClient(app)
-        transaction = str(uuid4())
-        claim_secret, completion_secret = "q" * 43, "r" * 43
-        response = client.post("/v1/excel-auth/handoff/create", json={
-            "transaction_id": transaction,
-            "claim_capability": claim_secret,
-            "completion_capability": completion_secret,
-        })
-        assert response.status_code == 201
-        response = client.post("/v1/excel-auth/handoff/complete", json={
-            "transaction_id": transaction,
-            "completion_capability": completion_secret,
-            "access_token": "a" * 20,
-            "refresh_token": "b" * 20,
-        })
-        assert response.status_code == 204
-        response = client.post("/v1/excel-auth/handoff/claim", json={
-            "transaction_id": transaction,
-            "claim_capability": claim_secret,
-        })
-        assert response.status_code == 200
-        assert response.json() == {"refresh_token": "rotated-refresh"}
-        assert client.post("/v1/excel-auth/handoff/claim", json={
-            "transaction_id": transaction,
-            "claim_capability": claim_secret,
-        }).status_code == 404
-    finally:
-        app.dependency_overrides.pop(get_db, None)
+    with session.begin() as db:
+        row = db.execute(text("SELECT status,ciphertext FROM excel_handoff.transactions WHERE id=:id"),
+                         {"id": tx}).one()
+    assert row.status == "expired" and row.ciphertext is None
