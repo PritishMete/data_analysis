@@ -122876,13 +122876,12 @@ break
 case 6:case 1:return A.y(q,r)
 case 2:return A.x(o.at(-1),r)}})
 return A.z($async$tw,r)},
-I(a){var s,r,q,p=this
-if(p.d||p.e)return B.cb3
-s=p.f
+I(a){var s,r,q=this
+if(q.d||q.e)return B.cb3
+s=q.f
 r=s==null
-q=r?"Sign in to InsightFlow":"Sign-in needs attention"
 if(r)s="A secure sign-in window will open. After you sign in, Excel will continue automatically."
-return A.bv4("Continue to sign in",s,!r,new A.aXK(p),q)}}
+return A.bv4("Continue to sign in",s,!r,new A.aXK(q),"Sign in to InsightFlow")}}
 A.aXL.prototype={
 $1(a){return this.a.vE()},
 $S:6}
