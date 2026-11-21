@@ -100,7 +100,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     }
 
     return _ExcelAuthStatus(
-      title: _error == null ? 'Sign in to InsightFlow' : 'Sign-in needs attention',
+      title: 'Sign in to InsightFlow',
       detail: _error ??
           'A secure sign-in window will open. After you sign in, Excel will continue automatically.',
       messageIsError: _error != null,
