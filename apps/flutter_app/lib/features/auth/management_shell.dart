@@ -113,6 +113,7 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _loadingReadOnlyWorkspace = false;
   Set<String> _loadingCapabilities = const <String>{};
   String? error;
+  String? _partialLoadWarning;
   Map<String, dynamic> overview = const {};
   List<Map<String, dynamic>> locations = [];
   List<Map<String, dynamic>> sections = [];
@@ -281,6 +282,7 @@ class _ManagementShellState extends State<ManagementShell> {
         loading = true;
         _showLoadingSkeleton = false;
         error = null;
+        _partialLoadWarning = null;
         // A refresh may resolve to a different role. Never render the previous
         // role's selected section while the new backend policy is unknown.
         section = ManagementSection.overview;
@@ -303,15 +305,43 @@ class _ManagementShellState extends State<ManagementShell> {
       }));
     }
     try {
-      final r = await Future.wait([
-        request('/overview'), request('/locations'), request('/sections'),
-        request('/people'), request('/assignments'), request(''),
+      Future<Map<String, dynamic>?> loadOptional(String path) async {
+        try {
+          return await request(path);
+        } catch (e) {
+          debugPrint('[management] Optional startup endpoint failed ($path): $e');
+          return null;
+        }
+      }
+
+      // Overview is mandatory because it carries the authoritative actor and
+      // UI policy. Other panels are independent: one failing endpoint must not
+      // hide data returned successfully by the others.
+      final r = await Future.wait<Map<String, dynamic>?>([
+        loadOptional('/overview'),
+        loadOptional('/locations'),
+        loadOptional('/sections'),
+        loadOptional('/people'),
+        loadOptional('/assignments'),
+        loadOptional(''),
       ]);
+      if (r[0] == null) {
+        throw StateError('Management permissions could not be loaded. Please retry.');
+      }
+      final failedPanels = <String>[
+        if (r[1] == null) 'locations',
+        if (r[2] == null) 'sections',
+        if (r[3] == null) 'people',
+        if (r[4] == null) 'assignments',
+        if (r[5] == null) 'audit and invitations',
+      ];
+      final data = r.map((value) => value ?? const <String, dynamic>{}).toList();
+
       // The server's UI policy is the single source of truth for the
       // Management Cell navigation. Never infer permissions from a role when
       // this contract is missing, malformed, or contains unknown sections.
-      final policySections = _parseAllowedSections(r[0]['ui_policy']);
-      final actor = r[0]['actor'];
+      final policySections = _parseAllowedSections(data[0]['ui_policy']);
+      final actor = data[0]['actor'];
       final roleId = actor is Map ? actor['role_id']?.toString().trim() ?? '' : '';
       if (roleId.isEmpty || policySections == null) {
         throw StateError(
@@ -320,16 +350,19 @@ class _ManagementShellState extends State<ManagementShell> {
       }
       if (!mounted) return;
       setState(() {
-        overview = r[0];
+        overview = data[0];
         _loadingManagementTier = _uiPolicy()['management_tier']?.toString() ?? '';
         _loadingReadOnlyWorkspace = _uiPolicy()['read_only'] == true;
         _loadingCapabilities = _uiCapabilities();
-        locations = maps(r[1]['locations']);
-        sections = maps(r[2]['sections']);
-        people = maps(r[3]['people']);
-        assignments = maps(r[4]['assignments']);
-        audit = maps(r[5]['audit']);
-        invitations = maps(r[5]['invitations']);
+        locations = maps(data[1]['locations']);
+        sections = maps(data[2]['sections']);
+        people = maps(data[3]['people']);
+        assignments = maps(data[4]['assignments']);
+        audit = maps(data[5]['audit']);
+        invitations = maps(data[5]['invitations']);
+        _partialLoadWarning = failedPanels.isEmpty
+            ? null
+            : 'Some Management panels could not load: ${failedPanels.join(', ')}. Successful panels remain available. Select Retry to refresh.';
         loading = false;
         _showLoadingSkeleton = false;
         if (!_sectionAllowed(section)) {
@@ -348,6 +381,7 @@ class _ManagementShellState extends State<ManagementShell> {
           loading = false;
           _showLoadingSkeleton = false;
           error = e.toString().replaceFirst('Bad state: ', '');
+          _partialLoadWarning = null;
         });
       }
       AuthDiagnostics.event(
@@ -4525,6 +4559,24 @@ class _ManagementShellState extends State<ManagementShell> {
                         ]),
                       )
                     : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        if (_partialLoadWarning != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0x332A6A91),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFF397FA8)),
+                            ),
+                            child: Row(children: [
+                              const Icon(Icons.info_outline, color: Color(0xFF8DDCFF), size: 18),
+                              const SizedBox(width: 9),
+                              Expanded(child: Text(_partialLoadWarning!,
+                                style: const TextStyle(color: Color(0xFFD0EAF8), height: 1.35))),
+                              TextButton(onPressed: loadAll, child: const Text('RETRY')),
+                            ]),
+                          ),
+                        ],
                         if (section != ManagementSection.overview && section != ManagementSection.dataAccess) ...[
                           Container(
                             padding: const EdgeInsets.all(16),

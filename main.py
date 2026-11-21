@@ -96,9 +96,12 @@ from common.transformations import TransformationEngine, TransformationHistory, 
 logger = logging.getLogger(__name__)
 
 _LEARNING_EVENT_TASKS: set[asyncio.Task[Any]] = set()
+_MAX_LEARNING_EVENT_TASKS = 32
 _BUSINESS_MODEL_CACHE: tuple[tuple[tuple[str, str], ...], dict[str, Any]] | None = None
 _BUSINESS_MODEL_CACHE_LOCK = threading.Lock()
 _BUSINESS_MODEL_WARMUP_THREADS: set[threading.Thread] = set()
+_BUSINESS_MODEL_WARMUP_KEYS: set[tuple[tuple[str, str], ...]] = set()
+_BUSINESS_MODEL_WARMUP_MAX_THREADS = 2
 _BUSINESS_MODEL_WARMUP_THREADS_LOCK = threading.Lock()
 
 from common.json_safe import to_json_safe
@@ -176,7 +179,9 @@ def _business_analysis_model_locked(
 
 
 def _warm_business_analysis_model(
-    tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
+    tables: dict[str, pd.DataFrame],
+    source_hashes: dict[str, str],
+    cache_key: tuple[tuple[str, str], ...],
 ) -> None:
     try:
         _business_analysis_model(tables, source_hashes)
@@ -186,20 +191,33 @@ def _warm_business_analysis_model(
         current = threading.current_thread()
         with _BUSINESS_MODEL_WARMUP_THREADS_LOCK:
             _BUSINESS_MODEL_WARMUP_THREADS.discard(current)
+            _BUSINESS_MODEL_WARMUP_KEYS.discard(cache_key)
 
 
 def _schedule_business_analysis_model_warmup(
     tables: dict[str, pd.DataFrame], source_hashes: dict[str, str]
 ) -> None:
-    thread = threading.Thread(
-        target=_warm_business_analysis_model,
-        args=(tables, dict(source_hashes)),
-        name="insightflow-business-model-warmup",
-        daemon=True,
-    )
+    cache_key = tuple(sorted(source_hashes.items()))
     with _BUSINESS_MODEL_WARMUP_THREADS_LOCK:
+        if cache_key in _BUSINESS_MODEL_WARMUP_KEYS:
+            return
+        if len(_BUSINESS_MODEL_WARMUP_THREADS) >= _BUSINESS_MODEL_WARMUP_MAX_THREADS:
+            logger.info("Skipping optional business-model warm-up: concurrency limit reached")
+            return
+        thread = threading.Thread(
+            target=_warm_business_analysis_model,
+            args=(tables, dict(source_hashes), cache_key),
+            name="insightflow-business-model-warmup",
+            daemon=True,
+        )
+        _BUSINESS_MODEL_WARMUP_KEYS.add(cache_key)
         _BUSINESS_MODEL_WARMUP_THREADS.add(thread)
-    thread.start()
+        try:
+            thread.start()
+        except Exception:
+            _BUSINESS_MODEL_WARMUP_THREADS.discard(thread)
+            _BUSINESS_MODEL_WARMUP_KEYS.discard(cache_key)
+            logger.exception("Unable to start business-model warm-up thread")
 
 
 def smart_query_error_response(
@@ -258,6 +276,15 @@ def _queue_learning_event(
     sheets: list,
     result: dict[str, Any],
 ) -> None:
+    # Learning events are optional telemetry, not part of the user's analysis
+    # result. Bound retained DataFrames/tasks so a slow downstream bridge cannot
+    # grow memory without limit. The primary request remains unaffected.
+    if len(_LEARNING_EVENT_TASKS) >= _MAX_LEARNING_EVENT_TASKS:
+        logger.warning(
+            "[/smart_query] Dropping optional learning event: task limit reached (%d)",
+            _MAX_LEARNING_EVENT_TASKS,
+        )
+        return
     try:
         task = asyncio.create_task(_record_learning_event(text=text, df=df, sheets=sheets, result=result))
     except RuntimeError:

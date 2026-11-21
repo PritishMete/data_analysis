@@ -108,6 +108,11 @@ class TransformationHistory:
         )
         self._entries.append(entry)
         self._redo_stack.clear()  # a new action invalidates any pending redo
+        # Snapshot history is intentionally bounded: each entry can retain two
+        # full DataFrames. Evict the oldest undo snapshot rather than allowing
+        # a long editing session to grow process memory indefinitely.
+        if len(self._entries) > 50:
+            del self._entries[: len(self._entries) - 50]
         return entry
 
     @staticmethod
