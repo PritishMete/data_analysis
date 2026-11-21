@@ -13,6 +13,7 @@ function createHarness(search = '?excelAuthDialog=1') {
   const storage = new Map();
   const messages = [];
   const historyCalls = [];
+  const diagnostics = [];
   let openedUrl = '';
   let closed = false;
 
@@ -37,6 +38,9 @@ function createHarness(search = '?excelAuthDialog=1') {
       state: null,
       replaceState: (...args) => historyCalls.push(args)
     },
+    console: {
+      info: (...args) => diagnostics.push(args.join(' '))
+    },
     Office: {
       AsyncResultStatus: { Succeeded: 'succeeded' },
       EventType: {
@@ -60,6 +64,7 @@ function createHarness(search = '?excelAuthDialog=1') {
   vm.runInNewContext(source, { window, URL, URLSearchParams, Promise, Error, JSON, Uint8Array, Array });
   return {
     window, handlers, messages, historyCalls,
+    diagnostics,
     get openedUrl() { return openedUrl; },
     get closed() { return closed; },
     storage
@@ -94,6 +99,8 @@ async function run() {
     });
     assert.equal(await result, 'r'.repeat(48));
     assert.equal(h.closed, true);
+    assert.ok(h.diagnostics.some((line) => line.includes('excel_dialog_message_validation')));
+    assert.ok(!h.diagnostics.some((line) => line.includes('r'.repeat(48))));
   }
 
   {
@@ -122,6 +129,8 @@ async function run() {
     assert.equal(payload.refreshToken, 'r'.repeat(48));
     assert.equal(h.storage.has('insightflow.excel.auth.dialog'), false);
     assert.equal(h.storage.has('insightflow.excel.auth.state'), false);
+    assert.ok(h.diagnostics.some((line) => line.includes('excel_dialog_message_parent')));
+    assert.ok(!h.diagnostics.some((line) => line.includes('r'.repeat(48))));
   }
 
   console.log('Excel authentication bridge tests passed.');

@@ -7,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/diagnostics/auth_diagnostics.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
@@ -103,6 +104,7 @@ class ManagementShell extends StatefulWidget {
 }
 
 class _ManagementShellState extends State<ManagementShell> {
+  final String _diagnosticCorrelationId = AuthDiagnostics.newCorrelationId();
   ManagementSection section = ManagementSection.overview;
   bool loading = true;
   bool _showLoadingSkeleton = false;
@@ -192,11 +194,50 @@ class _ManagementShellState extends State<ManagementShell> {
       headers['Content-Type'] = 'application/json';
     }
     final uri = Uri.parse('$insightFlowBackendBaseUrl/v1/authz/management$path');
-    final response = await _sendManagementRequest(
-      uri,
-      headers,
-      method: method,
-      body: body,
+    const startupOperations = <String>{
+      '/overview',
+      '/locations',
+      '/sections',
+      '/people',
+      '/assignments',
+      '',
+    };
+    final diagnosticOperation = startupOperations.contains(path)
+        ? 'management_request${path.isEmpty ? '/audit' : path}'
+        : 'management_request_other';
+    final started = DateTime.now();
+    late final http.Response response;
+    try {
+      response = await _sendManagementRequest(
+        uri,
+        headers,
+        method: method,
+        body: body,
+      );
+    } catch (error) {
+      AuthDiagnostics.event(
+        diagnosticOperation,
+        correlationId: _diagnosticCorrelationId,
+        success: false,
+        exceptionClass: error.runtimeType.toString(),
+        category: error is TimeoutException ? 'timeout' : 'request_failure',
+        durationMs: DateTime.now().difference(started).inMilliseconds,
+      );
+      rethrow;
+    }
+    AuthDiagnostics.event(
+      diagnosticOperation,
+      correlationId: _diagnosticCorrelationId,
+      success: response.statusCode >= 200 && response.statusCode < 300,
+      status: response.statusCode,
+      category: response.statusCode == 401
+          ? 'authentication_failure'
+          : response.statusCode == 403
+              ? 'authorization_failure'
+              : response.statusCode >= 500
+                  ? 'backend_failure'
+                  : null,
+      durationMs: DateTime.now().difference(started).inMilliseconds,
     );
     dynamic data;
     try { data = jsonDecode(response.body); } catch (_) {}
@@ -295,6 +336,12 @@ class _ManagementShellState extends State<ManagementShell> {
           section = ManagementSection.overview;
         }
       });
+      AuthDiagnostics.event(
+        'management_load',
+        correlationId: _diagnosticCorrelationId,
+        success: true,
+        category: 'loading_complete',
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -303,6 +350,13 @@ class _ManagementShellState extends State<ManagementShell> {
           error = e.toString().replaceFirst('Bad state: ', '');
         });
       }
+      AuthDiagnostics.event(
+        'management_load',
+        correlationId: _diagnosticCorrelationId,
+        success: false,
+        exceptionClass: e.runtimeType.toString(),
+        category: 'loading_error',
+      );
     }
   }
 

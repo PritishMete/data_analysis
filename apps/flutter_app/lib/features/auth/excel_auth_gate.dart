@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/diagnostics/auth_diagnostics.dart';
 import '../../core/interop/excel_auth_bridge.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_in_screen.dart';
@@ -22,6 +23,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   bool _openingDialog = false;
   String? _error;
   bool _attempted = false;
+  String _correlationId = AuthDiagnostics.newCorrelationId();
 
   @override
   void initState() {
@@ -55,6 +57,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   Future<void> _openDialog() async {
     if (_openingDialog || _attempted || !mounted) return;
     _attempted = true;
+    _correlationId = AuthDiagnostics.newCorrelationId();
     setState(() {
       _openingDialog = true;
       _error = null;
@@ -62,21 +65,67 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
 
     try {
       final refreshToken = await ExcelAuthBridge.openSignInDialog();
+      AuthDiagnostics.event(
+        'excel_dialog_message_received',
+        correlationId: _correlationId,
+        success: refreshToken.isNotEmpty,
+        category: refreshToken.isEmpty ? 'empty_session_message' : 'session_message',
+      );
       if (refreshToken.isEmpty) {
         throw StateError('InsightFlow did not return a session to Excel.');
       }
 
       // Supabase refresh tokens are rotated. The host consumes the one-time
       // handoff token and stores its own independently refreshed session.
-      await InsightFlowSupabaseAuthService.client.auth.setSession(refreshToken);
-      final user = await InsightFlowSupabaseAuthService.fetchAuthoritativeUser(
-        timeout: const Duration(seconds: 8),
+      try {
+        await InsightFlowSupabaseAuthService.client.auth.setSession(refreshToken);
+      } catch (error) {
+        AuthDiagnostics.event(
+          'excel_set_session',
+          correlationId: _correlationId,
+          success: false,
+          exceptionClass: error.runtimeType.toString(),
+          category: 'session_establishment_failure',
+        );
+        rethrow;
+      }
+      AuthDiagnostics.event(
+        'excel_set_session',
+        correlationId: _correlationId,
+        success: true,
       );
+      late final User? user;
+      try {
+        user = await InsightFlowSupabaseAuthService.fetchAuthoritativeUser(
+          timeout: const Duration(seconds: 8),
+        );
+      } catch (error) {
+        AuthDiagnostics.event(
+          'excel_fetch_authoritative_user',
+          correlationId: _correlationId,
+          success: false,
+          exceptionClass: error.runtimeType.toString(),
+          category: 'authoritative_user_failure',
+        );
+        rethrow;
+      }
       if (user == null || user.emailConfirmedAt == null) {
         throw StateError('The InsightFlow account could not be verified.');
       }
+      AuthDiagnostics.event(
+        'excel_fetch_authoritative_user',
+        correlationId: _correlationId,
+        success: true,
+      );
       // AuthGate observes the new Supabase session and opens the workspace.
     } catch (error) {
+      AuthDiagnostics.event(
+        'excel_parent_handoff',
+        correlationId: _correlationId,
+        success: false,
+        exceptionClass: error.runtimeType.toString(),
+        category: 'handoff_failure',
+      );
       if (!mounted) return;
       setState(() {
         _error = error is StateError
@@ -127,14 +176,26 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   bool _completed = false;
   bool _needsVerification = false;
   String? _error;
+  final String _correlationId = AuthDiagnostics.newCorrelationId();
 
   @override
   void initState() {
     super.initState();
     _subscription =
         InsightFlowSupabaseAuthService.authStateChanges.listen((_) {
+      AuthDiagnostics.event(
+        'excel_oauth_callback_session_available',
+        correlationId: _correlationId,
+        success: InsightFlowSupabaseAuthService.currentSession != null,
+      );
       _handoffAuthenticatedSession();
     }, onError: (_) {
+      AuthDiagnostics.event(
+        'excel_oauth_callback',
+        correlationId: _correlationId,
+        success: false,
+        category: 'auth_state_stream_error',
+      );
       if (mounted) setState(() => _error = 'Sign-in could not be verified. Try again.');
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -151,8 +212,25 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
 
     _handoffStarted = true;
     try {
-      final user = await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
-        timeout: const Duration(seconds: 8),
+      late final User? user;
+      try {
+        user = await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
+          timeout: const Duration(seconds: 8),
+        );
+      } catch (error) {
+        AuthDiagnostics.event(
+          'excel_refresh_authenticated_user',
+          correlationId: _correlationId,
+          success: false,
+          exceptionClass: error.runtimeType.toString(),
+          category: 'session_refresh_failure',
+        );
+        rethrow;
+      }
+      AuthDiagnostics.event(
+        'excel_refresh_authenticated_user',
+        correlationId: _correlationId,
+        success: user != null,
       );
       if (!mounted) return;
       if (user == null || user.emailConfirmedAt == null) {
@@ -167,12 +245,29 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       // dialog cannot be replayed into the task pane.
       final handoffToken =
           InsightFlowSupabaseAuthService.currentSession?.refreshToken;
+      AuthDiagnostics.event(
+        'excel_rotated_refresh_token_available',
+        correlationId: _correlationId,
+        success: handoffToken?.isNotEmpty == true,
+      );
       if (handoffToken == null || handoffToken.isEmpty) {
         throw StateError('InsightFlow did not return a refresh token.');
       }
       ExcelAuthBridge.completeDialog(handoffToken);
+      AuthDiagnostics.event(
+        'excel_dialog_complete',
+        correlationId: _correlationId,
+        success: true,
+      );
       if (mounted) setState(() => _completed = true);
-    } catch (_) {
+    } catch (error) {
+      AuthDiagnostics.event(
+        'excel_dialog_complete',
+        correlationId: _correlationId,
+        success: false,
+        exceptionClass: error.runtimeType.toString(),
+        category: 'handoff_failure',
+      );
       if (!mounted) return;
       setState(() {
         _error = 'InsightFlow could not verify this sign-in. Please try again.';
