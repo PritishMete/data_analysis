@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_auth_service.dart';
 import '../../core/interop/excel_auth_bridge.dart';
+import 'auth_glass_widgets.dart';
 import 'sign_in_screen.dart';
 
 /// Task-pane gate. It restores the add-in's own Supabase session first, then
@@ -94,6 +95,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
         title: 'Checking your InsightFlow sign-in…',
         detail: 'Your Excel session is being verified.',
         busy: true,
+        messageIsError: false,
       );
     }
 
@@ -101,6 +103,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       title: _error == null ? 'Sign in to InsightFlow' : 'Sign-in needs attention',
       detail: _error ??
           'A secure sign-in window will open. After you sign in, Excel will continue automatically.',
+      messageIsError: _error != null,
       actionLabel: 'Continue to sign in',
       onAction: () {
         _attempted = false;
@@ -191,6 +194,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         title: 'You’re signed in',
         detail: 'Return to Excel. Your InsightFlow workspace will open automatically.',
         busy: true,
+        messageIsError: false,
       );
     }
     if (_needsVerification || _error != null) {
@@ -198,6 +202,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         title: _needsVerification ? 'Verify your email first' : 'Sign-in could not finish',
         detail: _error ??
             'Confirm your InsightFlow email address, then return here and sign in again.',
+        messageIsError: _error != null,
         actionLabel: 'Back to sign in',
         onAction: () => setState(() {
           _needsVerification = false;
@@ -214,6 +219,7 @@ class _ExcelAuthStatus extends StatelessWidget {
     required this.title,
     required this.detail,
     this.busy = false,
+    this.messageIsError = true,
     this.actionLabel,
     this.onAction,
   });
@@ -221,60 +227,32 @@ class _ExcelAuthStatus extends StatelessWidget {
   final String title;
   final String detail;
   final bool busy;
+  final bool messageIsError;
   final String? actionLabel;
   final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF050B18),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.lock_outline, size: 38, color: Color(0xFF55D6E8)),
-                  const SizedBox(height: 20),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    detail,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF9BAAC1),
-                      fontSize: 13,
-                      height: 1.5,
-                    ),
-                  ),
-                  if (busy) ...[
-                    const SizedBox(height: 24),
-                    const CircularProgressIndicator(color: Color(0xFF55D6E8)),
-                  ],
-                  if (actionLabel != null && onAction != null) ...[
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: onAction,
-                      child: Text(actionLabel!),
-                    ),
-                  ],
-                ],
-              ),
+    return AuthGlassScaffold(
+      title: title,
+      subtitle: 'Sign in to continue to InsightFlow.',
+      children: [
+        AuthGlassMessage(text: detail, error: messageIsError),
+        if (busy) ...[
+          const SizedBox(height: 20),
+          const Center(child: CircularProgressIndicator()),
+        ],
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onAction,
+              child: Text(actionLabel!),
             ),
           ),
-        ),
-      ),
+        ],
+      ],
     );
   }
 }

@@ -68,7 +68,9 @@ class AuthGate extends StatelessWidget {
           return const _AuthLoading();
         }
         if (snapshot.hasError) {
-          return const _AuthError();
+          return isRunningInsideOffice
+              ? const SignInScreen()
+              : const _AuthError();
         }
         final user = InsightFlowSupabaseAuthService.currentUser;
         if (user == null) {
