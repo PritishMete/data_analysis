@@ -8,6 +8,7 @@ import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../../core/diagnostics/auth_diagnostics.dart';
+import '../../core/interop/excel_auth_bridge.dart';
 import '../../tech_background.dart';
 import '../../widgets/shared/dock_glass_material.dart';
 import 'management_navigation.dart';
@@ -104,7 +105,7 @@ class ManagementShell extends StatefulWidget {
 }
 
 class _ManagementShellState extends State<ManagementShell> {
-  final String _diagnosticCorrelationId = AuthDiagnostics.newCorrelationId();
+  late final String _diagnosticCorrelationId;
   ManagementSection section = ManagementSection.overview;
   bool loading = true;
   bool _showLoadingSkeleton = false;
@@ -134,7 +135,12 @@ class _ManagementShellState extends State<ManagementShell> {
   bool _isCurrentUserProfile = false;
 
   @override
-  void initState() { super.initState(); loadAll(); }
+  void initState() {
+    super.initState();
+    _diagnosticCorrelationId = ExcelAuthBridge.currentCorrelationId() ??
+        AuthDiagnostics.newCorrelationId();
+    loadAll();
+  }
 
   List<Map<String, dynamic>> maps(dynamic v) => v is List
       ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
@@ -220,7 +226,11 @@ class _ManagementShellState extends State<ManagementShell> {
         correlationId: _diagnosticCorrelationId,
         success: false,
         exceptionClass: error.runtimeType.toString(),
-        category: error is TimeoutException ? 'timeout' : 'request_failure',
+        category: error is TimeoutException ||
+                (error is StateError &&
+                    error.message.toString().startsWith('Management service timed out'))
+            ? 'timeout'
+            : 'request_failure',
         durationMs: DateTime.now().difference(started).inMilliseconds,
       );
       rethrow;

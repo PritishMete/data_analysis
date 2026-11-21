@@ -8,6 +8,8 @@
   var DIALOG_STATE_PARAM = "excelAuthState";
   var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
   var CORRELATION_SESSION_KEY = "insightflow.excel.auth.correlation";
+  var DIAGNOSTIC_EVENTS_KEY = "insightflow.excel.auth.events";
+  var MAX_DIAGNOSTIC_EVENTS = 64;
 
   function createState() {
     if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
@@ -40,7 +42,31 @@
       success: success
     };
     if (category) fields.category = category;
+    try {
+      var events = JSON.parse(global.sessionStorage.getItem(DIAGNOSTIC_EVENTS_KEY) || "[]");
+      if (!Array.isArray(events)) events = [];
+      events.push(fields);
+      global.sessionStorage.setItem(
+        DIAGNOSTIC_EVENTS_KEY,
+        JSON.stringify(events.slice(-MAX_DIAGNOSTIC_EVENTS))
+      );
+    } catch (_) {}
     global.console.info("[auth-diagnostic]", JSON.stringify(fields));
+  }
+
+  function setCorrelationId(correlationId) {
+    if (typeof correlationId !== "string" || !/^auth-[0-9a-f]{32}$/.test(correlationId)) {
+      throw new Error("The authentication diagnostic ID is invalid.");
+    }
+    global.sessionStorage.setItem(CORRELATION_SESSION_KEY, correlationId);
+  }
+
+  function currentCorrelationId() {
+    try {
+      return global.sessionStorage.getItem(CORRELATION_SESSION_KEY);
+    } catch (_) {
+      return null;
+    }
   }
 
   function restoreDialogFlag() {
@@ -53,6 +79,10 @@
         if (incomingState) {
           global.sessionStorage.setItem(DIALOG_STATE_SESSION_KEY, incomingState);
         }
+        var incomingCorrelationId = params.get("excelAuthCorrelationId");
+        if (incomingCorrelationId && /^auth-[0-9a-f]{32}$/.test(incomingCorrelationId)) {
+          global.sessionStorage.setItem(CORRELATION_SESSION_KEY, incomingCorrelationId);
+        }
         return;
       }
       if (global.sessionStorage.getItem(DIALOG_SESSION_KEY) === "1") {
@@ -60,6 +90,8 @@
         params.set(DIALOG_FLAG, "1");
         var savedState = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
         if (savedState) params.set(DIALOG_STATE_PARAM, savedState);
+        var savedCorrelationId = currentCorrelationId();
+        if (savedCorrelationId) params.set("excelAuthCorrelationId", savedCorrelationId);
         var query = params.toString();
         var nextUrl = global.location.pathname +
           (query ? "?" + query : "") + (global.location.hash || "");
@@ -90,22 +122,26 @@
         return;
       }
       try {
-        global.sessionStorage.setItem(CORRELATION_SESSION_KEY, createCorrelationId());
+        if (!currentCorrelationId()) setCorrelationId(createCorrelationId());
       } catch (_) {}
       diagnostic("excel_dialog_open", true);
       url.searchParams.set(DIALOG_FLAG, "1");
       url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
+      url.searchParams.set("excelAuthCorrelationId", currentCorrelationId() || "");
       url.hash = "";
 
       var dialog = null;
       var settled = false;
-      function finish(error, refreshToken) {
+      function finish(error, refreshToken, correlationId) {
         if (settled) return;
         settled = true;
         if (error) {
           reject(error);
         } else {
-          resolve(refreshToken);
+          resolve(JSON.stringify({
+            refreshToken: refreshToken,
+            correlationId: correlationId
+          }));
         }
       }
 
@@ -142,12 +178,14 @@
                     message.state !== expectedState ||
                     typeof message.refreshToken !== "string" ||
                     message.refreshToken.length < 20 ||
-                    message.refreshToken.length > 4096) {
+                    message.refreshToken.length > 4096 ||
+                    typeof message.correlationId !== "string" ||
+                    !/^auth-[0-9a-f]{32}$/.test(message.correlationId)) {
                   diagnostic("excel_dialog_message_validation", false, "state_or_shape_mismatch");
                   throw new Error("The sign-in response was invalid.");
                 }
                 diagnostic("excel_dialog_message_validation", true);
-                finish(null, message.refreshToken);
+                finish(null, message.refreshToken, message.correlationId);
                 if (dialog) dialog.close();
               } catch (error) {
                 finish(error instanceof Error ? error : new Error("Invalid sign-in response."));
@@ -188,6 +226,10 @@
     }
 
     var params = new URLSearchParams(global.location.search || "");
+    var correlationId = params.get("excelAuthCorrelationId") || currentCorrelationId();
+    if (!correlationId || !/^auth-[0-9a-f]{32}$/.test(correlationId)) {
+      throw new Error("The Excel authentication diagnostic ID is invalid.");
+    }
     var state = params.get(DIALOG_STATE_PARAM);
     if (!state) {
       try {
@@ -203,7 +245,8 @@
         type: MESSAGE_TYPE,
         version: MESSAGE_VERSION,
         state: state,
-        refreshToken: refreshToken
+        refreshToken: refreshToken,
+        correlationId: correlationId
       }));
       diagnostic("excel_dialog_message_parent", true);
     } catch (error) {
@@ -219,13 +262,16 @@
       global.sessionStorage.removeItem(DIALOG_SESSION_KEY);
       global.sessionStorage.removeItem(DIALOG_STATE_SESSION_KEY);
       global.sessionStorage.removeItem(CORRELATION_SESSION_KEY);
+      global.sessionStorage.removeItem(DIAGNOSTIC_EVENTS_KEY);
     } catch (_) {}
   }
 
   global.InsightFlowExcelAuth = {
     openSignInDialog: openSignInDialog,
     completeDialog: completeDialog,
-    restoreDialogFlag: restoreDialogFlag
+    restoreDialogFlag: restoreDialogFlag,
+    setCorrelationId: setCorrelationId,
+    currentCorrelationId: currentCorrelationId
   };
 
   restoreDialogFlag();
