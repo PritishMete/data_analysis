@@ -12,8 +12,13 @@ from sqlalchemy.orm import sessionmaker
 from core.excel_handoff_store import claim, cleanup, complete, create
 
 
-DATABASE_URL = os.environ["EXCEL_HANDOFF_TEST_DATABASE_URL"]
+DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL", "").strip()
 MIGRATION = Path(__file__).parents[2] / "migrations" / "0037_excel_auth_handoff.sql"
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL,
+    reason="Requires EXCEL_HANDOFF_TEST_DATABASE_URL for PostgreSQL integration tests.",
+)
 
 
 @pytest.fixture(scope="session")

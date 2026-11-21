@@ -49,6 +49,7 @@ def postgres_engine():
         # migrations are run. Never read DATABASE_URL or production secrets.
         conn.execute(text("DROP SCHEMA IF EXISTS managed_data CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS private CASCADE"))
+        conn.execute(text("DROP SCHEMA IF EXISTS excel_handoff CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS storage CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS auth CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
