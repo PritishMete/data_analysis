@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from core.db import get_db
 from core.excel_handoff_store import cancel, claim, complete, create
+from core.excel_handoff_diagnostics import event, new_correlation_id
 from firebase_authz.supabase_auth import (
     AuthenticationRequired,
     SupabaseAuthUnavailable,
@@ -95,10 +96,28 @@ def create_handoff(payload: HandoffRequest, db: Session = Depends(get_db)):
 
 @router.post("/complete", status_code=204)
 def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
+    correlation_id = new_correlation_id()
+    event('handoff_complete_started', correlation_id=correlation_id, success=True)
     try:
         original = verify_supabase_access_token(payload.access_token)
-        refreshed_access, rotated_refresh = _refresh_pair(payload.refresh_token)
+        event('handoff_access_token_verified', correlation_id=correlation_id, success=True)
+        try:
+            refreshed_access, rotated_refresh = _refresh_pair(payload.refresh_token)
+        except (AuthenticationRequired, RuntimeError, SupabaseAuthUnavailable) as exc:
+            event(
+                'handoff_supabase_refresh', correlation_id=correlation_id, success=False,
+                exception_class=exc.__class__.__name__, category='provider_refresh_failure',
+            )
+            raise
+        event('handoff_supabase_refresh', correlation_id=correlation_id, success=True)
         refreshed = verify_supabase_access_token(refreshed_access)
+        same_identity = original.get('uid') == refreshed.get('uid')
+        event(
+            'handoff_refreshed_identity_verified',
+            correlation_id=correlation_id,
+            success=same_identity,
+            category=None if same_identity else 'identity_mismatch',
+        )
         if original.get("uid") != refreshed.get("uid"):
             raise AuthenticationRequired("Supabase session identity mismatch.")
         if not complete(db, payload.transaction_id, payload.completion_capability,
@@ -106,10 +125,21 @@ def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
             db.rollback()
             raise HTTPException(status_code=400, detail="Authentication handoff unavailable.")
         _commit_or_fail(db)
+        event('handoff_persistence', correlation_id=correlation_id, success=True, status=204)
     except AuthenticationRequired as exc:
+        event(
+            'handoff_complete', correlation_id=correlation_id, success=False,
+            status=401, exception_class=exc.__class__.__name__,
+            category='authentication_failure',
+        )
         db.rollback()
         raise HTTPException(status_code=401, detail="Authentication could not be verified.") from exc
     except (RuntimeError, SupabaseAuthUnavailable) as exc:
+        event(
+            'handoff_complete', correlation_id=correlation_id, success=False,
+            status=503, exception_class=exc.__class__.__name__,
+            category='provider_unavailable',
+        )
         db.rollback()
         raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable.") from exc
 
