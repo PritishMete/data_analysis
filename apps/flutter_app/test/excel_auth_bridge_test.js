@@ -87,6 +87,7 @@ async function run() {
     const result = h.window.InsightFlowExcelAuth.openSignInDialog();
     assert.match(h.openedUrl, /excelAuthDialog=1/);
     const state = new URL(h.openedUrl).searchParams.get('excelAuthState');
+    const correlationId = new URL(h.openedUrl).searchParams.get('excelAuthCorrelationId');
     assert.ok(state);
     h.handlers.message({
       origin: 'https://pritishmete.github.io',
@@ -94,10 +95,13 @@ async function run() {
         type: 'insightflow.excel.auth',
         version: 1,
         state,
+        correlationId,
         refreshToken: 'r'.repeat(48)
       })
     });
-    assert.equal(await result, 'r'.repeat(48));
+    const handoff = JSON.parse(await result);
+    assert.match(handoff.correlationId, /^auth-[0-9a-f]{32}$/);
+    assert.equal(handoff.refreshToken, 'r'.repeat(48));
     assert.equal(h.closed, true);
     assert.ok(h.diagnostics.some((line) => line.includes('excel_dialog_message_validation')));
     assert.ok(!h.diagnostics.some((line) => line.includes('r'.repeat(48))));
@@ -120,13 +124,14 @@ async function run() {
   }
 
   {
-    const h = createHarness('?excelAuthDialog=1&excelAuthState=test-state');
+    const h = createHarness('?excelAuthDialog=1&excelAuthState=test-state&excelAuthCorrelationId=auth-07070707070707070707070707070707');
     h.window.InsightFlowExcelAuth.completeDialog('r'.repeat(48));
     const payload = JSON.parse(h.messages[0]);
     assert.equal(payload.type, 'insightflow.excel.auth');
     assert.equal(payload.version, 1);
     assert.equal(payload.state, 'test-state');
     assert.equal(payload.refreshToken, 'r'.repeat(48));
+    assert.equal(payload.correlationId, 'auth-07070707070707070707070707070707');
     assert.equal(h.storage.has('insightflow.excel.auth.dialog'), false);
     assert.equal(h.storage.has('insightflow.excel.auth.state'), false);
     assert.ok(h.diagnostics.some((line) => line.includes('excel_dialog_message_parent')));

@@ -64,7 +64,11 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     });
 
     try {
-      final refreshToken = await ExcelAuthBridge.openSignInDialog();
+      _correlationId = AuthDiagnostics.newCorrelationId();
+      ExcelAuthBridge.setCorrelationId(_correlationId);
+      final dialogResult = await ExcelAuthBridge.openSignInDialog();
+      final refreshToken = dialogResult.refreshToken;
+      _correlationId = dialogResult.correlationId;
       AuthDiagnostics.event(
         'excel_dialog_message_received',
         correlationId: _correlationId,
@@ -176,11 +180,13 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   bool _completed = false;
   bool _needsVerification = false;
   String? _error;
-  final String _correlationId = AuthDiagnostics.newCorrelationId();
+  late final String _correlationId;
 
   @override
   void initState() {
     super.initState();
+    _correlationId = ExcelAuthBridge.currentCorrelationId() ??
+        AuthDiagnostics.newCorrelationId();
     _subscription =
         InsightFlowSupabaseAuthService.authStateChanges.listen((_) {
       AuthDiagnostics.event(

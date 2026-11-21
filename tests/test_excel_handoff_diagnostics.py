@@ -1,4 +1,8 @@
-from core.excel_handoff_diagnostics import event, new_correlation_id
+from core.excel_handoff_diagnostics import (
+    event,
+    new_correlation_id,
+    validate_correlation_id,
+)
 
 
 def test_handoff_diagnostics_allowlist_excludes_sensitive_values(caplog):
@@ -20,3 +24,10 @@ def test_handoff_diagnostics_allowlist_excludes_sensitive_values(caplog):
     assert "FAKE_ACCESS_TOKEN" not in text
     assert "FAKE_REFRESH_TOKEN" not in text
     assert "authorization" not in text.lower()
+
+
+def test_correlation_ids_are_validated_without_becoming_authentication_proof():
+    valid = new_correlation_id()
+    assert validate_correlation_id(valid) == valid
+    assert validate_correlation_id("auth-not-valid") != "auth-not-valid"
+    assert validate_correlation_id(None) != ""

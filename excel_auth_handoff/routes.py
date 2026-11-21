@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from core.db import get_db
 from core.excel_handoff_store import cancel, claim, complete, create
-from core.excel_handoff_diagnostics import event, new_correlation_id
+from core.excel_handoff_diagnostics import event, validate_correlation_id
 from firebase_authz.supabase_auth import (
     AuthenticationRequired,
     SupabaseAuthUnavailable,
@@ -35,6 +35,7 @@ class CompleteRequest(BaseModel):
     completion_capability: Capability
     access_token: Annotated[str, Field(min_length=20, max_length=8192)]
     refresh_token: Annotated[str, Field(min_length=20, max_length=8192)]
+    diagnostic_correlation_id: str | None = None
 
 
 class ClaimRequest(BaseModel):
@@ -96,7 +97,7 @@ def create_handoff(payload: HandoffRequest, db: Session = Depends(get_db)):
 
 @router.post("/complete", status_code=204)
 def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
-    correlation_id = new_correlation_id()
+    correlation_id = validate_correlation_id(payload.diagnostic_correlation_id)
     event('handoff_complete_started', correlation_id=correlation_id, success=True)
     try:
         original = verify_supabase_access_token(payload.access_token)
