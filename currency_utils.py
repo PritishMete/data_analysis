@@ -6,6 +6,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from security_controls import validate_outbound_url
 from typing import Any
 
 TARGET_CURRENCY_REGISTRY: dict[str, dict[str, Any]] = {
@@ -257,7 +258,10 @@ def _fetch_rates(base: str) -> dict[str, float]:
     cached = _CACHE.get(base)
     if cached and now - cached[0] < 3600:
         return cached[1]
-    url = "https://open.er-api.com/v6/latest/" + urllib.parse.quote(base)
+    url = validate_outbound_url(
+        "https://open.er-api.com/v6/latest/" + urllib.parse.quote(base),
+        allowed_hosts={"open.er-api.com"},
+    )
     with urllib.request.urlopen(url, timeout=8) as response:
         payload = json.loads(response.read().decode("utf-8"))
     rates = payload.get("rates") or {}

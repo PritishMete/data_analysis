@@ -31,6 +31,7 @@ from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
 from schema_intelligence.repository import RelationshipRepository
 from schema_intelligence.service import SchemaIntelligenceService
+from security_controls import validate_upload_filename
 
 from .provider import SupabaseDatasetStorageProvider, archive_original_enabled
 
@@ -86,23 +87,8 @@ def _single_replacement_target(conflicts: list[dict[str, Any]]) -> str | None:
 
 
 def _safe_filename(filename: str) -> str:
-    raw_name = str(filename or "").strip()
-    if "/" in raw_name or "\\" in raw_name:
-        raise ValueError("Unsafe dataset filename.")
-    name = os.path.basename(raw_name)
-    if (
-        not name
-        or name in {".", ".."}
-        or len(name) > 255
-        or "/" in name
-        or "\\" in name
-        or any(ord(char) < 32 or ord(char) == 127 for char in name)
-    ):
-        raise ValueError("Unsafe dataset filename.")
-    extension = os.path.splitext(name)[1].lower()
-    if extension in BLOCKED_EXTENSIONS:
-        raise ValueError("This file type is not accepted as a managed dataset.")
-    if extension != ".csv":
+    name = validate_upload_filename(filename)
+    if os.path.splitext(name)[1].lower() != ".csv":
         raise ValueError("Only safe CSV files are accepted as managed datasets.")
     return name
 

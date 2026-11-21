@@ -293,6 +293,7 @@ from firebase_authz.middleware import FirebaseAuthorizationMiddleware
 from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
 from security_hardening import (
+    OriginProtectionMiddleware,
     DatabaseRateLimiter,
     RateLimitMiddleware,
     RequestSizeLimitMiddleware,
@@ -399,6 +400,7 @@ app.add_event_handler("startup", _initialize_production_database)
 app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(OriginProtectionMiddleware)
 app.add_middleware(FirebaseAuthorizationMiddleware)
 
 
