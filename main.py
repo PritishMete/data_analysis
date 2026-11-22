@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 try:
     from dotenv import load_dotenv
@@ -2660,7 +2660,11 @@ async def download_powerbi_report(filename: str):
     report_path = Path(tempfile.gettempdir()) / "insightflow_reports" / filename
     if not report_path.is_file():
         return JSONResponse(status_code=404, content={"success": False, "error": "Report not found."})
-    return FileResponse(report_path, media_type="application/pdf", filename=filename)
+    return Response(
+        content=report_path.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/powerbi/dashboard")
