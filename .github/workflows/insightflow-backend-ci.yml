@@ -180,7 +180,9 @@ jobs:
         env:
           PYTEST_SPLIT_GROUP: ${{ matrix.group }}
         run: |
-          pytest -vv -n auto --dist loadfile --timeout=120 --timeout-method=signal \
+          # The four GitHub jobs provide parallelism. Keep each shard serial to
+          # avoid nested xdist workers and shared-state contention inside a shard.
+          pytest -vv --timeout=120 --timeout-method=signal \
             --splits 4 --group "${PYTEST_SPLIT_GROUP}" --splitting-algorithm least_duration \
             --durations=25 --ignore=tests/test_query_history.py
 
