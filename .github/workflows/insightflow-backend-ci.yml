@@ -188,7 +188,7 @@ jobs:
 
   detail-upload-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       INSIGHTFLOW_PRIVACY_MODE: local_only
       SECURE_EXCEL_REMOTE_AI: "false"
@@ -209,9 +209,69 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
           python -m pip install 'pytest-timeout>=2.3,<3'
-      - name: Run isolated detail-upload regression tests
+      - name: Run detail-upload tests excluding isolated PDF cases
         run: |
-          pytest -vv tests/test_detail_upload.py --timeout=120 --timeout-method=signal --durations=25
+          pytest -vv tests/test_detail_upload.py \
+            -k 'not chat_report_request_returns_downloadable_local_pdf and not context_inherited_report_filename_is_downloadable' \
+            --timeout=120 --timeout-method=signal --durations=25
+
+  detail-upload-executive-report-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+      - name: Diagnose executive PDF generation and download
+        run: |
+          timeout --signal=TERM --kill-after=10s 180s pytest -vv \
+            tests/test_detail_upload.py::test_powerbi_chat_report_request_returns_downloadable_local_pdf \
+            --timeout=120 --timeout-method=thread --durations=10
+
+  detail-upload-context-report-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+      - name: Diagnose context-inherited PDF generation and download
+        run: |
+          timeout --signal=TERM --kill-after=10s 180s pytest -vv \
+            tests/test_detail_upload.py::test_context_inherited_report_filename_is_downloadable \
+            --timeout=120 --timeout-method=thread --durations=10
 
   context-state-tests:
     runs-on: ubuntu-latest
