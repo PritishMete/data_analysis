@@ -7,6 +7,7 @@ are provisioned as a test baseline; application-owned public tables are created
 only by the real migration runner.
 """
 
+import asyncio
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -420,3 +421,19 @@ def test_production_migration_runner_rejects_invalid_assignment_index(
 
     with pytest.raises(RuntimeError, match=expected_error):
         runner.run_migrations()
+
+
+def test_fastapi_lifespan_runs_required_initialization_before_serving(monkeypatch):
+    import main
+
+    calls = []
+    monkeypatch.setattr(
+        main, "_initialize_production_database", lambda: calls.append("initialized")
+    )
+
+    async def exercise_lifespan():
+        async with main.app.router.lifespan_context(main.app):
+            assert calls == ["initialized"]
+
+    asyncio.run(exercise_lifespan())
+    assert calls == ["initialized"]
