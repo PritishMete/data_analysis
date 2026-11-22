@@ -52,6 +52,33 @@ jobs:
       - name: Run disposable PostgreSQL migration integration tests
         run: pytest -q -rs tests/test_authz_assignment_index_postgres.py
 
+  query-history-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+      - name: Run complete query-history integration suite with hard per-test timeout
+        run: |
+          pytest -vv tests/test_query_history.py --timeout=120 --timeout-method=signal --durations=25
+
   backend-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -124,12 +151,8 @@ jobs:
       - name: Run backend regression suite excluding isolated query-history integration
         run: |
           python -m pip install 'pytest-timeout>=2.3,<3'
-          pytest -vv -n auto --dist loadfile --timeout=120 --timeout-method=thread --durations=25 \
+          pytest -vv -n auto --dist loadfile --timeout=120 --timeout-method=signal --durations=25 \
             --ignore=tests/test_query_history.py
-
-      - name: Run query-history integration suite in isolation
-        run: |
-          pytest -vv tests/test_query_history.py --timeout=120 --timeout-method=thread --durations=25
 
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
