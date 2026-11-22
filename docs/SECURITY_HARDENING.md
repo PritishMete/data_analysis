@@ -95,3 +95,31 @@ the Flutter lockfile.
   credentials configured by an operator.
 - No payment, billing, or payment-provider webhook implementation is intended
   in this product scope; verify again when such functionality is introduced.
+
+
+## Full-history Gitleaks finding disposition
+
+The full-history scan covered 3,466 commits and initially reported 129 matches:
+
+- 127 `gcp-api-key` matches in historical generated Flutter Web `main.dart.js`
+  bundles. Sampled revisions contained the same 39-character Firebase Web API
+  key alongside Firebase client configuration. This is a public Firebase
+  client identifier, not a Supabase service-role key, private key, or server
+  credential. It must still be restricted in Google Cloud to the required APIs
+  and approved web referrers.
+- 2 `curl-auth-header` matches in historical production smoke-test workflow
+  revisions. Both were deliberately invalid diagnostic bearer placeholders,
+  not production credentials. The current workflow generates its invalid
+  token dynamically.
+
+The repository's `.gitleaks.toml` allowlists only these narrowly scoped
+patterns: the GCP API-key detector for generated `main.dart.js` bundles and
+the curl-auth-header detector for invalid-prefixed values in the production
+smoke-test workflow. Other rules and paths remain scanned.
+
+**Manual external action:** inspect the Firebase Web API key in Google Cloud
+Console. Confirm API restrictions permit only required Firebase services and
+HTTP referrer restrictions include only the intended production web origin(s).
+If the key is unrestricted or has broader API access than required, manually
+restrict it and rotate it through the Google Cloud/Firebase owner workflow.
+No key was rotated or changed by this PR.
