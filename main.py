@@ -6,6 +6,7 @@ import logging
 import os
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -337,10 +338,19 @@ _docs_enabled = os.getenv("INSIGHTFLOW_ENABLE_OPENAPI", "false").strip().lower()
 if _production_environment and not _docs_enabled:
     _docs_enabled = False
 
+@asynccontextmanager
+async def _application_lifespan(_app):
+    # Starlette 1.x removed the legacy add_event_handler API. Keep required
+    # database/authz initialization in the supported lifespan lifecycle.
+    _initialize_production_database()
+    yield
+
+
 app = FastAPI(
     docs_url="/docs" if _docs_enabled else None,
     redoc_url="/redoc" if _docs_enabled else None,
     openapi_url="/openapi.json" if _docs_enabled else None,
+    lifespan=_application_lifespan,
 )
 _rate_limiter = DatabaseRateLimiter(engine)
 
@@ -394,7 +404,6 @@ def _initialize_production_database() -> None:
     logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)
 
 
-app.add_event_handler("startup", _initialize_production_database)
 
 # These middleware run before FastAPI/Starlette parses JSON or multipart bodies.
 app.add_middleware(RequestSizeLimitMiddleware)
