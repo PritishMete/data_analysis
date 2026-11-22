@@ -1,0 +1,30 @@
+title = "data_analysis secret scanning"
+
+[extend]
+useDefault = true
+
+# Flutter Web embeds the Firebase Web API key in its generated bundle. This
+# is public client configuration, not a service credential. Keep the allowlist
+# limited to the GCP API-key detector and the generated main.dart.js asset;
+# Google Cloud API/referrer restrictions still require operator verification.
+[[rules]]
+id = "gcp-api-key"
+
+    [[rules.allowlists]]
+    description = "Public Firebase Web API key in generated Flutter Web bundle; verify API and HTTP referrer restrictions."
+    condition = "AND"
+    paths = ['''(^|/)main\.dart\.js$''']
+    regexTarget = "secret"
+    regexes = ['''^AIza[0-9A-Za-z_-]{35}$''']
+
+# Historical negative smoke tests used deliberately invalid bearer placeholders.
+# The current workflow generates its negative-test token dynamically.
+[[rules]]
+id = "curl-auth-header"
+
+    [[rules.allowlists]]
+    description = "Historical invalid bearer placeholder in production smoke test; not a credential."
+    condition = "AND"
+    paths = ['''(^|/)\.github/workflows/production-backend-smoke\.yml$''']
+    regexTarget = "secret"
+    regexes = ['''(?i)^invalid[-_].+$''']
