@@ -5,6 +5,9 @@ on:
   # the selected release-branch commit, so the SHA check validates reality.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -91,8 +94,9 @@ jobs:
         run: |
           set -euo pipefail
           response_file="$(mktemp)"
+          invalid_token="invalid-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           status="$(curl --silent --show-error --output "$response_file" \
-            -H 'Authorization: Bearer invalid-diagnostic-token' \
+            -H "Authorization: Bearer ${invalid_token}" \
             -w '%{http_code}' \
             https://data-analysis-oajs.onrender.com/v1/authz/provider-diagnostics)"
           echo "Diagnostic status: $status"

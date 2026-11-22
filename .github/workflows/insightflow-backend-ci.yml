@@ -10,6 +10,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   authorization-postgres-integration:
     runs-on: ubuntu-latest
@@ -49,9 +52,36 @@ jobs:
       - name: Run disposable PostgreSQL migration integration tests
         run: pytest -q -rs tests/test_authz_assignment_index_postgres.py
 
-  backend-tests:
+  query-history-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+      - name: Run complete query-history integration suite with hard per-test timeout
+        run: |
+          pytest -vv tests/test_query_history.py --timeout=120 --timeout-method=signal --durations=25
+
+  backend-foundation-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       INSIGHTFLOW_PRIVACY_MODE: local_only
       SECURE_EXCEL_REMOTE_AI: "false"
@@ -118,9 +148,93 @@ jobs:
       - name: Run managed dataset ingestion and storage tests
         run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
 
-      - name: Run backend regression suite
-        run: pytest -q
+  backend-regression-tests:
+    name: Backend regression shard ${{ matrix.group }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies and deterministic pytest sharding
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3' 'pytest-split==0.11.0'
+      - name: Run complete backend regression suite shard
+        env:
+          PYTEST_SPLIT_GROUP: ${{ matrix.group }}
+        run: |
+          # The four GitHub jobs provide parallelism. Keep each shard serial to
+          # avoid nested xdist workers and shared-state contention inside a shard.
+          pytest -vv --timeout=120 --timeout-method=signal \
+            --splits 4 --group "${PYTEST_SPLIT_GROUP}" --splitting-algorithm least_duration \
+            --durations=25 --ignore=tests/test_query_history.py --ignore=tests/test_detail_upload.py
 
+  detail-upload-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+          python -m pip install 'pytest-timeout>=2.3,<3'
+      - name: Run complete detail-upload regression module
+        run: |
+          pytest -vv tests/test_detail_upload.py --timeout=120 --timeout-method=signal --durations=25
+
+  context-state-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSIGHTFLOW_PRIVACY_MODE: local_only
+      SECURE_EXCEL_REMOTE_AI: "false"
+      DETAIL_ANALYSIS_CHAT_GEMINI_ENABLED: "false"
+      DETAIL_ANALYSIS_ALLOW_METADATA_AI: "false"
+      INSIGHTFLOW_AUTH_REQUIRED: "false"
+      INSIGHTFLOW_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
 

@@ -73,8 +73,18 @@ function renderMetaResponse(result) {
   if ((result.links || []).length) {
     const links = document.createElement("p");
     result.links.forEach((item, index) => {
+      let safeUrl;
+      try {
+        safeUrl = new URL(String(item.url || ""), document.baseURI);
+      } catch (_) {
+        return;
+      }
+      if (safeUrl.protocol !== "https:" &&
+          !(safeUrl.protocol === "http:" && safeUrl.origin === window.location.origin)) {
+        return;
+      }
       const anchor = document.createElement("a");
-      anchor.href = item.url;
+      anchor.href = safeUrl.href;
       anchor.target = "_blank";
       anchor.rel = "noopener noreferrer";
       anchor.textContent = item.label;
@@ -94,10 +104,86 @@ function detailReport(result) {
   return { __detailHtml: result.readable_report_html };
 }
 
+const REPORT_HTML_TAGS = new Set([
+  "h1", "h2", "h3", "p", "strong", "table", "thead", "tbody", "tr",
+  "th", "td", "ul", "li", "section", "div", "span", "small", "em",
+  "b", "br", "svg", "line", "text",
+]);
+const REPORT_SVG_TAGS = new Set(["svg", "line", "text"]);
+const REPORT_NUMERIC_ATTRIBUTES = new Set(["x1", "y1", "x2", "y2"]);
+
+function sanitizeReportHtml(untrustedHtml) {
+  // DOMParser creates an inert document. Only known report elements and
+  // narrowly validated presentation attributes are copied into the live DOM.
+  const parsed = new DOMParser().parseFromString(String(untrustedHtml || ""), "text/html");
+  const svgNamespace = "http://www.w3.org/2000/svg";
+
+  function copySafeNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(node.nodeValue || "");
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+    const tag = node.tagName.toLowerCase();
+    if (!REPORT_HTML_TAGS.has(tag)) return null;
+
+    const element = REPORT_SVG_TAGS.has(tag)
+      ? document.createElementNS(svgNamespace, tag)
+      : document.createElement(tag);
+
+    for (const attribute of Array.from(node.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value;
+      if (name === "class" && /^[a-z0-9 _-]+$/i.test(value)) {
+        element.setAttribute("class", value);
+      } else if (
+        name === "style" &&
+        tag === "div" &&
+        /^left:\d+(?:\.\d+)?%;top:\d+(?:\.\d+)?%;?$/.test(value)
+      ) {
+        const match = value.match(/^left:(\d+(?:\.\d+)?)%;top:(\d+(?:\.\d+)?)%;?$/);
+        if (match) {
+          element.style.left = `${match[1]}%`;
+          element.style.top = `${match[2]}%`;
+        }
+      } else if (name === "aria-label") {
+        element.setAttribute("aria-label", value);
+      } else if (name === "role" && value === "img") {
+        element.setAttribute("role", "img");
+      } else if (
+        name === "viewbox" &&
+        tag === "svg" &&
+        /^\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?){3}$/.test(value)
+      ) {
+        element.setAttribute("viewBox", value);
+      } else if (
+        REPORT_NUMERIC_ATTRIBUTES.has(name) &&
+        tag === "line" &&
+        /^\d+(?:\.\d+)?$/.test(value)
+      ) {
+        element.setAttribute(name, value);
+      }
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      const safeChild = copySafeNode(child);
+      if (safeChild) element.appendChild(safeChild);
+    }
+    return element;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const child of Array.from(parsed.body.childNodes)) {
+    const safeChild = copySafeNode(child);
+    if (safeChild) fragment.appendChild(safeChild);
+  }
+  return fragment;
+}
+
 function setDetailOutput(result) {
   const formatted = detailReport(result);
   if (formatted && formatted.__detailHtml) {
-    output.innerHTML = formatted.__detailHtml;
+    output.replaceChildren(sanitizeReportHtml(formatted.__detailHtml));
   } else {
     setOutput(formatted);
   }

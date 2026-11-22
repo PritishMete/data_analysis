@@ -1,4 +1,4 @@
-fastapi
+fastapi>=0.133.0,<1.0
 uvicorn
 pandas
 python-multipart
@@ -7,8 +7,8 @@ openpyxl
 pyarrow
 scikit-learn
 pydantic
-google-generativeai
-google-adk
+# Legacy google-generativeai is unused; Google ADK uses google-genai directly.
+google-adk>=2.15.0,<3.0
 firebase-admin>=6.9.0
 python-dotenv
 duckdb
@@ -17,9 +17,10 @@ psycopg[binary]
 PyJWT>=2.8
 # Location enrichment uses the Python standard-library HTTP client; no extra geocoder dependency is required.
 google-genai
+# Google ADK 2.15.0 supports the patched OpenTelemetry release line.
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
 
 supabase>=2.20,<3
 phonenumbers==9.0.40
 pycountry==26.2.16
-# Keep Starlette's legacy startup-handler API available until main.py migrates to lifespan.
-starlette<1.0
