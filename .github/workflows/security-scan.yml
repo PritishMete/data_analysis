@@ -32,15 +32,62 @@ jobs:
         run: go install github.com/zricethezav/gitleaks/v8@v8.24.3
 
       - name: Scan complete Git history with redacted findings
+        id: gitleaks
+        continue-on-error: true
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
+          GITLEAKS_REPORT: ${{ runner.temp }}/gitleaks-report.json
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           "$(go env GOPATH)/bin/gitleaks" detect \
             --source "$GITHUB_WORKSPACE" \
             --log-opts="--all" \
+            --report-format json \
+            --report-path "$GITLEAKS_REPORT" \
             --redact \
             --exit-code 1
+
+      - name: Print redacted finding metadata and enforce clean scan
+        if: always()
+        env:
+          GITLEAKS_REPORT: ${{ runner.temp }}/gitleaks-report.json
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          report_path = pathlib.Path(os.environ["GITLEAKS_REPORT"])
+          outcome = os.environ.get("GITLEAKS_OUTCOME", "unknown")
+          if not report_path.is_file():
+              print("Gitleaks did not produce a report; scan is inconclusive.")
+              sys.exit(1 if outcome != "success" else 0)
+
+          findings = json.loads(report_path.read_text(encoding="utf-8") or "[]")
+          print(f"Full-history Gitleaks findings: {len(findings)}")
+          for item in sorted(
+              findings,
+              key=lambda row: (
+                  str(row.get("File", "")),
+                  str(row.get("RuleID", "")),
+                  str(row.get("Commit", "")),
+                  int(row.get("StartLine", 0)),
+              ),
+          ):
+              # Never emit Match, Secret, or any raw line contents.
+              print(
+                  "file={file} line={line} commit={commit} rule={rule}".format(
+                      file=item.get("File", "<unknown>"),
+                      line=item.get("StartLine", "?"),
+                      commit=item.get("Commit", "<unknown>"),
+                      rule=item.get("RuleID", "<unknown>"),
+                  )
+              )
+          if findings or outcome != "success":
+              sys.exit(1)
+          PY
 
   python-dependencies:
     name: Python dependency audit
