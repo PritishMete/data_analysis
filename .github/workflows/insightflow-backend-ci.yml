@@ -122,7 +122,9 @@ jobs:
         run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
 
       - name: Run backend regression suite
-        run: pytest -q -n auto
+        run: |
+          python -m pip install 'pytest-timeout>=2.3,<3'
+          pytest -vv -n auto --timeout=120 --timeout-method=signal
 
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
