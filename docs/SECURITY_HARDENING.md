@@ -18,6 +18,10 @@ and external provider keys remain server-side.
 - API responses receive security headers. JSON/text API responses also receive
   a non-executable CSP; the Flutter HTML deployment is hosted separately and
   is not given an API CSP that could break Office.js or Flutter assets.
+- The legacy dataset report renderer escapes untrusted report values, and the
+  browser copies only allowlisted HTML/SVG elements and validated presentation
+  attributes from an inert DOMParser document into the live DOM. Raw report
+  markup is never assigned directly to the output element.
 - `/docs`, `/redoc`, and `/openapi.json` are disabled by default in production.
   Set `INSIGHTFLOW_ENABLE_OPENAPI=true` only for an explicitly approved,
   temporary diagnostic window.
