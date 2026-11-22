@@ -56,6 +56,22 @@ checks. No Firebase code or provider configuration is removed by this change.
   cross-origin resource/opener policies. The Flutter HTML app is hosted on
   GitHub Pages and requires its own hosting-level CSP and source-map review.
 
+## Public client configuration versus secrets
+
+The GitHub Pages build injects the Supabase project URL and Supabase
+publishable key, plus the legacy Firebase Web API key, into Flutter Web
+build-time configuration. These are public client identifiers/keys by design;
+they are not Supabase secret/service-role credentials. Client-side exposure
+does not grant authorization by itself: Supabase RLS and server-side
+authorization remain mandatory. Restrict the Firebase Web key to the required
+APIs and approved HTTP referrers in Google Cloud.
+
+The workflows inspected do not inject `DATABASE_URL`,
+`SUPABASE_SECRET_KEY`, or `SUPABASE_SERVICE_ROLE_KEY` into Flutter Web.
+The production migration workflow consumes `DATABASE_URL` only in its
+server-side job. Keep Gemini, Google Maps server keys, database credentials,
+and all Supabase secret/service-role keys in trusted backend environments.
+
 ## Automated secret and dependency scanning
 
 The repository security workflow checks the full Git history with Gitleaks
