@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from security_controls import configured_origins
 
 
 ASGIApp = Callable[[dict[str, Any], Callable[[], Awaitable[dict[str, Any]]], Callable[[dict[str, Any]], Awaitable[None]]], Awaitable[None]]
@@ -96,7 +97,10 @@ class SecurityHeadersMiddleware:
                 names = {key.lower() for key, _ in headers}
                 additions = {
                     b"x-content-type-options": b"nosniff",
+                    b"x-frame-options": b"DENY",
                     b"referrer-policy": b"strict-origin-when-cross-origin",
+                    b"cross-origin-resource-policy": b"same-origin",
+                    b"cross-origin-opener-policy": b"same-origin",
                     b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
                     b"strict-transport-security": b"max-age=31536000; includeSubDomains",
                 }
@@ -113,6 +117,28 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+class OriginProtectionMiddleware:
+    """Reject cross-site state-changing requests and cookie-auth CSRF."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        if scope.get("method", "GET").upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            headers = {key.lower(): value.decode("latin1") for key, value in scope.get("headers", [])}
+            origin = headers.get(b"origin")
+            if origin and origin.rstrip("/") not in configured_origins():
+                await JSONResponse({"detail": "Cross-origin request rejected."}, status_code=403)(scope, receive, send)
+                return
+            if headers.get(b"cookie") and not origin:
+                await JSONResponse({"detail": "Origin header required for cookie-authenticated requests."}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class DatabaseRateLimiter:
@@ -175,6 +201,8 @@ class DatabaseRateLimiter:
 
 
 def rate_limit_policy(path: str, method: str) -> tuple[str, int] | None:
+    if path.startswith("/v1/excel-auth/handoff"):
+        return "excel-auth-handoff", _positive_int("INSIGHTFLOW_RATE_EXCEL_HANDOFF_PER_MINUTE", 12, 60)
     if path.startswith("/v1/authz"):
         return "auth", _positive_int("INSIGHTFLOW_RATE_AUTH_PER_MINUTE", 30, 600)
     if path.startswith("/v1/managed-datasets") and method in {"POST", "PUT", "PATCH", "DELETE"}:

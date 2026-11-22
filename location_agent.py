@@ -15,8 +15,9 @@ import re
 import time
 from functools import lru_cache
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+from security_controls import validate_outbound_url
 
 MODEL = os.getenv("LOCATION_AGENT_MODEL", "gemini-3.5-flash")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
@@ -74,6 +75,11 @@ def _valid_coord(v: Any, latitude: bool) -> bool:
 
 
 def _http_json(url: str) -> dict[str, Any]:
+    allowed_hosts = {"maps.googleapis.com"}
+    configured_host = urlparse(NOMINATIM_URL).hostname
+    if configured_host:
+        allowed_hosts.add(configured_host)
+    url = validate_outbound_url(url, allowed_hosts=allowed_hosts)
     req = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "en"})
     with urlopen(req, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
