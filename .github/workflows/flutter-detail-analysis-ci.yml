@@ -8,6 +8,9 @@ on:
       - '.github/workflows/flutter-detail-analysis-ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   flutter-detail-analysis:
     runs-on: ubuntu-latest
