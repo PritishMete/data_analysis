@@ -102,8 +102,15 @@ class SecurityHeadersMiddleware:
                     b"cross-origin-resource-policy": b"same-origin",
                     b"cross-origin-opener-policy": b"same-origin",
                     b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
-                    b"strict-transport-security": b"max-age=31536000; includeSubDomains",
                 }
+                # Render terminates TLS before forwarding to the ASGI process.
+                # HSTS is therefore an explicit operator opt-in, not inferred
+                # from request.scope["scheme"]. Never emit it in dev/test.
+                if (
+                    os.getenv("INSIGHTFLOW_ENV", "development").strip().lower() == "production"
+                    and os.getenv("INSIGHTFLOW_HSTS_ENABLED", "").strip().lower() == "true"
+                ):
+                    additions[b"strict-transport-security"] = b"max-age=31536000; includeSubDomains"
                 content_type = dict(headers).get(b"content-type", b"").lower()
                 if content_type.startswith((b"application/json", b"text/plain")):
                     additions[b"content-security-policy"] = (
