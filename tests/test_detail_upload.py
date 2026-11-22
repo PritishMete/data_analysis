@@ -191,7 +191,11 @@ def test_powerbi_chat_report_request_returns_downloadable_local_pdf():
     assert response.status_code == 200
     assert body["report_type"] == "executive"
     assert body["report"]["filename"].endswith(".pdf")
-    pdf = client.get(body["download_url"])
+    # Use a fresh TestClient portal for the follow-up download request.
+    # The upload/business-analysis request performs synchronous report generation;
+    # reusing its portal for FileResponse streaming can stall AnyIO's test transport.
+    with TestClient(app) as download_client:
+        pdf = download_client.get(body["download_url"])
     assert pdf.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF-")
@@ -213,7 +217,10 @@ def test_context_inherited_report_filename_is_downloadable():
     body = response.json()
     assert response.status_code == 200
     assert body["report_type"] == "context_inherited"
-    pdf = client.get(body["download_url"])
+    # Exercise the download route through a fresh portal, independently of
+    # the report-generation request's TestClient transport.
+    with TestClient(app) as download_client:
+        pdf = download_client.get(body["download_url"])
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF-")
     (Path(tempfile.gettempdir()) / "insightflow_reports" / body["filename"]).unlink(missing_ok=True)
