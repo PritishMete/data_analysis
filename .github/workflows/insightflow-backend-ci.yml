@@ -175,7 +175,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
-          python -m pip install 'pytest-timeout>=2.3,<3' 'pytest-split>=0.10,<1'
+          python -m pip install 'pytest-timeout>=2.3,<3' 'pytest-split==0.11.0'
       - name: Run complete backend regression suite shard
         env:
           PYTEST_SPLIT_GROUP: ${{ matrix.group }}
