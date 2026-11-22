@@ -27,3 +27,51 @@ and external provider keys remain server-side.
 The gateway still relies on the existing Supabase token verification, email
 verification, workspace authorization, resource authorization, and role
 checks. No Firebase code or provider configuration is removed by this change.
+
+## Transport security and session model
+
+- HSTS is not emitted by default. The Render service terminates TLS upstream of
+  the ASGI process, so the application cannot infer the public transport scheme
+  from the ASGI scope. Set `INSIGHTFLOW_HSTS_ENABLED=true` only after an
+  operator confirms the production hostname and every covered subdomain are
+  HTTPS-only and HTTP requests are redirected to HTTPS. The flag is restricted
+  to `INSIGHTFLOW_ENV=production`. Do not enable it for preview or local hosts.
+- The Flutter Web client uses Supabase's browser-persisted PKCE session and
+  sends access tokens as bearer authorization headers. This is not a
+  cookie-authenticated API model, so browser CSRF is not the primary threat;
+  token theft through XSS or compromised browser storage remains relevant.
+  The current browser persistence is not equivalent to Secure, HttpOnly cookie
+  storage.
+- A secure HttpOnly-cookie migration requires a backend-for-frontend session
+  endpoint, server-side refresh-token custody and rotation, cookie issuance and
+  revocation, origin/CSRF token validation, and coordinated changes to Flutter
+  Web and Excel handoff flows. Do not partially move only one token or client
+  path to cookies.
+- Production API security headers include a restrictive CSP for JSON/text
+  responses, frame denial, MIME sniffing protection, referrer policy, and
+  cross-origin resource/opener policies. The Flutter HTML app is hosted on
+  GitHub Pages and requires its own hosting-level CSP and source-map review.
+
+## Automated secret and dependency scanning
+
+The repository security workflow checks the full Git history with Gitleaks
+using a full-depth checkout and redacted output. A finding must be triaged by
+secret type and commit; any live credential requires manual revocation and
+replacement by its owner. CI does not rotate credentials or print secret
+values. Dependency scanning runs against the Python dependency manifests and
+the Flutter lockfile.
+
+## External verification still required
+
+- Verify the Render custom hostname and HTTPS redirect behavior before setting
+  `INSIGHTFLOW_HSTS_ENABLED=true` in the Render service environment.
+- Confirm the Supabase Auth email-confirmation and password-reset expiry
+  settings in the Supabase dashboard. Repository code can reject invalid and
+  expired JWTs but cannot prove dashboard policy values.
+- Confirm production RLS, grants, storage policies, and migration state against
+  the live Supabase project. CI PostgreSQL tests use disposable databases only.
+- Confirm Render rate-limit table permissions and retention/cleanup policy.
+  Centralized alerting requires an external monitoring destination and
+  credentials configured by an operator.
+- No payment, billing, or payment-provider webhook implementation is intended
+  in this product scope; verify again when such functionality is introduced.
