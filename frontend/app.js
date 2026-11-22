@@ -73,8 +73,18 @@ function renderMetaResponse(result) {
   if ((result.links || []).length) {
     const links = document.createElement("p");
     result.links.forEach((item, index) => {
+      let safeUrl;
+      try {
+        safeUrl = new URL(String(item.url || ""), document.baseURI);
+      } catch (_) {
+        return;
+      }
+      if (safeUrl.protocol !== "https:" &&
+          !(safeUrl.protocol === "http:" && safeUrl.origin === window.location.origin)) {
+        return;
+      }
       const anchor = document.createElement("a");
-      anchor.href = item.url;
+      anchor.href = safeUrl.href;
       anchor.target = "_blank";
       anchor.rel = "noopener noreferrer";
       anchor.textContent = item.label;
