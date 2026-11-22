@@ -129,9 +129,9 @@ function sanitizeReportHtml(untrustedHtml) {
       } else if (
         name === "style" &&
         tag === "div" &&
-        /^left:\\d+(?:\\.\\d+)?%;top:\\d+(?:\\.\\d+)?%;?$/.test(value)
+        /^left:\d+(?:\.\d+)?%;top:\d+(?:\.\d+)?%;?$/.test(value)
       ) {
-        const match = value.match(/^left:(\\d+(?:\\.\\d+)?)%;top:(\\d+(?:\\.\\d+)?)%;?$/);
+        const match = value.match(/^left:(\d+(?:\.\d+)?)%;top:(\d+(?:\.\d+)?)%;?$/);
         if (match) {
           element.style.left = `${match[1]}%`;
           element.style.top = `${match[2]}%`;
@@ -143,13 +143,13 @@ function sanitizeReportHtml(untrustedHtml) {
       } else if (
         name === "viewbox" &&
         tag === "svg" &&
-        /^\\d+(?:\\.\\d+)?(?:\\s+\\d+(?:\\.\\d+)?){3}$/.test(value)
+        /^\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?){3}$/.test(value)
       ) {
         element.setAttribute("viewBox", value);
       } else if (
         REPORT_NUMERIC_ATTRIBUTES.has(name) &&
         tag === "line" &&
-        /^\\d+(?:\\.\\d+)?$/.test(value)
+        /^\d+(?:\.\d+)?$/.test(value)
       ) {
         element.setAttribute(name, value);
       }
