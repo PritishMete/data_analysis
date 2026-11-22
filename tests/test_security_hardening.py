@@ -2,7 +2,7 @@ import asyncio
 
 from sqlalchemy import create_engine
 
-from security_hardening import DatabaseRateLimiter, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
+from security_hardening import DatabaseRateLimiter, OriginProtectionMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 
 
 def _run_asgi(app, body_chunks, headers=None):
@@ -118,3 +118,73 @@ def test_hsts_requires_explicit_production_opt_in(monkeypatch):
 def test_hsts_is_never_enabled_by_flag_outside_production(monkeypatch):
     headers = _security_response_headers(monkeypatch, {"INSIGHTFLOW_ENV": "test"}, "true")
     assert b"strict-transport-security" not in headers
+
+
+def _run_origin_request(method, headers):
+    downstream_called = False
+    sent = []
+
+    async def downstream(scope, receive, send):
+        nonlocal downstream_called
+        downstream_called = True
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": "/v1/managed-datasets",
+        "headers": headers,
+        "client": ("192.0.2.10", 5000),
+    }
+    asyncio.run(OriginProtectionMiddleware(downstream)(scope, receive, send))
+    return downstream_called, sent[0]["status"]
+
+
+def test_origin_protection_rejects_disallowed_cross_origin_mutations(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_CORS_ORIGINS", "https://app.example.test")
+    called, status = _run_origin_request(
+        "POST", [(b"origin", b"https://attacker.example")]
+    )
+    assert called is False
+    assert status == 403
+
+
+def test_origin_protection_allows_configured_origin_mutations(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_CORS_ORIGINS", "https://app.example.test")
+    called, status = _run_origin_request(
+        "POST", [(b"origin", b"https://app.example.test")]
+    )
+    assert called is True
+    assert status == 204
+
+
+def test_cookie_authenticated_mutation_requires_origin(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_CORS_ORIGINS", "https://app.example.test")
+    called, status = _run_origin_request("POST", [(b"cookie", b"session=opaque")])
+    assert called is False
+    assert status == 403
+
+
+def test_bearer_authenticated_mutation_without_cookie_is_not_cookie_csrf(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_CORS_ORIGINS", "https://app.example.test")
+    called, status = _run_origin_request(
+        "POST", [(b"authorization", b"Bearer opaque")]
+    )
+    assert called is True
+    assert status == 204
+
+
+def test_safe_get_does_not_use_origin_csrf_gate(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_CORS_ORIGINS", "https://app.example.test")
+    called, status = _run_origin_request(
+        "GET", [(b"origin", b"https://attacker.example")]
+    )
+    assert called is True
+    assert status == 204
