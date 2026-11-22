@@ -61,3 +61,5 @@ def test_frontend_uses_allowlist_sanitizer_before_inserting_report_markup():
     assert "REPORT_HTML_TAGS.has(tag)" in source
     assert "output.replaceChildren(sanitizeReportHtml(formatted.__detailHtml))" in source
     assert "output.innerHTML =" not in source
+    assert "safeUrl.protocol !== \"https:\"" in source
+    assert "safeUrl.href" in source
