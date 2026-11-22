@@ -122,7 +122,7 @@ jobs:
         run: pytest -q tests/test_managed_dataset_storage.py tests/test_managed_dataset_structured_storage.py
 
       - name: Run backend regression suite
-        run: pytest -q
+        run: pytest -q -n auto
 
       - name: Run context-state acceptance unit tests
         run: pytest -q tests/test_assistant_identity.py tests/test_conversation_state.py
