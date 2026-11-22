@@ -1,4 +1,4 @@
-fastapi
+fastapi>=0.133.0,<1.0
 uvicorn
 pandas
 python-multipart
@@ -8,7 +8,7 @@ pyarrow
 scikit-learn
 pydantic
 google-generativeai
-google-adk
+google-adk>=1.28.1,<2.0
 firebase-admin>=6.9.0
 python-dotenv
 duckdb
@@ -21,5 +21,3 @@ google-genai
 supabase>=2.20,<3
 phonenumbers==9.0.40
 pycountry==26.2.16
-# Keep Starlette's legacy startup-handler API available until main.py migrates to lifespan.
-starlette<1.0
