@@ -7,7 +7,7 @@ openpyxl
 pyarrow
 scikit-learn
 pydantic
-google-generativeai
+# Legacy google-generativeai is unused; Google ADK uses google-genai directly.
 google-adk>=1.28.1,<2.0
 firebase-admin>=6.9.0
 python-dotenv
