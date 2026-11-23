@@ -81,6 +81,41 @@ replacement by its owner. CI does not rotate credentials or print secret
 values. Dependency scanning runs against the Python dependency manifests and
 the Flutter lockfile.
 
+## Password authentication and brute-force controls
+
+- The Flutter client calls `SupabaseClient.auth.signInWithPassword` directly. The
+  password request goes to the project's Supabase Auth endpoint
+  (`/auth/v1/token`), not through the FastAPI gateway.
+- FastAPI's `DatabaseRateLimiter` applies to selected application API routes,
+  including `/v1/authz`. It does not intercept or rate-limit the direct
+  Supabase Auth password endpoint. Do not describe it as the login endpoint's
+  rate limiter.
+- Supabase Auth remains the password verifier and password-hash store. The
+  application does not implement custom password verification or store a
+  second password hash. Supabase's managed password hashing configuration
+  must be verified through the provider's current project settings; do not
+  infer the live algorithm or cost from application code.
+- Migration `0040_password_verification_attempt_protection.sql` installs the
+  private attempt table and initial hook function. Migration
+  `0041_password_verification_rolling_window.sql` upgrades the prepared
+  function to track actual failure timestamps over a rolling 15-minute
+  interval and serializes per-user success/failure events with a transaction
+  advisory lock.
+- The policy is 5 failures = 1 minute, 8 = 5 minutes, and 12 = 15 minutes.
+  These account-level restrictions are only enforced if Supabase Auth invokes
+  the Password Verification Attempt hook. The project organization was last
+  verified on the Free plan, where this hook was not available for assignment.
+  The SQL function is therefore prepared code, not an active production
+  cooldown control. Do not claim account-level cooldown protection is active.
+- Supabase Auth's native IP-based limits remain the provider-side control for
+  direct password sign-in. The actual dashboard values, CAPTCHA state, and
+  endpoint-specific project configuration must be checked in the Supabase
+  dashboard; documentation defaults are not production evidence.
+- The PostgreSQL hook test requires `AUTHZ_TEST_DATABASE_URL` and fails if it
+  is missing. CI provisions a disposable PostgreSQL 16 service and sets that
+  variable at job scope. It tests the prepared SQL only; it does not prove that
+  Supabase Auth has assigned or activated the hook.
+
 ## External verification still required
 
 - Verify the Render custom hostname and HTTPS redirect behavior before setting
