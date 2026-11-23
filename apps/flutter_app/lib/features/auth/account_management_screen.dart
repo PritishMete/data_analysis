@@ -148,10 +148,10 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
 
   Future<void> _changePassword() async {
     final password = _newPasswordController.text;
-    if (password.length < 6 ||
+    if (password.length < 8 ||
         password != _confirmPasswordController.text) {
       _setMessage(
-        'Enter matching passwords with at least 6 characters.',
+        'Enter matching passwords with at least 8 characters.',
         error: true,
       );
       return;

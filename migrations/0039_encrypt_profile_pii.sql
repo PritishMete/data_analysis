@@ -33,9 +33,10 @@ ALTER TABLE organization_member_profiles
     );
 
 DROP INDEX IF EXISTS idx_member_profiles_org_phone;
-CREATE INDEX IF NOT EXISTS idx_member_profiles_org_id_proof_fingerprint
+CREATE UNIQUE INDEX IF NOT EXISTS uq_member_profiles_org_id_proof_fingerprint
     ON organization_member_profiles
-       (organization_id, country_code, id_proof_type, id_proof_fingerprint);
+       (organization_id, country_code, id_proof_type, id_proof_fingerprint)
+    WHERE id_proof_fingerprint IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.reject_duplicate_employee_id_proof()
 RETURNS trigger

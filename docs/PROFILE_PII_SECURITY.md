@@ -7,6 +7,17 @@
 - InsightFlow application tables must never store passwords, password hashes, password salts, OAuth provider passwords, or client-submitted credential copies.
 - The Flutter client sends the password only to Supabase Auth through the Supabase SDK. It must not place passwords in user metadata, application logs, analytics, or profile tables.
 
+## Supabase Auth project policy
+
+- Configure the Supabase Auth password policy to require at least 8 characters. Client-side checks are an additional safeguard, not a substitute for the server-side Auth setting.
+- Enable leaked-password protection in the Supabase Auth dashboard when the project plan supports it.
+- Keep password changes behind the application's reauthentication flow and keep Supabase email confirmation enabled.
+- Google sign-in must remain an OAuth redirect through Supabase Auth. Do not request, receive, store, or log the user's Google password.
+
+## Provider-managed phone verification
+
+When a user enrolls a phone number in Supabase Auth for SMS verification, Supabase Auth must retain that number in its managed Auth schema so it can route verification messages. That provider-managed authentication identifier is distinct from the organization profile copy. InsightFlow's own organization profile stores its phone copy only as authenticated ciphertext with independent random salt and integrity metadata. A number used for OTP delivery cannot be replaced with a one-way hash at the provider boundary because the SMS destination must remain available to the Auth service.
+
 ## Employee phone and government ID values
 
 The organization_member_profiles table stores only:
