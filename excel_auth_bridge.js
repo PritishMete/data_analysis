@@ -7,7 +7,6 @@
   var DIALOG_SESSION_KEY = "insightflow.excel.auth.dialog";
   var DIALOG_STATE_PARAM = "excelAuthState";
   var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
-  var CORRELATION_SESSION_KEY = "insightflow.excel.auth.correlation";
 
   function createState() {
     if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
@@ -18,29 +17,6 @@
     return Array.prototype.map.call(bytes, function (value) {
       return value.toString(16).padStart(2, "0");
     }).join("");
-  }
-
-  function createCorrelationId() {
-    var bytes = new Uint8Array(16);
-    global.crypto.getRandomValues(bytes);
-    return "auth-" + Array.prototype.map.call(bytes, function (value) {
-      return value.toString(16).padStart(2, "0");
-    }).join("");
-  }
-
-  function diagnostic(operation, success, category) {
-    var correlationId = "auth-unknown";
-    try {
-      correlationId = global.sessionStorage.getItem(CORRELATION_SESSION_KEY) || correlationId;
-    } catch (_) {}
-    var fields = {
-      correlation_id: correlationId,
-      operation: operation,
-      timestamp: new Date().toISOString(),
-      success: success
-    };
-    if (category) fields.category = category;
-    global.console.info("[auth-diagnostic]", JSON.stringify(fields));
   }
 
   function restoreDialogFlag() {
@@ -89,10 +65,6 @@
         reject(error);
         return;
       }
-      try {
-        global.sessionStorage.setItem(CORRELATION_SESSION_KEY, createCorrelationId());
-      } catch (_) {}
-      diagnostic("excel_dialog_open", true);
       url.searchParams.set(DIALOG_FLAG, "1");
       url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
       url.hash = "";
@@ -129,7 +101,6 @@
             function (eventArgs) {
               try {
                 if (eventArgs.origin !== global.location.origin) {
-                  diagnostic("excel_dialog_message_validation", false, "origin_mismatch");
                   throw new Error("The sign-in response came from an untrusted origin.");
                 }
                 if (typeof eventArgs.message !== "string" ||
@@ -143,10 +114,8 @@
                     typeof message.refreshToken !== "string" ||
                     message.refreshToken.length < 20 ||
                     message.refreshToken.length > 4096) {
-                  diagnostic("excel_dialog_message_validation", false, "state_or_shape_mismatch");
                   throw new Error("The sign-in response was invalid.");
                 }
-                diagnostic("excel_dialog_message_validation", true);
                 finish(null, message.refreshToken);
                 if (dialog) dialog.close();
               } catch (error) {
@@ -160,7 +129,6 @@
             global.Office.EventType.DialogEventReceived,
             function (eventArgs) {
               if (!settled) {
-                diagnostic("excel_dialog_closed", false, "dialog_closed");
                 finish(new Error(
                   eventArgs && eventArgs.error === 12006
                     ? "The sign-in window was closed before authentication finished."
@@ -198,27 +166,16 @@
       throw new Error("The Excel sign-in request could not be verified.");
     }
 
-    try {
-      global.Office.context.ui.messageParent(JSON.stringify({
-        type: MESSAGE_TYPE,
-        version: MESSAGE_VERSION,
-        state: state,
-        refreshToken: refreshToken
-      }));
-      diagnostic("excel_dialog_message_parent", true);
-    } catch (error) {
-      diagnostic(
-        "excel_dialog_message_parent",
-        false,
-        error && error.name ? error.name : "message_parent_failure"
-      );
-      throw error;
-    }
+    global.Office.context.ui.messageParent(JSON.stringify({
+      type: MESSAGE_TYPE,
+      version: MESSAGE_VERSION,
+      state: state,
+      refreshToken: refreshToken
+    }));
 
     try {
       global.sessionStorage.removeItem(DIALOG_SESSION_KEY);
       global.sessionStorage.removeItem(DIALOG_STATE_SESSION_KEY);
-      global.sessionStorage.removeItem(CORRELATION_SESSION_KEY);
     } catch (_) {}
   }
 
