@@ -338,4 +338,28 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(physical, contains('def physical_table_name(version_pk: str)'));
   });
 
+
+  test('password signup and change flows enforce at least eight characters', () {
+    final sourceByFlow = <String, String>{
+      'Sign in and signup': File('lib/features/auth/sign_in_screen.dart')
+          .readAsStringSync(),
+      'Standalone signup': File('lib/features/auth/sign_up_screen.dart')
+          .readAsStringSync(),
+      'Employee invitation password setup':
+          File('lib/features/auth/employee_invitation_password_setup_screen.dart')
+              .readAsStringSync(),
+      'Account password change':
+          File('lib/features/auth/account_management_screen.dart')
+              .readAsStringSync(),
+    };
+
+    for (final entry in sourceByFlow.entries) {
+      expect(
+        entry.value,
+        contains('password.length < 8'),
+        reason: entry.key,
+      );
+    }
+  });
+
 }
