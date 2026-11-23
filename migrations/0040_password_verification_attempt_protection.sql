@@ -45,7 +45,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE
 CREATE OR REPLACE FUNCTION public.insightflow_password_verification_attempt(event JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $function$
 DECLARE
