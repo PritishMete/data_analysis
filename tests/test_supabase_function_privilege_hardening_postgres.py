@@ -55,21 +55,24 @@ def test_supabase_function_hardening_migration_on_disposable_postgres():
                 $$;
 
                 CREATE OR REPLACE FUNCTION public.insightflow_cleanup_deleted_auth_user()
-                RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+                RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+                SET search_path = '' AS $
                 BEGIN
                     RETURN OLD;
                 END;
                 $$;
 
                 CREATE OR REPLACE FUNCTION public.insightflow_cleanup_orphaned_branch_organization()
-                RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+                RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+                SET search_path = '' AS $
                 BEGIN
                     RETURN OLD;
                 END;
                 $$;
 
                 CREATE OR REPLACE FUNCTION public.rls_auto_enable()
-                RETURNS event_trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+                RETURNS event_trigger LANGUAGE plpgsql SECURITY DEFINER
+                SET search_path = pg_catalog AS $
                 BEGIN
                     RETURN;
                 END;
