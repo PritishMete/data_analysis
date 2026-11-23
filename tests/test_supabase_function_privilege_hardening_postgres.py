@@ -32,7 +32,7 @@ def test_supabase_function_hardening_migration_on_disposable_postgres():
                         IF NOT EXISTS (
                             SELECT 1 FROM pg_roles WHERE rolname = role_name
                         ) THEN
-                            EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
+                            EXECUTE format('CREATE ROLE %%I NOLOGIN', role_name);
                         END IF;
                     END LOOP;
                 END;
