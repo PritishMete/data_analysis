@@ -90,6 +90,13 @@ BEGIN
 END;
 $$;
 
+-- Trigger functions retain prior ACLs across CREATE OR REPLACE, so explicitly
+-- remove the default/public RPC grants from both invoker trigger entry points.
+REVOKE ALL ON FUNCTION public.enforce_single_active_branch_assignment()
+    FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.reject_duplicate_employee_id_proof()
+    FROM PUBLIC, anon, authenticated, service_role;
+
 -- These routines are trigger/event-trigger entry points, not public RPC APIs.
 -- Revoke the default/public API grants while retaining the Auth service grant
 -- already required by the account-deletion trigger's deployment contract.
