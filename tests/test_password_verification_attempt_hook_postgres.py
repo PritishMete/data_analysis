@@ -115,11 +115,11 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
                 {"user_id": first_user},
             )
 
-        def failed_attempt(_):
+        def invoke_hook(user_id, valid):
             with engine.begin() as conn:
                 conn.exec_driver_sql("SET ROLE supabase_auth_admin")
                 try:
-                    result = conn.execute(
+                    return conn.execute(
                         text("""
                             SELECT public.insightflow_password_verification_attempt(
                                 CAST(:event AS jsonb)
@@ -127,13 +127,15 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
                         """),
                         {
                             "event": json.dumps(
-                                {"user_id": str(first_user), "valid": False}
+                                {"user_id": str(user_id), "valid": valid}
                             )
                         },
                     ).scalar_one()
-                    return result
                 finally:
                     conn.exec_driver_sql("RESET ROLE")
+
+        def failed_attempt(_):
+            return invoke_hook(first_user, False)
 
         # Concurrent requests must all be counted by the single atomic upsert.
         with ThreadPoolExecutor(max_workers=20) as executor:
@@ -156,19 +158,7 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
         # A correct password is allowed even while a cooldown exists and resets
         # the failed-attempt state. The hook only receives this event after Auth
         # has already verified the submitted password.
-        with engine.begin() as conn:
-            success = conn.execute(
-                text("""
-                    SELECT public.insightflow_password_verification_attempt(
-                        CAST(:event AS jsonb)
-                    )
-                """),
-                {
-                    "event": json.dumps(
-                        {"user_id": str(first_user), "valid": True}
-                    )
-                },
-            ).scalar_one()
+        success = invoke_hook(first_user, True)
         assert success == {"decision": "continue"}
 
         with engine.connect() as conn:
@@ -194,5 +184,40 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
                 },
             ).scalar_one()
         assert fresh == {"decision": "continue"}
+
+        # Verify that the cooldown escalates at the documented thresholds.
+        escalation_user = uuid.uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO auth.users(id) VALUES (:user_id)"),
+                {"user_id": escalation_user},
+            )
+
+        for attempt_number in range(1, 13):
+            result = invoke_hook(escalation_user, False)
+            if attempt_number < 5:
+                assert result == {"decision": "continue"}
+            else:
+                assert result.get("error", {}).get("http_code") == 429
+
+            if attempt_number in {5, 8, 12}:
+                with engine.connect() as conn:
+                    remaining_seconds = conn.execute(text("""
+                        SELECT EXTRACT(
+                            EPOCH FROM (blocked_until - clock_timestamp())
+                        )
+                        FROM public.password_failed_verification_attempts
+                        WHERE user_id = :user_id
+                    """), {"user_id": escalation_user}).scalar_one()
+
+                lower, upper = {
+                    5: (45, 75),
+                    8: (270, 330),
+                    12: (840, 960),
+                }[attempt_number]
+                assert lower <= float(remaining_seconds) <= upper
+
+        # Even during a cooldown, a genuinely verified password can sign in.
+        assert invoke_hook(escalation_user, True) == {"decision": "continue"}
     finally:
         engine.dispose()
