@@ -76,6 +76,22 @@ def postgres_engine():
             $roles$;
         """))
 
+        # Supabase owns this event-trigger function outside the app migration
+        # chain. Model the production prerequisite so the follow-up migration
+        # can revoke its default PostgREST execution grants in this disposable DB.
+        conn.execute(text("""
+            CREATE FUNCTION public.rls_auto_enable()
+            RETURNS event_trigger
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path TO 'pg_catalog'
+            AS $$
+            BEGIN
+                RETURN;
+            END;
+            $$
+        """))
+
         conn.execute(text("CREATE SCHEMA auth"))
         conn.execute(text("CREATE TABLE auth.users (id UUID PRIMARY KEY)"))
         conn.execute(text("""

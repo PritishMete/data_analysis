@@ -46,11 +46,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-test.txt
       - name: Compile migration runner and integration tests
-        run: python -m py_compile tools/run_authz_migrations.py tests/test_authz_assignment_index_verification.py tests/test_authz_assignment_index_postgres.py
+        run: python -m py_compile tools/run_authz_migrations.py tests/test_authz_assignment_index_verification.py tests/test_authz_assignment_index_postgres.py tests/test_supabase_function_privilege_hardening.py tests/test_supabase_function_privilege_hardening_postgres.py
       - name: Run assignment index unit tests
         run: pytest -q tests/test_authz_assignment_index_verification.py
       - name: Run disposable PostgreSQL migration integration tests
         run: pytest -q -rs tests/test_authz_assignment_index_postgres.py
+      - name: Run Supabase function privilege migration integration test
+        run: pytest -q -rs tests/test_supabase_function_privilege_hardening_postgres.py
 
   query-history-tests:
     runs-on: ubuntu-latest
