@@ -102,6 +102,16 @@ BEGIN
     WHERE attempted_at > v_now - INTERVAL '15 minutes';
 
     v_timestamps := pg_catalog.array_append(v_timestamps, v_now);
+
+    -- The policy only distinguishes thresholds up to 12. Retain the latest
+    -- 12 timestamps so a distributed burst cannot grow an unbounded array.
+    IF pg_catalog.cardinality(v_timestamps) > 12 THEN
+        v_timestamps := v_timestamps[
+            pg_catalog.cardinality(v_timestamps) - 11:
+            pg_catalog.cardinality(v_timestamps)
+        ];
+    END IF;
+
     v_failure_count := pg_catalog.cardinality(v_timestamps);
 
     v_blocked_until := CASE
