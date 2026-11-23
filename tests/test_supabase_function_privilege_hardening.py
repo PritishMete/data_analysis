@@ -74,3 +74,5 @@ def test_production_migration_runner_verifies_live_function_privileges():
     assert "has_function_privilege('service_role'" in runner
     assert "has_function_privilege('supabase_auth_admin'" in runner
     assert "verify_supabase_function_security(engine)" in runner
+    assert '"enforce_single_active_branch_assignment":' in runner
+    assert '"rls_auto_enable": "search_path=pg_catalog"' in runner
