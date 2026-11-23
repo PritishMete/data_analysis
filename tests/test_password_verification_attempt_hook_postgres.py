@@ -42,7 +42,7 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
                         IF NOT EXISTS (
                             SELECT 1 FROM pg_roles WHERE rolname = role_name
                         ) THEN
-                            EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
+                            EXECUTE format('CREATE ROLE %%I NOLOGIN', role_name);
                         END IF;
                     END LOOP;
                 END;
@@ -117,19 +117,23 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
 
         def failed_attempt(_):
             with engine.begin() as conn:
-                result = conn.execute(
-                    text("""
-                        SELECT public.insightflow_password_verification_attempt(
-                            CAST(:event AS jsonb)
-                        )
-                    """),
-                    {
-                        "event": json.dumps(
-                            {"user_id": str(first_user), "valid": False}
-                        )
-                    },
-                ).scalar_one()
-                return result
+                conn.exec_driver_sql("SET ROLE supabase_auth_admin")
+                try:
+                    result = conn.execute(
+                        text("""
+                            SELECT public.insightflow_password_verification_attempt(
+                                CAST(:event AS jsonb)
+                            )
+                        """),
+                        {
+                            "event": json.dumps(
+                                {"user_id": str(first_user), "valid": False}
+                            )
+                        },
+                    ).scalar_one()
+                    return result
+                finally:
+                    conn.exec_driver_sql("RESET ROLE")
 
         # Concurrent requests must all be counted by the single atomic upsert.
         with ThreadPoolExecutor(max_workers=20) as executor:
