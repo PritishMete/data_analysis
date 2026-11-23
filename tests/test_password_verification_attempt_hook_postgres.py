@@ -127,11 +127,15 @@ def test_hook_permissions_and_function_hardening(auth_hook_db):
                     has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
                     has_table_privilege('anon', c.oid, 'INSERT') AS anon_insert,
                     has_table_privilege('anon', c.oid, 'UPDATE') AS anon_update,
+                    has_table_privilege('anon', c.oid, 'DELETE') AS anon_delete,
                     has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
                     has_table_privilege('authenticated', c.oid, 'INSERT') AS authenticated_insert,
                     has_table_privilege('authenticated', c.oid, 'UPDATE') AS authenticated_update,
+                    has_table_privilege('authenticated', c.oid, 'DELETE') AS authenticated_delete,
                     has_table_privilege('service_role', c.oid, 'SELECT') AS service_role_select,
                     has_table_privilege('service_role', c.oid, 'INSERT') AS service_role_insert,
+                    has_table_privilege('service_role', c.oid, 'UPDATE') AS service_role_update,
+                    has_table_privilege('service_role', c.oid, 'DELETE') AS service_role_delete,
                     has_table_privilege('supabase_auth_admin', c.oid, 'SELECT') AS auth_admin_select,
                     has_table_privilege('supabase_auth_admin', c.oid, 'INSERT') AS auth_admin_insert,
                     has_table_privilege('supabase_auth_admin', c.oid, 'UPDATE') AS auth_admin_update,
@@ -150,6 +154,31 @@ def test_hook_permissions_and_function_hardening(auth_hook_db):
         assert permissions["auth_admin_insert"] is True
         assert permissions["auth_admin_update"] is True
         assert permissions["auth_admin_delete"] is True
+
+        columns = conn.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'password_failed_verification_attempts'
+                """
+            )
+        ).scalars().all()
+        assert set(columns) == {
+            "user_id",
+            "failure_count",
+            "window_started_at",
+            "last_failed_at",
+            "blocked_until",
+            "updated_at",
+            "failure_timestamps",
+        }
+        assert not any(
+            marker in column.casefold()
+            for column in columns
+            for marker in ("password", "hash", "email", "ip", "token")
+        )
 
         function_permissions = conn.execute(
             text(
