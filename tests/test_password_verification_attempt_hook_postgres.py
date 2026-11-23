@@ -105,7 +105,7 @@ def test_password_verification_hook_is_private_and_atomic_on_disposable_postgres
                 FROM pg_proc
                 WHERE oid = 'public.insightflow_password_verification_attempt(jsonb)'::regprocedure
             """)).mappings().one()
-            assert function_settings["prosecdef"] is True
+            assert function_settings["prosecdef"] is False
             assert 'search_path=""' in (function_settings["proconfig"] or [])
 
         first_user = uuid.uuid4()
