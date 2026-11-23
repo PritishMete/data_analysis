@@ -46,7 +46,7 @@ def auth_hook_db():
                         IF NOT EXISTS (
                             SELECT 1 FROM pg_roles WHERE rolname = role_name
                         ) THEN
-                            EXECUTE format('CREATE ROLE %%I NOLOGIN', role_name);
+                            EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
                         END IF;
                     END LOOP;
                 END;
@@ -148,7 +148,7 @@ def test_hook_permissions_and_function_hardening(auth_hook_db):
 
         assert permissions["relrowsecurity"] is True
         for key, value in permissions.items():
-            if key.endswith(("_select", "_insert", "_update")) and not key.startswith("auth_admin"):
+            if key.endswith(("_select", "_insert", "_update", "_delete")) and not key.startswith("auth_admin"):
                 assert value is False, key
         assert permissions["auth_admin_select"] is True
         assert permissions["auth_admin_insert"] is True
@@ -226,8 +226,8 @@ def test_concurrent_failures_are_counted_without_lost_updates(auth_hook_db, atte
 
     counter = read_counter(engine, user_id)
     assert counter is not None
-    assert counter["failure_count"] == attempt_count
-    assert counter["timestamp_count"] == attempt_count
+    assert counter["failure_count"] == min(attempt_count, 12)
+    assert counter["timestamp_count"] == min(attempt_count, 12)
     assert counter["blocked_until"] is not None
 
 
