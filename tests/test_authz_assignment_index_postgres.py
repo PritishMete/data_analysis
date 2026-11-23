@@ -85,11 +85,11 @@ def postgres_engine():
             LANGUAGE plpgsql
             SECURITY DEFINER
             SET search_path TO 'pg_catalog'
-            AS $
+            AS $$
             BEGIN
                 RETURN;
             END;
-            $
+            $$
         """))
 
         conn.execute(text("CREATE SCHEMA auth"))
