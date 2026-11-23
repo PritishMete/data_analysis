@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 MIGRATIONS = ROOT / "migrations"
 HISTORY_TABLE = "insightflow_schema_migrations"
 EXPECTED_TABLES = {
@@ -116,16 +118,102 @@ def apply_pending(engine) -> tuple[list[str], list[str]]:
     return newly_applied, already_applied
 
 
+def migrate_profile_pii(engine) -> None:
+    """Encrypt legacy phone/ID values, then remove the plaintext columns.
+
+    The operation is transactional and safe to repeat after a failed startup.
+    A production key is required only when legacy plaintext values exist.
+    """
+    import re
+
+    import pycountry
+
+    from firebase_authz.profile_crypto import protect_profile_value
+    from firebase_authz.profile_validation import normalize_id_proof_type
+
+    inspector = inspect(engine)
+    if not inspector.has_table("organization_member_profiles"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("organization_member_profiles")}
+    legacy = {"phone_e164", "id_proof_number"} & columns
+    if not legacy:
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+            SELECT organization_id, principal_id,
+                   phone_e164, id_proof_number, country, country_code, id_proof_type,
+                   phone_ciphertext, phone_salt, phone_hmac,
+                   id_proof_ciphertext, id_proof_salt, id_proof_hmac,
+                   id_proof_fingerprint
+            FROM organization_member_profiles
+            WHERE phone_e164 IS NOT NULL OR id_proof_number IS NOT NULL
+            FOR UPDATE
+        """)).mappings().all()
+
+        for row in rows:
+            org = str(row["organization_id"])
+            principal = str(row["principal_id"])
+            updates = {}
+            if row["phone_e164"] is not None and row["phone_ciphertext"] is None:
+                protected = protect_profile_value(row["phone_e164"], "phone", org, principal)
+                updates.update({"phone_ciphertext": protected["ciphertext"], "phone_salt": protected["salt"], "phone_hmac": protected["hmac"]})
+            if row["id_proof_number"] is not None and row["id_proof_ciphertext"] is None:
+                country_code = str(row["country_code"] or "").strip().upper()
+                if not re.fullmatch(r"[A-Z]{2}", country_code):
+                    try:
+                        country_code = pycountry.countries.lookup(str(row["country"] or "")).alpha_2
+                    except LookupError as exc:
+                        raise RuntimeError(
+                            "Cannot securely fingerprint a legacy ID proof without a valid country code."
+                        ) from exc
+                    updates["country_code"] = country_code
+                try:
+                    proof_type = normalize_id_proof_type(
+                        country_code, str(row["id_proof_type"] or "")
+                    )
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "Cannot securely fingerprint a legacy ID proof with an unsupported proof type."
+                    ) from exc
+                if proof_type != row["id_proof_type"]:
+                    updates["id_proof_type"] = proof_type
+                protected = protect_profile_value(
+                    row["id_proof_number"], "id_proof", org, principal,
+                    country_code=country_code, id_proof_type=proof_type,
+                )
+                updates.update({
+                    "id_proof_ciphertext": protected["ciphertext"],
+                    "id_proof_salt": protected["salt"],
+                    "id_proof_hmac": protected["hmac"],
+                    "id_proof_fingerprint": protected["fingerprint"],
+                })
+            if updates:
+                assignments = ", ".join(f"{name}=:{name}" for name in updates)
+                conn.execute(text(f"UPDATE organization_member_profiles SET {assignments} WHERE organization_id=:org AND principal_id=:principal"), {**updates, "org": org, "principal": principal})
+
+        remaining = conn.execute(text("SELECT count(*) FROM organization_member_profiles WHERE phone_e164 IS NOT NULL OR id_proof_number IS NOT NULL")).scalar_one()
+        if int(remaining):
+            raise RuntimeError("Profile PII migration left plaintext values behind.")
+        conn.exec_driver_sql("ALTER TABLE organization_member_profiles DROP COLUMN IF EXISTS phone_e164, DROP COLUMN IF EXISTS id_proof_number")
+        conn.exec_driver_sql("DROP INDEX IF EXISTS idx_member_profiles_org_phone")
+
+
 def verify_profile_security(engine) -> None:
+    from firebase_authz.profile_crypto import verify_profile_pii_key
+
+    verify_profile_pii_key()
     inspector = inspect(engine)
     if not inspector.has_table("organization_member_profiles"):
         raise RuntimeError("Employee profile table is missing.")
     required = {
         "organization_id", "principal_id", "full_name", "email",
-        "email_verified_at", "phone_e164", "phone_verified_at",
+        "email_verified_at", "phone_verified_at",
         "address_line1", "address_line2", "city", "state", "state_code",
         "postal_code", "country", "country_code", "id_proof_type",
-        "id_proof_number", "id_proof_provided_at",
+        "id_proof_provided_at", "phone_ciphertext", "phone_salt",
+        "phone_hmac", "id_proof_ciphertext", "id_proof_salt",
+        "id_proof_hmac", "id_proof_fingerprint",
         "created_at", "updated_at",
     }
     actual = {
@@ -136,6 +224,11 @@ def verify_profile_security(engine) -> None:
     if missing:
         raise RuntimeError(
             "Employee profile columns are missing: " + ",".join(missing)
+        )
+    plaintext_columns = {"phone_e164", "id_proof_number"} & actual
+    if plaintext_columns:
+        raise RuntimeError(
+            "Plaintext employee PII columns remain: " + ",".join(sorted(plaintext_columns))
         )
     with engine.connect() as conn:
         row = conn.execute(text("""
@@ -409,6 +502,7 @@ def run_migrations() -> None:
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
     apply_pending(engine)
+    migrate_profile_pii(engine)
     final_tables, _ = inspect_database(engine)
     missing = sorted(EXPECTED_TABLES - final_tables)
     if missing:

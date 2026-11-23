@@ -20,6 +20,7 @@ from .service import AuthzError, PermissionDenied
 from .schema import ROLE_LEVELS
 from . import registration_diagnostics
 from .profile_validation import validate_profile_fields
+from .profile_crypto import protect_profile_value
 from .supabase_admin import (
     SupabaseAdminConfigurationError,
     SupabaseAdminOperationError,
@@ -313,18 +314,29 @@ def register_organization(
         email_verified_at = _auth_timestamp(claims.get("email_confirmed_at"))
         if email_verified_at is None:
             email_verified_at = datetime.now(timezone.utc)
+        protected_phone = protect_profile_value(
+            profile_phone, "phone", organization_id, principal_id
+        )
+        protected_id = protect_profile_value(
+            proof_number, "id_proof", organization_id, principal_id,
+            country_code=profile_country_code, id_proof_type=proof_type,
+        )
         db.execute(
             text(
                 """INSERT INTO organization_member_profiles
                 (organization_id, principal_id, full_name, email, email_verified_at,
-                 phone_e164, phone_verified_at, address_line1, address_line2,
-                 city, state, state_code, postal_code, country, country_code,
-                 id_proof_type, id_proof_number, id_proof_provided_at)
+                 phone_ciphertext, phone_salt, phone_hmac, phone_verified_at,
+                 address_line1, address_line2, city, state, state_code,
+                 postal_code, country, country_code, id_proof_type,
+                 id_proof_ciphertext, id_proof_salt, id_proof_hmac,
+                 id_proof_fingerprint, id_proof_provided_at)
                 VALUES
                 (:organization, :principal, :full_name, :email, :email_verified_at,
-                 :phone, :phone_verified_at, :address_line1, :address_line2,
-                 :city, :state, :state_code, :postal_code, :country, :country_code,
-                 :id_proof_type, :id_proof_number, now())"""
+                 :phone_ciphertext, :phone_salt, :phone_hmac, :phone_verified_at,
+                 :address_line1, :address_line2, :city, :state, :state_code,
+                 :postal_code, :country, :country_code, :id_proof_type,
+                 :id_proof_ciphertext, :id_proof_salt, :id_proof_hmac,
+                 :id_proof_fingerprint, now())"""
             ),
             {
                 "organization": organization_id,
@@ -332,7 +344,9 @@ def register_organization(
                 "full_name": profile_name,
                 "email": authoritative_email,
                 "email_verified_at": email_verified_at,
-                "phone": profile_phone,
+                "phone_ciphertext": protected_phone["ciphertext"],
+                "phone_salt": protected_phone["salt"],
+                "phone_hmac": protected_phone["hmac"],
                 "phone_verified_at": confirmed_phone_at,
                 "address_line1": address1,
                 "address_line2": address2 or None,
@@ -343,7 +357,10 @@ def register_organization(
                 "country": profile_country,
                 "country_code": profile_country_code,
                 "id_proof_type": proof_type,
-                "id_proof_number": proof_number,
+                "id_proof_ciphertext": protected_id["ciphertext"],
+                "id_proof_salt": protected_id["salt"],
+                "id_proof_hmac": protected_id["hmac"],
+                "id_proof_fingerprint": protected_id["fingerprint"],
             },
         )
         registration_diagnostics.stage("PROFILE_CREATED")
@@ -1579,8 +1596,9 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
 
         selected = active_rows[0]
         profile_row = db.execute(text("""
-            SELECT full_name, email, email_verified_at, phone_e164, phone_verified_at,
-                   address_line1, state, country, postal_code, id_proof_type, id_proof_number
+            SELECT full_name, email, email_verified_at, phone_ciphertext, phone_verified_at,
+                   address_line1, state, country, postal_code, id_proof_type,
+                   id_proof_ciphertext
             FROM organization_member_profiles
             WHERE organization_id=:org AND principal_id=:principal
         """), {
@@ -1594,13 +1612,13 @@ def authorization_context(claims: dict[str, Any], workspace_id: str | None = Non
             str(profile_row["email"] or "").strip(),
             profile_row["email_verified_at"] is not None,
             authoritative_email_verified,
-            str(profile_row["phone_e164"] or "").strip(),
+            profile_row["phone_ciphertext"] is not None,
             str(profile_row["address_line1"] or "").strip(),
             str(profile_row["state"] or "").strip(),
             str(profile_row["country"] or "").strip(),
             str(profile_row["postal_code"] or "").strip(),
             str(profile_row["id_proof_type"] or "").strip(),
-            str(profile_row["id_proof_number"] or "").strip(),
+            profile_row["id_proof_ciphertext"] is not None,
         ])
         # member_roles is a role catalogue, not proof of current authority.
         # Every role, including Organization Owner, must have a live assignment.

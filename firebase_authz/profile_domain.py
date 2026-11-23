@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 from .profile_validation import validate_profile_fields
+from .profile_crypto import protect_profile_value, reveal_profile_value
 from .service import AuthzError
 
 
@@ -129,9 +130,10 @@ def get_my_profile(
     with SessionLocal() as db:
         member = _member(db, claims, workspace_id)
         profile = db.execute(text("""
-            SELECT full_name, email, email_verified_at, phone_e164, phone_verified_at,
-                   address_line1, address_line2, state, state_code, country, country_code,
-                   postal_code, id_proof_type, id_proof_number, created_at, updated_at
+            SELECT full_name, email, email_verified_at, phone_ciphertext, phone_salt,
+                   phone_hmac, phone_verified_at, address_line1, address_line2,
+                   state, state_code, country, country_code, postal_code, id_proof_type,
+                   id_proof_ciphertext, id_proof_salt, id_proof_hmac, created_at, updated_at
             FROM organization_member_profiles
             WHERE organization_id=:org AND principal_id=:principal
         """), {
@@ -139,7 +141,19 @@ def get_my_profile(
             "principal": member["principal_id"],
         }).mappings().first()
 
-        result = _safe(dict(profile) if profile else None, member, claims)
+        profile_data = dict(profile) if profile else None
+        if profile_data:
+            profile_data["phone_e164"] = reveal_profile_value(
+                profile_data.pop("phone_ciphertext"), profile_data.pop("phone_salt"),
+                profile_data.pop("phone_hmac"), "phone",
+                member["organization_id"], member["principal_id"],
+            )
+            profile_data["id_proof_number"] = reveal_profile_value(
+                profile_data.pop("id_proof_ciphertext"), profile_data.pop("id_proof_salt"),
+                profile_data.pop("id_proof_hmac"), "id_proof",
+                member["organization_id"], member["principal_id"],
+            )
+        result = _safe(profile_data, member, claims)
         result["profile_exists"] = profile is not None
         result["created_at"] = profile["created_at"] if profile else None
         result["updated_at"] = profile["updated_at"] if profile else None
@@ -198,7 +212,7 @@ def upsert_my_profile(
     with SessionLocal.begin() as db:
         member = _member(db, claims, workspace_id)
         existing = db.execute(text("""
-            SELECT phone_e164, phone_verified_at
+            SELECT phone_ciphertext, phone_salt, phone_hmac, phone_verified_at
             FROM organization_member_profiles
             WHERE organization_id=:org AND principal_id=:principal
         """), {
@@ -206,24 +220,43 @@ def upsert_my_profile(
             "principal": member["principal_id"],
         }).mappings().first()
         exists = existing is not None
+        existing_phone = None
+        if existing:
+            existing_phone = reveal_profile_value(
+                existing["phone_ciphertext"], existing["phone_salt"],
+                existing["phone_hmac"], "phone",
+                member["organization_id"], member["principal_id"],
+            )
         existing_phone_verified_at = (
             existing["phone_verified_at"]
-            if existing and existing["phone_e164"] == fields["phone_e164"]
+            if existing and existing_phone == fields["phone_e164"]
             else None
+        )
+        protected_phone = protect_profile_value(
+            fields["phone_e164"], "phone",
+            member["organization_id"], member["principal_id"],
+        )
+        protected_id = protect_profile_value(
+            fields["id_proof_number"], "id_proof",
+            member["organization_id"], member["principal_id"],
+            country_code=fields["country_code"],
+            id_proof_type=fields["id_proof_type"],
         )
 
         db.execute(text("""
             INSERT INTO organization_member_profiles
               (organization_id, principal_id, full_name, email, email_verified_at,
-               phone_e164, phone_verified_at, address_line1, address_line2,
-               state, state_code, postal_code, country, country_code,
-               id_proof_type, id_proof_number, id_proof_provided_at,
+               phone_ciphertext, phone_salt, phone_hmac, phone_verified_at,
+               address_line1, address_line2, state, state_code, postal_code,
+               country, country_code, id_proof_type, id_proof_ciphertext,
+               id_proof_salt, id_proof_hmac, id_proof_fingerprint, id_proof_provided_at,
                created_at, updated_at)
             VALUES
               (:org, :principal, :full_name, :email, :email_verified_at,
-               :phone, :phone_verified_at, :address_line1, :address_line2,
-               :state, :state_code, :postal_code, :country, :country_code,
-               :id_proof_type, :id_proof_number, now(),
+               :phone_ciphertext, :phone_salt, :phone_hmac, :phone_verified_at,
+               :address_line1, :address_line2, :state, :state_code, :postal_code,
+               :country, :country_code, :id_proof_type, :id_proof_ciphertext,
+               :id_proof_salt, :id_proof_hmac, :id_proof_fingerprint, now(),
                coalesce(
                  (SELECT created_at
                   FROM organization_member_profiles
@@ -235,7 +268,9 @@ def upsert_my_profile(
               full_name=EXCLUDED.full_name,
               email=EXCLUDED.email,
               email_verified_at=EXCLUDED.email_verified_at,
-              phone_e164=EXCLUDED.phone_e164,
+              phone_ciphertext=EXCLUDED.phone_ciphertext,
+              phone_salt=EXCLUDED.phone_salt,
+              phone_hmac=EXCLUDED.phone_hmac,
               phone_verified_at=EXCLUDED.phone_verified_at,
               address_line1=EXCLUDED.address_line1,
               address_line2=EXCLUDED.address_line2,
@@ -245,7 +280,10 @@ def upsert_my_profile(
               country=EXCLUDED.country,
               country_code=EXCLUDED.country_code,
               id_proof_type=EXCLUDED.id_proof_type,
-              id_proof_number=EXCLUDED.id_proof_number,
+              id_proof_ciphertext=EXCLUDED.id_proof_ciphertext,
+              id_proof_salt=EXCLUDED.id_proof_salt,
+              id_proof_hmac=EXCLUDED.id_proof_hmac,
+              id_proof_fingerprint=EXCLUDED.id_proof_fingerprint,
               id_proof_provided_at=EXCLUDED.id_proof_provided_at,
               updated_at=now()
         """), {
@@ -254,7 +292,9 @@ def upsert_my_profile(
             "full_name": fields["full_name"],
             "email": email,
             "email_verified_at": email_time,
-            "phone": fields["phone_e164"],
+            "phone_ciphertext": protected_phone["ciphertext"],
+            "phone_salt": protected_phone["salt"],
+            "phone_hmac": protected_phone["hmac"],
             "phone_verified_at": existing_phone_verified_at,
             "address_line1": fields["address_line1"],
             "address_line2": fields["address_line2"],
@@ -264,7 +304,10 @@ def upsert_my_profile(
             "country": fields["country"],
             "country_code": fields["country_code"],
             "id_proof_type": fields["id_proof_type"],
-            "id_proof_number": fields["id_proof_number"],
+            "id_proof_ciphertext": protected_id["ciphertext"],
+            "id_proof_salt": protected_id["salt"],
+            "id_proof_hmac": protected_id["hmac"],
+            "id_proof_fingerprint": protected_id["fingerprint"],
         })
 
         db.execute(text("""

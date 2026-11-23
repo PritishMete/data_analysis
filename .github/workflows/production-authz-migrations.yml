@@ -27,6 +27,7 @@ jobs:
     environment: production
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      INSIGHTFLOW_PROFILE_PII_KEY: ${{ secrets.INSIGHTFLOW_PROFILE_PII_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,6 +58,14 @@ jobs:
             postgresql://*|postgresql+psycopg2://*|postgres://*) ;;
             *) echo "::error::DATABASE_URL is not a PostgreSQL connection URL."; exit 1 ;;
           esac
+
+      - name: Require profile PII encryption key when legacy PII exists
+        run: |
+          set -euo pipefail
+          if [ -z "${INSIGHTFLOW_PROFILE_PII_KEY:-}" ]; then
+            echo "::error::GitHub Actions secret INSIGHTFLOW_PROFILE_PII_KEY is required to migrate existing profile PII."
+            exit 1
+          fi
 
       - name: Apply and verify authz migrations
         run: python tools/run_authz_migrations.py
