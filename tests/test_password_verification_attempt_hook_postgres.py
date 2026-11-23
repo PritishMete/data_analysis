@@ -46,7 +46,7 @@ def auth_hook_db():
                         IF NOT EXISTS (
                             SELECT 1 FROM pg_roles WHERE rolname = role_name
                         ) THEN
-                            EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
+                            EXECUTE 'CREATE ROLE ' || quote_ident(role_name) || ' NOLOGIN';
                         END IF;
                     END LOOP;
                 END;
