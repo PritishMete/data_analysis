@@ -192,9 +192,14 @@ def migrate_profile_pii(engine) -> None:
                 assignments = ", ".join(f"{name}=:{name}" for name in updates)
                 conn.execute(text(f"UPDATE organization_member_profiles SET {assignments} WHERE organization_id=:org AND principal_id=:principal"), {**updates, "org": org, "principal": principal})
 
-        remaining = conn.execute(text("SELECT count(*) FROM organization_member_profiles WHERE phone_e164 IS NOT NULL OR id_proof_number IS NOT NULL")).scalar_one()
+        remaining = conn.execute(text("""
+            SELECT count(*)
+            FROM organization_member_profiles
+            WHERE (phone_e164 IS NOT NULL AND phone_ciphertext IS NULL)
+               OR (id_proof_number IS NOT NULL AND id_proof_ciphertext IS NULL)
+        """)).scalar_one()
         if int(remaining):
-            raise RuntimeError("Profile PII migration left plaintext values behind.")
+            raise RuntimeError("Profile PII migration left legacy values without encrypted replacements.")
         conn.exec_driver_sql("ALTER TABLE organization_member_profiles DROP COLUMN IF EXISTS phone_e164, DROP COLUMN IF EXISTS id_proof_number")
         conn.exec_driver_sql("DROP INDEX IF EXISTS idx_member_profiles_org_phone")
 
