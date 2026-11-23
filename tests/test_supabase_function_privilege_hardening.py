@@ -59,3 +59,18 @@ def test_existing_branch_and_employee_integrity_guards_remain_in_place():
     assert "pg_catalog.pg_advisory_xact_lock" in sql
     assert "duplicate employee ID proof" in sql
     assert "organization_member_profiles_unique_id_proof" in sql
+
+
+def test_production_migration_runner_verifies_live_function_privileges():
+    runner = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_authz_migrations.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def verify_supabase_function_security(engine)" in runner
+    assert "has_function_privilege('anon'" in runner
+    assert "has_function_privilege('authenticated'" in runner
+    assert "has_function_privilege('service_role'" in runner
+    assert "has_function_privilege('supabase_auth_admin'" in runner
+    assert "verify_supabase_function_security(engine)" in runner
