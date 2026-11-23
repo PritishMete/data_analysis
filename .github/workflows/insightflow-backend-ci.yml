@@ -53,6 +53,8 @@ jobs:
         run: pytest -q -rs tests/test_authz_assignment_index_postgres.py
       - name: Run Supabase function privilege migration integration test
         run: pytest -q -rs tests/test_supabase_function_privilege_hardening_postgres.py
+      - name: Require disposable PostgreSQL test database
+        run: python -c "import os; assert os.environ.get('AUTHZ_TEST_DATABASE_URL', '').strip(), 'AUTHZ_TEST_DATABASE_URL is required; refusing to skip security integration tests'"
       - name: Run password verification hook concurrency integration test
         run: pytest -q -rs tests/test_password_verification_attempt_hook_postgres.py
 
