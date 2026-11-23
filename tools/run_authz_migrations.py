@@ -359,6 +359,46 @@ def verify_managed_dataset_security(engine) -> None:
                 "RLS is not enabled on managed_data table: " + str(bad_physical_rls)
             )
 
+def verify_supabase_function_security(engine) -> None:
+    """Fail closed if privileged trigger functions remain exposed as public RPCs."""
+    expected_search_paths = {
+        "enforce_single_active_branch_assignment": 'search_path=""',
+        "reject_duplicate_employee_id_proof": 'search_path=""',
+        "insightflow_cleanup_deleted_auth_user": 'search_path=""',
+        "insightflow_cleanup_orphaned_branch_organization": 'search_path=""',
+        "rls_auto_enable": "search_path=pg_catalog",
+    }
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT
+                p.proname,
+                COALESCE(array_to_string(p.proconfig, ','), '') AS settings,
+                has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_execute,
+                has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_execute,
+                has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_execute,
+                has_function_privilege('supabase_auth_admin', p.oid, 'EXECUTE') AS auth_admin_execute
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname = ANY(:function_names)
+        """), {"function_names": sorted(expected_search_paths)}).mappings().all()
+
+    found = {row["proname"]: row for row in rows}
+    missing = sorted(set(expected_search_paths) - set(found))
+    if missing:
+        raise RuntimeError("Supabase security trigger functions are missing: " + ",".join(missing))
+
+    for name, expected_setting in expected_search_paths.items():
+        row = found[name]
+        if expected_setting not in (row["settings"] or ""):
+            raise RuntimeError(f"Unsafe or unset search_path on public.{name}().")
+        if row["anon_execute"] or row["authenticated_execute"] or row["service_role_execute"]:
+            raise RuntimeError(f"Public API execution remains enabled for public.{name}().")
+
+    if not found["insightflow_cleanup_deleted_auth_user"]["auth_admin_execute"]:
+        raise RuntimeError("Supabase Auth service lost EXECUTE on its account-cleanup trigger function.")
+
+
 def run_migrations() -> None:
     """Apply and verify pending production PostgreSQL migrations.
 
@@ -378,6 +418,7 @@ def run_migrations() -> None:
     verify_profile_security(engine)
     verify_employee_id_allocator(engine)
     verify_managed_dataset_security(engine)
+    verify_supabase_function_security(engine)
 
 
 def verify_employee_id_allocator(engine) -> None:
@@ -432,6 +473,8 @@ def main() -> int:
         verify_profile_security(engine)
         verify_employee_id_allocator(engine)
         verify_managed_dataset_security(engine)
+        verify_supabase_function_security(engine)
+        print("SUPABASE_FUNCTION_SECURITY=PASS")
         print("ORGANIZATIONAL_STRUCTURE=PASS")
         print("ASSIGNMENT_INDEXES=PASS")
         print("REQUIRED_TABLES=PASS")
