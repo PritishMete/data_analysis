@@ -7,6 +7,11 @@ from sqlalchemy import text
 
 from core.db import SessionLocal
 
+os.environ.setdefault(
+    "INSIGHTFLOW_PROFILE_PII_KEY",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+)
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
     reason="Supabase DATABASE_URL is required",
@@ -101,10 +106,11 @@ def test_registration_persists_branch_head_profile_and_assignment():
     try:
         with SessionLocal() as session:
             profile = session.execute(
-                text("""SELECT full_name, email, email_verified_at, phone_e164,
-                               phone_verified_at, address_line1, address_line2,
-                               state, state_code, postal_code, country, country_code,
-                               id_proof_type, id_proof_number
+                text("""SELECT full_name, email, email_verified_at, phone_ciphertext,
+                               phone_salt, phone_hmac, phone_verified_at, address_line1,
+                               address_line2, state, state_code, postal_code, country,
+                               country_code, id_proof_type, id_proof_ciphertext,
+                               id_proof_salt, id_proof_hmac
                         FROM organization_member_profiles
                         WHERE organization_id=:org"""),
                 {"org": result["organization_id"]},
@@ -112,11 +118,18 @@ def test_registration_persists_branch_head_profile_and_assignment():
         assert profile["full_name"] == "Pritish Mete"
         assert profile["email"] == f"founder-{suffix}@example.com"
         assert profile["email_verified_at"] is not None
-        assert profile["phone_e164"] == "+919876543210"
+        from firebase_authz.profile_crypto import reveal_profile_value
+        assert reveal_profile_value(
+            profile["phone_ciphertext"], profile["phone_salt"], profile["phone_hmac"],
+            "phone", result["organization_id"], result["principal_id"],
+        ) == "+919876543210"
         assert profile["phone_verified_at"] is None
         assert profile["address_line1"] == "1 InsightFlow Way"
         assert profile["id_proof_type"] == "passport"
-        assert profile["id_proof_number"] == "P-1234567"
+        assert reveal_profile_value(
+            profile["id_proof_ciphertext"], profile["id_proof_salt"], profile["id_proof_hmac"],
+            "id_proof", result["organization_id"], result["principal_id"],
+        ) == "P-1234567"
 
         overview = management_overview(
             _claims(f"founder-{suffix}"),
@@ -154,8 +167,8 @@ def test_registration_allows_unverified_phone_and_persists_e164():
     result=register_organization(_claims("unverified-phone",phone_confirmed=False),"No Phone Company","Main Branch","NO-PHONE",**_profile_kwargs())
     try:
         with SessionLocal() as session:
-            row=session.execute(text("SELECT phone_e164,phone_verified_at FROM organization_member_profiles WHERE organization_id=:org"),{"org":result["organization_id"]}).one()
-        assert row.phone_e164=="+919876543210"; assert row.phone_verified_at is None
+            row=session.execute(text("SELECT phone_ciphertext,phone_verified_at FROM organization_member_profiles WHERE organization_id=:org"),{"org":result["organization_id"]}).one()
+        assert row.phone_ciphertext is not None; assert row.phone_verified_at is None
     finally:_cleanup(result["organization_id"])
 
 def test_profile_update_accepts_valid_phone_without_supabase_phone_verification():
@@ -227,16 +240,33 @@ def test_sensitive_profile_requires_users_manage_and_is_cross_company_scoped():
                     "location": owner["location_id"],
                 },
             )
+            from firebase_authz.profile_crypto import protect_profile_value
+            phone_data = protect_profile_value(
+                "+15557654321", "phone", owner["organization_id"], member
+            )
+            id_data = protect_profile_value(
+                "SECRET-ID", "id_proof", owner["organization_id"], member,
+                country_code="US", id_proof_type="passport",
+            )
             session.execute(
                 text("""INSERT INTO organization_member_profiles
-                    (organization_id, principal_id, full_name, email, phone_e164,
-                     id_proof_type, id_proof_number)
-                    VALUES (:org, :principal, 'Private Person',
-                            'private@example.com', '+15557654321',
-                            'Passport', 'SECRET-ID')"""),
+                    (organization_id, principal_id, full_name, email,
+                     phone_ciphertext, phone_salt, phone_hmac,
+                     id_proof_type, id_proof_ciphertext, id_proof_salt,
+                     id_proof_hmac, id_proof_fingerprint)
+                    VALUES (:org, :principal, 'Private Person', 'private@example.com',
+                            :phone_ciphertext, :phone_salt, :phone_hmac,
+                            'passport', :id_ciphertext, :id_salt, :id_hmac, :fingerprint)"""),
                 {
                     "org": owner["organization_id"],
                     "principal": member,
+                    "phone_ciphertext": phone_data["ciphertext"],
+                    "phone_salt": phone_data["salt"],
+                    "phone_hmac": phone_data["hmac"],
+                    "id_ciphertext": id_data["ciphertext"],
+                    "id_salt": id_data["salt"],
+                    "id_hmac": id_data["hmac"],
+                    "fingerprint": id_data["fingerprint"],
                 },
             )
 
@@ -310,6 +340,14 @@ def test_profile_migration_has_rls_and_no_public_data_api_grants():
     assert "REVOKE ALL ON TABLE organization_member_profiles FROM PUBLIC" in migration
     assert "REFERENCES organization_members (organization_id, principal_id)" in migration
     assert "ON DELETE CASCADE" in migration
+
+    encrypted = open(
+        "migrations/0039_encrypt_profile_pii.sql",
+        encoding="utf-8",
+    ).read()
+    assert "phone_ciphertext BYTEA" in encrypted
+    assert "id_proof_fingerprint BYTEA" in encrypted
+    assert "reject_duplicate_employee_id_proof" in encrypted
 
     additive = open(
         "migrations/0020_add_profile_geo_codes.sql",

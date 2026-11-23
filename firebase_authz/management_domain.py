@@ -14,6 +14,7 @@ from sqlalchemy import text
 from core.db import SessionLocal
 from .schema import ROLE_LEVELS
 from .service import AuthzError
+from .profile_crypto import reveal_profile_value
 
 
 class ManagementConflict(AuthzError):
@@ -281,12 +282,12 @@ def _profile_summary_sql(alias: str = "profile") -> str:
         {alias}.full_name,
         {alias}.email_verified_at IS NOT NULL AS email_verified,
         {alias}.phone_verified_at IS NOT NULL AS phone_verified,
-        ({alias}.id_proof_number IS NOT NULL AND {alias}.id_proof_number <> '') AS id_proof_supplied,
+        ({alias}.id_proof_fingerprint IS NOT NULL) AS id_proof_supplied,
         (
             CASE WHEN coalesce({alias}.full_name, '') <> '' THEN 1 ELSE 0 END
             + CASE WHEN coalesce({alias}.email, '') <> ''
                         AND {alias}.email_verified_at IS NOT NULL THEN 1 ELSE 0 END
-            + CASE WHEN coalesce({alias}.phone_e164, '') <> ''
+            + CASE WHEN {alias}.phone_ciphertext IS NOT NULL
                         AND {alias}.phone_verified_at IS NOT NULL THEN 1 ELSE 0 END
             + CASE
                 WHEN coalesce({alias}.address_line1, '') <> ''
@@ -296,7 +297,7 @@ def _profile_summary_sql(alias: str = "profile") -> str:
                 THEN 1 ELSE 0 END
             + CASE
                 WHEN coalesce({alias}.id_proof_type, '') <> ''
-                 AND coalesce({alias}.id_proof_number, '') <> ''
+                 AND {alias}.id_proof_fingerprint IS NOT NULL
                 THEN 1 ELSE 0 END
         ) * 20 AS profile_completeness_percent
     """
@@ -318,10 +319,12 @@ def _profile_detail(db, organization_id: str, assignment_id: str) -> dict[str, A
                parent_member.employee_id AS reports_to_employee_id,
                parent.role_id AS reports_to_role_id,
                profile.full_name, profile.email, profile.email_verified_at,
-               profile.phone_e164, profile.phone_verified_at,
+               profile.phone_ciphertext, profile.phone_salt, profile.phone_hmac,
+               profile.phone_verified_at,
                profile.address_line1, profile.address_line2,
                profile.state, profile.postal_code, profile.country,
-               profile.id_proof_type, profile.id_proof_number,
+               profile.id_proof_type, profile.id_proof_ciphertext,
+               profile.id_proof_salt, profile.id_proof_hmac,
                profile.id_proof_provided_at, profile.created_at AS profile_created_at,
                profile.updated_at AS profile_updated_at,
                oa.created_at AS assignment_created_at,
@@ -346,7 +349,18 @@ def _profile_detail(db, organization_id: str, assignment_id: str) -> dict[str, A
     """), {"org": organization_id, "assignment": assignment_id}).mappings().first()
     if not row:
         raise AuthzError("Organizational assignment is not part of your organization.")
-    return dict(row)
+    result = dict(row)
+    result["phone_e164"] = reveal_profile_value(
+        result.pop("phone_ciphertext"), result.pop("phone_salt"),
+        result.pop("phone_hmac"), "phone", organization_id,
+        str(result["principal_id"]),
+    )
+    result["id_proof_number"] = reveal_profile_value(
+        result.pop("id_proof_ciphertext"), result.pop("id_proof_salt"),
+        result.pop("id_proof_hmac"), "id_proof", organization_id,
+        str(result["principal_id"]),
+    )
+    return result
 
 
 def _audit(db, organization_id: str, actor_principal_id: str, action: str,
@@ -947,11 +961,11 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
                    profile.full_name,
                    profile.email_verified_at IS NOT NULL AS email_verified,
                    profile.phone_verified_at IS NOT NULL AS phone_verified,
-                   (profile.id_proof_number IS NOT NULL AND profile.id_proof_number <> '') AS id_proof_supplied,
+                   (profile.id_proof_fingerprint IS NOT NULL) AS id_proof_supplied,
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_ciphertext IS NOT NULL THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
                             AND coalesce(profile.state, '') <> ''
@@ -960,7 +974,7 @@ def list_people(claims: dict[str, Any], workspace_id: str, search: str | None = 
                            THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.id_proof_type, '') <> ''
-                            AND coalesce(profile.id_proof_number, '') <> ''
+                            AND profile.id_proof_fingerprint IS NOT NULL
                            THEN 1 ELSE 0 END
                    ) * 20 AS profile_completeness_percent
             FROM organizational_assignments oa
@@ -1033,11 +1047,11 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
                    profile.full_name,
                    profile.email_verified_at IS NOT NULL AS email_verified,
                    profile.phone_verified_at IS NOT NULL AS phone_verified,
-                   (profile.id_proof_number IS NOT NULL AND profile.id_proof_number <> '') AS id_proof_supplied,
+                   (profile.id_proof_fingerprint IS NOT NULL) AS id_proof_supplied,
                    (
                        CASE WHEN profile.full_name IS NOT NULL AND profile.full_name <> '' THEN 1 ELSE 0 END
                        + CASE WHEN profile.email IS NOT NULL AND profile.email <> '' THEN 1 ELSE 0 END
-                       + CASE WHEN profile.phone_e164 IS NOT NULL AND profile.phone_e164 <> '' THEN 1 ELSE 0 END
+                       + CASE WHEN profile.phone_ciphertext IS NOT NULL THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.address_line1, '') <> ''
                             AND coalesce(profile.state, '') <> ''
@@ -1046,7 +1060,7 @@ def list_assignments(claims: dict[str, Any], workspace_id: str) -> list[dict[str
                            THEN 1 ELSE 0 END
                        + CASE
                            WHEN coalesce(profile.id_proof_type, '') <> ''
-                            AND coalesce(profile.id_proof_number, '') <> ''
+                            AND profile.id_proof_fingerprint IS NOT NULL
                            THEN 1 ELSE 0 END
                    ) * 20 AS profile_completeness_percent
             FROM organizational_assignments oa

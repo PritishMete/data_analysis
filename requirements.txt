@@ -22,5 +22,6 @@ opentelemetry-api==1.45.2
 opentelemetry-sdk==1.45.2
 
 supabase>=2.20,<3
+cryptography>=50.0.0,<51.0.0
 phonenumbers==9.0.40
 pycountry==26.2.16

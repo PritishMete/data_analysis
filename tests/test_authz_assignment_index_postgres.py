@@ -23,6 +23,7 @@ from tools import run_authz_migrations as runner
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
 DATABASE_URL = os.environ.get("AUTHZ_TEST_DATABASE_URL", "").strip()
+TEST_PROFILE_PII_KEY = "0000000000000000000000000000000000000000000000000000000000000000"
 
 pytestmark = pytest.mark.skipif(
     not DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://")),
@@ -41,7 +42,8 @@ def _assert_disposable_test_url(url: str) -> None:
 
 
 @pytest.fixture()
-def postgres_engine():
+def postgres_engine(monkeypatch):
+    monkeypatch.setenv("INSIGHTFLOW_PROFILE_PII_KEY", TEST_PROFILE_PII_KEY)
     _assert_disposable_test_url(DATABASE_URL)
     engine = create_engine(DATABASE_URL, future=True)
     with engine.begin() as conn:
@@ -453,3 +455,101 @@ def test_fastapi_lifespan_runs_required_initialization_before_serving(monkeypatc
 
     asyncio.run(exercise_lifespan())
     assert calls == ["initialized"]
+
+
+def test_profile_pii_legacy_backfill_and_duplicate_proof_guard(postgres_engine, monkeypatch):
+    """Legacy plaintext values are encrypted, removed, and remain duplicate-checkable."""
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    runner.run_migrations()
+    _seed_manager_assignments(postgres_engine)
+
+    with postgres_engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO organization_member_profiles
+                (organization_id, principal_id, full_name, email, country, country_code,
+                 id_proof_type, id_proof_provided_at)
+            VALUES
+                ('org-a', 'person-a', 'Legacy Person', 'legacy@example.com',
+                 'India', 'IN', 'Passport', now())
+        """))
+        # Recreate the old schema columns to simulate a pre-0039 production row.
+        conn.exec_driver_sql("""
+            ALTER TABLE organization_member_profiles
+              ADD COLUMN phone_e164 TEXT,
+              ADD COLUMN id_proof_number TEXT
+        """)
+        conn.execute(text("""
+            UPDATE organization_member_profiles
+            SET phone_e164='+919876543210',
+                id_proof_number='AB-1234567'
+            WHERE organization_id='org-a' AND principal_id='person-a'
+        """))
+
+    runner.migrate_profile_pii(postgres_engine)
+
+    from firebase_authz.profile_crypto import (
+        protect_profile_value,
+        reveal_profile_value,
+    )
+    from sqlalchemy import inspect
+
+    columns = {
+        item["name"]
+        for item in inspect(postgres_engine).get_columns("organization_member_profiles")
+    }
+    assert "phone_e164" not in columns
+    assert "id_proof_number" not in columns
+
+    with postgres_engine.connect() as conn:
+        profile = conn.execute(text("""
+            SELECT phone_ciphertext, phone_salt, phone_hmac,
+                   id_proof_ciphertext, id_proof_salt, id_proof_hmac,
+                   id_proof_fingerprint, id_proof_type
+            FROM organization_member_profiles
+            WHERE organization_id='org-a' AND principal_id='person-a'
+        """)).mappings().one()
+
+    assert profile["phone_ciphertext"] is not None
+    assert profile["id_proof_ciphertext"] is not None
+    assert profile["phone_salt"] != profile["id_proof_salt"]
+    assert reveal_profile_value(
+        profile["phone_ciphertext"], profile["phone_salt"], profile["phone_hmac"],
+        "phone", "org-a", "person-a",
+    ) == "+919876543210"
+    assert reveal_profile_value(
+        profile["id_proof_ciphertext"], profile["id_proof_salt"], profile["id_proof_hmac"],
+        "id_proof", "org-a", "person-a",
+    ) == "AB-1234567"
+    assert profile["id_proof_type"] == "passport"
+
+    phone_data = protect_profile_value(
+        "+919876543211", "phone", "org-a", "person-b"
+    )
+    proof_data = protect_profile_value(
+        "AB1234567", "id_proof", "org-a", "person-b",
+        country_code="IN", id_proof_type="passport",
+    )
+    assert proof_data["salt"] != profile["id_proof_salt"]
+    assert proof_data["fingerprint"] == profile["id_proof_fingerprint"]
+
+    with pytest.raises(IntegrityError):
+        with postgres_engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO organization_member_profiles
+                    (organization_id, principal_id, full_name, email, country, country_code,
+                     id_proof_type, phone_ciphertext, phone_salt, phone_hmac,
+                     id_proof_ciphertext, id_proof_salt, id_proof_hmac,
+                     id_proof_fingerprint, id_proof_provided_at)
+                VALUES
+                    ('org-a', 'person-b', 'Second Person', 'second@example.com',
+                     'India', 'IN', 'passport', :phone_ciphertext, :phone_salt, :phone_hmac,
+                     :id_ciphertext, :id_salt, :id_hmac, :fingerprint, now())
+            """), {
+                "phone_ciphertext": phone_data["ciphertext"],
+                "phone_salt": phone_data["salt"],
+                "phone_hmac": phone_data["hmac"],
+                "id_ciphertext": proof_data["ciphertext"],
+                "id_salt": proof_data["salt"],
+                "id_hmac": proof_data["hmac"],
+                "fingerprint": proof_data["fingerprint"],
+            })
