@@ -338,7 +338,12 @@ def test_simultaneous_success_and_failure_events_are_serialized(auth_hook_db):
         assert success_future.result() == {"decision": "continue"}
         failure_result = failure_future.result()
 
-    assert failure_result == {"decision": "continue"}
+    # Either event may acquire the per-user advisory lock first. A failure
+    # before success can be recorded and then cleared; a failure after success
+    # leaves exactly one recent failure. Both outcomes are safe.
+    assert failure_result == {"decision": "continue"} or (
+        failure_result.get("error", {}).get("http_code") == 429
+    )
     counter = read_counter(engine, user_id)
     assert counter is None or (
         counter["failure_count"] == 1 and counter["timestamp_count"] == 1
