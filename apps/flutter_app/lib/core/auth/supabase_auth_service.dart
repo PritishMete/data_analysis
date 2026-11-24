@@ -31,6 +31,12 @@ class InsightFlowSupabaseAuthService {
   /// the UI does not reveal whether an email is already registered.
   static const String signupResultMessage =
       'If this email address can be registered, check your inbox for next steps.';
+  static const String loginFailureMessage =
+      'Email or password is incorrect. If your email needs verification, request a new verification link.';
+  static const String verificationLinkRequestMessage =
+      'If this email can receive a verification link, check your inbox and spam folder.';
+  static const String passwordResetRequestMessage =
+      'If an account can be recovered with this email, reset instructions will be sent.';
 
   static bool isSignupEnumerationSafeResponse(Object error) {
     if (error is! AuthException) return false;
