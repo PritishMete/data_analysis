@@ -71,12 +71,16 @@ class _SupabasePasswordRecoveryScreenState
   }
 
   Future<void> _returnToSignIn() async {
-    InsightFlowSupabaseAuthService.clearPasswordRecoveryPending();
     try {
       await InsightFlowSupabaseAuthService.signOutCurrentDevice();
+      InsightFlowSupabaseAuthService.clearPasswordRecoveryPending();
     } catch (_) {
-      // Local session cleanup is best effort after the password change. The
-      // recovery flag is already cleared and Supabase remains authoritative.
+      // Keep recovery mode active if the recovery session could not be cleared.
+      // The user can retry instead of falling through to the authenticated app.
+      if (!mounted) return;
+      setState(() {
+        _message = 'Sign-out could not be completed. Please try again.';
+      });
     }
   }
 
