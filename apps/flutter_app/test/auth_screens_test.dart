@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
@@ -9,6 +10,20 @@ import 'package:liquid_glass_widgets/features/auth/account_management_screen.dar
 import 'package:liquid_glass_widgets/features/auth/password_recovery_screen.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await Supabase.initialize(
+      url: 'https://test-project.supabase.co',
+      anonKey: 'test-anon-key',
+      authOptions: FlutterAuthClientOptions(
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUri: false,
+      ),
+    );
+  });
+
   Future<void> pumpAuthApp(
     WidgetTester tester,
     Widget child, {

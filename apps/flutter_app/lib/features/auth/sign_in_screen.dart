@@ -287,12 +287,17 @@ class _SignInScreenState extends State<SignInScreen> {
           else
             Icon(icon, size: 17, color: TechColors.borderActive),
           const SizedBox(width: 9),
-          Text(
-            busy ? 'Please wait…' : label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              busy ? 'Please wait…' : label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
