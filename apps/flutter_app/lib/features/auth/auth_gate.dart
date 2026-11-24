@@ -68,6 +68,9 @@ class AuthGate extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _AuthLoading();
         }
+        if (InsightFlowSupabaseAuthService.isPasswordRecoveryPending) {
+          return const SupabasePasswordRecoveryScreen();
+        }
         if (snapshot.hasError) {
           return isRunningInsideOffice
               ? const SignInScreen()
