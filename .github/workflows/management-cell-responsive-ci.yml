@@ -10,9 +10,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'apps/flutter_app/**'
-      - '.github/workflows/management-cell-responsive-ci.yml'
   workflow_dispatch:
 
 permissions:
