@@ -156,6 +156,10 @@ class InsightFlowSupabaseAuthService {
           return 'Google sign-in is not enabled for this InsightFlow project.';
       }
       final message = error.message.toLowerCase();
+      if (message.contains('user already registered') ||
+          message.contains('user already exists')) {
+        return signupResultMessage;
+      }
       if (message.contains('network') || message.contains('failed to fetch')) {
         return 'Network connection failed. Check your connection and try again.';
       }
