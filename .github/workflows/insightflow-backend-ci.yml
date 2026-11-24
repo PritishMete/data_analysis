@@ -292,7 +292,6 @@ jobs:
           test/auth_screens_test.dart
           test/supabase_multi_device_session_test.dart
           test/supabase_auth_error_handling_test.dart
-          test/auth_screens_test.dart
           test/onboarding_auth_flow_contract_test.dart
           test/management_shell_contract_test.dart
           test/management_skeleton_responsive_test.dart
