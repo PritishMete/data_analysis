@@ -263,8 +263,12 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _messageIsError = true;
-        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        final enumerationSafe =
+            InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(error);
+        _messageIsError = !enumerationSafe;
+        _error = enumerationSafe
+            ? InsightFlowSupabaseAuthService.verificationLinkRequestMessage
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     }
   }
