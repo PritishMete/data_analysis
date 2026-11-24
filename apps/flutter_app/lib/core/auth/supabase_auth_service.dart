@@ -32,6 +32,15 @@ class InsightFlowSupabaseAuthService {
   static const String signupResultMessage =
       'If this email address can be registered, check your inbox for next steps.';
 
+  static bool isSignupEnumerationSafeResponse(Object error) {
+    if (error is! AuthException) return false;
+    final code = error.code?.toLowerCase().trim() ?? '';
+    final message = error.message.toLowerCase();
+    return code == 'user_already_exists' ||
+        message.contains('user already registered') ||
+        message.contains('user already exists');
+  }
+
   static String? _sessionOnlyEmail;
   InsightFlowSupabaseAuthService._();
 
