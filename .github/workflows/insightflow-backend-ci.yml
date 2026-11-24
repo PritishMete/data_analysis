@@ -277,6 +277,7 @@ jobs:
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
           lib/features/auth/auth_gate.dart
+          lib/features/auth/password_recovery_screen.dart
           lib/features/auth/employee_invitation_password_setup_screen.dart
           lib/features/auth/organization_onboarding_screen.dart
           lib/features/auth/account_management_screen.dart
