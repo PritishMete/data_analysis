@@ -164,9 +164,8 @@ class InsightFlowSupabaseAuthService {
       switch (code) {
         case 'invalid_credentials':
         case 'invalid_grant':
-          return 'Email or password is incorrect.';
         case 'email_not_confirmed':
-          return 'Please verify your email before signing in.';
+          return loginFailureMessage;
         case 'user_already_exists':
           return signupResultMessage;
         case 'weak_password':
