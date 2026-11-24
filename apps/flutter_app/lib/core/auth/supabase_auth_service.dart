@@ -261,12 +261,18 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithPassword(email: email, password: password);
   }
 
+  /// Sends the current password to Supabase so a project-level
+  /// require-current-password policy can be enforced by Auth itself.
+  /// Password-recovery sessions intentionally omit this value.
   static Future<void> setPassword(
     String password, {
+    String? currentPassword,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     await client.auth
-        .updateUser(UserAttributes(password: password))
+        .updateUser(
+          UserAttributes(password: password, currentPassword: currentPassword),
+        )
         .timeout(timeout);
   }
 

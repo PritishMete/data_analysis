@@ -52,11 +52,11 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
     });
   }
 
-  Future<bool> _reauthenticate() async {
+  Future<String?> _reauthenticate() async {
     final user = InsightFlowSupabaseAuthService.currentSupabaseUser;
     if (user == null) {
       _setMessage('Sign in again before changing account security settings.', error: true);
-      return false;
+      return null;
     }
 
     final provider = user.appMetadata['provider']?.toString().toLowerCase();
@@ -65,7 +65,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         'For this account provider, reauthenticate by signing out and signing in again before retrying this change.',
         error: true,
       );
-      return false;
+      return null;
     }
 
     final controller = TextEditingController();
@@ -95,17 +95,17 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
       ),
     );
     controller.dispose();
-    if (password == null || password.isEmpty) return false;
+    if (password == null || password.isEmpty) return null;
 
     try {
       await InsightFlowSupabaseAuthService.signInWithPassword(
         email: user.email ?? '',
         password: password,
       );
-      return true;
+      return password;
     } catch (_) {
       _setMessage('Current password could not be verified.', error: true);
-      return false;
+      return null;
     }
   }
 
@@ -126,7 +126,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
         );
       }
       if (email.isNotEmpty && email != (user.email ?? '')) {
-        if (!await _reauthenticate()) return;
+        if (await _reauthenticate() == null) return;
         await InsightFlowSupabaseAuthService.client.auth.updateUser(
           UserAttributes(email: email),
         );
@@ -161,8 +161,12 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
       _message = null;
     });
     try {
-      if (!await _reauthenticate()) return;
-      await InsightFlowSupabaseAuthService.setPassword(password);
+      final currentPassword = await _reauthenticate();
+      if (currentPassword == null) return;
+      await InsightFlowSupabaseAuthService.setPassword(
+        password,
+        currentPassword: currentPassword,
+      );
       _newPasswordController.clear();
       _confirmPasswordController.clear();
       _setMessage('Password changed successfully.');

@@ -59,4 +59,22 @@ void main() {
       );
     });
   });
+  group('Supabase password-change enforcement support', () {
+    test('current password is serialized for provider-side enforcement', () {
+      final attributes = UserAttributes(
+        password: 'new-test-password',
+        currentPassword: 'old-test-password',
+      );
+
+      expect(attributes.toJson()['current_password'], 'old-test-password');
+    });
+
+    test('account password changes pass current password to Supabase Auth', () {
+      final account =
+          File('lib/features/auth/account_management_screen.dart').readAsStringSync();
+
+      expect(account, contains('currentPassword: currentPassword'));
+    });
+  });
+
 }
