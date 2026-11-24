@@ -24,9 +24,21 @@ The documented values below are extracted from `apps/flutter_app/lib/app_colors.
 
 The code also defines liquid-glass presets for panel, section, and input surfaces, plus glow geometry with blur `32`, active spread `8`, active opacity `0.6`, and ambient opacity `0.12`.
 
+## Background token clarification
+
+`kAppBackgroundColor` (`#22D3EE`) is a standalone exported color used by the scan-button/legacy surface path; it is not the dark application background. Dark screens use `TechColors.bgBlack` (`#0F111A`), `panelBg`, and the ambient background implementation in `tech_background.dart`. Do not replace either path without tracing its consumers and updating its contract tests.
+
 ## Typography and layout
 
 Typography follows Flutter Material/theme definitions in `lib/theme/`. Reusable glass containers, fields, buttons, chips, cards, bars, dialogs, sheets, and navigation components live under `lib/widgets/` and `lib/features/`. Prefer those existing components over one-off styling.
+
+## Spacing, shape, shadow, and breakpoints
+
+`lib/constants/glass_defaults.dart` defines shared spacing (`4`, `8`, `16`, `24`), card/panel padding, and radii (`8`, `16`, `20`). Existing screens also use deliberate radii around `7–22`; reuse the shared constants where a component has them. `lib/constants/glass_shadow.dart` owns standard shadow behavior. Responsive code primarily uses `LayoutBuilder` and `MediaQuery`; a verified reference breakpoint is `520` in `analytics_reference_workspace.dart`, while other screens use constraint-based layouts. Do not invent a universal breakpoint.
+
+## Ownership rule
+
+Use `TechColors`, `GlowDesignSystem`, `GlassTheme`, `GlassDefaults`, and the shared `lib/widgets/` components before adding local colors, spacing, glass settings, shadows, or radii. New styling requires a source-backed reason and responsive/accessibility tests.
 
 ## Interaction states
 

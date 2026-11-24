@@ -14,16 +14,19 @@ Status vocabulary: `NOT STARTED`, `IN PROGRESS`, `IMPLEMENTED — NOT VERIFIED`,
 - Verification: focused Python tests, Flutter contract tests, privacy/security tests, and manual Excel flow.
 - Rollback: revert the focused feature commit; preserve data migrations separately.
 
-## Phase 2 — Identity and authorization — VERIFIED
+Feature status: analysis and transformation routes are implemented; broad end-to-end workbook verification is not established. Detail-analysis and AI workspaces have focused Flutter contracts but are not production-verified.
+
+## Phase 2 — Identity and authorization — IMPLEMENTED — NOT VERIFIED
 
 - Objective: authenticate users and enforce organization, workspace, role, dataset, and resource access.
 - Evidence: `firebase_authz/`, `firebase_authz/routes.py`, `firebase_authz/management_routes.py`, migrations, authorization CI workflows.
-- Completed: profiles, memberships, invitations, roles, assignments, grants, audit routes, and migration verification.
+- Completed in source: profiles, memberships, invitations, roles, assignments, grants, audit routes, and migration verification.
 - Pending: continue coverage as new resources are added.
 - Blockers: provider behavior depends on configured Firebase/Supabase environments.
 - Dependencies: Supabase/PostgreSQL and provider credentials supplied through deployment configuration.
 - Acceptance: unauthorized access fails closed and authorized scoped access succeeds.
-- Verification: `insightflow-backend-ci.yml`, `postgres-dataset-security.yml`, authz tests, and emulator tests.
+- Automated verification: `insightflow-backend-ci.yml`, `postgres-dataset-security.yml`, authz tests, and emulator tests exist and cover important paths. This does not establish complete end-to-end or production verification.
+- Verification date: source audit 2026-11-24; no fresh execution was performed in this documentation task.
 - Rollback: revert application changes; use reviewed forward migrations for schema changes.
 
 ## Phase 3 — Excel integration — IMPLEMENTED — NOT VERIFIED
@@ -62,8 +65,20 @@ Status vocabulary: `NOT STARTED`, `IN PROGRESS`, `IMPLEMENTED — NOT VERIFIED`,
 - Verification: run the exact workflow and inspect provider dashboards/logs.
 - Rollback: redeploy the last verified commit; do not rewrite production data.
 
+Feature status: CI workflows and deployment configuration are implemented; current live Render, Pages, secrets, and production database state are not independently verified in this task.
+
 ## Phase 6 — Future product expansion — NOT STARTED
 
 - Objective: expand analytics and modeling capabilities beyond the currently verified contracts.
 - Pending: define each feature with a source-backed spec, tests, security review, and rollback plan.
 - Acceptance: no feature is marked complete until implementation and verification evidence exist.
+
+## Feature status ledger
+
+| Capability | Source implementation | Automated verification | End-to-end verification | Production verification |
+|---|---|---|---|---|
+| Core analysis/cleaning | IMPLEMENTED | IMPLEMENTED — NOT VERIFIED | NOT STARTED | NOT STARTED |
+| Identity/authz | IMPLEMENTED | IMPLEMENTED — NOT VERIFIED | IMPLEMENTED — NOT VERIFIED | NOT VERIFIED |
+| Excel scan/handoff | IMPLEMENTED | IMPLEMENTED — NOT VERIFIED | IMPLEMENTED — NOT VERIFIED | NOT VERIFIED |
+| Managed datasets | IMPLEMENTED | IMPLEMENTED — NOT VERIFIED | NOT STARTED | NOT STARTED |
+| Flutter Web publication | IMPLEMENTED | IMPLEMENTED — NOT VERIFIED | NOT VERIFIED | NOT VERIFIED |

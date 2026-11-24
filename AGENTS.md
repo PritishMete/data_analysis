@@ -1,5 +1,11 @@
 # InsightFlow Agent Instructions
 
+## Purpose and discovery
+
+This is the central repository entry point for coding agents. It is a convention, not a guarantee that every AI product automatically loads it. Agents must discover it explicitly and follow the applicable files.
+
+Before work, search from the repository root for `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.github/instructions/**/*.instructions.md`, and tool-specific instruction files. A nested file applies to its directory and descendants.
+
 ## Read first
 
 Read documents in this order:
@@ -9,6 +15,19 @@ Read documents in this order:
 3. The task-specific document: `architecture.md`, `security.md`, `testing.md`, `deployment.md`, `design.md`, `PRD.md`, `phases.md`, or `memory.md`
 4. Relevant source files, tests, workflows, and existing `docs/` documents
 
+For meaningful implementation work, `memory.md` is mandatory before source inspection. For read-only questions, read only the minimum relevant set and do not edit files unnecessarily.
+
+## Instruction priority
+
+1. System, platform, and safety instructions.
+2. Explicit user request and approval boundaries.
+3. Repository and organization instructions.
+4. The nearest applicable nested instruction file.
+5. `AGENTS.md`, then the detailed project documents.
+6. Source code, tests, and provider behavior as implementation evidence.
+
+If instructions conflict, stop and report the conflict. Resolve it using the higher-priority source and actual code evidence; never weaken security, skip required checks, or silently reinterpret scope.
+
 Source code is the implementation authority. If documentation conflicts with code, report the discrepancy and verify it; do not silently choose either version.
 
 ## Before changing anything
@@ -17,6 +36,7 @@ Source code is the implementation authority. If documentation conflicts with cod
 - Inspect the latest `origin/main` and the current branch diff.
 - Identify authentication, authorization, privacy, database, deployment, and regression risks.
 - Find existing tests and workflows for the affected path.
+- Check nested instructions before editing a file under a subdirectory.
 - Preserve unrelated local changes and do not commit secrets or generated output.
 
 ## Implementation protocol
@@ -36,6 +56,7 @@ Source code is the implementation authority. If documentation conflicts with cod
 - Never modify production databases directly.
 - Never change production infrastructure or trigger deployment without explicit user approval.
 - Do not force-push shared branches or push directly to protected `main` unless explicitly authorized.
+- Even with user approval to merge, do not bypass branch protection, required reviews, required checks, or normal PR controls.
 
 ## Git and PRs
 
@@ -44,6 +65,14 @@ Source code is the implementation authority. If documentation conflicts with cod
 - Review staged files before committing.
 - Create a PR for review; do not merge without approval.
 - Do not claim a PR, CI run, deployment, or health check is successful without verifying it.
+
+## Compatibility entry points
+
+- Gemini CLI: `GEMINI.md` is the project context entry point and references this file.
+- GitHub Copilot: `.github/copilot-instructions.md` is repository-wide context and references this file; applicable path-specific instructions may also apply.
+- Claude Code: no separate `CLAUDE.md` is currently added because this repository has not verified a current official Claude Code file-loading contract. Use `AGENTS.md` and `memory.md` explicitly.
+
+These files are lightweight pointers, not duplicate policy documents.
 
 ## Approval-required actions
 
