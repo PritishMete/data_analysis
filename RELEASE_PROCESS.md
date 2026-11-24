@@ -44,18 +44,23 @@ production source branch requires a separately reviewed migration.
 
 ### Supabase Preview check: expected skip on this Free project
 
-The Supabase organization is on the Free plan. The connected project currently
-has only its persistent `main` branch and no per-PR preview branch. Supabase
-documents isolated Preview Branching as a Pro-plan capability. Therefore the
-Supabase Preview integration check may be reported as **skipped** for this
-repository's PRs or production-branch commits when no preview branch exists.
+The Supabase organization is on the Free plan and the connected project has
+only its persistent `main` branch. The Supabase Preview check's own output
+reports: "Creating a new preview branch per PR is disabled. You can re-enable
+it in Project Integrations Settings." The current check is therefore skipped
+because per-PR preview creation is disabled; it is not a passing test. Supabase
+documents isolated Preview Branching as a Pro-plan capability, so this release
+does not enable preview branching or incur additional subscription or compute
+costs.
 
 A skipped Supabase Preview check is not a pass and must never be represented as
-one. It is not a required release check for this Free-plan setup. Database
-migration and authorization verification instead relies on the required,
-disposable PostgreSQL integration jobs in GitHub Actions, which must pass on the
-exact PR head SHA. Do not create or upgrade a Supabase preview environment to
-make this check green.
+one. Under the project's Free-plan and no-cost constraint, it is excluded from
+the required release gate. The approved database verification mechanism is the
+required, disposable PostgreSQL integration jobs in GitHub Actions, which must
+pass on the exact PR head SHA. Do not create or upgrade a Supabase preview
+environment to make this check green. If the project plan or integration
+configuration changes, revisit this exception before making Preview a required
+check.
 
 ### Cloudflare checks
 
