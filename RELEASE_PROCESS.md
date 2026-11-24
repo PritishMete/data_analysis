@@ -5,7 +5,8 @@
 As verified on 24 November 2026, the production backend is the existing
 Render web service `data_analysis`
 (`https://data-analysis-oajs.onrender.com`). It deploys from `main`, uses
-`uvicorn main:app --host 0.0.0.0 --port $PORT`, checks `/health`. Auto-deploy is disabled.
+`uvicorn main:app --host 0.0.0.0 --port $PORT`, checks `/health`, and has
+Auto-deploy is disabled.
 
 The Flutter web frontend is built and published to the repository's
 `gh-pages` branch by the GitHub Actions workflow
@@ -41,8 +42,12 @@ reviewed migration.
 ## Required validation before a release
 
 1. Open a pull request targeting `main` and review the complete diff.
-2. Confirm the exact PR head SHA and require the following applicable GitHub
-   Actions validation jobs to complete successfully on that SHA:
+2. Record the exact PR head SHA before validation. Require the following
+   applicable GitHub Actions validation jobs to complete successfully for the
+   current PR revision. For `pull_request` workflows that use the default
+   `actions/checkout` ref, GitHub checks out the PR's synthetic merge ref; verify
+   that the checks belong to the current PR revision and rerun after any head
+   SHA change. Do not assume those jobs tested the head commit object directly:
    - Backend regression shards 1/4 through 4/4.
    - `backend-foundation-tests`.
    - `flutter-web-tests` when Flutter web validation is in scope.
