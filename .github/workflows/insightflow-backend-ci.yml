@@ -332,6 +332,7 @@ jobs:
           flutter test
           test/supabase_only_auth_contract_test.dart
           test/supabase_auth_error_handling_test.dart
+          test/auth_screens_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/supabase_multi_device_session_test.dart
