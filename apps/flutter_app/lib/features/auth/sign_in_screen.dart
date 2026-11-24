@@ -100,15 +100,14 @@ class _SignInScreenState extends State<SignInScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      final unverified =
-          InsightFlowSupabaseAuthService.isEmailVerificationError(error);
       setState(() {
         _loading = false;
-        _emailVerificationRequired = unverified;
-        _messageIsError = !unverified;
-        _error = unverified
-            ? 'Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.'
-            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        // Offer the same recovery action after every failed password attempt.
+        // The provider's email_not_confirmed response must not reveal an
+        // existing account through different UI state or message content.
+        _emailVerificationRequired = true;
+        _messageIsError = true;
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
     }
