@@ -197,8 +197,7 @@ class _SignInScreenState extends State<SignInScreen> {
       setState(() {
         _loading = false;
         _messageIsError = false;
-        _error =
-            'Account created. Check your email for the Supabase confirmation link, then return to InsightFlow and sign in.';
+        _error = InsightFlowSupabaseAuthService.signupResultMessage;
       });
     }
   }
