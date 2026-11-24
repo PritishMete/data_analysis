@@ -1,11 +1,32 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../lib/core/auth/supabase_auth_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await Supabase.initialize(
+      url: 'https://test-project.supabase.co',
+      anonKey: 'test-anon-key',
+      authOptions: FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUri: false,
+      ),
+    );
+  });
+
+  setUp(() {
+    InsightFlowSupabaseAuthService.clearPasswordRecoveryPending();
+  });
+
   group('Supabase signup account-enumeration protection', () {
     test('duplicate-account error uses the generic signup response', () {
       final message =
@@ -58,6 +79,38 @@ void main() {
         isFalse,
       );
     });
+    test('password recovery callback is replayed to the late auth listener', () async {
+      final user = User(
+        id: '00000000-0000-4000-8000-000000000001',
+        appMetadata: const {},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: '2026-01-01T00:00:00Z',
+        email: 'recovery@example.invalid',
+      );
+      final session = Session(
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        tokenType: 'bearer',
+        user: user,
+      );
+
+      // Supabase Flutter 2.17.2 uses a replaying auth event stream. Model the
+      // PASSWORD_RECOVERY callback being emitted during initialize, before
+      // AuthGate attaches its listener after runApp.
+      // ignore: invalid_use_of_internal_member
+      InsightFlowSupabaseAuthService.client.auth.notifyAllSubscribers(
+        AuthChangeEvent.passwordRecovery,
+        session: session,
+      );
+
+      final state = await InsightFlowSupabaseAuthService.authStateChanges
+          .firstWhere((state) => state.event == AuthChangeEvent.passwordRecovery);
+
+      expect(state.session?.user.id, user.id);
+      expect(InsightFlowSupabaseAuthService.isPasswordRecoveryPending, isTrue);
+    });
+
     test('unconfirmed and invalid-password login errors share one message', () {
       final invalidPassword =
           InsightFlowSupabaseAuthService.userFacingAuthError(
