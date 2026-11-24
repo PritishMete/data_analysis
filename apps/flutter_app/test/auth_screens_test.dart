@@ -156,6 +156,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('password recovery screen requests a new password', (tester) async {
+    await pumpAuthApp(tester, const SupabasePasswordRecoveryScreen());
+
+    expect(find.text('RESET PASSWORD'), findsOneWidget);
+    expect(find.text('NEW PASSWORD'), findsOneWidget);
+    expect(find.text('CONFIRM NEW PASSWORD'), findsOneWidget);
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.text('Update password'), findsOneWidget);
+
+    await tester.tap(find.text('Update password'));
+    await tester.pump();
+
+    expect(
+      find.text('Choose a password with at least 8 characters.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shared password field keeps show/hide interaction', (
     tester,
   ) async {
