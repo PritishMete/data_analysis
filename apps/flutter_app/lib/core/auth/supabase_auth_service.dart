@@ -47,6 +47,24 @@ class InsightFlowSupabaseAuthService {
         message.contains('user already exists');
   }
 
+  static bool isRecoveryEnumerationSafeResponse(Object error) {
+    if (error is! AuthException) return false;
+    final code = error.code?.toLowerCase().trim() ?? '';
+    final message = error.message.toLowerCase();
+    return const {
+          'user_not_found',
+          'user_not_exists',
+          'email_not_found',
+          'email_not_exists',
+          'user_already_exists',
+        }.contains(code) ||
+        message.contains('user not found') ||
+        message.contains('no user found') ||
+        message.contains('email not found') ||
+        message.contains('user already registered') ||
+        message.contains('user already exists');
+  }
+
   static String? _sessionOnlyEmail;
   InsightFlowSupabaseAuthService._();
 
