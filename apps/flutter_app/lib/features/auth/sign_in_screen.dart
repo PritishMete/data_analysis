@@ -185,9 +185,12 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      final enumerationSafe =
+          InsightFlowSupabaseAuthService.isSignupEnumerationSafeResponse(error);
       setState(() {
         _loading = false;
-        _messageIsError = true;
+        // Match the successful signup presentation as well as its text.
+        _messageIsError = !enumerationSafe;
         _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
