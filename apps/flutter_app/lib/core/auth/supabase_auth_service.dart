@@ -18,6 +18,15 @@ class InsightFlowSupabaseConfig {
 }
 
 class InsightFlowSupabaseAuthService {
+  static bool _passwordRecoveryPending = false;
+
+  static bool get isPasswordRecoveryPending => _passwordRecoveryPending;
+
+  /// Clear recovery mode only after the user has successfully chosen a new password.
+  static void clearPasswordRecoveryPending() {
+    _passwordRecoveryPending = false;
+  }
+
   /// The same response is used for successful and duplicate-address signups so
   /// the UI does not reveal whether an email is already registered.
   static const String signupResultMessage =
