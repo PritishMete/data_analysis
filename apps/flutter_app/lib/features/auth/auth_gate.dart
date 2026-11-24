@@ -17,6 +17,7 @@ import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'employee_profile_onboarding_screen.dart';
 import 'sign_in_screen.dart';
+import 'password_recovery_screen.dart';
 import 'excel_auth_gate.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
