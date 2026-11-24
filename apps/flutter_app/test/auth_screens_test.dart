@@ -6,6 +6,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/account_management_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/password_recovery_screen.dart';
 
 void main() {
   Future<void> pumpAuthApp(
