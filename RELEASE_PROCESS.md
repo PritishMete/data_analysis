@@ -5,8 +5,7 @@
 As verified on 24 November 2026, the production backend is the existing
 Render web service `data_analysis`
 (`https://data-analysis-oajs.onrender.com`). It deploys from `main`, uses
-`uvicorn main:app --host 0.0.0.0 --port $PORT`, checks `/health`, and has
-Auto-deploy disabled.
+`uvicorn main:app --host 0.0.0.0 --port $PORT`, checks `/health`. Auto-deploy is disabled.
 
 The Flutter web frontend is built and published to the repository's
 `gh-pages` branch by the GitHub Actions workflow
