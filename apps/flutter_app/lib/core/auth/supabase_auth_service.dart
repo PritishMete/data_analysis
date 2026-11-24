@@ -188,6 +188,12 @@ class InsightFlowSupabaseAuthService {
           message.contains('user already exists')) {
         return signupResultMessage;
       }
+      if (message.contains('email not confirmed') ||
+          message.contains('email not verified') ||
+          message.contains('email_not_confirmed') ||
+          message.contains('email_not_verified')) {
+        return loginFailureMessage;
+      }
       if (message.contains('network') || message.contains('failed to fetch')) {
         return 'Network connection failed. Check your connection and try again.';
       }
