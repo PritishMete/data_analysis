@@ -225,7 +225,8 @@ class _SignInScreenState extends State<SignInScreen> {
       await InsightFlowSupabaseAuthService.resetPassword(email);
       if (!mounted) return;
       setState(() {
-        _error = 'Password reset email sent. Check your inbox.';
+        _error =
+            InsightFlowSupabaseAuthService.passwordResetRequestMessage;
         _messageIsError = false;
       });
     } catch (error) {
