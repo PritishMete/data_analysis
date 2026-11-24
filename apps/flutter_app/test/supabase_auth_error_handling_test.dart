@@ -34,5 +34,29 @@ void main() {
       expect(signIn, contains('InsightFlowSupabaseAuthService.signupResultMessage'));
       expect(signUp, contains('InsightFlowSupabaseAuthService.signupResultMessage'));
     });
+
+    test('duplicate signup errors are classified as enumeration-safe', () {
+      expect(
+        InsightFlowSupabaseAuthService.isSignupEnumerationSafeResponse(
+          AuthException('User already registered', code: 'user_already_exists'),
+        ),
+        isTrue,
+      );
+      expect(
+        InsightFlowSupabaseAuthService.isSignupEnumerationSafeResponse(
+          AuthException('User already exists'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('unrelated authentication errors are not treated as signup success', () {
+      expect(
+        InsightFlowSupabaseAuthService.isSignupEnumerationSafeResponse(
+          AuthException('Invalid login credentials', code: 'invalid_credentials'),
+        ),
+        isFalse,
+      );
+    });
   });
 }
