@@ -92,6 +92,11 @@ class InsightFlowSupabaseAuthService {
       final initialSession = currentSession;
       yield AuthState(AuthChangeEvent.initialSession, initialSession);
       await for (final state in client.auth.onAuthStateChange) {
+        if (state.event == AuthChangeEvent.passwordRecovery) {
+          _passwordRecoveryPending = true;
+        } else if (state.event == AuthChangeEvent.signedOut) {
+          _passwordRecoveryPending = false;
+        }
         final sameSession = state.session?.accessToken != null &&
             state.session?.accessToken == initialSession?.accessToken;
         if (state.event == AuthChangeEvent.initialSession && sameSession) {
