@@ -257,7 +257,7 @@ class _SignInScreenState extends State<SignInScreen> {
         _emailVerificationRequired = true;
         _messageIsError = false;
         _error =
-            'Verification email sent again. Check your inbox and spam/junk folder.';
+            InsightFlowSupabaseAuthService.verificationLinkRequestMessage;
       });
     } catch (error) {
       if (!mounted) return;
