@@ -139,7 +139,7 @@ class InsightFlowSupabaseAuthService {
         case 'email_not_confirmed':
           return 'Please verify your email before signing in.';
         case 'user_already_exists':
-          return 'An account already exists for this email.';
+          return signupResultMessage;
         case 'weak_password':
           return 'Choose a stronger password and try again.';
         case 'over_request_rate_limit':
