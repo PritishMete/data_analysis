@@ -58,6 +58,64 @@ void main() {
         isFalse,
       );
     });
+    test('unconfirmed and invalid-password login errors share one message', () {
+      final invalidPassword =
+          InsightFlowSupabaseAuthService.userFacingAuthError(
+        AuthException('Invalid login credentials', code: 'invalid_credentials'),
+      );
+      final unconfirmed =
+          InsightFlowSupabaseAuthService.userFacingAuthError(
+        AuthException('Email not confirmed', code: 'email_not_confirmed'),
+      );
+
+      expect(invalidPassword, InsightFlowSupabaseAuthService.loginFailureMessage);
+      expect(unconfirmed, invalidPassword);
+    });
+
+    test('unconfirmed login text is normalized when only message is available', () {
+      expect(
+        InsightFlowSupabaseAuthService.userFacingAuthError(
+          AuthException('Email not verified'),
+        ),
+        InsightFlowSupabaseAuthService.loginFailureMessage,
+      );
+    });
+
+    test('unknown account recovery responses use the same safe confirmation', () {
+      expect(
+        InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(
+          AuthException('User not found', code: 'user_not_found'),
+        ),
+        isTrue,
+      );
+      expect(
+        InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(
+          AuthException('Email not found'),
+        ),
+        isTrue,
+      );
+      expect(
+        InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(
+          AuthException('Too many requests', code: 'over_request_rate_limit'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('reset and resend actions use generic provider-neutral messaging', () {
+      final signIn = File('lib/features/auth/sign_in_screen.dart').readAsStringSync();
+
+      expect(
+        signIn,
+        contains('InsightFlowSupabaseAuthService.passwordResetRequestMessage'),
+      );
+      expect(
+        signIn,
+        contains('InsightFlowSupabaseAuthService.verificationLinkRequestMessage'),
+      );
+      expect(signIn, contains('_emailVerificationRequired = true'));
+      expect(signIn, isNot(contains('Email not verified. Please verify your email first.')));
+    });
   });
   group('Supabase password-change enforcement support', () {
     test('current password is serialized for provider-side enforcement', () {
