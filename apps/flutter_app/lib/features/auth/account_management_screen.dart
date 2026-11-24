@@ -298,7 +298,7 @@ class _AccountManagementScreenState extends State<AccountManagementScreen> {
       _message = null;
     });
     try {
-      if (!await _reauthenticate()) return;
+      if (await _reauthenticate() == null) return;
       final token = InsightFlowSupabaseAuthService.accessToken;
       if (token == null || token.isEmpty) throw StateError('Sign-in required.');
       final cleanup = await http.post(
