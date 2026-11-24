@@ -18,6 +18,11 @@ class InsightFlowSupabaseConfig {
 }
 
 class InsightFlowSupabaseAuthService {
+  /// The same response is used for successful and duplicate-address signups so
+  /// the UI does not reveal whether an email is already registered.
+  static const String signupResultMessage =
+      'If this email address can be registered, check your inbox for next steps.';
+
   static String? _sessionOnlyEmail;
   InsightFlowSupabaseAuthService._();
 
