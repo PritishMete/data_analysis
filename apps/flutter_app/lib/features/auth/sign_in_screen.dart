@@ -231,9 +231,13 @@ class _SignInScreenState extends State<SignInScreen> {
       });
     } catch (error) {
       if (!mounted) return;
+      final enumerationSafe =
+          InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(error);
       setState(() {
-        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
-        _messageIsError = true;
+        _error = enumerationSafe
+            ? InsightFlowSupabaseAuthService.passwordResetRequestMessage
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        _messageIsError = !enumerationSafe;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
