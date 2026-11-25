@@ -10,12 +10,14 @@
   var DIAGNOSTIC_SESSION_KEY = "insightflow.excel.auth.diagnostics";
   var DIAGNOSTIC_EXPIRY_MS = 15 * 60 * 1000;
   var bridgeEvents = [];
+  var bridgeCorrelation = null;
 
   function diagnostic(event, fields) {
     if (!global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
     var payload = Object.assign({
       event: event,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      correlation_id: bridgeCorrelation
     }, fields || {});
     bridgeEvents.push(payload);
     if (bridgeEvents.length > 100) bridgeEvents.shift();
@@ -29,6 +31,7 @@
     var active = false;
     try {
       var params = new URLSearchParams(global.location.search || "");
+      bridgeCorrelation = params.get("excelAuthCorrelation") || bridgeCorrelation;
       if (enabled === true && params.get("excelAuthDiagnostics") === "1") {
         global.sessionStorage.setItem(DIAGNOSTIC_SESSION_KEY, String(Date.now() + DIAGNOSTIC_EXPIRY_MS));
       }
@@ -66,7 +69,10 @@
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
         var incomingState = params.get(DIALOG_STATE_PARAM);
         var incomingCorrelation = params.get("excelAuthCorrelation");
-        if (incomingCorrelation) global.__insightFlowExcelAuthCorrelation = incomingCorrelation;
+        if (incomingCorrelation) {
+          bridgeCorrelation = incomingCorrelation;
+          global.__insightFlowExcelAuthCorrelation = incomingCorrelation;
+        }
         if (incomingState) {
           global.sessionStorage.setItem(DIALOG_STATE_SESSION_KEY, incomingState);
         }
