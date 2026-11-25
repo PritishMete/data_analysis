@@ -266,6 +266,22 @@ jobs:
         with:
           path: gh-pages-publish
 
+      - name: Wait for Pages artifact indexing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "github-pages" and .workflow_run.id == '${GITHUB_RUN_ID}') | .id' \
+              | grep -q .; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "github-pages artifact was not indexed for this workflow run" >&2
+          exit 1
+
       - name: Deploy GitHub Pages artifact
         id: deployment
         uses: actions/deploy-pages@v4
