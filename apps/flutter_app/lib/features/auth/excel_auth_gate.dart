@@ -30,6 +30,9 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   }
 
   Future<void> _checkSession() async {
+    final hadPersistedSession =
+        InsightFlowSupabaseAuthService.currentSession != null;
+    var shouldClearPersistedSession = false;
     try {
       final session = await InsightFlowSupabaseAuthService.ensureSession(
         timeout: const Duration(seconds: 5),
@@ -43,8 +46,20 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
           return;
         }
       }
+      shouldClearPersistedSession = hadPersistedSession;
     } catch (_) {
       // A stale local session must not prevent the user from signing in again.
+      shouldClearPersistedSession = hadPersistedSession;
+    }
+
+    // Clear a rejected task-pane session before opening the Office dialog so
+    // its refresh token cannot race the one-time handoff claim.
+    if (shouldClearPersistedSession) {
+      try {
+        await InsightFlowSupabaseAuthService.signOut();
+      } catch (_) {
+        // The dialog can still attempt a fresh sign-in.
+      }
     }
 
     if (!mounted) return;

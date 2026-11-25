@@ -3241,7 +3241,18 @@ class _ManagementShellState extends State<ManagementShell> {
       ],
     );
     if (confirmed == true && mounted) {
-      await InsightFlowSupabaseAuthService.signOut();
+      try {
+        await InsightFlowSupabaseAuthService.signOut();
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sign out could not be completed. Please try again.')),
+          );
+        }
+      }
     }
   }
 

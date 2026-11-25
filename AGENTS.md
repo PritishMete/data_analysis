@@ -70,7 +70,7 @@ Source code is the implementation authority. If documentation conflicts with cod
 
 - Gemini CLI: `GEMINI.md` is the project context entry point and references this file.
 - GitHub Copilot: `.github/copilot-instructions.md` is repository-wide context and references this file; applicable path-specific instructions may also apply.
-- Claude Code: no separate `CLAUDE.md` is currently added because this repository has not verified a current official Claude Code file-loading contract. Use `AGENTS.md` and `memory.md` explicitly.
+- Claude Code: `CLAUDE.md` is a lightweight project pointer to this instruction system. Read `AGENTS.md` and `memory.md` explicitly because compatibility files are pointers, not duplicated policy.
 
 These files are lightweight pointers, not duplicate policy documents.
 
