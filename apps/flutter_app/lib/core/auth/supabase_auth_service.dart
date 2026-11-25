@@ -352,6 +352,9 @@ class InsightFlowSupabaseAuthService {
       } on TimeoutException {
         return null;
       } catch (error, stackTrace) {
+        if (_isInvalidSessionError(error)) {
+          await _clearInvalidLocalSession();
+        }
         debugPrint('[supabase-auth] session restoration error: ${error.runtimeType}');
         debugPrintStack(stackTrace: stackTrace);
         return null;
@@ -373,6 +376,9 @@ class InsightFlowSupabaseAuthService {
         debugPrint('[supabase-auth] session refresh timed out');
         return null;
       } catch (error, stackTrace) {
+        if (_isInvalidSessionError(error)) {
+          await _clearInvalidLocalSession();
+        }
         debugPrint('[supabase-auth] session refresh failed: ${error.runtimeType}');
         debugPrintStack(stackTrace: stackTrace);
         return null;
@@ -380,6 +386,25 @@ class InsightFlowSupabaseAuthService {
     }
     if (session?.accessToken.isEmpty ?? true) return null;
     return session;
+  }
+
+  static bool _isInvalidSessionError(Object error) {
+    final text = error is AuthException
+        ? '${error.code ?? ''} ${error.message}'
+        : error.toString();
+    final normalized = text.toLowerCase();
+    return normalized.contains('invalid refresh token') ||
+        normalized.contains('refresh_token_not_found') ||
+        normalized.contains('session not found') ||
+        normalized.contains('invalid jwt');
+  }
+
+  static Future<void> _clearInvalidLocalSession() async {
+    try {
+      await client.auth.signOut(scope: localSignOutScope);
+    } catch (error) {
+      debugPrint('[supabase-auth] invalid local session cleanup failed: ${error.runtimeType}');
+    }
   }
 
   static void logSafeStatus() {

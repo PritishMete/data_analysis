@@ -44,6 +44,9 @@ class _AuthorizationManagementScreenState
   Future<void> _logout() async {
     try {
       await InsightFlowSupabaseAuthService.signOut();
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
