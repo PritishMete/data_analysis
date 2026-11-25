@@ -27,6 +27,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
   @override
   void initState() {
     super.initState();
+    ExcelAuthBridge.setDiagnosticsEnabled(ExcelAuthDiagnostics.isEnabled);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkSession());
   }
 
@@ -196,6 +197,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   @override
   void initState() {
     super.initState();
+    ExcelAuthBridge.setDiagnosticsEnabled(ExcelAuthDiagnostics.isEnabled);
     _subscription = InsightFlowSupabaseAuthService.authStateChanges.listen(
       (state) {
         ExcelAuthDiagnostics.record(

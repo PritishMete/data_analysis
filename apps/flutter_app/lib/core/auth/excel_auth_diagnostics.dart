@@ -23,9 +23,13 @@ class ExcelAuthDiagnostics {
 
   static void start(String correlationId) {
     if (!isEnabled) return;
-    _events.clear();
-    _correlationId = correlationId;
-    record('attempt_started');
+    try {
+      _events.clear();
+      _correlationId = correlationId;
+      record('attempt_started');
+    } catch (_) {
+      // Diagnostics must never affect authentication.
+    }
   }
 
   static void record(
@@ -39,7 +43,8 @@ class ExcelAuthDiagnostics {
     bool? handoffStarted,
   }) {
     if (!isEnabled) return;
-    final fields = <String, Object?>{
+    try {
+      final fields = <String, Object?>{
       'timestamp': DateTime.now().toUtc().toIso8601String(),
       'correlation_id': _correlationId,
       'event': event,
@@ -51,11 +56,13 @@ class ExcelAuthDiagnostics {
       if (completed != null) 'completed': completed,
       if (handoffStarted != null) 'handoff_started': handoffStarted,
     };
-    _events.add(fields);
-    if (_events.length > 200) _events.removeAt(0);
-    // Keep the existing searchable prefix for WebView2 console collection.
-    // Values are all allowlisted above.
-    debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
+      _events.add(fields);
+      if (_events.length > 200) _events.removeAt(0);
+      // Keep the existing searchable prefix for WebView2 console collection.
+      debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
+    } catch (_) {
+      // Diagnostics must never affect authentication.
+    }
   }
 
   static String exportJson() => isEnabled ? jsonEncode(_events) : '[]';

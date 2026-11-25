@@ -20,6 +20,10 @@
     }
   }
 
+  function setDiagnosticsEnabled(enabled) {
+    global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__ = enabled === true;
+  }
+
   function createState() {
     if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
       throw new Error("Secure sign-in state generation is unavailable.");
@@ -215,6 +219,7 @@
   global.InsightFlowExcelAuth = {
     openSignInDialog: openSignInDialog,
     completeDialog: completeDialog,
+    setDiagnosticsEnabled: setDiagnosticsEnabled,
     restoreDialogFlag: restoreDialogFlag
   };
 

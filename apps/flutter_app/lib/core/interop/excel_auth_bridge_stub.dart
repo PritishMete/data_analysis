@@ -13,4 +13,6 @@ class ExcelAuthBridge {
       'Excel sign-in is available only in the Office web host.',
     );
   }
+
+  static void setDiagnosticsEnabled(bool enabled) {}
 }
