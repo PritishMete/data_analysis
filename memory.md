@@ -3,9 +3,9 @@
 ## Current verified state
 
 - Last source audit: 2026-11-25.
-- Latest implementation audit branch: `codex/fix-auth-regressions` (not deployed).
-- Latest main audited: `33cad540` (`Merge pull request #95 from PritishMete/codex/project-knowledge-governance`).
-- Last verified source commit: `33cad540` before this focused fix branch.
+- Latest implementation audit branch: `codex/fix-auth-regressions`, merged by PR #96.
+- Latest main audited: `c1798aa5` (`Merge PR #96`).
+- Last verified source commit: `c1798aa5be269c0c9ef2342653c2e449aef72609`.
 - Existing documentation branch audited: `codex/security-hardening-deploy`, based on older history and containing the initial six generic docs.
 - This documentation work is on a new branch based on latest `origin/main`.
 - Current repository evidence includes Flutter Web, Excel bridges, FastAPI routes, Supabase/Firebase authorization, PostgreSQL migrations, Render configuration, GitHub Pages, and multiple CI/security workflows.
@@ -13,10 +13,10 @@
 ## Current status and priorities
 
 - Documentation governance: MERGED on PR #95.
-- Authentication regression fixes: IMPLEMENTED — NOT VERIFIED in live production; pending review, CI, and deployment.
-- Priority 1: review and verify the focused authentication regression branch.
+- Authentication regression fixes: DEPLOYED — live user journeys still require authorized manual verification.
+- Priority 1: complete live website and Excel Desktop acceptance testing.
 - Priority 2: keep implementation, automated, end-to-end, and production verification separate.
-- Priority 3: record independently verified deployment state after a reviewed release.
+- Priority 3: investigate the optional Cloudflare Workers build failure without changing its configuration.
 
 ## Important decisions
 
@@ -50,9 +50,11 @@
 
 ## Latest CI and deployment status
 
-- Latest verified CI result: not established for this documentation revision.
-- Latest independently verified Render status: not established for this documentation revision.
-- Latest independently verified GitHub Pages status: not established for this documentation revision.
+- Latest verified CI result: all required PR #96 and post-merge workflows passed for `c1798aa5be269c0c9ef2342653c2e449aef72609`.
+- Latest independently verified Render status: live deployment `dep-dc35do7avr4c73ecb4ag`, service `data_analysis`, commit `c1798aa5be269c0c9ef2342653c2e449aef72609`; `/health` returned 200 with `database_ready: true`.
+- Previous Render rollback target: live deployment `dep-dc2g8197lnhs73ecr9l0`, commit `1e9efd0cad94971d4abd0f71a2572f504288dbfa`.
+- Latest independently verified GitHub Pages status: post-merge workflow `45537604864` succeeded and the live index contains `c1798aa5be269c0c9ef2342653c2e449aef72609`.
+- Live backend build identity: frontend build `8ead2764ba32`; backend commit `c1798aa5be269c0c9ef2342653c2e449aef72609`.
 - Never promote these fields to success without provider evidence for a specific commit.
 
 ## Decision history
@@ -60,6 +62,10 @@
 ### 2026-11-25 — Isolated authentication regression fixes
 
 Cleared locally rejected refresh-token sessions, unwound authenticated navigation after successful logout, and cleared stale Excel task-pane sessions before opening a new handoff dialog. Preserved token, origin, expiry, and authorization checks. The changes require review and CI before any deployment.
+
+### 2026-11-25 — Deployed authentication fixes to Render
+
+Merged PR #96 and deployed main commit `c1798aa5be269c0c9ef2342653c2e449aef72609` to Render deployment `dep-dc35do7avr4c73ecb4ag`. Build and startup completed successfully; `/health`, `/ping`, build identity, CORS, and unauthenticated protection checks passed. Authenticated website and Excel Desktop journeys remain manual verification items.
 
 ### 2026-11-24 — Created project knowledge system
 
