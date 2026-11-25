@@ -34,8 +34,10 @@ class ExcelAuthDiagnostics {
   static void start(String correlationId) {
     if (!isEnabled) return;
     try {
-      _events.clear();
       _correlationId = correlationId;
+      for (final event in _events) {
+        event['correlation_id'] ??= correlationId;
+      }
       record('attempt_started');
     } catch (_) {
       // Diagnostics must never affect authentication.
