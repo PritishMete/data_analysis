@@ -251,7 +251,14 @@ jobs:
             exit 0
           fi
           git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
-          git push origin gh-pages
+          for attempt in 1 2 3 4 5; do
+            if git push origin gh-pages; then
+              exit 0
+            fi
+            echo "gh-pages push failed (attempt ${attempt}); retrying..." >&2
+            sleep 5
+          done
+          exit 1
 
       - name: Remove stale Pages artifacts from reruns
         env:
