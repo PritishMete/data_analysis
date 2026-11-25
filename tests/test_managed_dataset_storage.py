@@ -315,6 +315,34 @@ def test_workspace_http_errors_are_preserved_by_route_error_mapper():
     assert _map_error(conflict) is conflict
 
 
+def test_authorized_managed_dataset_endpoint_returns_catalogue_page(monkeypatch):
+    from fastapi.testclient import TestClient
+    from main import app
+    import dataset_storage.routes as routes
+
+    monkeypatch.setattr(routes, "_workspace", lambda workspace, authorization: "workspace-1")
+    monkeypatch.setattr(routes, "_token", lambda authorization: "access-token")
+    monkeypatch.setattr(
+        routes,
+        "list_authorized_datasets",
+        lambda **kwargs: {
+            "datasets": [{"dataset_id": "dataset-1", "location_id": "branch-a"}],
+            "pagination": {"offset": 0, "limit": 100, "total": 1, "has_more": False},
+        },
+    )
+
+    response = TestClient(app).get(
+        "/v1/managed-datasets?limit=100&offset=0",
+        headers={
+            "Authorization": "Bearer access-token",
+            "X-InsightFlow-Workspace-ID": "workspace-1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["datasets"][0]["dataset_id"] == "dataset-1"
+
+
 
 def test_dataset_catalogue_read_does_not_run_stale_upload_recovery():
     from pathlib import Path

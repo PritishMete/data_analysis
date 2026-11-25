@@ -4,6 +4,7 @@ import textwrap
 from io import BytesIO
 
 import pytest
+from sqlalchemy import text
 
 from datasets.repository import DatasetRepository
 from datasets.service import DatasetRegistryService
@@ -106,6 +107,62 @@ def test_malformed_csv_does_not_create_dataset(db_session):
     with pytest.raises(ValueError):
         register(service, db_session, b"id,amount\n1,10\n2,\"unterminated\n")
     assert repo.list_by_organization("org_1") == []
+
+
+def test_list_by_organization_filters_authorized_branch_datasets_and_paginates(db_session):
+    repo = DatasetRepository(db_session)
+    service = DatasetRegistryService(repo)
+    authorized = register(service, db_session, csv_bytes(1), "org_1").registration.dataset
+    second_authorized = register(
+        service, db_session, csv_bytes(1, offset=10), "org_1"
+    ).registration.dataset
+    unauthorized_branch = register(
+        service, db_session, csv_bytes(1, offset=20), "org_1"
+    ).registration.dataset
+    deleted = register(service, db_session, csv_bytes(1, offset=30), "org_1").registration.dataset
+    other_org = register(service, db_session, csv_bytes(1, offset=40), "org_2").registration.dataset
+    deleted.status = "deleted"
+    db_session.execute(text("""
+        CREATE TABLE dataset_authorization (
+            organization_id TEXT NOT NULL,
+            dataset_id TEXT NOT NULL,
+            owner_principal_id TEXT NOT NULL,
+            protected_original BOOLEAN NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'active',
+            location_id TEXT
+        )
+    """))
+    db_session.execute(text("""
+        INSERT INTO dataset_authorization
+            (organization_id, dataset_id, owner_principal_id, protected_original, status, location_id)
+        VALUES
+            ('org_1', :authorized, 'principal_1', 1, 'active', 'branch-a'),
+            ('org_1', :second_authorized, 'principal_1', 1, 'active', 'branch-a'),
+            ('org_1', :unauthorized, 'principal_1', 1, 'active', 'branch-b'),
+            ('org_2', :other_org, 'principal_1', 1, 'active', 'branch-a')
+    """), {
+        "authorized": authorized.dataset_id,
+        "second_authorized": second_authorized.dataset_id,
+        "unauthorized": unauthorized_branch.dataset_id,
+        "other_org": other_org.dataset_id,
+    })
+    db_session.commit()
+
+    page = repo.list_by_organization("org_1", limit=1, location_ids=["branch-a"])
+    assert [dataset.dataset_id for dataset in page] == [second_authorized.dataset_id]
+    assert [dataset.dataset_id for dataset in repo.list_by_organization(
+        "org_1", limit=10, location_ids=["branch-a"]
+    )] == [second_authorized.dataset_id, authorized.dataset_id]
+    assert repo.list_by_organization("org_1", location_ids=["branch-z"]) == []
+    assert repo.list_by_organization("org_1", location_ids=[]) == []
+    assert other_org.dataset_id not in {
+        dataset.dataset_id
+        for dataset in repo.list_by_organization("org_1", location_ids=["branch-a"])
+    }
+    assert deleted.dataset_id not in {
+        dataset.dataset_id
+        for dataset in repo.list_by_organization("org_1", location_ids=["branch-a"])
+    }
 
 
 
