@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
   pages: write
   id-token: write
 
@@ -248,18 +249,26 @@ jobs:
           git commit -m "deploy: publish onboarding fix from ${GITHUB_SHA}"
           git push origin gh-pages
 
+      - name: Remove stale Pages artifacts from reruns
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name == "github-pages") | .id' |
+            while read -r artifact_id; do
+              [ -n "${artifact_id}" ] || continue
+              gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            done
 
       - name: Upload complete GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          name: github-pages-${{ github.run_id }}
           path: gh-pages-publish
 
       - name: Deploy GitHub Pages artifact
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          artifact_name: github-pages-${{ github.run_id }}
 
       - name: Verify live Google sign-in bundle
         shell: bash
