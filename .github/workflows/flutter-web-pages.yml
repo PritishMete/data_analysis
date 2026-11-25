@@ -125,12 +125,13 @@ jobs:
             --dart-define "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
             --dart-define "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
           )
-          if [ "${INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS}" = "true" ]; then
+          diagnostic_build="${INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS:-false}"
+          if [ "${diagnostic_build}" = "true" ]; then
             build_args+=(--dart-define "INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS=true")
           fi
           flutter "${build_args[@]}"
 
-          if [ "${INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS}" = "true" ]; then
+          if [ "${diagnostic_build}" = "true" ]; then
             grep -R -q "INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS" build/web || {
               echo "::error::Diagnostic build requested but support marker is absent"
               exit 1
