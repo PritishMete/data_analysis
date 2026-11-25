@@ -38,6 +38,8 @@ void main() {
       'lib/features/auth/excel_auth_gate.dart',
     ).readAsStringSync();
     expect(excel, contains('hadPersistedSession'));
+    expect(excel, contains('shouldClearPersistedSession = hadPersistedSession'));
+    expect(excel, contains('if (shouldClearPersistedSession)'));
     expect(excel, contains('await InsightFlowSupabaseAuthService.signOut();'));
   });
 }
