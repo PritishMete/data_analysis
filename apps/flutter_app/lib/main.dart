@@ -9,7 +9,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'core/interop/office_host.dart';
 import 'core/services/backend_heartbeat.dart';
-
+import 'core/auth/excel_auth_diagnostics.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {}
@@ -133,8 +133,10 @@ class InsightFlowApp extends StatelessWidget {
             // CupertinoApp can provide a null child during its first builder
             // pass. Keep startup renderable instead of turning that transient
             // state into a release-only null-check crash and blank page.
-            child: BackendHeartbeatHost(
-              child: child ?? const SizedBox.shrink(),
+            child: ExcelDiagnosticsOverlay(
+              child: BackendHeartbeatHost(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
@@ -143,4 +145,3 @@ class InsightFlowApp extends StatelessWidget {
     );
   }
 }
-

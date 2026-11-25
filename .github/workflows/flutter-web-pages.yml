@@ -7,6 +7,13 @@ on:
       - 'apps/flutter_app/**'
       - 'docs/EXCEL_AUTHENTICATION.md'
       - '.github/workflows/flutter-web-pages.yml'
+  workflow_dispatch:
+    inputs:
+      diagnostic_build:
+        description: 'Enable temporary Excel diagnostics (requires explicit approval)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -14,6 +21,8 @@ permissions:
   id-token: write
 
 concurrency:
+  # Normal and diagnostic publishes share one lock so they cannot race and
+  # overwrite the same GitHub Pages artifact unexpectedly.
   group: insightflow-flutter-pages
   cancel-in-progress: true
 
@@ -66,6 +75,7 @@ jobs:
           INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
           INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
           INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
+          INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS: ${{ inputs.diagnostic_build || 'false' }}
         run: |
           set -euo pipefail
           required=(
@@ -115,7 +125,17 @@ jobs:
             --dart-define "INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY=$(clean_env INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY)"
             --dart-define "INSIGHTFLOW_BACKEND_URL=$(clean_env INSIGHTFLOW_BACKEND_URL)"
           )
+          if [ "${INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS}" = "true" ]; then
+            build_args+=(--dart-define "INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS=true")
+          fi
           flutter "${build_args[@]}"
+
+          if [ "${INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS}" = "true" ]; then
+            grep -R -q "INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS" build/web || {
+              echo "::error::Diagnostic build requested but support marker is absent"
+              exit 1
+            }
+          fi
 
       - name: Stamp generated web build identity
         working-directory: apps/flutter_app

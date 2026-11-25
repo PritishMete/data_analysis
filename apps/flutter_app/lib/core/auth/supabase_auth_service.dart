@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'excel_auth_diagnostics.dart';
+
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
   static const publishableKey = String.fromEnvironment(
@@ -283,6 +285,7 @@ class InsightFlowSupabaseAuthService {
   /// Starts the Supabase-managed Google OAuth flow. The browser callback is
   /// consumed by supabase_flutter using the PKCE options configured above.
   static Future<bool> signInWithGoogle({String? redirectTo}) {
+    ExcelAuthDiagnostics.record('google_oauth_initiated', operation: 'supabase_oauth');
     return signInWithOAuth(
       OAuthProvider.google,
       redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,

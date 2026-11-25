@@ -53,10 +53,12 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     expect(end, greaterThan(start));
     final lookup = auth.substring(start, end);
     expect(lookup, contains('ensureSession(timeout: timeout)'));
-    expect(lookup, contains('client.auth.getUser(session.accessToken)'));
+    final getUserPattern = RegExp(r'client\.auth\.getUser\(\s*session\.accessToken\s*\)');
+    expect(lookup, contains('client.auth.getUser'));
+    expect(getUserPattern.hasMatch(lookup), isTrue);
     expect(
       lookup.indexOf('ensureSession(timeout: timeout)'),
-      lessThan(lookup.indexOf('client.auth.getUser(session.accessToken)')),
+      lessThan(getUserPattern.firstMatch(lookup)!.start),
     );
   });
 
@@ -99,9 +101,15 @@ void main() { // Pages deployment trigger: keep the startup authorization contra
     final signup = File('lib/features/auth/sign_up_screen.dart').readAsStringSync();
     final company = File('lib/features/auth/company_registration_screen.dart').readAsStringSync();
     final employee = File('lib/features/auth/employee_profile_onboarding_screen.dart').readAsStringSync();
-    expect(signup, contains('Future<void> _signUp() async {\n    if (_loading) return;'));
-    expect(company, contains('_proofNumber,\n    ])'));
-    expect(employee, contains('_proofNumber,\n    ])'));
+    final normalizedSignup = signup.replaceAll('\r\n', '\n');
+    final normalizedCompany = company.replaceAll('\r\n', '\n');
+    final normalizedEmployee = employee.replaceAll('\r\n', '\n');
+    expect(
+      normalizedSignup,
+      contains('Future<void> _signUp() async {\n    if (_loading) return;'),
+    );
+    expect(normalizedCompany, contains('_proofNumber,\n    ])'));
+    expect(normalizedEmployee, contains('_proofNumber,\n    ])'));
   });
 
   test('pending invitation lookup and acceptance use Supabase authentication', () {
