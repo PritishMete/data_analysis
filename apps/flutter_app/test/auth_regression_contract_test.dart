@@ -42,4 +42,20 @@ void main() {
     expect(excel, contains('if (shouldClearPersistedSession)'));
     expect(excel, contains('await InsightFlowSupabaseAuthService.signOut();'));
   });
+
+  test('authoritative auth checks use the coordinated session path', () {
+    final auth = File(
+      'lib/core/auth/supabase_auth_service.dart',
+    ).readAsStringSync();
+    expect(auth, contains('final session = await ensureSession(timeout: timeout);'));
+    expect(auth, contains('.getUser(session.accessToken)'));
+  });
+
+  test('access requests recover a missing workspace from authoritative membership', () {
+    final access = File(
+      'lib/features/auth/managed_dataset_access_workspace.dart',
+    ).readAsStringSync();
+    expect(access, contains('resolveInsightFlowOnboardingStateFromBackend(session.user.id)'));
+    expect(access, contains('Workspace authorization context could not be restored.'));
+  });
 }

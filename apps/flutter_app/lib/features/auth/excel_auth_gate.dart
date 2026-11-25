@@ -142,6 +142,19 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   bool _completed = false;
   bool _needsVerification = false;
   String? _error;
+  static int _nextCorrelationId = 0;
+
+  String _correlationId() =>
+      'excel-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${++_nextCorrelationId}';
+
+  void _logHandoff(String correlationId, String operation, String result,
+      [Object? error]) {
+    final code = error is AuthException ? error.code : null;
+    debugPrint(
+      '[excel-auth-handoff] correlation=$correlationId operation=$operation '
+      'result=$result error_code=${code ?? error?.runtimeType ?? 'none'}',
+    );
+  }
 
   @override
   void initState() {
@@ -165,10 +178,13 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     if (refreshToken == null || refreshToken.isEmpty) return;
 
     _handoffStarted = true;
+    final correlationId = _correlationId();
     try {
+      _logHandoff(correlationId, 'verify_session', 'started');
       final user = await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
         timeout: const Duration(seconds: 8),
       );
+      _logHandoff(correlationId, 'verify_session', user == null ? 'missing' : 'succeeded');
       if (!mounted) return;
       if (user == null || user.emailConfirmedAt == null) {
         setState(() {
@@ -185,9 +201,12 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       if (handoffToken == null || handoffToken.isEmpty) {
         throw StateError('InsightFlow did not return a refresh token.');
       }
+      _logHandoff(correlationId, 'complete_dialog', 'started');
       ExcelAuthBridge.completeDialog(handoffToken);
+      _logHandoff(correlationId, 'complete_dialog', 'succeeded');
       if (mounted) setState(() => _completed = true);
-    } catch (_) {
+    } catch (error) {
+      _logHandoff(correlationId, 'handoff', 'failed', error);
       if (!mounted) return;
       setState(() {
         _error = 'InsightFlow could not verify this sign-in. Please try again.';

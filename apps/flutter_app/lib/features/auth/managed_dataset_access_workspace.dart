@@ -235,8 +235,17 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<Map<String,String>> _headers() async {
     final session = await InsightFlowSupabaseAuthService.ensureSession(timeout: const Duration(seconds: 8));
     if (session == null || session.accessToken.isEmpty) throw StateError('Authenticated session could not be restored.');
-    final h = await supabaseAuthHeaders();
+    // Resolve a missing cache from the authoritative membership response. The
+    // management endpoint requires an explicit workspace selector, but the
+    // selector must come from server authorization rather than a client guess.
+    if (insightFlowWorkspaceId.isEmpty) {
+      await resolveInsightFlowOnboardingStateFromBackend(session.user.id);
+    }
+    final h = <String, String>{'Authorization': 'Bearer ${session.accessToken}'};
     if (insightFlowWorkspaceId.isNotEmpty) h['X-InsightFlow-Workspace-ID'] = insightFlowWorkspaceId;
+    if (insightFlowWorkspaceId.isEmpty) {
+      throw StateError('Workspace authorization context could not be restored.');
+    }
     return h;
   }
 

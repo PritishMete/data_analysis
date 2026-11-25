@@ -105,8 +105,15 @@ class InsightFlowSupabaseAuthService {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     if (!isInitialized) return null;
-    final response = await client.auth.refreshSession().timeout(timeout);
-    return response.user ?? response.session?.user ?? currentSupabaseUser;
+    // Use the shared session coordinator. Calling refreshSession() directly
+    // here raced Supabase's automatic refresh and rotated the same refresh
+    // token concurrently in the Excel dialog and task pane.
+    final session = await ensureSession(timeout: timeout);
+    if (session == null || session.accessToken.isEmpty) return null;
+    final response = await client.auth
+        .getUser(session.accessToken)
+        .timeout(timeout);
+    return response.user ?? currentSupabaseUser;
   }
 
   static Future<User?> fetchAuthoritativeUser({
