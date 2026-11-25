@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'excel_auth_diagnostics.dart';
+
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
   static const publishableKey = String.fromEnvironment(
@@ -29,13 +31,12 @@ class InsightFlowSupabaseAuthService {
   /// Concurrent logins on other devices are controlled by the Supabase Auth
   /// project setting "Single session per user", which must remain disabled
   /// for multi-device use.
-  static FlutterAuthClientOptions get authOptions =>
-      FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-        detectSessionInUri: true,
-        persistSession: true,
-        autoRefreshToken: true,
-      );
+  static FlutterAuthClientOptions get authOptions => FlutterAuthClientOptions(
+    authFlowType: AuthFlowType.pkce,
+    detectSessionInUri: true,
+    persistSession: true,
+    autoRefreshToken: true,
+  );
 
   /// Use local scope so signing out on this installation does not revoke
   /// sessions on the user's other devices.
@@ -78,7 +79,8 @@ class InsightFlowSupabaseAuthService {
       final initialSession = currentSession;
       yield AuthState(AuthChangeEvent.initialSession, initialSession);
       await for (final state in client.auth.onAuthStateChange) {
-        final sameSession = state.session?.accessToken != null &&
+        final sameSession =
+            state.session?.accessToken != null &&
             state.session?.accessToken == initialSession?.accessToken;
         if (state.event == AuthChangeEvent.initialSession && sameSession) {
           continue;
@@ -86,7 +88,9 @@ class InsightFlowSupabaseAuthService {
         yield state;
       }
     } catch (error, stackTrace) {
-      debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
+      debugPrint(
+        '[supabase-auth] auth-state stream error: ${error.runtimeType}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       yield AuthState(AuthChangeEvent.initialSession, currentSession);
     }
@@ -126,8 +130,9 @@ class InsightFlowSupabaseAuthService {
     // period does not turn an otherwise refreshable login into a false logout.
     final session = await ensureSession(timeout: timeout);
     if (session == null || session.accessToken.isEmpty) return null;
-    final response =
-        await client.auth.getUser(session.accessToken).timeout(timeout);
+    final response = await client.auth
+        .getUser(session.accessToken)
+        .timeout(timeout);
     return response.user;
   }
 
@@ -197,11 +202,13 @@ class InsightFlowSupabaseAuthService {
 
   static SupabaseAuthUser? get currentUser {
     final user = currentSupabaseUser;
-    return user == null ? null : SupabaseAuthUser(
-      user.id,
-      user.email,
-      emailVerified: user.emailConfirmedAt != null,
-    );
+    return user == null
+        ? null
+        : SupabaseAuthUser(
+            user.id,
+            user.email,
+            emailVerified: user.emailConfirmedAt != null,
+          );
   }
 
   static Future<void> setRememberDevice(String identity, bool remember) async {
@@ -283,6 +290,10 @@ class InsightFlowSupabaseAuthService {
   /// Starts the Supabase-managed Google OAuth flow. The browser callback is
   /// consumed by supabase_flutter using the PKCE options configured above.
   static Future<bool> signInWithGoogle({String? redirectTo}) {
+    ExcelAuthDiagnostics.record(
+      'google_oauth_initiated',
+      operation: 'supabase_oauth',
+    );
     return signInWithOAuth(
       OAuthProvider.google,
       redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,
@@ -290,9 +301,7 @@ class InsightFlowSupabaseAuthService {
   }
 
   static Future<void> beginPhoneVerification(String phone) async {
-    await client.auth.updateUser(
-      UserAttributes(phone: phone.trim()),
-    );
+    await client.auth.updateUser(UserAttributes(phone: phone.trim()));
   }
 
   static Future<AuthResponse> verifyPhoneChangeOtp({
@@ -307,10 +316,7 @@ class InsightFlowSupabaseAuthService {
   }
 
   static Future<void> resendPhoneChangeOtp(String phone) async {
-    await client.auth.resend(
-      type: OtpType.phoneChange,
-      phone: phone.trim(),
-    );
+    await client.auth.resend(type: OtpType.phoneChange, phone: phone.trim());
   }
 
   /// Ends only this installation's Supabase session.
@@ -362,7 +368,9 @@ class InsightFlowSupabaseAuthService {
         if (_isInvalidSessionError(error)) {
           await _clearInvalidLocalSession();
         }
-        debugPrint('[supabase-auth] session restoration error: ${error.runtimeType}');
+        debugPrint(
+          '[supabase-auth] session restoration error: ${error.runtimeType}',
+        );
         debugPrintStack(stackTrace: stackTrace);
         return null;
       }
@@ -371,13 +379,12 @@ class InsightFlowSupabaseAuthService {
     if (session == null) return null;
 
     final expiresAt = session.expiresAt;
-    final needsRefresh = expiresAt != null &&
+    final needsRefresh =
+        expiresAt != null &&
         expiresAt <= DateTime.now().millisecondsSinceEpoch ~/ 1000 + 30;
     if (needsRefresh) {
       try {
-        final refreshed = await client.auth
-            .refreshSession()
-            .timeout(timeout);
+        final refreshed = await client.auth.refreshSession().timeout(timeout);
         session = refreshed.session ?? currentSession;
       } on TimeoutException {
         debugPrint('[supabase-auth] session refresh timed out');
@@ -386,7 +393,9 @@ class InsightFlowSupabaseAuthService {
         if (_isInvalidSessionError(error)) {
           await _clearInvalidLocalSession();
         }
-        debugPrint('[supabase-auth] session refresh failed: ${error.runtimeType}');
+        debugPrint(
+          '[supabase-auth] session refresh failed: ${error.runtimeType}',
+        );
         debugPrintStack(stackTrace: stackTrace);
         return null;
       }
@@ -410,7 +419,9 @@ class InsightFlowSupabaseAuthService {
     try {
       await client.auth.signOut(scope: localSignOutScope);
     } catch (error) {
-      debugPrint('[supabase-auth] invalid local session cleanup failed: ${error.runtimeType}');
+      debugPrint(
+        '[supabase-auth] invalid local session cleanup failed: ${error.runtimeType}',
+      );
     }
   }
 
@@ -422,11 +433,7 @@ class InsightFlowSupabaseAuthService {
 }
 
 class SupabaseAuthUser {
-  const SupabaseAuthUser(
-    this.uid,
-    this.email, {
-    required this.emailVerified,
-  });
+  const SupabaseAuthUser(this.uid, this.email, {required this.emailVerified});
   final String uid;
   final String? email;
   final bool emailVerified;

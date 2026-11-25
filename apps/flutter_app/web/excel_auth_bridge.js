@@ -8,6 +8,18 @@
   var DIALOG_STATE_PARAM = "excelAuthState";
   var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
 
+  function diagnostic(event, fields) {
+    if (!global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
+    var payload = Object.assign({
+      event: event,
+      timestamp: new Date().toISOString()
+    }, fields || {});
+    // Never include message bodies, tokens, state, nonce, cookies or URLs.
+    if (global.console && typeof global.console.debug === "function") {
+      global.console.debug("[excel-auth-bridge-diagnostic]", payload);
+    }
+  }
+
   function createState() {
     if (!global.crypto || typeof global.crypto.getRandomValues !== "function") {
       throw new Error("Secure sign-in state generation is unavailable.");
@@ -26,6 +38,8 @@
         global.__isInsightFlowExcelAuthDialog = true;
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
         var incomingState = params.get(DIALOG_STATE_PARAM);
+        var incomingCorrelation = params.get("excelAuthCorrelation");
+        if (incomingCorrelation) global.__insightFlowExcelAuthCorrelation = incomingCorrelation;
         if (incomingState) {
           global.sessionStorage.setItem(DIALOG_STATE_SESSION_KEY, incomingState);
         }
@@ -36,6 +50,9 @@
         params.set(DIALOG_FLAG, "1");
         var savedState = global.sessionStorage.getItem(DIALOG_STATE_SESSION_KEY);
         if (savedState) params.set(DIALOG_STATE_PARAM, savedState);
+        if (global.__insightFlowExcelAuthCorrelation) {
+          params.set("excelAuthCorrelation", global.__insightFlowExcelAuthCorrelation);
+        }
         var query = params.toString();
         var nextUrl = global.location.pathname +
           (query ? "?" + query : "") + (global.location.hash || "");
@@ -47,7 +64,8 @@
     }
   }
 
-  function openSignInDialog() {
+  function openSignInDialog(correlationId) {
+    diagnostic("dialog_open_started");
     return new Promise(function (resolve, reject) {
       if (!global.Office ||
           !global.Office.context ||
@@ -67,6 +85,9 @@
       }
       url.searchParams.set(DIALOG_FLAG, "1");
       url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
+      if (typeof correlationId === "string" && correlationId.length <= 80) {
+        url.searchParams.set("excelAuthCorrelation", correlationId);
+      }
       url.hash = "";
 
       var dialog = null;
@@ -96,9 +117,11 @@
           }
 
           dialog = result.value;
+          diagnostic("dialog_open_succeeded");
           dialog.addEventHandler(
             global.Office.EventType.DialogMessageReceived,
             function (eventArgs) {
+              diagnostic("dialog_message_received", { origin: eventArgs && eventArgs.origin === global.location.origin ? "same_origin" : "other_origin" });
               try {
                 if (eventArgs.origin !== global.location.origin) {
                   throw new Error("The sign-in response came from an untrusted origin.");
@@ -117,8 +140,10 @@
                   throw new Error("The sign-in response was invalid.");
                 }
                 finish(null, message.refreshToken);
+                diagnostic("message_validated", { result: "succeeded" });
                 if (dialog) dialog.close();
               } catch (error) {
+                diagnostic("message_validation", { result: "failed", error_code: "invalid_message" });
                 finish(error instanceof Error ? error : new Error("Invalid sign-in response."));
                 if (dialog) dialog.close();
               }
@@ -128,6 +153,7 @@
           dialog.addEventHandler(
             global.Office.EventType.DialogEventReceived,
             function (eventArgs) {
+              diagnostic("dialog_event_received", { event_code: eventArgs && eventArgs.error === 12006 ? "user_closed" : "dialog_error" });
               if (!settled) {
                 finish(new Error(
                   eventArgs && eventArgs.error === 12006
@@ -143,6 +169,7 @@
   }
 
   function completeDialog(refreshToken) {
+    diagnostic("message_parent_started");
     if (typeof refreshToken !== "string" ||
         refreshToken.length < 20 ||
         refreshToken.length > 4096) {
@@ -166,12 +193,18 @@
       throw new Error("The Excel sign-in request could not be verified.");
     }
 
-    global.Office.context.ui.messageParent(JSON.stringify({
-      type: MESSAGE_TYPE,
-      version: MESSAGE_VERSION,
-      state: state,
-      refreshToken: refreshToken
-    }));
+    try {
+      global.Office.context.ui.messageParent(JSON.stringify({
+        type: MESSAGE_TYPE,
+        version: MESSAGE_VERSION,
+        state: state,
+        refreshToken: refreshToken
+      }));
+      diagnostic("message_parent_returned", { result: "synchronous_return" });
+    } catch (error) {
+      diagnostic("message_parent_exception", { result: "threw", error_code: "message_parent_error" });
+      throw error;
+    }
 
     try {
       global.sessionStorage.removeItem(DIALOG_SESSION_KEY);
