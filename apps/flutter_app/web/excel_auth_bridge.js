@@ -7,6 +7,9 @@
   var DIALOG_SESSION_KEY = "insightflow.excel.auth.dialog";
   var DIALOG_STATE_PARAM = "excelAuthState";
   var DIALOG_STATE_SESSION_KEY = "insightflow.excel.auth.state";
+  var DIAGNOSTIC_SESSION_KEY = "insightflow.excel.auth.diagnostics";
+  var DIAGNOSTIC_EXPIRY_MS = 15 * 60 * 1000;
+  var bridgeEvents = [];
 
   function diagnostic(event, fields) {
     if (!global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
@@ -14,6 +17,8 @@
       event: event,
       timestamp: new Date().toISOString()
     }, fields || {});
+    bridgeEvents.push(payload);
+    if (bridgeEvents.length > 100) bridgeEvents.shift();
     // Never include message bodies, tokens, state, nonce, cookies or URLs.
     if (global.console && typeof global.console.debug === "function") {
       global.console.debug("[excel-auth-bridge-diagnostic]", payload);
@@ -21,7 +26,25 @@
   }
 
   function setDiagnosticsEnabled(enabled) {
-    global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__ = enabled === true;
+    var active = false;
+    try {
+      var params = new URLSearchParams(global.location.search || "");
+      if (enabled === true && params.get("excelAuthDiagnostics") === "1") {
+        global.sessionStorage.setItem(DIAGNOSTIC_SESSION_KEY, String(Date.now() + DIAGNOSTIC_EXPIRY_MS));
+      }
+      var expiry = Number(global.sessionStorage.getItem(DIAGNOSTIC_SESSION_KEY) || 0);
+      active = enabled === true && expiry > Date.now();
+      if (!active && expiry) global.sessionStorage.removeItem(DIAGNOSTIC_SESSION_KEY);
+    } catch (_) {}
+    global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__ = active;
+    return active;
+  }
+
+  function exportDiagnostics() { return JSON.stringify(bridgeEvents); }
+  function resetDiagnostics() {
+    bridgeEvents = [];
+    try { global.sessionStorage.removeItem(DIAGNOSTIC_SESSION_KEY); } catch (_) {}
+    global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__ = false;
   }
 
   function createState() {
@@ -91,6 +114,9 @@
       url.searchParams.set(DIALOG_STATE_PARAM, expectedState);
       if (typeof correlationId === "string" && correlationId.length <= 80) {
         url.searchParams.set("excelAuthCorrelation", correlationId);
+      }
+      if (global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) {
+        url.searchParams.set("excelAuthDiagnostics", "1");
       }
       url.hash = "";
 
@@ -220,6 +246,8 @@
     openSignInDialog: openSignInDialog,
     completeDialog: completeDialog,
     setDiagnosticsEnabled: setDiagnosticsEnabled,
+    exportDiagnostics: exportDiagnostics,
+    resetDiagnostics: resetDiagnostics,
     restoreDialogFlag: restoreDialogFlag
   };
 

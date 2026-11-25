@@ -53,7 +53,8 @@ function createHarness(search = '?excelAuthDialog=1') {
           messageParent: (message) => messages.push(message)
         }
       }
-    }
+    },
+    console: { debug: () => {} }
   };
 
   window.crypto = { getRandomValues: (bytes) => { bytes.fill(7); return bytes; } };
@@ -67,6 +68,14 @@ function createHarness(search = '?excelAuthDialog=1') {
 }
 
 async function run() {
+  {
+    const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1');
+    assert.equal(h.window.InsightFlowExcelAuth.setDiagnosticsEnabled(true), true);
+    assert.equal(h.window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__, true);
+    h.window.InsightFlowExcelAuth.resetDiagnostics();
+    assert.equal(h.window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__, false);
+  }
+
   {
     const h = createHarness('');
     h.storage.set('insightflow.excel.auth.dialog', '1');

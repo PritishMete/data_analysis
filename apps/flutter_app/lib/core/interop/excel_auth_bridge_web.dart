@@ -12,6 +12,12 @@ external JSPromise<JSString> _openSignInDialog(JSString correlationId);
 external void _completeDialog(JSString refreshToken);
 @JS('window.InsightFlowExcelAuth.setDiagnosticsEnabled')
 external void _setDiagnosticsEnabled(JSBoolean enabled);
+@JS('window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__')
+external JSBoolean? get _diagnosticsActive;
+@JS('window.InsightFlowExcelAuth.exportDiagnostics')
+external JSString _exportDiagnostics();
+@JS('window.InsightFlowExcelAuth.resetDiagnostics')
+external void _resetDiagnostics();
 
 class ExcelAuthBridge {
   static bool get isAuthDialog => _isExcelAuthDialog?.toDart ?? false;
@@ -29,4 +35,8 @@ class ExcelAuthBridge {
   static void setDiagnosticsEnabled(bool enabled) {
     _setDiagnosticsEnabled(enabled.toJS);
   }
+
+  static bool get diagnosticsActive => _diagnosticsActive?.toDart ?? false;
+  static String bridgeDiagnosticsJson() => _exportDiagnostics().toDart;
+  static void resetDiagnostics() => _resetDiagnostics();
 }
