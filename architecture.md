@@ -7,7 +7,7 @@
 - Persistence: PostgreSQL/Supabase with SQL migrations in `migrations/`.
 - Identity: Firebase/Supabase provider adapters in `firebase_authz/` and Flutter auth services.
 - CI/CD: GitHub Actions in `.github/workflows/`.
-- Hosting: Render web service from `render.yaml`; GitHub Pages Flutter publication.
+- Hosting: Render or an HTTPS-fronted Oracle Cloud VM for the FastAPI service; GitHub Pages Flutter publication.
 
 ## Repository structure
 
@@ -66,7 +66,7 @@ Workbook content is intended to remain local by default. The outbound privacy gu
 
 ## Deployment architecture
 
-Render runs `uvicorn main:app --host 0.0.0.0 --port $PORT` and checks `/health`. GitHub Pages builds `apps/flutter_app` with `flutter build web --release --base-href=/data_analysis/`, stamps build identity, publishes the SPA fallback, and verifies the live bundle.
+Render runs `uvicorn main:app --host 0.0.0.0 --port $PORT`; the Oracle VM runs the same application behind an HTTPS reverse proxy and systemd. Both providers must expose `/health`. GitHub Pages builds `apps/flutter_app` with `flutter build web --release --base-href=/data_analysis/`, stamps build identity, publishes the SPA fallback, and verifies the live bundle. The public API origin is supplied through the `INSIGHTFLOW_BACKEND_URL` repository variable.
 
 ## Limitations
 
