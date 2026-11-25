@@ -251,11 +251,14 @@ jobs:
       - name: Upload complete GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
+          name: github-pages-${{ github.run_id }}
           path: gh-pages-publish
 
       - name: Deploy GitHub Pages artifact
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}
 
       - name: Verify live Google sign-in bundle
         shell: bash
