@@ -115,7 +115,10 @@ jobs:
           set -euo pipefail
           clean_env() { printf '%s' "${!1:-}" | tr -d '\r\n'; }
           build_args=(
-            build web --release --no-wasm-dry-run --base-href "/data_analysis/"
+            # Cloudflare Pages serves the site at the domain root. A root base
+            # href keeps the generated Flutter bundle working on both the
+            # Cloudflare Pages project and any root-mounted static host.
+            build web --release --no-wasm-dry-run --base-href "/"
             --dart-define "INSIGHTFLOW_FIREBASE_WEB_API_KEY=$(clean_env INSIGHTFLOW_FIREBASE_WEB_API_KEY)"
             --dart-define "INSIGHTFLOW_FIREBASE_WEB_APP_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_APP_ID)"
             --dart-define "INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID=$(clean_env INSIGHTFLOW_FIREBASE_WEB_MESSAGING_SENDER_ID)"
