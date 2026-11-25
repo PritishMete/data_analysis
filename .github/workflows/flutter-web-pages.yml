@@ -258,12 +258,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name == "github-pages") | .id' |
-            while read -r artifact_id; do
-              [ -n "${artifact_id}" ] || continue
-              gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
-            done
+          # GitHub's artifacts endpoint can transiently return an incomplete
+          # JSON response immediately after a Pages artifact is uploaded.
+          # Cleanup is best-effort; publishing the new artifact must continue.
+          artifact_ids=""
+          for attempt in 1 2 3 4 5; do
+            artifact_ids="$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "github-pages") | .id' 2>/dev/null || true)"
+            if [ -n "${artifact_ids}" ]; then
+              break
+            fi
+            sleep 2
+          done
+          while read -r artifact_id; do
+            [ -n "${artifact_id}" ] || continue
+            gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" || true
+          done <<< "${artifact_ids}"
 
       - name: Upload complete GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
