@@ -13,9 +13,9 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="InsightFlow" />
   <Description DefaultValue="InsightFlow data analysis and secure Excel workspace." />
-  <IconUrl DefaultValue="https://pritishmete.github.io/data_analysis/icons/Icon-192.png" />
-  <HighResolutionIconUrl DefaultValue="https://pritishmete.github.io/data_analysis/icons/Icon-512.png" />
-  <SupportUrl DefaultValue="https://pritishmete.github.io/data_analysis/" />
+  <IconUrl DefaultValue="https://insightflow-3e8.pages.dev/icons/Icon-192.png" />
+  <HighResolutionIconUrl DefaultValue="https://insightflow-3e8.pages.dev/icons/Icon-512.png" />
+  <SupportUrl DefaultValue="https://insightflow-3e8.pages.dev/" />
   <AppDomains>
     <AppDomain>https://pritishmete.github.io</AppDomain>
   </AppDomains>
@@ -28,7 +28,7 @@
     </Sets>
   </Requirements>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://pritishmete.github.io/data_analysis/" />
+    <SourceLocation DefaultValue="https://insightflow-3e8.pages.dev/" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>
