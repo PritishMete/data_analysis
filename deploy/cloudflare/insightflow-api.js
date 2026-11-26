@@ -1,4 +1,4 @@
-const ORIGIN = "http://144.24.104.65:8000";
+const ORIGIN = "https://rebel-distance-pursuant-valium.trycloudflare.com";
 const FRONTEND_ORIGIN = "https://insightflowdashboard.pages.dev";
 
 function corsHeaders() {
