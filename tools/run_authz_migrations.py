@@ -27,6 +27,7 @@ EXPECTED_TABLES = {
     "datasets", "dataset_versions", "dataset_columns", "dataset_rows", "dataset_change_proposals",
     "manager_dataset_upload_grants",
     "organization_employee_id_counters",
+    "diagnostic_sessions", "diagnostic_events", "diagnostic_support_admins",
 }
 
 

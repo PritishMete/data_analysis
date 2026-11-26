@@ -53,6 +53,10 @@
 
 ## Latest CI and deployment status
 
+- Independent administrator portal branch `codex/user-diagnostics-admin-panel` is published in PR #115 at commit `761eb87dda83dc09d27dd56435392d3cead166ee`; the dedicated Admin Portal CI, backend, PostgreSQL security, Excel PostgreSQL, management validation, and security scanning workflows all passed. Cloudflare Pages and Render deployment remain pending provider credentials/configuration and migration approval.
+- Security hardening follow-up is pushed at `faa3d89f`; PR checks are pending for organization/branch isolation, anonymous session claiming, rate limits, sanitized exports, and in-memory admin token handling.
+- Remaining blocker follow-up is pushed at `b33418a3`; migration 0042 claim hashes are nullable with a state constraint, claim locking is atomic, payloads are allowlisted, the six admin views are wired, and a disposable PostgreSQL diagnostic test is included in Admin Portal CI.
+
 - Latest verified CI result: all required PR #96 and post-merge workflows passed for `c1798aa5be269c0c9ef2342653c2e449aef72609`.
 - Latest independently verified Render status: live deployment `dep-dc35do7avr4c73ecb4ag`, service `data_analysis`, commit `c1798aa5be269c0c9ef2342653c2e449aef72609`; `/health` returned 200 with `database_ready: true`.
 - Previous Render rollback target: live deployment `dep-dc2g8197lnhs73ecr9l0`, commit `1e9efd0cad94971d4abd0f71a2572f504288dbfa`.
@@ -61,6 +65,18 @@
 - Never promote these fields to success without provider evidence for a specific commit.
 
 ## Decision history
+
+### 2026-11-26 — Independent administrator portal
+
+Added the separate `apps/admin_portal` Cloudflare Pages frontend, server-authorized `/v1/admin` diagnostics routes, additive migration `0042_diagnostic_admin.sql`, audit logging, focused contract tests, and branch-scoped CI. No production migration or deployment was performed.
+
+### 2026-11-26 — Diagnostics security hardening
+
+Rejected arbitrary organization expansion, required target organization membership in directory/timeline/export queries, added branch-aware scope enforcement, one-time hashed diagnostic session claims, shared database-backed rate limits, authenticated event ingestion, formula-safe CSV output, and memory-only frontend access tokens. No production infrastructure or database was changed.
+
+### 2026-11-26 — Final admin portal blocker fixes
+
+Made `claim_token_hash` nullable while preserving the claim-state check, separated row locking from aggregate identity resolution, added payload allowlisting/redaction and disposable PostgreSQL coverage, and completed the advertised admin sections without persisting access tokens. No production changes were made.
 
 ### 2026-11-25 — Isolated authentication regression fixes
 

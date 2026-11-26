@@ -288,6 +288,7 @@ from memory_engine.routes import memory_engine_router
 from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
 from firebase_authz.management_routes import router as management_router
+from firebase_authz.admin_diagnostics import router as admin_diagnostics_router, diagnostic_router
 from dataset_storage.routes import router as managed_dataset_router
 from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
@@ -2748,6 +2749,8 @@ app.include_router(authz_router)
 from excel_auth_handoff.routes import router as excel_auth_handoff_router
 app.include_router(excel_auth_handoff_router)
 app.include_router(management_router)
+app.include_router(admin_diagnostics_router)
+app.include_router(diagnostic_router)
 app.include_router(managed_dataset_router)
 
 try:
