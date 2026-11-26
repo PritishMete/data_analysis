@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../lib/core/auth/supabase_auth_service.dart';
 
 void main() {
   test('Supabase service starts Google OAuth with the configured callback', () {
