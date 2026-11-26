@@ -15,7 +15,7 @@ void main() {
     );
 
     expect(changed, isTrue);
-    expect(calls, ['/??tenant=demo#after-login']);
+    expect(calls, ['/?tenant=demo#after-login']);
   });
 
   test('preserves Excel handoff parameters during cleanup', () {
