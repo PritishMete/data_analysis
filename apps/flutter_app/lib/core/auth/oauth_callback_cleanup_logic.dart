@@ -1,5 +1,6 @@
 const oauthCallbackKeys = <String>{
   'code',
+  'state',
   'error',
   'error_code',
   'error_description',
