@@ -1,6 +1,6 @@
 // Oracle origin is served through the VM's temporary Cloudflare Quick Tunnel.
 const ORIGIN = "https://rebel-distance-pursuant-valium.trycloudflare.com";
-const FRONTEND_ORIGIN = "https://insightflowdashboard.pages.dev";
+const FRONTEND_ORIGIN = "https://insightflow-3e8.pages.dev";
 
 function corsHeaders() {
   return {
