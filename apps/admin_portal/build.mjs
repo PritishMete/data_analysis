@@ -31,14 +31,17 @@ for (const [name, value] of Object.entries({ apiOrigin: config.apiOrigin, supaba
   if (production && parsed.protocol !== 'https:') throw new Error(`${name} must use HTTPS in production.`);
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error(`${name} must not contain credentials, query parameters, or fragments.`);
   if (!parsed.hostname) throw new Error(`${name} must include a hostname.`);
-  if (name === 'apiOrigin' && parsed.pathname !== '/') throw new Error('apiOrigin must be an origin without a path.');
-  if (name === 'apiOrigin') config.apiOrigin = parsed.origin;
+  if (parsed.pathname !== '/') throw new Error(`${name} must be an origin without a path.`);
+  config[name] = parsed.origin;
 }
 const headersTemplate = await readFile('_headers', 'utf8');
 const apiOrigin = new URL(config.apiOrigin).origin;
-const headers = headersTemplate.replaceAll('__INSIGHTFLOW_ADMIN_API_ORIGIN__', apiOrigin);
-if (headers.includes('__INSIGHTFLOW_ADMIN_API_ORIGIN__')) {
-  throw new Error('Admin API origin was not substituted into the Pages security headers.');
+const supabaseOrigin = config.supabaseUrl ? new URL(config.supabaseUrl).origin : '';
+const headers = headersTemplate
+  .replaceAll('__INSIGHTFLOW_ADMIN_API_ORIGIN__', apiOrigin)
+  .replaceAll('__INSIGHTFLOW_SUPABASE_ORIGIN__', supabaseOrigin);
+if (headers.includes('__INSIGHTFLOW_ADMIN_API_ORIGIN__') || headers.includes('__INSIGHTFLOW_SUPABASE_ORIGIN__')) {
+  throw new Error('A required origin was not substituted into the Pages security headers.');
 }
 await writeFile('dist/_headers', headers);
 await writeFile('dist/config.js', `globalThis.INSIGHTFLOW_ADMIN_CONFIG=${JSON.stringify(config)};`);
