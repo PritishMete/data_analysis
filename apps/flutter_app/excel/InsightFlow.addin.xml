@@ -17,7 +17,7 @@
   <HighResolutionIconUrl DefaultValue="https://insightflow-3e8.pages.dev/icons/Icon-512.png" />
   <SupportUrl DefaultValue="https://insightflow-3e8.pages.dev/" />
   <AppDomains>
-    <AppDomain>https://pritishmete.github.io</AppDomain>
+    <AppDomain>https://insightflow-3e8.pages.dev</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Workbook" />
