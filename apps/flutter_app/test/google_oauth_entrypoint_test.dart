@@ -80,3 +80,4 @@ void main() {
     expect(manifest, contains('https://insightflow-3e8.pages.dev/'));
     expect(manifest, isNot(contains('github.io')));
   });
+}
