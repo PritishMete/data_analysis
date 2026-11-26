@@ -181,7 +181,7 @@ jobs:
             fi
           }
           assert_file "generated index" build/web/index.html
-          assert_file "GitHub Pages SPA fallback" build/web/404.html
+          assert_file "Cloudflare Pages SPA fallback" build/web/404.html
           assert_file "Flutter bootstrap" build/web/flutter_bootstrap.js
           assert_file "compiled Dart bundle" build/web/main.dart.js
           assert_text "exact source commit marker" "${GITHUB_SHA}" build/web/index.html
