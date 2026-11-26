@@ -127,7 +127,7 @@ def _event_fields(item: Any) -> dict[str, Any]:
     serialized = json.dumps(payload, separators=(",", ":"))
     if len(serialized.encode("utf-8")) > MAX_PAYLOAD_BYTES:
         raise HTTPException(422, "Diagnostic payload is too large.")
-    return {"correlation": _safe_text(item.correlation_id, 128), "category": _safe_text(item.category, 80),
+    return {"corr": _safe_text(item.correlation_id, 128), "category": _safe_text(item.category, 80),
             "status": _safe_text(item.status, 40), "error": _safe_text(item.sanitized_error, 500),
             "payload": serialized}
 
