@@ -1,4 +1,4 @@
-name: Build and publish InsightFlow Flutter web
+name: Build InsightFlow Flutter web for Cloudflare Pages
 
 on:
   push:
@@ -17,20 +17,16 @@ on:
 
 permissions:
   contents: write
-  actions: write
-  pages: write
-  id-token: write
 
 concurrency:
-  # Normal and diagnostic publishes share one lock so they cannot race and
-  # overwrite the same GitHub Pages artifact unexpectedly.
+  # Normal and diagnostic builds share one lock so they cannot race while
+  # updating the gh-pages source branch consumed by Cloudflare Pages.
   group: insightflow-flutter-pages
   cancel-in-progress: true
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: github-pages
     timeout-minutes: 45
 
     steps:
@@ -154,7 +150,7 @@ jobs:
           sed -i "s/__INSIGHTFLOW_BUILD_COMMIT__/${GITHUB_SHA}/g" build/web/index.html
           sed -i "s/__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__/${INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID}/g" build/web/index.html
 
-      - name: Generate GitHub Pages SPA fallback
+      - name: Generate Cloudflare Pages SPA fallback
         working-directory: apps/flutter_app
         shell: bash
         run: |
@@ -200,7 +196,7 @@ jobs:
           assert_text "membership status auth marker" "membership_status" build/web/main.dart.js
           assert_text "authorization API integration" "/v1/authz/me" build/web/main.dart.js
 
-      - name: Checkout published gh-pages
+      - name: Checkout Cloudflare Pages source branch
         uses: actions/checkout@v4
         with:
           ref: gh-pages
@@ -222,7 +218,7 @@ jobs:
           rm -f gh-pages-publish/version.json
           cp -R apps/flutter_app/build/web/. gh-pages-publish/
 
-      - name: Verify published source build identity
+      - name: Verify Cloudflare source build identity
         shell: bash
         env:
           INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
@@ -238,7 +234,7 @@ jobs:
           grep -R -q "profile_complete" gh-pages-publish
           grep -R -q "membership_status" gh-pages-publish
 
-      - name: Commit and publish
+      - name: Publish Cloudflare Pages source branch
         working-directory: gh-pages-publish
         shell: bash
         run: |
@@ -260,77 +256,4 @@ jobs:
           done
           exit 1
 
-      - name: Remove stale Pages artifacts from reruns
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # GitHub's artifacts endpoint can transiently return an incomplete
-          # JSON response immediately after a Pages artifact is uploaded.
-          # Cleanup is best-effort; publishing the new artifact must continue.
-          artifact_ids=""
-          for attempt in 1 2 3 4 5; do
-            artifact_ids="$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-              --jq '.artifacts[] | select(.name == "github-pages") | .id' 2>/dev/null || true)"
-            if [ -n "${artifact_ids}" ]; then
-              break
-            fi
-            sleep 2
-          done
-          while read -r artifact_id; do
-            [ -n "${artifact_id}" ] || continue
-            gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" || true
-          done <<< "${artifact_ids}"
-
-      - name: Upload complete GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: gh-pages-publish
-
-      - name: Wait for Pages artifact indexing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            if gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-              --jq '.artifacts[] | select(.name == "github-pages" and .workflow_run.id == '${GITHUB_RUN_ID}') | .id' \
-              | grep -q .; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "github-pages artifact was not indexed for this workflow run" >&2
-          exit 1
-
-      - name: Deploy GitHub Pages artifact
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-      - name: Verify live Google sign-in bundle
-        shell: bash
-        env:
-          PAGES_URL: https://pritishmete.github.io/data_analysis
-          INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 18); do
-            index_url="${PAGES_URL}/index.html?verify=${GITHUB_SHA}-${attempt}"
-            index_html="$(curl --fail --silent --show-error --location "${index_url}")"
-            if grep -q "${GITHUB_SHA}" <<<"${index_html}" && grep -Fq "$INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID" <<<"${index_html}" && ! grep -Fq "__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__" <<<"${index_html}"; then
-              bundle_path="$(grep -o 'main.dart.js?[^\"]*' <<<"${index_html}" | head -n 1)"
-              if [ -n "${bundle_path}" ]; then
-                if curl --fail --silent --show-error --location "${PAGES_URL}/${bundle_path}" -o /dev/null; then
-                  fallback_html="$(curl --fail --silent --show-error --location "${PAGES_URL}/404.html?verify=${GITHUB_SHA}-${attempt}")"
-                  if grep -q "${GITHUB_SHA}" <<<"${fallback_html}" && grep -Fq "$INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID" <<<"${fallback_html}"; then
-                    echo "Live Pages index, Flutter bundle, and SPA fallback verified for ${GITHUB_SHA}."
-                    exit 0
-                  fi
-                fi
-              fi
-            fi
-            echo "Waiting for live Pages deployment (attempt ${attempt}/18)."
-            sleep 10
-          done
-          echo "::error::Live Pages did not expose the expected build SHA, Google OAuth client metadata, Flutter bundle, and SPA fallback."
           exit 1
