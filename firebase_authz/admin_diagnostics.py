@@ -177,6 +177,9 @@ def _anonymous_rate_limit(bucket: str, now: float) -> None:
     with _anonymous_rate_lock:
         cutoff = now - 60
         active = [stamp for stamp in _anonymous_rate_buckets.get(bucket, []) if stamp > cutoff]
+        for key in list(_anonymous_rate_buckets):
+            if not any(stamp > cutoff for stamp in _anonymous_rate_buckets[key]):
+                del _anonymous_rate_buckets[key]
         if len(active) >= ANONYMOUS_RATE_LIMIT:
             _anonymous_rate_buckets[bucket] = active
             raise HTTPException(429, "Diagnostic session rate limit exceeded.")
