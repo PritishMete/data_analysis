@@ -11,6 +11,6 @@ INSIGHTFLOW_SUPABASE_URL=https://<project>.supabase.co
 INSIGHTFLOW_SUPABASE_ANON_KEY=<public-anon-key>
 ```
 
-Missing production values fail the build. For local development, omit `ADMIN_PORTAL_ENV` and optionally set the same variables; otherwise the API defaults to `http://localhost:8000` and Supabase login remains unavailable until configured. Run `npm run build` then `npm run dev`.
+Missing production values fail the build. `ADMIN_PORTAL_ENV` is always required and accepts only `production`, `development`, or `test`. For local development, explicitly set `ADMIN_PORTAL_ENV=development`; the documented local API default is `http://localhost:8000`. Set `INSIGHTFLOW_SUPABASE_URL` and `INSIGHTFLOW_SUPABASE_ANON_KEY` when testing login locally. Run `npm run build` then `npm run dev`.
 
 Authentication uses the existing Supabase Auth project; the API remains the authorization boundary. `dist/config.js` is deployment configuration, not a secret store.

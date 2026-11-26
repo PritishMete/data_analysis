@@ -3,7 +3,11 @@ import { env } from 'node:process';
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });
 await cp('src', 'dist', { recursive: true });
-const production = env.ADMIN_PORTAL_ENV === 'production';
+const mode = env.ADMIN_PORTAL_ENV;
+if (!['production', 'development', 'test'].includes(mode)) {
+  throw new Error('ADMIN_PORTAL_ENV must be explicitly set to production, development, or test.');
+}
+const production = mode === 'production';
 const values = {
   apiOrigin: env.INSIGHTFLOW_ADMIN_API,
   supabaseUrl: env.INSIGHTFLOW_SUPABASE_URL,
@@ -20,4 +24,12 @@ const config = production ? values : {
   supabaseUrl: values.supabaseUrl || '',
   supabaseAnonKey: values.supabaseAnonKey || '',
 };
+for (const [name, value] of Object.entries({ apiOrigin: config.apiOrigin, supabaseUrl: config.supabaseUrl })) {
+  if (!value) continue;
+  let parsed;
+  try { parsed = new URL(value); } catch { throw new Error(`${name} must be a valid URL.`); }
+  if (production && parsed.protocol !== 'https:') throw new Error(`${name} must use HTTPS in production.`);
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error(`${name} must not contain credentials, query parameters, or fragments.`);
+  if (!parsed.hostname) throw new Error(`${name} must include a hostname.`);
+}
 await writeFile('dist/config.js', `globalThis.INSIGHTFLOW_ADMIN_CONFIG=${JSON.stringify(config)};`);

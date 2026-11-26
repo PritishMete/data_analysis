@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: python -m pip install -r requirements-test.txt
-      - run: python -m pytest -q tests/test_admin_diagnostics_contract.py tests/test_management_ui_policy_contract.py tests/test_provider_diagnostics.py tests/test_firebase_authz_api.py
+      - run: python -m pytest -q tests/test_admin_diagnostics_contract.py tests/test_admin_portal_build.py tests/test_management_ui_policy_contract.py tests/test_provider_diagnostics.py tests/test_firebase_authz_api.py
       - run: >-
           python -m pytest -q
           tests/test_authz_assignment_index_postgres.py::test_diagnostic_session_claim_and_scope_isolation_on_disposable_postgres
