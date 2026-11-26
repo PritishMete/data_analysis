@@ -7,3 +7,5 @@ frontend origin.
 
 The Worker origin is intentionally constant; it does not accept a
 user-controlled upstream URL and therefore is not an open proxy.
+
+The configured production Worker name is `insightflow-api`.
