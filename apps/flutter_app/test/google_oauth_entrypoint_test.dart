@@ -23,10 +23,6 @@ void main() {
     );
     expect(
       source,
-      contains('isOffice: isRunningInsideOffice'),
-    );
-    expect(
-      source,
       isNot(contains("defaultValue: 'https://pritishmete.github.io/data_analysis/'")),
     );
     expect(
@@ -38,12 +34,11 @@ void main() {
   test('OAuth redirect resolver preserves website and Excel origins', () {
     final cloudflare = Uri.parse('https://insightflow-3e8.pages.dev/');
     final local = Uri.parse('http://localhost:5173/');
-    const legacyExcel = 'https://pritishmete.github.io/data_analysis/';
+    const cloudflareOrigin = 'https://insightflow-3e8.pages.dev/';
 
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
         isWeb: true,
-        isOffice: false,
         currentUri: cloudflare,
       ),
       'https://insightflow-3e8.pages.dev/',
@@ -59,19 +54,17 @@ void main() {
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
         isWeb: true,
-        isOffice: true,
         currentUri: cloudflare,
       ),
-      legacyExcel,
+      cloudflareOrigin,
     );
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
         isWeb: true,
         isOffice: false,
         currentUri: cloudflare,
-        configuredUrl: 'https://auth.example.test/callback',
       ),
-      'https://auth.example.test/callback',
+      cloudflareOrigin,
     );
   });
 
@@ -94,3 +87,10 @@ void main() {
     expect(source, contains('Google sign-in was cancelled.'));
   });
 }
+
+
+test('Excel add-in manifest uses Cloudflare Pages for every runtime URL', () {
+  final manifest = File('excel/InsightFlow.addin.xml').readAsStringSync();
+  expect(manifest, contains('https://insightflow-3e8.pages.dev/'));
+  expect(manifest, isNot(contains('github.io')));
+});
