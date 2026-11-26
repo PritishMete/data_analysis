@@ -280,7 +280,7 @@ def export_report(format: str=Query("json",pattern="^(json|csv)$"), branch_id: s
 @router.get("/support/search")
 def support_search(q: str=Query(...,min_length=2,max_length=160), branch_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
     actor=_actor(authorization); _rate_limit(actor,"diagnostic.support_reference.searched"); org,branch=_scope(actor,branch_id=branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.support_reference.searched",{"branch_id":branch})
-    with SessionLocal() as db: rows=db.execute(text("SELECT event_id,event_at,correlation_id,category,status FROM diagnostic_events WHERE organization_id=:org AND (:branch IS NULL OR branch_id=:branch) AND (correlation_id ILIKE :q OR category ILIKE :q) ORDER BY event_at DESC OFFSET :offset LIMIT :limit"),{"org":org,"branch":branch,"q":f"%{q}%","offset":offset,"limit":limit}).mappings().all()
+    with SessionLocal() as db: rows=db.execute(text("SELECT event_id,event_at,session_id,correlation_id,category,status FROM diagnostic_events WHERE organization_id=:org AND (:branch IS NULL OR branch_id=:branch) AND (session_id ILIKE :q OR correlation_id ILIKE :q OR category ILIKE :q) ORDER BY event_at DESC OFFSET :offset LIMIT :limit"),{"org":org,"branch":branch,"q":f"%{q}%","offset":offset,"limit":limit}).mappings().all()
     return {"references":[dict(row) for row in rows],"page":page,"page_size":page_size}
 
 @router.get("/audit")

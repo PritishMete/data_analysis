@@ -587,3 +587,40 @@ def test_diagnostic_session_claim_and_scope_isolation_on_disposable_postgres(
         expired = conn.execute(text("""UPDATE diagnostic_sessions SET claimed_at=now(),claim_token_hash=NULL
             WHERE session_id='expired-session' AND claim_token_hash=:hash AND claimed_at IS NULL AND expires_at>now()"""), {"hash": claim_hash})
         assert expired.rowcount == 0
+
+
+def test_diagnostic_route_functions_use_disposable_postgres_for_claim_and_events(
+    postgres_engine, monkeypatch
+):
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    runner.run_migrations()
+    from sqlalchemy.orm import sessionmaker
+    from firebase_authz import admin_diagnostics as diagnostics
+
+    monkeypatch.setattr(diagnostics, "SessionLocal", sessionmaker(bind=postgres_engine, future=True))
+    subject = "route-subject"
+    with postgres_engine.begin() as conn:
+        conn.execute(text("INSERT INTO principals(principal_id) VALUES ('route-principal')"))
+        conn.execute(text("INSERT INTO organizations(organization_id,name,created_by_principal_id) VALUES ('route-org','Route','route-principal')"))
+        conn.execute(text("INSERT INTO workspaces(workspace_id,organization_id) VALUES ('route-ws','route-org')"))
+        conn.execute(text("INSERT INTO organization_members(organization_id,workspace_id,principal_id,employee_id) VALUES ('route-org','route-ws','route-principal','R1')"))
+        conn.execute(text("INSERT INTO identity_bindings(provider,provider_subject,principal_id) VALUES ('supabase',:subject,'route-principal')"), {"subject": subject})
+
+    created = diagnostics.create_session()
+    item = diagnostics.EventIn(session_id=created["support_reference"], claim_secret=created["claim_secret"], correlation_id="route-correlation", category="office_dialog_open", status="started", payload={"stage": "office_dialog_open"})
+    assert diagnostics.anonymous_event(item) == {"accepted": True}
+    with pytest.raises(Exception):
+        diagnostics.anonymous_event(diagnostics.EventIn(session_id=created["support_reference"], claim_secret=created["claim_secret"], correlation_id="bad", category="stage", status="failed", payload={"access_token": "Bearer eyJsecret"}))
+    monkeypatch.setattr(diagnostics, "_claims", lambda _: {"sub": subject, "email_verified": True})
+    assert diagnostics.claim_session(diagnostics.SessionClaim(session_id=created["support_reference"], claim_secret=created["claim_secret"]), "Bearer route-token") == {"claimed": True}
+    with pytest.raises(Exception):
+        diagnostics.claim_session(diagnostics.SessionClaim(session_id=created["support_reference"], claim_secret=created["claim_secret"]), "Bearer route-token")
+    with postgres_engine.connect() as conn:
+        row = conn.execute(text("SELECT claim_token_hash,organization_id,user_principal_id FROM diagnostic_sessions WHERE session_id=:session"), {"session": created["support_reference"]}).mappings().one()
+        assert row["claim_token_hash"] is None
+        assert row["organization_id"] == "route-org"
+        assert row["user_principal_id"] == "route-principal"
+        assert conn.execute(text("SELECT organization_id,user_principal_id FROM diagnostic_events WHERE session_id=:session"), {"session": created["support_reference"]}).one() == ("route-org", "route-principal")
+
+    with pytest.raises(Exception):
+        diagnostics.anonymous_event(diagnostics.EventIn(session_id=created["support_reference"], claim_secret="x" * 48, correlation_id="bad", category="stage", status="failed"))
