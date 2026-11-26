@@ -55,4 +55,26 @@ void main() {
     expect(events[2]['event'], 'auth_state_stream_error');
     expect(events[2]['completed'], true);
   });
+
+  test('records safe stage events without accepting sensitive fields', () {
+    ExcelAuthDiagnostics.start('excel-stage-test');
+    ExcelAuthDiagnostics.record('oauth_callback_detected', sessionAvailable: true);
+    ExcelAuthDiagnostics.record('user_verification_failed', errorCode: 'timeout');
+    ExcelAuthDiagnostics.record('handoff_failed', result: 'failed');
+
+    final output = ExcelAuthDiagnostics.exportJson();
+    expect(output, contains('oauth_callback_detected'));
+    expect(output, contains('user_verification_failed'));
+    expect(output, contains('handoff_failed'));
+    expect(output, isNot(contains('refresh_token')));
+    expect(output, isNot(contains('authorization')));
+    expect(output, isNot(contains('callback_url')));
+  });
+
+  test('diagnostics remain disabled by default until explicitly activated', () {
+    ExcelAuthDiagnostics.disableForTest();
+    ExcelAuthDiagnostics.resetForTest();
+    expect(ExcelAuthDiagnostics.isEnabled, isFalse);
+    expect(ExcelAuthDiagnostics.exportJson(), '[]');
+  });
 }

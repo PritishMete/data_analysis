@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app_colors.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/auth/excel_auth_diagnostics.dart';
 import 'auth_glass_widgets.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -127,6 +131,7 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
+      ExcelAuthDiagnostics.record('google_oauth_started', operation: 'google');
       final started = await InsightFlowSupabaseAuthService.signInWithGoogle();
       if (!started && mounted) {
         setState(() {
@@ -135,12 +140,23 @@ class _SignInScreenState extends State<SignInScreen> {
         });
       }
     } catch (error) {
+      ExcelAuthDiagnostics.record(
+        'google_oauth_start_failed',
+        result: 'failed',
+        errorCode: _safeExcelAuthErrorCode(error),
+      );
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     }
+  }
+
+  String _safeExcelAuthErrorCode(Object error) {
+    if (error is AuthException) return error.code ?? 'auth_error';
+    if (error is TimeoutException) return 'timeout';
+    return error.runtimeType.toString();
   }
 
   Future<void> _signUp() async {

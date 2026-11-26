@@ -111,6 +111,8 @@ class ExcelAuthDiagnostics {
   }
 
   static void enableForTest() => _testEnabled = true;
+
+  static void disableForTest() => _testEnabled = false;
 }
 
 class ExcelDiagnosticsOverlay extends StatefulWidget {

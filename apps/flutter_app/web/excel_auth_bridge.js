@@ -64,6 +64,9 @@
   function restoreDialogFlag() {
     try {
       var params = new URLSearchParams(global.location.search || "");
+      if (params.has("code") || params.has("error")) {
+        diagnostic("oauth_callback_detected");
+      }
       if (params.get(DIALOG_FLAG) === "1") {
         global.__isInsightFlowExcelAuthDialog = true;
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
