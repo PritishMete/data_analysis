@@ -5,46 +5,36 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'excel_auth_diagnostics.dart';
-import '../interop/office_host.dart';
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
   static const publishableKey = String.fromEnvironment(
     'INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY',
   );
-  static const _configuredAuthRedirectUrl = String.fromEnvironment(
-    'INSIGHTFLOW_AUTH_REDIRECT_URL',
-  );
-  static const _legacyExcelAuthRedirectUrl =
-      'https://pritishmete.github.io/data_analysis/';
+  static const _productionWebAuthRedirectUrl =
+      'https://insightflow-3e8.pages.dev/';
 
-  /// Resolves the callback to the origin that initiated authentication.
+  /// Resolves authentication callbacks to the host that served the app.
   ///
-  /// Website OAuth must return to the current website origin so its PKCE
-  /// verifier is available to Supabase in the same browser storage context.
-  /// Excel continues using its established GitHub Pages task-pane origin.
+  /// Both the public website and the Excel task pane are hosted on Cloudflare
+  /// Pages. Returning to the initiating origin keeps the Supabase PKCE
+  /// verifier in the same browser storage context. Native clients use the
+  /// production Cloudflare origin as the web callback fallback.
   static String resolveAuthRedirectUrl({
     required bool isWeb,
-    required bool isOffice,
     required Uri currentUri,
-    String configuredUrl = _configuredAuthRedirectUrl,
   }) {
-    final override = configuredUrl.trim();
-    if (override.isNotEmpty) return override;
-
     if (isWeb &&
-        !isOffice &&
         (currentUri.scheme == 'https' || currentUri.scheme == 'http') &&
         currentUri.origin.isNotEmpty) {
       return '${currentUri.origin}/';
     }
 
-    return _legacyExcelAuthRedirectUrl;
+    return _productionWebAuthRedirectUrl;
   }
 
   static String get authRedirectUrl => resolveAuthRedirectUrl(
         isWeb: kIsWeb,
-        isOffice: isRunningInsideOffice,
         currentUri: Uri.base,
       );
 

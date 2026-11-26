@@ -22,7 +22,7 @@ The dialog route is selected only by the `excelAuthDialog=1` query flag. A norma
 
 - The add-in task pane must be served over HTTPS.
 - The first URL passed to `displayDialogAsync` must use the exact same origin as the task pane.
-- Keep the deployed add-in manifest's task-pane URL on the GitHub Pages origin used by InsightFlow.
+- Keep the deployed add-in manifest's task-pane URL on the Cloudflare Pages origin used by InsightFlow.
 - Do not use `displayInIframe: true` for authentication. Identity-provider sign-in pages may block iframe embedding.
 - The Office dialog API is used instead of `window.open`, which is unreliable in Office webviews.
 
@@ -32,22 +32,22 @@ The dialog is a separate Office-managed browser/webview context. It does not gai
 
 The add-in-only XML template is at
 `apps/flutter_app/excel/InsightFlow.addin.xml`. It points to the deployed
-GitHub Pages task pane and the deployed 192px/512px icon assets. Its GUID is a
+Cloudflare Pages task pane and the deployed 192px/512px icon assets. Its GUID is a
 clearly marked placeholder and must be replaced before organizational
 deployment; the repository does not invent the tenant-owned add-in identity.
 
 Before deployment, confirm the stable Add-in GUID, publisher details, icon
 branding, and Microsoft 365 registration method. The task-pane URL is:
-`https://pritishmete.github.io/data_analysis/`.
+`https://insightflow-3e8.pages.dev/`.
 
 ## Build and test
 
-The GitHub Pages workflow runs:
+The Flutter web publication workflow builds the app and updates the `gh-pages` source branch consumed by Cloudflare Pages. It runs:
 
 - `node test/excel_auth_bridge_test.js`
 - Auth/onboarding Flutter regression tests
 - Flutter analysis for the Excel auth gate and JS interop
-- The production Flutter web build and Pages deployment
+- The production Flutter web build and Cloudflare Pages source publication
 
 ## Manual Excel verification
 
