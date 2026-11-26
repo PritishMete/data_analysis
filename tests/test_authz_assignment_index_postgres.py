@@ -278,6 +278,8 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         assert proposal_security.relrowsecurity is True
         assert proposal_security.has_client_policy is False
         assert conn.execute(text("SELECT has_schema_privilege('anon', 'managed_data', 'USAGE')")).scalar_one() is False
+
+
         assert conn.execute(text("SELECT has_schema_privilege('authenticated', 'managed_data', 'USAGE')")).scalar_one() is False
         ready_policies = {
             row[0]: row[1]
@@ -553,3 +555,35 @@ def test_profile_pii_legacy_backfill_and_duplicate_proof_guard(postgres_engine, 
                 "id_hmac": proof_data["hmac"],
                 "fingerprint": proof_data["fingerprint"],
             })
+
+
+def test_diagnostic_session_claim_and_scope_isolation_on_disposable_postgres(
+    postgres_engine, monkeypatch
+):
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    runner.run_migrations()
+    claim_hash = "a" * 64
+    with postgres_engine.begin() as conn:
+        conn.execute(text("INSERT INTO principals(principal_id) VALUES ('diag-a'),('diag-b')"))
+        conn.execute(text("INSERT INTO organizations(organization_id,name,created_by_principal_id) VALUES ('diag-org-a','A','diag-a'),('diag-org-b','B','diag-b')"))
+        conn.execute(text("INSERT INTO workspaces(workspace_id,organization_id) VALUES ('diag-ws-a','diag-org-a'),('diag-ws-b','diag-org-b')"))
+        conn.execute(text("""INSERT INTO organization_members(organization_id,workspace_id,principal_id,employee_id)
+            VALUES ('diag-org-a','diag-ws-a','diag-a','DA'),('diag-org-b','diag-ws-b','diag-b','DB')"""))
+        conn.execute(text("INSERT INTO diagnostic_sessions(session_id,claim_token_hash,expires_at) VALUES ('diag-session',:hash,now()+interval '15 minutes')"), {"hash": claim_hash})
+        conn.execute(text("""INSERT INTO diagnostic_events(event_id,session_id,correlation_id,category,status,payload)
+            VALUES ('diag-event','diag-session','corr-a','auth_stage','ok','{}')"""))
+        assert conn.execute(text("SELECT claim_token_hash IS NOT NULL FROM diagnostic_sessions WHERE session_id='diag-session'")).scalar_one() is True
+        assert conn.execute(text("SELECT count(*) FROM diagnostic_events WHERE organization_id='diag-org-b'")).scalar_one() == 0
+        conn.execute(text("""UPDATE diagnostic_sessions SET user_principal_id='diag-a',organization_id='diag-org-a',claimed_at=now(),claim_token_hash=NULL
+            WHERE session_id='diag-session' AND claim_token_hash=:hash AND claimed_at IS NULL AND expires_at>now()"""), {"hash": claim_hash})
+        conn.execute(text("UPDATE diagnostic_events SET organization_id='diag-org-a',user_principal_id='diag-a' WHERE session_id='diag-session' AND organization_id IS NULL"))
+        assert conn.execute(text("SELECT claim_token_hash IS NULL FROM diagnostic_sessions WHERE session_id='diag-session'")).scalar_one() is True
+        second = conn.execute(text("""UPDATE diagnostic_sessions SET claimed_at=now(),claim_token_hash=NULL
+            WHERE session_id='diag-session' AND claim_token_hash=:hash AND claimed_at IS NULL"""), {"hash": claim_hash})
+        assert second.rowcount == 0
+        assert conn.execute(text("SELECT count(*) FROM diagnostic_events WHERE organization_id='diag-org-b'")).scalar_one() == 0
+        assert conn.execute(text("SELECT count(*) FROM diagnostic_events WHERE organization_id='diag-org-a'")).scalar_one() == 1
+        conn.execute(text("INSERT INTO diagnostic_sessions(session_id,claim_token_hash,expires_at) VALUES ('expired-session',:hash,now()-interval '1 minute')"), {"hash": claim_hash})
+        expired = conn.execute(text("""UPDATE diagnostic_sessions SET claimed_at=now(),claim_token_hash=NULL
+            WHERE session_id='expired-session' AND claim_token_hash=:hash AND claimed_at IS NULL AND expires_at>now()"""), {"hash": claim_hash})
+        assert expired.rowcount == 0

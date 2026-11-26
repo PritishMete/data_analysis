@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS diagnostic_sessions (
     organization_id TEXT REFERENCES organizations(organization_id) ON DELETE CASCADE,
     user_principal_id TEXT REFERENCES principals(principal_id) ON DELETE SET NULL,
     created_by_principal_id TEXT REFERENCES principals(principal_id) ON DELETE SET NULL,
-    claim_token_hash TEXT NOT NULL,
+    claim_token_hash TEXT,
     claimed_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

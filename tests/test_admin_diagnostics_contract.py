@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-from firebase_authz.admin_diagnostics import _csv_safe, _scope
+from firebase_authz.admin_diagnostics import _csv_safe, _scope, _safe_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +27,7 @@ def test_diagnostic_migration_is_additive_and_separate_from_audit_events():
     assert "ALTER TABLE diagnostic_events ENABLE ROW LEVEL SECURITY" in migration
     assert "REVOKE ALL ON diagnostic_sessions, diagnostic_events" in migration
     assert "diagnostic_session_claim_state" in migration
+    assert "claim_token_hash TEXT," in migration
     assert "diagnostic_events_branch_idx" in migration
     assert "organization_id TEXT NOT NULL REFERENCES organizations" in migration
 
@@ -59,4 +60,11 @@ def test_session_and_csv_controls_are_safe():
     assert "sessionStorage" not in frontend
     assert "logger" not in source.lower()
     assert "print(" not in source
-    assert "claim_secret" in source
+
+
+def test_diagnostic_payload_allowlist_rejects_authentication_material():
+    assert _safe_payload({"stage": "oauth_callback", "unknown": "dropped"}) == {"stage": "oauth_callback"}
+    with pytest.raises(Exception):
+        _safe_payload({"access_token": "Bearer eyJsecret"})
+    with pytest.raises(Exception):
+        _safe_payload({"metadata": {"authorization": "Bearer eyJsecret"}})

@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,10 @@ diagnostic_router = APIRouter(prefix="/v1/diagnostics", tags=["diagnostics"])
 SESSION_TTL = timedelta(minutes=15)
 MAX_PAGE_SIZE = 100
 MAX_EXPORT_ROWS = 10_000
+MAX_PAYLOAD_BYTES = 4096
+SENSITIVE_NAME = re.compile(r"(?:access|refresh|id|claim|api)[_-]?(?:token|secret|key)|password|authorization|cookie|oauth[_-]?code", re.I)
+SENSITIVE_VALUE = re.compile(r"(?:bearer\s+eyj|-----BEGIN|sk-[A-Za-z0-9]|oauth[_-]?(?:code|state|token)|refresh[_-]?token|access[_-]?token)", re.I)
+ALLOWED_PAYLOAD_KEYS = {"stage", "component", "operation", "detail", "duration_ms", "code", "metadata"}
 
 def _claims(authorization: str | None) -> dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -88,6 +93,44 @@ def _csv_safe(value: Any):
     value = "" if value is None else str(value)
     return "'" + value if value.startswith(("=", "+", "-", "@")) else value
 
+def _safe_text(value: str | None, limit: int) -> str:
+    text_value = str(value or "")[:limit]
+    if SENSITIVE_VALUE.search(text_value):
+        raise HTTPException(422, "Diagnostic payload contains prohibited authentication material.")
+    return text_value
+
+def _safe_payload(value: Any, depth: int = 0) -> Any:
+    if depth > 3:
+        raise HTTPException(422, "Diagnostic payload nesting is too deep.")
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if SENSITIVE_NAME.search(key_text):
+                raise HTTPException(422, "Diagnostic payload contains prohibited authentication material.")
+            if key_text not in ALLOWED_PAYLOAD_KEYS:
+                continue
+            result[key_text] = _safe_payload(item, depth + 1)
+        return result
+    if isinstance(value, list):
+        if len(value) > 20:
+            raise HTTPException(422, "Diagnostic payload is too large.")
+        return [_safe_payload(item, depth + 1) for item in value]
+    if isinstance(value, str):
+        return _safe_text(value, 512)
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    raise HTTPException(422, "Diagnostic payload contains an unsupported value.")
+
+def _event_fields(item: Any) -> dict[str, Any]:
+    payload = _safe_payload(item.payload)
+    serialized = json.dumps(payload, separators=(",", ":"))
+    if len(serialized.encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        raise HTTPException(422, "Diagnostic payload is too large.")
+    return {"correlation": _safe_text(item.correlation_id, 128), "category": _safe_text(item.category, 80),
+            "status": _safe_text(item.status, 40), "error": _safe_text(item.sanitized_error, 500),
+            "payload": serialized}
+
 class EventIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_id: str = Field(min_length=20, max_length=100)
@@ -125,44 +168,69 @@ def create_session():
 
 @diagnostic_router.post("/sessions/claim")
 def claim_session(item: SessionClaim, authorization: str | None = Header(default=None)):
-    claims = _claims(authorization); subject = str(claims.get("sub") or claims.get("uid") or "")
+    claims = _claims(authorization)
+    subject = str(claims.get("sub") or claims.get("uid") or "")
     with SessionLocal.begin() as db:
-        rows = db.execute(text("""SELECT s.session_id,s.expires_at,s.claimed_at,p.principal_id,om.organization_id,
-            MIN(oa.location_id) AS location_id, COUNT(DISTINCT oa.location_id) AS assignment_branches
-            FROM diagnostic_sessions s JOIN identity_bindings ib ON ib.provider='supabase' AND ib.provider_subject=:subject
-            JOIN principals p ON p.principal_id=ib.principal_id JOIN organization_members om ON om.principal_id=p.principal_id AND om.status='active'
-            LEFT JOIN organizational_assignments oa ON oa.principal_id=p.principal_id AND oa.organization_id=om.organization_id AND oa.status='active'
-            WHERE s.session_id=:session AND s.claim_token_hash=:hash
-            GROUP BY s.session_id,s.expires_at,s.claimed_at,p.principal_id,om.organization_id
-            FOR UPDATE"""), {"session":item.session_id,"hash":_hash(item.claim_secret),"subject":subject}).mappings().all()
-        if len(rows) != 1 or rows[0]["assignment_branches"] > 1: raise HTTPException(403,"Diagnostic session identity scope is ambiguous or invalid.")
-        row = rows[0]
-        if row["claimed_at"] or row["expires_at"] <= datetime.now(timezone.utc): raise HTTPException(403,"Diagnostic session is invalid or expired.")
-        db.execute(text("UPDATE diagnostic_sessions SET user_principal_id=:principal,organization_id=:org,claimed_at=now(),claim_token_hash=NULL WHERE session_id=:session"), {"principal":row["principal_id"],"org":row["organization_id"],"session":item.session_id})
-        db.execute(text("UPDATE diagnostic_events SET organization_id=:org,user_principal_id=:principal,branch_id=:branch WHERE session_id=:session AND organization_id IS NULL"), {"org":row["organization_id"],"principal":row["principal_id"],"branch":row.get("location_id"),"session":item.session_id})
+        session = db.execute(text("""SELECT session_id, expires_at, claimed_at, claim_token_hash
+            FROM diagnostic_sessions
+            WHERE session_id=:session
+            FOR UPDATE"""), {"session": item.session_id}).mappings().first()
+        if (not session or session["claimed_at"] or not session["claim_token_hash"]
+                or not secrets.compare_digest(session["claim_token_hash"], _hash(item.claim_secret))
+                or session["expires_at"] <= datetime.now(timezone.utc)):
+            raise HTTPException(403, "Diagnostic session is invalid or expired.")
+
+        identities = db.execute(text("""SELECT p.principal_id, om.organization_id,
+                COUNT(DISTINCT oa.location_id) AS assignment_branches,
+                MIN(oa.location_id) AS location_id
+            FROM identity_bindings ib
+            JOIN principals p ON p.principal_id=ib.principal_id
+            JOIN organization_members om ON om.principal_id=p.principal_id AND om.status='active'
+            LEFT JOIN organizational_assignments oa ON oa.principal_id=p.principal_id
+              AND oa.organization_id=om.organization_id AND oa.status='active'
+            WHERE ib.provider='supabase' AND ib.provider_subject=:subject
+            GROUP BY p.principal_id, om.organization_id"""), {"subject": subject}).mappings().all()
+        if len(identities) != 1 or identities[0]["assignment_branches"] > 1:
+            raise HTTPException(403, "Diagnostic session identity scope is ambiguous or invalid.")
+        identity = identities[0]
+        updated = db.execute(text("""UPDATE diagnostic_sessions
+            SET user_principal_id=:principal, organization_id=:org,
+                claimed_at=now(), claim_token_hash=NULL
+            WHERE session_id=:session AND claimed_at IS NULL
+              AND claim_token_hash=:hash AND expires_at > now()"""), {
+                  "principal": identity["principal_id"], "org": identity["organization_id"],
+                  "session": item.session_id, "hash": _hash(item.claim_secret)}).rowcount
+        if updated != 1:
+            raise HTTPException(403, "Diagnostic session is invalid or expired.")
+        db.execute(text("""UPDATE diagnostic_events
+            SET organization_id=:org, user_principal_id=:principal, branch_id=:branch
+            WHERE session_id=:session AND organization_id IS NULL"""), {
+                "org": identity["organization_id"], "principal": identity["principal_id"],
+                "branch": identity["location_id"], "session": item.session_id})
     return {"claimed": True}
 
 @diagnostic_router.post("/events")
 def anonymous_event(item: EventIn):
+    fields = _event_fields(item)
     with SessionLocal.begin() as db:
         row = db.execute(text("SELECT session_id,organization_id,user_principal_id,expires_at,claim_token_hash FROM diagnostic_sessions WHERE session_id=:session FOR UPDATE"), {"session":item.session_id}).mappings().first()
         if not row or row["expires_at"] <= datetime.now(timezone.utc) or row["claim_token_hash"] != _hash(item.claim_secret): raise HTTPException(403,"Diagnostic session is invalid or expired.")
         count = db.execute(text("SELECT count(*) FROM diagnostic_events WHERE session_id=:session AND created_at > now() - interval '1 minute'"), {"session":item.session_id}).scalar_one()
         if count >= 60: raise HTTPException(429,"Diagnostic event rate limit exceeded.")
         db.execute(text("""INSERT INTO diagnostic_events(event_id,session_id,organization_id,user_principal_id,correlation_id,category,status,sanitized_error,payload)
-            VALUES (:id,:session,:org,:principal,:corr,:category,:status,:error,CAST(:payload AS jsonb))"""), {"id":"evt_"+uuid.uuid4().hex,"session":item.session_id,"org":row["organization_id"],"principal":row["user_principal_id"],"corr":item.correlation_id,"category":item.category,"status":item.status,"error":item.sanitized_error or "","payload":json.dumps(item.payload)})
+            VALUES (:id,:session,:org,:principal,:corr,:category,:status,:error,CAST(:payload AS jsonb))"""), {"id":"evt_"+uuid.uuid4().hex,"session":item.session_id,"org":row["organization_id"],"principal":row["user_principal_id"],**fields})
     return {"accepted": True}
 
 @router.post("/events")
 def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = Header(default=None)):
-    actor = _actor(authorization); _rate_limit(actor, "diagnostic.event.ingested", 600)
+    actor = _actor(authorization); _rate_limit(actor, "diagnostic.event.ingested", 600); fields = _event_fields(item)
     with SessionLocal.begin() as db:
         valid = db.execute(text("""SELECT 1 FROM diagnostic_sessions
             WHERE session_id=:session AND organization_id=:org AND (user_principal_id=:principal OR user_principal_id IS NULL)
               AND expires_at > now()"""), {"session":item.session_id,"org":actor["organization_id"],"principal":actor["principal_id"]}).scalar_one_or_none()
         if not valid: raise HTTPException(403, "Diagnostic session is invalid or outside your scope.")
         db.execute(text("""INSERT INTO diagnostic_events(event_id,session_id,organization_id,user_principal_id,branch_id,correlation_id,category,status,sanitized_error,payload)
-            VALUES (:id,:session,:org,:principal,:branch,:corr,:category,:status,:error,CAST(:payload AS jsonb))"""), {"id":"evt_"+uuid.uuid4().hex,"session":item.session_id,"org":actor["organization_id"],"principal":actor["principal_id"],"branch":actor.get("support_branch"),"corr":item.correlation_id,"category":item.category,"status":item.status,"error":item.sanitized_error or "","payload":json.dumps(item.payload)})
+            VALUES (:id,:session,:org,:principal,:branch,:corr,:category,:status,:error,CAST(:payload AS jsonb))"""), {"id":"evt_"+uuid.uuid4().hex,"session":item.session_id,"org":actor["organization_id"],"principal":actor["principal_id"],"branch":actor.get("support_branch"),**fields})
     return {"accepted": True}
 
 @router.get("/overview")
