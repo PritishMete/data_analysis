@@ -451,16 +451,18 @@ _CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "INSIGHTFLOW_CORS_ORIGINS",
-        "https://pritishmete.github.io"
+        "https://insightflow-3e8.pages.dev,https://pritishmete.github.io"
         if _production_environment
-        else "https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000",
+        else "https://insightflow-3e8.pages.dev,https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000",
     ).split(",")
     if origin.strip()
 ]
-# Production always retains the verified GitHub Pages origin. Development may
-# opt into it explicitly through INSIGHTFLOW_CORS_ORIGINS.
-if _production_environment and "https://pritishmete.github.io" not in _CORS_ORIGINS:
-    _CORS_ORIGINS.append("https://pritishmete.github.io")
+# Production retains both the current Cloudflare Pages origin and the legacy
+# GitHub Pages origin while older clients finish migrating.
+if _production_environment:
+    for _origin in ("https://insightflow-3e8.pages.dev", "https://pritishmete.github.io"):
+        if _origin not in _CORS_ORIGINS:
+            _CORS_ORIGINS.append(_origin)
 if _production_environment:
     _CORS_ORIGINS = [
         origin for origin in _CORS_ORIGINS

@@ -14,9 +14,9 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 def configured_origins() -> set[str]:
     default = (
-        "https://pritishmete.github.io"
+        "https://insightflow-3e8.pages.dev,https://pritishmete.github.io"
         if os.getenv("INSIGHTFLOW_ENV", "production").strip().lower() == "production"
-        else "https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000"
+        else "https://insightflow-3e8.pages.dev,https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000"
     )
     raw = os.getenv("INSIGHTFLOW_CORS_ORIGINS", default)
     return {item.strip().rstrip("/") for item in raw.split(",") if item.strip()}
