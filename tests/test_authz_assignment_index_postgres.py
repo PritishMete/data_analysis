@@ -660,3 +660,35 @@ def test_diagnostic_http_endpoints_use_disposable_postgres(
         headers = {"Authorization": "Bearer test-token"}
         assert client.post("/v1/diagnostics/sessions/claim", json={"session_id": session_id, "claim_secret": secret}, headers=headers).status_code == 200
         assert client.post("/v1/diagnostics/sessions/claim", json={"session_id": session_id, "claim_secret": secret}, headers=headers).status_code == 403
+
+
+def test_diagnostic_http_claim_is_single_winner_under_concurrency(postgres_engine, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+    from firebase_authz import admin_diagnostics as diagnostics
+
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    runner.run_migrations()
+    monkeypatch.setattr(diagnostics, "SessionLocal", sessionmaker(bind=postgres_engine, future=True))
+    with postgres_engine.begin() as conn:
+        conn.execute(text("INSERT INTO principals(principal_id) VALUES ('concurrent-principal')"))
+        conn.execute(text("INSERT INTO organizations(organization_id,name,created_by_principal_id) VALUES ('concurrent-org','Concurrent','concurrent-principal')"))
+        conn.execute(text("INSERT INTO workspaces(workspace_id,organization_id) VALUES ('concurrent-ws','concurrent-org')"))
+        conn.execute(text("INSERT INTO organization_members(organization_id,workspace_id,principal_id,employee_id) VALUES ('concurrent-org','concurrent-ws','concurrent-principal','C1')"))
+        conn.execute(text("INSERT INTO identity_bindings(provider,provider_subject,principal_id) VALUES ('supabase','concurrent-subject','concurrent-principal')"))
+    monkeypatch.setattr(diagnostics, "_claims", lambda _: {"sub": "concurrent-subject", "email_verified": True})
+    app = FastAPI(); app.include_router(diagnostics.diagnostic_router)
+    with TestClient(app) as creator:
+        created = creator.post("/v1/diagnostics/sessions").raise_for_status().json()
+    payload = {"session_id": created["support_reference"], "claim_secret": created["claim_secret"]}
+    def claim():
+        with TestClient(app) as client:
+            return client.post("/v1/diagnostics/sessions/claim", json=payload, headers={"Authorization": "Bearer concurrent"}).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _: claim(), range(2)))
+    assert sorted(statuses) == [200, 403]
+    with postgres_engine.connect() as conn:
+        row = conn.execute(text("SELECT count(*) AS claims FROM diagnostic_sessions WHERE session_id=:session AND claimed_at IS NOT NULL AND user_principal_id='concurrent-principal'"), {"session": created["support_reference"]}).scalar_one()
+        assert row == 1

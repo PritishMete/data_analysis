@@ -1,6 +1,7 @@
 from pathlib import Path
 import pytest
 
+from firebase_authz import admin_diagnostics as diagnostics
 from firebase_authz.admin_diagnostics import _csv_safe, _scope, _safe_payload
 
 
@@ -68,3 +69,20 @@ def test_diagnostic_payload_allowlist_rejects_authentication_material():
         _safe_payload({"access_token": "Bearer eyJsecret"})
     with pytest.raises(Exception):
         _safe_payload({"metadata": {"authorization": "Bearer eyJsecret"}})
+
+
+def test_anonymous_rate_limiter_has_hard_cap_and_expiry_cleanup():
+    diagnostics._anonymous_rate_buckets.clear()
+    for index in range(diagnostics.ANONYMOUS_RATE_MAX_BUCKETS):
+        diagnostics._anonymous_rate_limit(f"client-{index}", 1000.0)
+    assert len(diagnostics._anonymous_rate_buckets) == diagnostics.ANONYMOUS_RATE_MAX_BUCKETS
+    with pytest.raises(Exception):
+        diagnostics._anonymous_rate_limit("overflow", 1000.0)
+    diagnostics._anonymous_rate_limit("new-client", 1061.0)
+    assert len(diagnostics._anonymous_rate_buckets) <= diagnostics.ANONYMOUS_RATE_MAX_BUCKETS
+
+
+def test_anonymous_rate_limiter_handles_missing_client_bucket():
+    diagnostics._anonymous_rate_buckets.clear()
+    diagnostics._anonymous_rate_limit("unknown", 2000.0)
+    assert "unknown" in diagnostics._anonymous_rate_buckets

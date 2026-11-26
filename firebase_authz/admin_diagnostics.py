@@ -166,14 +166,22 @@ class AuthenticatedEventIn(BaseModel):
 _anonymous_rate_lock = threading.Lock()
 _anonymous_rate_buckets: dict[str, list[float]] = {}
 ANONYMOUS_RATE_LIMIT = 20
+ANONYMOUS_RATE_MAX_BUCKETS = 2048
 
 def _anonymous_rate_limit(bucket: str, now: float) -> None:
+    """Process-local limiter; trusted socket IPs only, not forwarded headers.
+
+    The cap and overflow response bound memory. Shared NAT addresses are one bucket,
+    and multiple workers/instances are not globally coordinated.
+    """
     with _anonymous_rate_lock:
         cutoff = now - 60
         active = [stamp for stamp in _anonymous_rate_buckets.get(bucket, []) if stamp > cutoff]
         if len(active) >= ANONYMOUS_RATE_LIMIT:
             _anonymous_rate_buckets[bucket] = active
             raise HTTPException(429, "Diagnostic session rate limit exceeded.")
+        if bucket not in _anonymous_rate_buckets and len(_anonymous_rate_buckets) >= ANONYMOUS_RATE_MAX_BUCKETS:
+            raise HTTPException(429, "Diagnostic session capacity temporarily unavailable.")
         active.append(now)
         _anonymous_rate_buckets[bucket] = active
         if len(_anonymous_rate_buckets) > 2048:
