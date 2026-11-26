@@ -1,6 +1,7 @@
-const api = globalThis.INSIGHTFLOW_ADMIN_API || 'http://localhost:8000';
-const supabaseUrl = globalThis.INSIGHTFLOW_SUPABASE_URL || '';
-const supabaseAnonKey = globalThis.INSIGHTFLOW_SUPABASE_ANON_KEY || '';
+const config = globalThis.INSIGHTFLOW_ADMIN_CONFIG || {};
+const api = config.apiOrigin || '';
+const supabaseUrl = config.supabaseUrl || '';
+const supabaseAnonKey = config.supabaseAnonKey || '';
 const state = { token: '', q: '', page: 1, pageSize: 25, principal: '' };
 const app = document.querySelector('#app');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

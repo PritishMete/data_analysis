@@ -43,3 +43,8 @@ jobs:
         working-directory: apps/admin_portal
       - run: npm run build
         working-directory: apps/admin_portal
+        env:
+          ADMIN_PORTAL_ENV: production
+          INSIGHTFLOW_ADMIN_API: https://api.example.invalid
+          INSIGHTFLOW_SUPABASE_URL: https://example.supabase.co
+          INSIGHTFLOW_SUPABASE_ANON_KEY: ci-public-anon-key

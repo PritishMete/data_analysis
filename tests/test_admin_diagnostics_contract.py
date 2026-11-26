@@ -38,6 +38,10 @@ def test_admin_frontend_has_no_main_app_mount():
     assert (frontend / "wrangler.toml").exists()
     assert (frontend / "src" / "index.html").exists()
     assert "admin" in (frontend / "README.md").read_text(encoding="utf-8").lower()
+    build = (frontend / "build.mjs").read_text(encoding="utf-8")
+    assert "INSIGHTFLOW_ADMIN_API" in build
+    assert "JSON.stringify(config)" in build
+    assert "Production admin build requires" in build
 
 
 def test_scope_rejects_arbitrary_organization_and_support_branch_expansion():
