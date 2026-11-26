@@ -27,6 +27,9 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    # Retain the existing environment because it stores production build
+    # variables and secrets; it is not a GitHub Pages deployment target.
+    environment: github-pages
     timeout-minutes: 45
 
     steps:
