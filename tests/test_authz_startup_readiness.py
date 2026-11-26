@@ -9,6 +9,32 @@ from fastapi.testclient import TestClient
 
 
 class AuthorizationStartupReadinessTests(unittest.TestCase):
+    def test_schema_verification_rejects_missing_table(self):
+        class Inspector:
+            def has_table(self, name): return name != "diagnostic_events"
+            def get_columns(self, name): return [{"name": column} for column in main._REQUIRED_AUTHZ_COLUMNS[name]]
+        with patch.object(main, "sqlalchemy_inspect", return_value=Inspector()):
+            with self.assertRaisesRegex(RuntimeError, "schema is incomplete"):
+                main._verify_required_schema()
+
+    def test_schema_verification_rejects_missing_column(self):
+        class Inspector:
+            def has_table(self, name): return True
+            def get_columns(self, name):
+                columns = main._REQUIRED_AUTHZ_COLUMNS.get(name, {"id"})
+                return [{"name": column} for column in columns if column != "payload"]
+        with patch.object(main, "sqlalchemy_inspect", return_value=Inspector()):
+            with self.assertRaisesRegex(RuntimeError, "schema is incomplete"):
+                main._verify_required_schema()
+
+    def test_schema_verification_accepts_required_schema(self):
+        class Inspector:
+            def has_table(self, name): return True
+            def get_columns(self, name):
+                return [{"name": column} for column in main._REQUIRED_AUTHZ_COLUMNS.get(name, {"id"})]
+        with patch.object(main, "sqlalchemy_inspect", return_value=Inspector()):
+            main._verify_required_schema()
+
     def test_main_source_has_no_migration_execution_path(self):
         source = open("main.py", encoding="utf-8").read()
         self.assertNotIn("run_migrations()", source)
@@ -27,6 +53,16 @@ class AuthorizationStartupReadinessTests(unittest.TestCase):
 
     def test_health_remains_unready_when_database_initialization_fails(self):
         main._PRODUCTION_READY = False
+        with patch.object(main, "_initialize_production_database"):
+            with TestClient(main.app) as client:
+                assert client.get("/health").status_code == 503
+
+    def test_health_is_503_when_schema_verification_fails(self):
+        main._PRODUCTION_READY = False
+        with patch.dict(os.environ, {"AUTHZ_PERSISTENCE_PROVIDER": "supabase", "DATABASE_URL": "postgresql://isolated"}):
+            with patch.object(main, "init_db"), patch.object(main._rate_limiter, "initialize"), patch.object(main, "_verify_required_schema", side_effect=RuntimeError("schema incomplete")):
+                with self.assertRaisesRegex(RuntimeError, "schema incomplete"):
+                    main._initialize_production_database()
         with patch.object(main, "_initialize_production_database"):
             with TestClient(main.app) as client:
                 assert client.get("/health").status_code == 503

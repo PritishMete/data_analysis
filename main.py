@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from sqlalchemy import inspect as sqlalchemy_inspect
 try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - optional in local test envs
@@ -360,6 +361,29 @@ _rate_limiter = DatabaseRateLimiter(engine)
 # Schema migrations are deliberately not part of this lifecycle.
 _PRODUCTION_READY = False
 
+_REQUIRED_AUTHZ_COLUMNS = {
+    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at"},
+    "diagnostic_events": {"event_id", "session_id", "organization_id", "user_principal_id", "branch_id", "correlation_id", "category", "status", "payload"},
+    "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
+}
+
+
+def _verify_required_schema() -> None:
+    """Read-only verification of migration-managed authorization schema."""
+    required_tables = {
+        "principals", "identity_bindings", "organizations", "organization_members",
+        "organizational_assignments", "audit_events", *(_REQUIRED_AUTHZ_COLUMNS.keys()),
+    }
+    inspector = sqlalchemy_inspect(engine)
+    missing_tables = [name for name in required_tables if not inspector.has_table(name)]
+    missing_columns = [
+        name for table, columns in _REQUIRED_AUTHZ_COLUMNS.items()
+        if inspector.has_table(table)
+        for name in columns - {column["name"] for column in inspector.get_columns(table)}
+    ]
+    if missing_tables or missing_columns:
+        raise RuntimeError("Required authorization database schema is incomplete; run the explicit migration command.")
+
 
 def _initialize_production_database() -> None:
     """Fail closed until required schema verification and DB initialization finish."""
@@ -373,6 +397,8 @@ def _initialize_production_database() -> None:
     logger.info("[startup] Beginning application model/table initialization.")
     init_db()
     _rate_limiter.initialize()
+    if provider == "supabase":
+        _verify_required_schema()
     logger.info("[startup] Application model/table initialization finished in %.2fs.", time.monotonic() - startup_started)
     _PRODUCTION_READY = True
     logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)
