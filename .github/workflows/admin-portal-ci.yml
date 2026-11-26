@@ -1,0 +1,25 @@
+name: InsightFlow Admin Portal CI
+on:
+  pull_request:
+    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
+  push:
+    branches: [main, codex/user-diagnostics-admin-panel]
+    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
+permissions: {contents: read}
+jobs:
+  build-and-compile:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: data_analysis}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r requirements-test.txt
+      - run: python -m pytest -q tests/test_management_ui_policy_contract.py tests/test_provider_diagnostics.py tests/test_firebase_authz_api.py
+      - run: python -m py_compile firebase_authz/admin_diagnostics.py tools/run_authz_migrations.py
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
+      - run: npm install --ignore-scripts
+        working-directory: apps/admin_portal
+      - run: npm run build
+        working-directory: apps/admin_portal
