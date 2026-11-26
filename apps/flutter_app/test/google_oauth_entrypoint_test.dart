@@ -17,24 +17,18 @@ void main() {
   test('website OAuth callback follows the current Cloudflare Pages origin', () {
     final source = File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
 
-    expect(
-      source,
-      contains('static String resolveAuthRedirectUrl'),
-    );
-    expect(
-      source,
-      isNot(contains("defaultValue: 'https://pritishmete.github.io/data_analysis/'")),
-    );
+    expect(source, contains('static String resolveAuthRedirectUrl'));
+    expect(source, contains('_productionWebAuthRedirectUrl'));
+    expect(source, isNot(contains('pritishmete.github.io')));
     expect(
       source,
       contains('emailRedirectTo: InsightFlowSupabaseConfig.authRedirectUrl'),
     );
   });
 
-  test('OAuth redirect resolver preserves website and Excel origins', () {
+  test('OAuth callback follows the website origin for browser and Excel hosts', () {
     final cloudflare = Uri.parse('https://insightflow-3e8.pages.dev/');
-    final local = Uri.parse('http://localhost:5173/');
-    const cloudflareOrigin = 'https://insightflow-3e8.pages.dev/';
+    final excelLocal = Uri.parse('http://localhost:5173/');
 
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
@@ -46,25 +40,19 @@ void main() {
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
         isWeb: true,
-        isOffice: false,
-        currentUri: local,
+        currentUri: excelLocal,
       ),
       'http://localhost:5173/',
     );
+  });
+
+  test('native OAuth fallback is the Cloudflare production origin', () {
     expect(
       InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
-        isWeb: true,
-        currentUri: cloudflare,
+        isWeb: false,
+        currentUri: Uri.parse('insightflow://callback'),
       ),
-      cloudflareOrigin,
-    );
-    expect(
-      InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
-        isWeb: true,
-        isOffice: false,
-        currentUri: cloudflare,
-      ),
-      cloudflareOrigin,
+      'https://insightflow-3e8.pages.dev/',
     );
   });
 
@@ -86,11 +74,10 @@ void main() {
     expect(source, contains("error == 'access_denied'"));
     expect(source, contains('Google sign-in was cancelled.'));
   });
+
+  test('Excel add-in manifest uses Cloudflare Pages for every runtime URL', () {
+    final manifest = File('excel/InsightFlow.addin.xml').readAsStringSync();
+    expect(manifest, contains('https://insightflow-3e8.pages.dev/'));
+    expect(manifest, isNot(contains('github.io')));
+  });
 }
-
-
-test('Excel add-in manifest uses Cloudflare Pages for every runtime URL', () {
-  final manifest = File('excel/InsightFlow.addin.xml').readAsStringSync();
-  expect(manifest, contains('https://insightflow-3e8.pages.dev/'));
-  expect(manifest, isNot(contains('github.io')));
-});
