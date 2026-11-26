@@ -7,9 +7,10 @@ import json
 import re
 import secrets
 import uuid
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
@@ -34,10 +35,10 @@ def _claims(authorization: str | None) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(401, "Session expired.") from exc
 
-def _actor(authorization: str | None) -> dict[str, Any]:
+def _actor(authorization: str | None, organization_id: str | None = None) -> dict[str, Any]:
     claims = _claims(authorization); subject = str(claims.get("sub") or claims.get("uid") or "").strip()
     with SessionLocal() as db:
-        row = db.execute(text("""
+        rows = db.execute(text("""
             SELECT p.principal_id, om.organization_id, om.workspace_id,
                    COALESCE(MAX(CASE WHEN oa.role_id='organization_owner' THEN 1 ELSE 0 END), 0) AS owner,
                    COALESCE(sa.active, false) AS support_active,
@@ -49,8 +50,13 @@ def _actor(authorization: str | None) -> dict[str, Any]:
             LEFT JOIN diagnostic_support_admins sa ON sa.principal_id=p.principal_id AND sa.active
             WHERE ib.provider='supabase' AND ib.provider_subject=:subject
             GROUP BY p.principal_id, om.organization_id, om.workspace_id, sa.active, sa.organization_id, sa.branch_id
-            ORDER BY owner DESC LIMIT 1
-        """), {"subject": subject}).mappings().first()
+            ORDER BY owner DESC
+        """), {"subject": subject}).mappings().all()
+    if organization_id:
+        rows = [item for item in rows if item["organization_id"] == organization_id]
+    if len(rows) != 1:
+        raise HTTPException(409, "An explicit, unambiguous organization context is required.")
+    row = rows[0]
     if not row or (not row["owner"] and (not row["support_active"] or not row["support_org"])):
         raise HTTPException(403, "Diagnostic administrator access denied.")
     return dict(row) | {"subject": subject}
@@ -157,12 +163,29 @@ class AuthenticatedEventIn(BaseModel):
     sanitized_error: str | None = Field(default=None, max_length=500)
     payload: dict[str, Any] = Field(default_factory=dict)
 
+_anonymous_rate_lock = threading.Lock()
+_anonymous_rate_buckets: dict[str, list[float]] = {}
+ANONYMOUS_RATE_LIMIT = 20
+
+def _anonymous_rate_limit(bucket: str, now: float) -> None:
+    with _anonymous_rate_lock:
+        cutoff = now - 60
+        active = [stamp for stamp in _anonymous_rate_buckets.get(bucket, []) if stamp > cutoff]
+        if len(active) >= ANONYMOUS_RATE_LIMIT:
+            _anonymous_rate_buckets[bucket] = active
+            raise HTTPException(429, "Diagnostic session rate limit exceeded.")
+        active.append(now)
+        _anonymous_rate_buckets[bucket] = active
+        if len(_anonymous_rate_buckets) > 2048:
+            for key in list(_anonymous_rate_buckets):
+                if not _anonymous_rate_buckets[key] or _anonymous_rate_buckets[key][-1] <= cutoff:
+                    del _anonymous_rate_buckets[key]
+
 @diagnostic_router.post("/sessions")
-def create_session():
+def create_session(request: Request = None):
+    _anonymous_rate_limit(request.client.host if request and request.client else "unknown", datetime.now(timezone.utc).timestamp())
     session = "diag_" + secrets.token_urlsafe(32); secret = secrets.token_urlsafe(48); now = datetime.now(timezone.utc)
     with SessionLocal.begin() as db:
-        recent = db.execute(text("SELECT count(*) FROM diagnostic_sessions WHERE created_at > now() - interval '1 minute'" )).scalar_one()
-        if recent >= 120: raise HTTPException(429, "Diagnostic session rate limit exceeded.")
         db.execute(text("INSERT INTO diagnostic_sessions(session_id,claim_token_hash,expires_at) VALUES (:session,:hash,:expires)"), {"session":session,"hash":_hash(secret),"expires":now+SESSION_TTL})
     return {"support_reference": session, "claim_secret": secret, "expires_at": (now+SESSION_TTL).isoformat()}
 
@@ -234,14 +257,14 @@ def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = 
     return {"accepted": True}
 
 @router.get("/overview")
-def overview(branch_id: str | None = None, authorization: str | None = Header(default=None)):
-    actor=_actor(authorization); org,branch=_scope(actor,branch_id=branch_id); _audit(actor,"diagnostic.overview.viewed",{"branch_id":branch})
+def overview(branch_id: str | None = None, organization_id: str | None = None, authorization: str | None = Header(default=None)):
+    actor=_actor(authorization, organization_id); org,branch=_scope(actor,organization_id=organization_id,branch_id=branch_id); _audit(actor,"diagnostic.overview.viewed",{"branch_id":branch})
     with SessionLocal() as db: row=db.execute(text("SELECT count(*) total_events,count(DISTINCT user_principal_id) users FROM diagnostic_events WHERE organization_id=:org AND (:branch IS NULL OR branch_id=:branch)"),{"org":org,"branch":branch}).mappings().one()
     return {"organization_id":org,"total_events":row["total_events"],"users":row["users"]}
 
 @router.get("/users")
 def users(q: str=Query(default="",max_length=160), branch_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), organization_id: str|None=None, authorization: str|None=Header(default=None)):
-    actor=_actor(authorization); org,branch=_scope(actor,organization_id,branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.directory.searched",{"branch_id":branch})
+    actor=_actor(authorization, organization_id); org,branch=_scope(actor,organization_id,branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.directory.searched",{"branch_id":branch})
     with SessionLocal() as db:
         rows=db.execute(text("""SELECT p.principal_id,ib.provider_subject AS user_id,au.email,oa.location_id AS branch_id
             FROM principals p JOIN identity_bindings ib ON ib.principal_id=p.principal_id AND ib.provider='supabase'
@@ -253,8 +276,8 @@ def users(q: str=Query(default="",max_length=160), branch_id: str|None=None, pag
     return {"users":[dict(row) for row in rows],"page":page,"page_size":page_size}
 
 @router.get("/users/{principal_id}/timeline")
-def timeline(principal_id: str, branch_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
-    actor=_actor(authorization); org,branch=_scope(actor,branch_id=branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.timeline.viewed",{"branch_id":branch})
+def timeline(principal_id: str, branch_id: str|None=None, organization_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
+    actor=_actor(authorization, organization_id); org,branch=_scope(actor,organization_id=organization_id,branch_id=branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.timeline.viewed",{"branch_id":branch})
     with SessionLocal() as db:
         rows=db.execute(text("""SELECT e.event_id,e.event_at,e.correlation_id,e.category,e.status,e.sanitized_error FROM diagnostic_events e
             JOIN organization_members target_member ON target_member.principal_id=e.user_principal_id AND target_member.organization_id=:org AND target_member.status='active'
@@ -270,21 +293,21 @@ def _export_rows(actor, branch_id):
             WHERE e.organization_id=:org AND (:branch IS NULL OR e.branch_id=:branch) ORDER BY e.event_at DESC LIMIT :limit"""),{"org":org,"branch":branch,"limit":MAX_EXPORT_ROWS}).mappings().all()]
 
 @router.get("/export")
-def export_report(format: str=Query("json",pattern="^(json|csv)$"), branch_id: str|None=None, authorization: str|None=Header(default=None)):
-    actor=_actor(authorization); rows=_export_rows(actor,branch_id); _audit(actor,"diagnostic.report.exported",{"format":format,"branch_id":branch_id})
+def export_report(format: str=Query("json",pattern="^(json|csv)$"), branch_id: str|None=None, organization_id: str|None=None, authorization: str|None=Header(default=None)):
+    actor=_actor(authorization, organization_id); rows=_export_rows(actor,branch_id); _audit(actor,"diagnostic.report.exported",{"format":format,"branch_id":branch_id})
     if format=="csv":
         out=io.StringIO(); fields=list(rows[0]) if rows else ["event_id"]; writer=csv.DictWriter(out,fieldnames=fields); writer.writeheader(); writer.writerows({k:_csv_safe(v) for k,v in row.items()} for row in rows)
         return StreamingResponse(iter([out.getvalue()]),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=diagnostics.csv"})
     return rows
 
 @router.get("/support/search")
-def support_search(q: str=Query(...,min_length=2,max_length=160), branch_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
-    actor=_actor(authorization); _rate_limit(actor,"diagnostic.support_reference.searched"); org,branch=_scope(actor,branch_id=branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.support_reference.searched",{"branch_id":branch})
+def support_search(q: str=Query(...,min_length=2,max_length=160), branch_id: str|None=None, organization_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
+    actor=_actor(authorization, organization_id); _rate_limit(actor,"diagnostic.support_reference.searched"); org,branch=_scope(actor,organization_id=organization_id,branch_id=branch_id); offset,limit=_paging(page,page_size); _audit(actor,"diagnostic.support_reference.searched",{"branch_id":branch})
     with SessionLocal() as db: rows=db.execute(text("SELECT event_id,event_at,session_id,correlation_id,category,status FROM diagnostic_events WHERE organization_id=:org AND (:branch IS NULL OR branch_id=:branch) AND (session_id ILIKE :q OR correlation_id ILIKE :q OR category ILIKE :q) ORDER BY event_at DESC OFFSET :offset LIMIT :limit"),{"org":org,"branch":branch,"q":f"%{q}%","offset":offset,"limit":limit}).mappings().all()
     return {"references":[dict(row) for row in rows],"page":page,"page_size":page_size}
 
 @router.get("/audit")
-def audit_history(branch_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
-    actor=_actor(authorization); org,branch=_scope(actor,branch_id=branch_id); offset,limit=_paging(page,page_size)
+def audit_history(branch_id: str|None=None, organization_id: str|None=None, page: int=Query(1,ge=1), page_size: int=Query(50,ge=1,le=MAX_PAGE_SIZE), authorization: str|None=Header(default=None)):
+    actor=_actor(authorization, organization_id); org,branch=_scope(actor,organization_id=organization_id,branch_id=branch_id); offset,limit=_paging(page,page_size)
     with SessionLocal() as db: rows=db.execute(text("SELECT event_id,action,outcome,metadata,created_at FROM audit_events WHERE organization_id=:org AND action LIKE 'diagnostic.%' AND (:branch IS NULL OR metadata->>'branch_id'=:branch) ORDER BY created_at DESC OFFSET :offset LIMIT :limit"),{"org":org,"branch":branch,"offset":offset,"limit":limit}).mappings().all()
     return {"audit":[dict(row) for row in rows],"page":page,"page_size":page_size}

@@ -624,3 +624,37 @@ def test_diagnostic_route_functions_use_disposable_postgres_for_claim_and_events
 
     with pytest.raises(Exception):
         diagnostics.anonymous_event(diagnostics.EventIn(session_id=created["support_reference"], claim_secret="x" * 48, correlation_id="bad", category="stage", status="failed"))
+
+
+def test_diagnostic_http_endpoints_use_disposable_postgres(
+    postgres_engine, monkeypatch
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+    from firebase_authz import admin_diagnostics as diagnostics
+
+    runner.run_migrations()
+    monkeypatch.setattr(diagnostics, "SessionLocal", sessionmaker(bind=postgres_engine, future=True))
+    with postgres_engine.begin() as conn:
+        conn.execute(text("INSERT INTO principals(principal_id) VALUES ('http-principal')"))
+        conn.execute(text("INSERT INTO organizations(organization_id,name,created_by_principal_id) VALUES ('http-org','HTTP','http-principal')"))
+        conn.execute(text("INSERT INTO workspaces(workspace_id,organization_id) VALUES ('http-ws','http-org')"))
+        conn.execute(text("INSERT INTO organization_members(organization_id,workspace_id,principal_id,employee_id) VALUES ('http-org','http-ws','http-principal','H1')"))
+        conn.execute(text("INSERT INTO identity_bindings(provider,provider_subject,principal_id) VALUES ('supabase','http-subject','http-principal')"))
+    app = FastAPI()
+    app.include_router(diagnostics.diagnostic_router)
+    with TestClient(app) as client:
+        created = client.post("/v1/diagnostics/sessions").raise_for_status().json()
+        session_id = created["support_reference"]
+        secret = created["claim_secret"]
+        event = {"session_id": session_id, "claim_secret": secret, "correlation_id": "http-correlation", "category": "office_dialog_open", "status": "started", "payload": {"stage": "office_dialog_open"}}
+        assert client.post("/v1/diagnostics/events", json=event).status_code == 200
+        bad = dict(event, claim_secret="x" * 48)
+        assert client.post("/v1/diagnostics/events", json=bad).status_code == 403
+        sensitive = dict(event, payload={"access_token": "Bearer eyJsecret"})
+        assert client.post("/v1/diagnostics/events", json=sensitive).status_code == 422
+        monkeypatch.setattr(diagnostics, "_claims", lambda _: {"sub": "http-subject", "email_verified": True})
+        headers = {"Authorization": "Bearer test-token"}
+        assert client.post("/v1/diagnostics/sessions/claim", json={"session_id": session_id, "claim_secret": secret}, headers=headers).status_code == 200
+        assert client.post("/v1/diagnostics/sessions/claim", json={"session_id": session_id, "claim_secret": secret}, headers=headers).status_code == 403
