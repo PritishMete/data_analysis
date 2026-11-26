@@ -431,6 +431,7 @@ def test_production_migration_runner_rejects_invalid_assignment_index(
 ):
     """The actual startup runner must fail closed on stale/missing live indexes."""
     monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
     runner.run_migrations()
 
     with postgres_engine.begin() as conn:
@@ -634,6 +635,7 @@ def test_diagnostic_http_endpoints_use_disposable_postgres(
     from sqlalchemy.orm import sessionmaker
     from firebase_authz import admin_diagnostics as diagnostics
 
+    monkeypatch.setattr(runner, "connect", lambda: postgres_engine)
     runner.run_migrations()
     monkeypatch.setattr(diagnostics, "SessionLocal", sessionmaker(bind=postgres_engine, future=True))
     with postgres_engine.begin() as conn:
