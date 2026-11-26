@@ -205,6 +205,9 @@ def test_explicit_migration_runner_and_startup_are_separate(
     # module-level engine. Bind that engine to the disposable PostgreSQL
     # service so this test exercises the real follow-up application DB setup.
     monkeypatch.setattr(core_db, "engine", postgres_engine)
+    # main.py also retains the imported engine reference for readiness schema
+    # verification; bind that reference to the same disposable database.
+    monkeypatch.setattr(main, "engine", postgres_engine)
     actual_init_db = main.init_db
     startup_calls = []
     expected_versions = {path.stem for path in runner.migration_files()}
