@@ -7,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/auth/oauth_callback_cleanup.dart';
 import '../../core/interop/office_host.dart';
 import '../../core/interop/excel_auth_bridge.dart';
 import 'management_shell.dart';
@@ -260,6 +261,7 @@ class _AuthenticatedGateState extends State<_AuthenticatedGate> {
   @override
   void initState() {
     super.initState();
+    cleanOAuthCallbackUrl();
     _refresh();
   }
 
