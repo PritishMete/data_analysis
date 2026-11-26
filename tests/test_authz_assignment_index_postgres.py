@@ -679,17 +679,22 @@ def test_diagnostic_http_claim_is_single_winner_under_concurrency(postgres_engin
         conn.execute(text("INSERT INTO workspaces(workspace_id,organization_id) VALUES ('concurrent-ws','concurrent-org')"))
         conn.execute(text("INSERT INTO organization_members(organization_id,workspace_id,principal_id,employee_id) VALUES ('concurrent-org','concurrent-ws','concurrent-principal','C1')"))
         conn.execute(text("INSERT INTO identity_bindings(provider,provider_subject,principal_id) VALUES ('supabase','concurrent-subject','concurrent-principal')"))
-    monkeypatch.setattr(diagnostics, "_claims", lambda _: {"sub": "concurrent-subject", "email_verified": True})
     app = FastAPI(); app.include_router(diagnostics.diagnostic_router)
     with TestClient(app) as creator:
         created = creator.post("/v1/diagnostics/sessions").raise_for_status().json()
         event = {"session_id": created["support_reference"], "claim_secret": created["claim_secret"], "correlation_id": "concurrent-event", "category": "claim_race", "status": "started", "payload": {"stage": "claim_race"}}
         assert creator.post("/v1/diagnostics/events", json=event).status_code == 200
     payload = {"session_id": created["support_reference"], "claim_secret": created["claim_secret"]}
-    ready = Barrier(2)
+    auth_ready = Barrier(2)
+    def synchronized_claims(_authorization):
+        try:
+            auth_ready.wait(timeout=10)
+        except Exception as exc:
+            raise AssertionError("concurrent claim authentication barrier timed out") from exc
+        return {"sub": "concurrent-subject", "email_verified": True}
+    monkeypatch.setattr(diagnostics, "_claims", synchronized_claims)
     def claim():
         with TestClient(app) as client:
-            ready.wait(timeout=10)
             return client.post("/v1/diagnostics/sessions/claim", json=payload, headers={"Authorization": "Bearer concurrent"}).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: claim(), range(2)))
