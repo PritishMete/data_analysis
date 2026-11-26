@@ -342,7 +342,7 @@ if _production_environment and not _docs_enabled:
 @asynccontextmanager
 async def _application_lifespan(_app):
     # Starlette 1.x removed the legacy add_event_handler API. Keep required
-    # database/authz initialization in the supported lifespan lifecycle.
+    # application database initialization in the supported lifespan lifecycle.
     _initialize_production_database()
     yield
 
@@ -356,36 +356,8 @@ app = FastAPI(
 _rate_limiter = DatabaseRateLimiter(engine)
 
 
-def _run_production_authz_migrations() -> None:
-    """Ensure the Supabase authorization schema exists before serving requests.
-
-    Render's service-level Build Command can lag behind render.yaml, so the
-    application also performs the existing versioned migration runner during
-    startup when the live service is configured for Supabase authorization.
-    The runner is idempotent and uses a PostgreSQL advisory lock, so this does
-    not create a second migration system or alter migration files.
-    """
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
-    if provider != "supabase":
-        return
-    if not os.environ.get("DATABASE_URL", "").strip():
-        raise RuntimeError(
-            "[authz] DATABASE_URL is missing; refusing to start with unverified Supabase authorization schema."
-        )
-    try:
-        from tools.run_authz_migrations import run_migrations
-
-        logger.info("[startup] Beginning authorization migration verification.")
-        run_migrations()
-        logger.info("[authz] Production authorization migrations verified successfully.")
-    except Exception:
-        logger.exception("[authz] Production authorization migration verification failed.")
-        raise
-
-
-# Complete required database initialization inside FastAPI startup. A background
-# daemon allowed /health to return success while authz migration verification
-# was still pending or had failed; startup now fails closed instead.
+# Complete required application database initialization inside FastAPI startup.
+# Schema migrations are deliberately not part of this lifecycle.
 _PRODUCTION_READY = False
 
 
@@ -395,8 +367,6 @@ def _initialize_production_database() -> None:
     _PRODUCTION_READY = False
     startup_started = time.monotonic()
     logger.info("[startup] Beginning required production database initialization.")
-    _run_production_authz_migrations()
-    logger.info("[startup] Authorization schema verification finished in %.2fs.", time.monotonic() - startup_started)
     logger.info("[startup] Beginning application model/table initialization.")
     init_db()
     _rate_limiter.initialize()

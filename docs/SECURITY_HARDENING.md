@@ -25,7 +25,9 @@ and external provider keys remain server-side.
 - `/docs`, `/redoc`, and `/openapi.json` are disabled by default in production.
   Set `INSIGHTFLOW_ENABLE_OPENAPI=true` only for an explicitly approved,
   temporary diagnostic window.
-- Render startup fails if `DATABASE_URL` is absent. Local development retains
+- Application startup never executes migrations. Use `tools/run_authz_migrations.py`
+  as a separate operator action; production application requires
+  `--confirm-production`. Render startup fails if `DATABASE_URL` is absent. Local development retains
   the existing SQLite fallback; tests can use an explicit SQLite URL.
 
 The gateway still relies on the existing Supabase token verification, email
