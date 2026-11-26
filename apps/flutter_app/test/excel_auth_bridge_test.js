@@ -79,6 +79,14 @@ async function run() {
   }
 
   {
+    const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1&code=test-code');
+    assert.equal(h.window.InsightFlowExcelAuth.setDiagnosticsEnabled(true), true);
+    const diagnostics = h.window.InsightFlowExcelAuth.exportDiagnostics();
+    assert.match(diagnostics, /oauth_callback_detected/);
+    assert.doesNotMatch(diagnostics, /test-code/);
+  }
+
+  {
     const h = createHarness('');
     h.storage.set('insightflow.excel.auth.dialog', '1');
     h.storage.set('insightflow.excel.auth.state', 'test-state');

@@ -182,9 +182,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     Object? error,
   ]) {
     final code = error is AuthException ? error.code : null;
+    final safeCode = ExcelAuthDiagnostics.sanitizeErrorCode(code);
     debugPrint(
       '[excel-auth-handoff] correlation=$correlationId operation=$operation '
-      'result=$result error_code=${code ?? error?.runtimeType ?? 'none'}',
+        'result=$result error_code=$safeCode',
     );
     ExcelAuthDiagnostics.record(
       'dialog_$operation',
@@ -203,12 +204,18 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     ExcelAuthDiagnostics.activateSession(ExcelAuthBridge.diagnosticsActive);
     _subscription = InsightFlowSupabaseAuthService.authStateChanges.listen(
       (state) {
-        if (state.event == AuthChangeEvent.signedIn ||
-            state.event == AuthChangeEvent.initialSession) {
+        if (state.event == AuthChangeEvent.signedIn) {
           ExcelAuthDiagnostics.record(
             'oauth_callback_detected',
             authEvent: state.event.name,
             sessionAvailable: state.session != null,
+          );
+        } else if (state.event == AuthChangeEvent.initialSession &&
+            state.session != null) {
+          ExcelAuthDiagnostics.record(
+            'session_restored',
+            authEvent: state.event.name,
+            sessionAvailable: true,
           );
         }
         ExcelAuthDiagnostics.record(

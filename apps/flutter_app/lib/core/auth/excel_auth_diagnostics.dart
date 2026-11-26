@@ -63,7 +63,7 @@ class ExcelAuthDiagnostics {
         if (operation != null) 'operation': operation,
         if (result != null) 'result': result,
         if (authEvent != null) 'auth_event': authEvent,
-        if (errorCode != null) 'error_code': errorCode,
+        if (errorCode != null) 'error_code': sanitizeErrorCode(errorCode),
         if (sessionAvailable != null) 'session_available': sessionAvailable,
         if (completed != null) 'completed': completed,
         if (handoffStarted != null) 'handoff_started': handoffStarted,
@@ -75,6 +75,26 @@ class ExcelAuthDiagnostics {
     } catch (_) {
       // Diagnostics must never affect authentication.
     }
+  }
+
+  static String sanitizeErrorCode(String? value) {
+    const allowed = {
+      'access_denied',
+      'email_not_confirmed',
+      'email_not_verified',
+      'invalid_credentials',
+      'invalid_grant',
+      'invalid_message',
+      'message_parent_error',
+      'network_error',
+      'provider_disabled',
+      'provider_not_enabled',
+      'state_error',
+      'timeout',
+      'user_canceled',
+      'user_cancelled',
+    };
+    return allowed.contains(value) ? value! : 'unknown_auth_error';
   }
 
   static String exportJson() {

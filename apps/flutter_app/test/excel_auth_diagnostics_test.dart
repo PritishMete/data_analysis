@@ -77,4 +77,16 @@ void main() {
     expect(ExcelAuthDiagnostics.isEnabled, isFalse);
     expect(ExcelAuthDiagnostics.exportJson(), '[]');
   });
+
+  test('sanitizes unexpected error codes', () {
+    ExcelAuthDiagnostics.start('excel-error-code-test');
+    ExcelAuthDiagnostics.record(
+      'verification_failed',
+      errorCode: 'secret-token-and-private-message',
+    );
+
+    final output = ExcelAuthDiagnostics.exportJson();
+    expect(output, contains('unknown_auth_error'));
+    expect(output, isNot(contains('secret-token-and-private-message')));
+  });
 }
