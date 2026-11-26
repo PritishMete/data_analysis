@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../lib/core/auth/supabase_auth_service.dart';
 
 void main() {
   test('Supabase service starts Google OAuth with the configured callback', () {
@@ -11,6 +12,67 @@ void main() {
     expect(source, contains('InsightFlowSupabaseConfig.authRedirectUrl'));
     expect(source, contains('AuthFlowType.pkce'));
     expect(source, isNot(contains('GoogleSignIn')));
+  });
+
+  test('website OAuth callback follows the current Cloudflare Pages origin', () {
+    final source = File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
+
+    expect(
+      source,
+      contains('static String resolveAuthRedirectUrl'),
+    );
+    expect(
+      source,
+      contains('isOffice: isRunningInsideOffice'),
+    );
+    expect(
+      source,
+      isNot(contains("defaultValue: 'https://pritishmete.github.io/data_analysis/'")),
+    );
+    expect(
+      source,
+      contains('emailRedirectTo: InsightFlowSupabaseConfig.authRedirectUrl'),
+    );
+  });
+
+  test('OAuth redirect resolver preserves website and Excel origins', () {
+    final cloudflare = Uri.parse('https://insightflow-3e8.pages.dev/');
+    final local = Uri.parse('http://localhost:5173/');
+    const legacyExcel = 'https://pritishmete.github.io/data_analysis/';
+
+    expect(
+      InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
+        isWeb: true,
+        isOffice: false,
+        currentUri: cloudflare,
+      ),
+      'https://insightflow-3e8.pages.dev/',
+    );
+    expect(
+      InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
+        isWeb: true,
+        isOffice: false,
+        currentUri: local,
+      ),
+      'http://localhost:5173/',
+    );
+    expect(
+      InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
+        isWeb: true,
+        isOffice: true,
+        currentUri: cloudflare,
+      ),
+      legacyExcel,
+    );
+    expect(
+      InsightFlowSupabaseConfig.resolveAuthRedirectUrl(
+        isWeb: true,
+        isOffice: false,
+        currentUri: cloudflare,
+        configuredUrl: 'https://auth.example.test/callback',
+      ),
+      'https://auth.example.test/callback',
+    );
   });
 
   test('primary sign-in screen uses the Supabase Google entry point', () {
