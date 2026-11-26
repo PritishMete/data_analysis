@@ -367,6 +367,9 @@ def _initialize_production_database() -> None:
     _PRODUCTION_READY = False
     startup_started = time.monotonic()
     logger.info("[startup] Beginning required production database initialization.")
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider == "supabase" and not os.environ.get("DATABASE_URL", "").strip():
+        raise RuntimeError("[authz] DATABASE_URL is missing; refusing to initialize Supabase authorization storage.")
     logger.info("[startup] Beginning application model/table initialization.")
     init_db()
     _rate_limiter.initialize()
