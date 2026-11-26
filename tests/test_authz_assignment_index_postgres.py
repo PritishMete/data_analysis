@@ -664,6 +664,7 @@ def test_diagnostic_http_endpoints_use_disposable_postgres(
 
 def test_diagnostic_http_claim_is_single_winner_under_concurrency(postgres_engine, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from sqlalchemy.orm import sessionmaker
@@ -682,13 +683,21 @@ def test_diagnostic_http_claim_is_single_winner_under_concurrency(postgres_engin
     app = FastAPI(); app.include_router(diagnostics.diagnostic_router)
     with TestClient(app) as creator:
         created = creator.post("/v1/diagnostics/sessions").raise_for_status().json()
+        event = {"session_id": created["support_reference"], "claim_secret": created["claim_secret"], "correlation_id": "concurrent-event", "category": "claim_race", "status": "started", "payload": {"stage": "claim_race"}}
+        assert creator.post("/v1/diagnostics/events", json=event).status_code == 200
     payload = {"session_id": created["support_reference"], "claim_secret": created["claim_secret"]}
+    ready = Barrier(2)
     def claim():
         with TestClient(app) as client:
+            ready.wait(timeout=10)
             return client.post("/v1/diagnostics/sessions/claim", json=payload, headers={"Authorization": "Bearer concurrent"}).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: claim(), range(2)))
     assert sorted(statuses) == [200, 403]
     with postgres_engine.connect() as conn:
-        row = conn.execute(text("SELECT count(*) AS claims FROM diagnostic_sessions WHERE session_id=:session AND claimed_at IS NOT NULL AND user_principal_id='concurrent-principal'"), {"session": created["support_reference"]}).scalar_one()
-        assert row == 1
+        row = conn.execute(text("SELECT organization_id,user_principal_id,claimed_at FROM diagnostic_sessions WHERE session_id=:session"), {"session": created["support_reference"]}).mappings().one()
+        assert row["organization_id"] == "concurrent-org"
+        assert row["user_principal_id"] == "concurrent-principal"
+        assert row["claimed_at"] is not None
+        event_row = conn.execute(text("SELECT organization_id,user_principal_id,session_id FROM diagnostic_events WHERE session_id=:session AND correlation_id='concurrent-event'"), {"session": created["support_reference"]}).mappings().one()
+        assert dict(event_row) == {"organization_id": "concurrent-org", "user_principal_id": "concurrent-principal", "session_id": created["support_reference"]}

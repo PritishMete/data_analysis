@@ -1,10 +1,10 @@
 name: InsightFlow Admin Portal CI
 on:
   pull_request:
-    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
+    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "tests/test_admin_diagnostics_contract.py", "tests/test_authz_assignment_index_postgres.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
   push:
     branches: [main, codex/user-diagnostics-admin-panel]
-    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
+    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "tests/test_admin_diagnostics_contract.py", "tests/test_authz_assignment_index_postgres.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
 permissions: {contents: read}
 jobs:
   build-and-compile:
