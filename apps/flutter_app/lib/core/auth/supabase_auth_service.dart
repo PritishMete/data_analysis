@@ -5,16 +5,48 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'excel_auth_diagnostics.dart';
+import '../interop/office_host.dart';
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
   static const publishableKey = String.fromEnvironment(
     'INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY',
   );
-  static const authRedirectUrl = String.fromEnvironment(
+  static const _configuredAuthRedirectUrl = String.fromEnvironment(
     'INSIGHTFLOW_AUTH_REDIRECT_URL',
-    defaultValue: 'https://pritishmete.github.io/data_analysis/',
   );
+  static const _legacyExcelAuthRedirectUrl =
+      'https://pritishmete.github.io/data_analysis/';
+
+  /// Resolves the callback to the origin that initiated authentication.
+  ///
+  /// Website OAuth must return to the current website origin so its PKCE
+  /// verifier is available to Supabase in the same browser storage context.
+  /// Excel continues using its established GitHub Pages task-pane origin.
+  static String resolveAuthRedirectUrl({
+    required bool isWeb,
+    required bool isOffice,
+    required Uri currentUri,
+    String configuredUrl = _configuredAuthRedirectUrl,
+  }) {
+    final override = configuredUrl.trim();
+    if (override.isNotEmpty) return override;
+
+    if (isWeb &&
+        !isOffice &&
+        (currentUri.scheme == 'https' || currentUri.scheme == 'http') &&
+        currentUri.origin.isNotEmpty) {
+      return '${currentUri.origin}/';
+    }
+
+    return _legacyExcelAuthRedirectUrl;
+  }
+
+  static String get authRedirectUrl => resolveAuthRedirectUrl(
+        isWeb: kIsWeb,
+        isOffice: isRunningInsideOffice,
+        currentUri: Uri.base,
+      );
 
   static bool get isConfigured => url.isNotEmpty && publishableKey.isNotEmpty;
 }
@@ -264,7 +296,7 @@ class InsightFlowSupabaseAuthService {
     return client.auth.resend(
       type: OtpType.signup,
       email: email.trim(),
-      emailRedirectTo: 'https://pritishmete.github.io/data_analysis/',
+      emailRedirectTo: InsightFlowSupabaseConfig.authRedirectUrl,
     );
   }
 
