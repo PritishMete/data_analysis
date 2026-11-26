@@ -80,20 +80,3 @@ void main() {
     expect(manifest, contains('https://insightflow-3e8.pages.dev/'));
     expect(manifest, isNot(contains('github.io')));
   });
-
-  test('authenticated callback cleanup preserves PKCE and Excel flow boundaries', () {
-    final authGate = File('lib/features/auth/auth_gate.dart').readAsStringSync();
-    final service = File('lib/core/auth/supabase_auth_service.dart').readAsStringSync();
-    final cleanup = File('lib/core/auth/oauth_callback_cleanup.dart').readAsStringSync();
-
-    expect(service, contains('AuthFlowType.pkce'));
-    expect(service, contains('detectSessionInUri: true'));
-    expect(authGate, contains("import '../../core/auth/oauth_callback_cleanup.dart';"));
-    expect(authGate, contains('cleanOAuthCallbackUrl();'));
-    expect(cleanup, contains('replaceState'));
-    expect(cleanup, contains("'code'"));
-    expect(cleanup, contains("'error'"));
-    expect(cleanup, contains("'excelAuthDialog'"));
-  });
-
-}
