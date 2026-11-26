@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from sqlalchemy import inspect as sqlalchemy_inspect
 try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - optional in local test envs
@@ -342,7 +343,7 @@ if _production_environment and not _docs_enabled:
 @asynccontextmanager
 async def _application_lifespan(_app):
     # Starlette 1.x removed the legacy add_event_handler API. Keep required
-    # database/authz initialization in the supported lifespan lifecycle.
+    # application database initialization in the supported lifespan lifecycle.
     _initialize_production_database()
     yield
 
@@ -356,37 +357,32 @@ app = FastAPI(
 _rate_limiter = DatabaseRateLimiter(engine)
 
 
-def _run_production_authz_migrations() -> None:
-    """Ensure the Supabase authorization schema exists before serving requests.
-
-    Render's service-level Build Command can lag behind render.yaml, so the
-    application also performs the existing versioned migration runner during
-    startup when the live service is configured for Supabase authorization.
-    The runner is idempotent and uses a PostgreSQL advisory lock, so this does
-    not create a second migration system or alter migration files.
-    """
-    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
-    if provider != "supabase":
-        return
-    if not os.environ.get("DATABASE_URL", "").strip():
-        raise RuntimeError(
-            "[authz] DATABASE_URL is missing; refusing to start with unverified Supabase authorization schema."
-        )
-    try:
-        from tools.run_authz_migrations import run_migrations
-
-        logger.info("[startup] Beginning authorization migration verification.")
-        run_migrations()
-        logger.info("[authz] Production authorization migrations verified successfully.")
-    except Exception:
-        logger.exception("[authz] Production authorization migration verification failed.")
-        raise
-
-
-# Complete required database initialization inside FastAPI startup. A background
-# daemon allowed /health to return success while authz migration verification
-# was still pending or had failed; startup now fails closed instead.
+# Complete required application database initialization inside FastAPI startup.
+# Schema migrations are deliberately not part of this lifecycle.
 _PRODUCTION_READY = False
+
+_REQUIRED_AUTHZ_COLUMNS = {
+    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at"},
+    "diagnostic_events": {"event_id", "session_id", "organization_id", "user_principal_id", "branch_id", "correlation_id", "category", "status", "payload"},
+    "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
+}
+
+
+def _verify_required_schema() -> None:
+    """Read-only verification of migration-managed authorization schema."""
+    required_tables = {
+        "principals", "identity_bindings", "organizations", "organization_members",
+        "organizational_assignments", "audit_events", *(_REQUIRED_AUTHZ_COLUMNS.keys()),
+    }
+    inspector = sqlalchemy_inspect(engine)
+    missing_tables = [name for name in required_tables if not inspector.has_table(name)]
+    missing_columns = [
+        name for table, columns in _REQUIRED_AUTHZ_COLUMNS.items()
+        if inspector.has_table(table)
+        for name in columns - {column["name"] for column in inspector.get_columns(table)}
+    ]
+    if missing_tables or missing_columns:
+        raise RuntimeError("Required authorization database schema is incomplete; run the explicit migration command.")
 
 
 def _initialize_production_database() -> None:
@@ -395,11 +391,14 @@ def _initialize_production_database() -> None:
     _PRODUCTION_READY = False
     startup_started = time.monotonic()
     logger.info("[startup] Beginning required production database initialization.")
-    _run_production_authz_migrations()
-    logger.info("[startup] Authorization schema verification finished in %.2fs.", time.monotonic() - startup_started)
+    provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
+    if provider == "supabase" and not os.environ.get("DATABASE_URL", "").strip():
+        raise RuntimeError("[authz] DATABASE_URL is missing; refusing to initialize Supabase authorization storage.")
     logger.info("[startup] Beginning application model/table initialization.")
     init_db()
     _rate_limiter.initialize()
+    if provider == "supabase":
+        _verify_required_schema()
     logger.info("[startup] Application model/table initialization finished in %.2fs.", time.monotonic() - startup_started)
     _PRODUCTION_READY = True
     logger.info("[startup] Production database initialization completed in %.2fs.", time.monotonic() - startup_started)

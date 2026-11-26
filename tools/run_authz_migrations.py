@@ -2,6 +2,8 @@
 
 This runner deliberately does not alter migration files. Use --inspect first;
 the default mode creates only the history table and applies pending files.
+Application startup never imports or invokes this runner. Production apply
+requires --confirm-production and INSIGHTFLOW_ENV=production.
 """
 from __future__ import annotations
 
@@ -499,11 +501,7 @@ def verify_supabase_function_security(engine) -> None:
 
 
 def run_migrations() -> None:
-    """Apply and verify pending production PostgreSQL migrations.
-
-    Safe to call during application startup: migrations are versioned,
-    transactional per file, and serialized with a PostgreSQL advisory lock.
-    """
+    """Apply and verify pending migrations when explicitly invoked by an operator."""
     engine = connect()
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
@@ -548,7 +546,13 @@ def verify_employee_id_allocator(engine) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inspect", action="store_true", help="read schema only")
+    parser.add_argument("--confirm-production", action="store_true", help="authorize applying migrations when INSIGHTFLOW_ENV=production")
     args = parser.parse_args()
+    environment = os.environ.get("INSIGHTFLOW_ENV", "development").strip().lower()
+    if environment == "production" and not args.inspect and not args.confirm_production:
+        print("REFUSED: production migration requires --confirm-production.", file=sys.stderr)
+        return 2
+    print("TARGET_ENVIRONMENT=" + environment)
     engine = connect()
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))

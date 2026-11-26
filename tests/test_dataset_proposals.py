@@ -498,14 +498,13 @@ def test_production_release_branch_and_render_service_are_aligned():
 def test_health_readiness_is_gated_by_successful_database_initialization():
     source = Path("main.py").read_text(encoding="utf-8")
     startup = source.split("def _initialize_production_database() -> None:", 1)[1].split(
-        "app.add_event_handler(\"startup\", _initialize_production_database)", 1
+        "# These middleware run before", 1
     )[0]
     health = source.split('@app.get("/health")', 1)[1].split(
         '@app.get("/v1/build-info")', 1
     )[0]
-    assert "_run_production_authz_migrations()" in startup
+    assert "_run_production_authz_migrations()" not in startup
     assert "init_db()" in startup
-    assert startup.index("_run_production_authz_migrations()") < startup.index("init_db()")
     assert startup.index("init_db()") < startup.index("_PRODUCTION_READY = True")
     assert "if not _PRODUCTION_READY:" in health
     assert "status_code=503" in health

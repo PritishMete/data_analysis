@@ -191,7 +191,7 @@ def _seed_manager_assignments(engine):
         """))
 
 
-def test_full_production_migration_runner_and_second_startup_are_idempotent(
+def test_explicit_migration_runner_and_startup_are_separate(
     postgres_engine, monkeypatch
 ):
     # Replace only the connection factory with the isolated CI service engine.
@@ -205,6 +205,9 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
     # module-level engine. Bind that engine to the disposable PostgreSQL
     # service so this test exercises the real follow-up application DB setup.
     monkeypatch.setattr(core_db, "engine", postgres_engine)
+    # main.py also retains the imported engine reference for readiness schema
+    # verification; bind that reference to the same disposable database.
+    monkeypatch.setattr(main, "engine", postgres_engine)
     actual_init_db = main.init_db
     startup_calls = []
     expected_versions = {path.stem for path in runner.migration_files()}
@@ -222,9 +225,9 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
         "DATABASE_URL": DATABASE_URL,
     }
 
-    # The production startup function runs the complete repository migration
-    # chain before invoking the application's follow-up DB initializer.
+    # Migrations run only through the explicit runner command.
     with patch.dict(os.environ, test_environment, clear=False):
+        runner.run_migrations()
         main._initialize_production_database()
 
     assert startup_calls == ["application-db-init"]
@@ -237,7 +240,7 @@ def test_full_production_migration_runner_and_second_startup_are_idempotent(
     assert all(row.applied_at is not None for row in first_history)
     assert len(first_history) == len(expected_versions)
 
-    # run_migrations calls the same verifier functions used by production.
+    # The explicit runner calls the same verifier functions used by production.
     indexes = _read_assignment_indexes(postgres_engine)
     assert "uq_active_manager_per_location" not in indexes
     assert "uq_active_assignment_context" in indexes
