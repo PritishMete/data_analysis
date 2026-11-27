@@ -4,15 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/auth/authenticated_http.dart' show insightFlowBackendBaseUrl;
 import '../../core/auth/excel_auth_diagnostics.dart';
 import '../../core/interop/excel_auth_bridge.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_in_screen.dart';
-
-const String _diagnosticsApiOrigin = String.fromEnvironment(
-  'INSIGHTFLOW_DIAGNOSTICS_API_ORIGIN',
-  defaultValue: 'https://data-analysis-oajs.onrender.com',
-);
 
 /// Shared decision helper so late dialog failures cannot displace an
 /// independently verified task-pane session.
@@ -112,7 +108,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       ExcelAuthDiagnostics.record('task_pane_dialog_open_started');
       final refreshToken = await ExcelAuthBridge.openSignInDialog(
         correlationId,
-        _diagnosticsApiOrigin,
+        insightFlowBackendBaseUrl,
       );
       ExcelAuthDiagnostics.record(
         'task_pane_dialog_message_received',
