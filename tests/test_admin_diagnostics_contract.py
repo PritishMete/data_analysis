@@ -169,3 +169,11 @@ def test_global_flutter_error_hooks_report_only_safe_runtime_types():
     assert "FlutterError.onError" in source
     assert "error.runtimeType.toString()" in source
     assert "stackTrace" not in source.split("InsightFlowDiagnosticTelemetry.record(", 1)[1].split(");", 1)[0]
+
+
+def test_client_telemetry_isolated_when_account_changes_on_shared_device():
+    source = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "services" / "diagnostic_telemetry_service.dart").read_text(encoding="utf-8")
+    assert "_claimedSubject" in source
+    assert "currentSubject != _claimedSubject" in source
+    assert "_pending.clear()" in source
+    assert "Never attach one customer's queued events to another account" in source
