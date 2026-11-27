@@ -6,13 +6,20 @@ external JSBoolean? get _isExcelAuthDialog;
 external JSString? get _excelAuthCorrelation;
 
 @JS('window.InsightFlowExcelAuth.openSignInDialog')
-external JSPromise<JSString> _openSignInDialog(JSString correlationId, JSString backendOrigin);
+external JSPromise<JSString> _openSignInDialog(
+  JSString correlationId,
+  JSString backendOrigin,
+);
 
 @JS('window.InsightFlowExcelAuth.waitForHandoffContext')
 external JSPromise<JSString> _waitForHandoffContext();
 
 @JS('window.InsightFlowExcelAuth.completeDialog')
-external JSPromise<JSBoolean> _completeDialog(JSString accessToken, JSString refreshToken, JSString backendOrigin);
+external JSPromise<JSBoolean> _completeDialog(
+  JSString accessToken,
+  JSString refreshToken,
+  JSString backendOrigin,
+);
 @JS('window.InsightFlowExcelAuth.setDiagnosticsEnabled')
 external void _setDiagnosticsEnabled(JSBoolean enabled);
 @JS('window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__')
@@ -26,8 +33,14 @@ class ExcelAuthBridge {
   static bool get isAuthDialog => _isExcelAuthDialog?.toDart ?? false;
   static String? get correlationId => _excelAuthCorrelation?.toDart;
 
-  static Future<String> openSignInDialog(String correlationId, String backendOrigin) async {
-    final token = await _openSignInDialog(correlationId.toJS, backendOrigin.toJS).toDart;
+  static Future<String> openSignInDialog(
+    String correlationId,
+    String backendOrigin,
+  ) async {
+    final token = await _openSignInDialog(
+      correlationId.toJS,
+      backendOrigin.toJS,
+    ).toDart;
     return token.toDart;
   }
 
@@ -35,8 +48,16 @@ class ExcelAuthBridge {
     await _waitForHandoffContext().toDart;
   }
 
-  static Future<void> completeDialog(String accessToken, String refreshToken, String backendOrigin) async {
-    final completed = await _completeDialog(accessToken.toJS, refreshToken.toJS, backendOrigin.toJS).toDart;
+  static Future<void> completeDialog(
+    String accessToken,
+    String refreshToken,
+    String backendOrigin,
+  ) async {
+    final completed = await _completeDialog(
+      accessToken.toJS,
+      refreshToken.toJS,
+      backendOrigin.toJS,
+    ).toDart;
     if (!completed.toDart) throw StateError('excel_handoff_unavailable');
   }
 
