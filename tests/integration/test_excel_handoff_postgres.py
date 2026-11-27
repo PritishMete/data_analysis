@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from core.excel_handoff_store import (
-    claim, cleanup, complete, create, lock_pending_completion,
+    cancel, claim, cleanup, complete, create, lock_pending_completion,
 )
 
 
@@ -228,6 +228,7 @@ def test_complete_lock_blocks_duplicate_token_rotation(engine):
         assert complete(db, transaction, completion_secret, "rotated-refresh-token")
     with Session.begin() as db:
         assert not lock_pending_completion(db, transaction, completion_secret)
+        cancel(db, transaction, claim_secret)
         assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
 
 
@@ -245,8 +246,14 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
         finally:
             db.close()
 
+    refresh_calls = []
+
+    def rotate_refresh_token(token):
+        refresh_calls.append(token)
+        return "rotated-access", "rotated-refresh"
+
     monkeypatch.setattr(routes, "verify_supabase_access_token", lambda token: {"uid": "user-1"})
-    monkeypatch.setattr(routes, "_refresh_pair", lambda token: ("rotated-access", "rotated-refresh"))
+    monkeypatch.setattr(routes, "_refresh_pair", rotate_refresh_token)
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
@@ -265,6 +272,14 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
             "refresh_token": "b" * 20,
         })
         assert response.status_code == 204
+        duplicate = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "a" * 20,
+            "refresh_token": "b" * 20,
+        })
+        assert duplicate.status_code == 409
+        assert refresh_calls == ["b" * 20]
         response = client.post("/v1/excel-auth/handoff/claim", json={
             "transaction_id": transaction,
             "claim_capability": claim_secret,
