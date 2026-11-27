@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _BEARER = re.compile(r"(?i)bearer\s+[^\s,;]+")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 _SECRET = re.compile(r"(?i)(?:sb_secret|sb_publishable)_[A-Za-z0-9_-]+")
-_SECRET_ASSIGNMENT = re.compile(r"(?i)\\b(?:password|passphrase|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|cookie)\\b\\s*[:=]\\s*[^,\\s;]+")
+_SECRET_ASSIGNMENT = re.compile(r"(?i)\b(?:password|passphrase|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|cookie)\b\s*[:=]\s*[^,\s;]+")
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)")
 
@@ -88,7 +88,7 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
             subject = getattr(request.state, "firebase_uid", None)
             raw_client_version = request.headers.get("x-insightflow-client-version", "").strip()
             client_version = raw_client_version if re.fullmatch(
-                r"\\d+\\.\\d+(?:\\.\\d+){0,2}(?:[-+][A-Za-z0-9.-]+)?", raw_client_version
+                r"\d+\.\d+(?:\.\d+){0,2}(?:[-+][A-Za-z0-9.-]+)?", raw_client_version
             ) else None
             fingerprint = hashlib.sha256(
                 f"{error_type or ''}:{error_message or ''}".encode("utf-8", "replace")
