@@ -161,3 +161,11 @@ def test_company_admin_endpoints_have_a_separate_rate_limit():
     source = (ROOT / "security_hardening.py").read_text(encoding="utf-8")
     assert 'path.startswith("/v1/company-admin")' in source
     assert '"company-admin"' in source
+
+
+def test_global_flutter_error_hooks_report_only_safe_runtime_types():
+    source = (ROOT / "apps" / "flutter_app" / "lib" / "main.dart").read_text(encoding="utf-8")
+    assert "PlatformDispatcher.instance.onError" in source
+    assert "FlutterError.onError" in source
+    assert "error.runtimeType.toString()" in source
+    assert "stackTrace" not in source.split("InsightFlowDiagnosticTelemetry.record(", 1)[1].split(");", 1)[0]
