@@ -44,12 +44,13 @@ def company_overview(authorization: str | None = Header(default=None)):
     actor = _company_actor(authorization)
     with SessionLocal() as db:
         row = db.execute(text("""
-            SELECT count(*) AS total_events,
-                   count(DISTINCT user_principal_id) AS users,
-                   count(DISTINCT organization_id) AS organizations,
-                   count(*) FILTER (WHERE status IN ('failed','error')) AS failures,
-                   max(event_at) AS latest_event
-            FROM diagnostic_events
+            SELECT
+              (SELECT count(*) FROM diagnostic_events) AS total_events,
+              (SELECT count(DISTINCT principal_id) FROM organization_members WHERE status='active') AS users,
+              (SELECT count(*) FROM organizations) AS organizations,
+              (SELECT count(*) FROM diagnostic_events WHERE status IN ('failed','error')) AS failures,
+              (SELECT max(event_at) FROM diagnostic_events) AS latest_event,
+              (SELECT count(*) FROM organizations WHERE status='active') AS active_organizations
         """)).mappings().one()
     _audit(actor, "company_diagnostics.overview.viewed")
     return dict(row)
@@ -64,24 +65,63 @@ def company_users(q: str = Query(default="", max_length=160),
     offset, limit = _paging(page, page_size)
     with SessionLocal() as db:
         rows = db.execute(text("""
-            SELECT e.user_principal_id AS principal_id,
-                   ib.provider_subject AS user_id, au.email,
-                   count(*) AS event_count,
-                   count(*) FILTER (WHERE e.status IN ('failed','error')) AS failures,
-                   max(e.event_at) AS last_seen,
-                   count(DISTINCT e.organization_id) AS organization_count
-            FROM diagnostic_events e
-            JOIN principals p ON p.principal_id=e.user_principal_id
-            LEFT JOIN identity_bindings ib ON ib.principal_id=p.principal_id AND ib.provider='supabase'
+            WITH member_directory AS (
+              SELECT om.principal_id,
+                     count(DISTINCT om.organization_id) AS organization_count,
+                     string_agg(DISTINCT o.name, ', ' ORDER BY o.name) AS organizations
+              FROM organization_members om
+              JOIN organizations o ON o.organization_id=om.organization_id
+              WHERE om.status='active'
+              GROUP BY om.principal_id
+            ), event_rollup AS (
+              SELECT user_principal_id,
+                     count(*) AS event_count,
+                     count(*) FILTER (WHERE status IN ('failed','error')) AS failures,
+                     max(event_at) AS last_seen
+              FROM diagnostic_events
+              WHERE user_principal_id IS NOT NULL
+              GROUP BY user_principal_id
+            )
+            SELECT p.principal_id, ib.provider_subject AS user_id, au.email,
+                   coalesce(md.organization_count, 0) AS organization_count,
+                   coalesce(md.organizations, '') AS organizations,
+                   coalesce(er.event_count, 0) AS event_count,
+                   coalesce(er.failures, 0) AS failures,
+                   er.last_seen
+            FROM principals p
+            JOIN identity_bindings ib ON ib.principal_id=p.principal_id
+              AND ib.provider='supabase' AND ib.status='active'
             LEFT JOIN auth.users au ON au.id::text=ib.provider_subject
-            WHERE e.user_principal_id IS NOT NULL
-              AND (:q = '' OR ib.provider_subject ILIKE :pattern OR au.email ILIKE :pattern)
-            GROUP BY e.user_principal_id, ib.provider_subject, au.email
-            ORDER BY max(e.event_at) DESC
+            LEFT JOIN member_directory md ON md.principal_id=p.principal_id
+            LEFT JOIN event_rollup er ON er.user_principal_id=p.principal_id
+            WHERE (md.principal_id IS NOT NULL OR er.user_principal_id IS NOT NULL)
+              AND (:q = '' OR ib.provider_subject ILIKE :pattern OR au.email ILIKE :pattern
+                   OR md.organizations ILIKE :pattern)
+            ORDER BY er.last_seen DESC NULLS LAST, au.email ASC
             OFFSET :offset LIMIT :limit
         """), {"q": q.strip(), "pattern": f"%{q.strip()}%", "offset": offset, "limit": limit}).mappings().all()
     _audit(actor, "company_diagnostics.directory.searched")
     return {"users": [dict(row) for row in rows], "page": page, "page_size": page_size}
+
+
+@router.get("/companies")
+def company_directory(authorization: str | None = Header(default=None)):
+    actor = _company_actor(authorization)
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            SELECT o.organization_id, o.name, o.status, o.created_at,
+                   count(DISTINCT om.principal_id) FILTER (WHERE om.status='active') AS users,
+                   count(e.event_id) AS events,
+                   count(e.event_id) FILTER (WHERE e.status IN ('failed','error')) AS failures,
+                   max(e.event_at) AS last_activity
+            FROM organizations o
+            LEFT JOIN organization_members om ON om.organization_id=o.organization_id
+            LEFT JOIN diagnostic_events e ON e.organization_id=o.organization_id
+            GROUP BY o.organization_id, o.name, o.status, o.created_at
+            ORDER BY o.created_at DESC
+        """)).mappings().all()
+    _audit(actor, "company_diagnostics.companies.viewed")
+    return {"companies": [dict(row) for row in rows]}
 
 
 @router.get("/users/{principal_id}/timeline")
