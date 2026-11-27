@@ -147,3 +147,11 @@ def test_safe_telemetry_metadata_and_branch_context_are_persisted():
     assert '"http_status"' in source
     assert "ADD COLUMN IF NOT EXISTS branch_id TEXT" in migration
     assert '"branch_id"' in (ROOT / "main.py").read_text(encoding="utf-8")
+
+
+def test_admin_portal_origin_is_allowed_by_cors_and_origin_protection():
+    controls = (ROOT / "security_controls.py").read_text(encoding="utf-8")
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+    origin = "https://insightflow-admin-portal.onrender.com"
+    assert origin in controls
+    assert origin in main
