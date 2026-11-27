@@ -16,11 +16,11 @@ from core.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-_BEARER = re.compile(r"(?i)bearer\\s+[^\\s,;]+")
-_JWT = re.compile(r"\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b")
+_BEARER = re.compile(r"(?i)bearer\s+[^\s,;]+")
+_JWT = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 _SECRET = re.compile(r"(?i)(?:sb_secret|sb_publishable)_[A-Za-z0-9_-]+")
-_EMAIL = re.compile(r"\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b", re.I)
-_PHONE = re.compile(r"(?<!\\w)(?:\\+?\\d[\\d .()\\-]{7,}\\d)(?!\\w)")
+_EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
+_PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)")
 
 
 def sanitize_error_message(value: object, limit: int = 1200) -> str:
