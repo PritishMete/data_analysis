@@ -71,7 +71,8 @@ function createHarness(options = {}) {
       context: {
         requirements: {
           isSetSupported: (name, version) =>
-            name === 'DialogApi' && version === '1.2' && options.supportDialogApi !== false
+            (name === 'DialogApi' && version === '1.2' && options.supportDialogApi !== false) ||
+            (name === 'DialogOrigin' && version === '1.1' && options.supportDialogOrigin !== false)
         },
         ui: {
           displayDialogAsync: (url, dialogOptions, callback) => {
@@ -277,6 +278,19 @@ async function run() {
     );
     assert.equal(h.requests.length, 0,
       'unsupported Office hosts must not create a stranded handoff transaction');
+  }
+
+  {
+    const h = createHarness({ supportDialogOrigin: false });
+    await assert.rejects(
+      h.window.InsightFlowExcelAuth.openSignInDialog(
+        'excel-test-correlation',
+        'https://api.insightflow.test'
+      ),
+      /excel_dialog_api_unsupported/
+    );
+    assert.equal(h.requests.length, 0,
+      'hosts without origin metadata must not receive handoff capabilities');
   }
 
   {
