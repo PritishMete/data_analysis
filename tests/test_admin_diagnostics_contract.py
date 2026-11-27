@@ -136,3 +136,14 @@ def test_customer_event_ingestion_is_bound_to_claimed_user_session():
     assert "om.organization_id=ds.organization_id AND om.status='active'" in event_handler
     assert "_actor(authorization)" not in event_handler
     assert "diagnostic.event.ingested" not in event_handler
+
+
+
+def test_safe_telemetry_metadata_and_branch_context_are_persisted():
+    source = (ROOT / "firebase_authz" / "admin_diagnostics.py").read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0043_insightflow_company_admin.sql").read_text(encoding="utf-8")
+    assert '"auth_event"' in source
+    assert '"session_available"' in source
+    assert '"http_status"' in source
+    assert "ADD COLUMN IF NOT EXISTS branch_id TEXT" in migration
+    assert '"branch_id"' in (ROOT / "main.py").read_text(encoding="utf-8")
