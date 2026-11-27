@@ -257,14 +257,46 @@ def anonymous_event(item: EventIn):
 
 @router.post("/events")
 def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = Header(default=None)):
-    actor = _actor(authorization); _rate_limit(actor, "diagnostic.event.ingested", 600); fields = _event_fields(item)
+    # Customer telemetry is authorized against the user's own claimed session.
+    # It must not require the customer to hold an administrator role.
+    claims = _claims(authorization)
+    subject = str(claims.get("sub") or claims.get("uid") or "").strip()
+    fields = _event_fields(item)
     with SessionLocal.begin() as db:
-        valid = db.execute(text("""SELECT 1 FROM diagnostic_sessions
-            WHERE session_id=:session AND organization_id=:org AND (user_principal_id=:principal OR user_principal_id IS NULL)
-              AND expires_at > now()"""), {"session":item.session_id,"org":actor["organization_id"],"principal":actor["principal_id"]}).scalar_one_or_none()
-        if not valid: raise HTTPException(403, "Diagnostic session is invalid or outside your scope.")
-        db.execute(text("""INSERT INTO diagnostic_events(event_id,session_id,organization_id,user_principal_id,branch_id,correlation_id,category,status,sanitized_error,payload)
-            VALUES (:id,:session,:org,:principal,:branch,:corr,:category,:status,:error,CAST(:payload AS jsonb))"""), {"id":"evt_"+uuid.uuid4().hex,"session":item.session_id,"org":actor["organization_id"],"principal":actor["principal_id"],"branch":actor.get("support_branch"),**fields})
+        identity = db.execute(text("""
+            SELECT ds.organization_id, ds.user_principal_id,
+                   COUNT(DISTINCT oa.location_id) AS assignment_branches,
+                   MIN(oa.location_id) AS branch_id
+            FROM diagnostic_sessions ds
+            JOIN identity_bindings ib ON ib.provider='supabase'
+              AND ib.provider_subject=:subject
+            JOIN principals p ON p.principal_id=ib.principal_id
+            JOIN organization_members om ON om.principal_id=p.principal_id
+              AND om.organization_id=ds.organization_id AND om.status='active'
+            LEFT JOIN organizational_assignments oa ON oa.principal_id=p.principal_id
+              AND oa.organization_id=ds.organization_id AND oa.status='active'
+            WHERE ds.session_id=:session
+              AND ds.user_principal_id=p.principal_id
+              AND ds.claimed_at IS NOT NULL
+              AND ds.expires_at > now()
+            GROUP BY ds.organization_id, ds.user_principal_id
+            FOR UPDATE OF ds
+        """), {"subject": subject, "session": item.session_id}).mappings().first()
+        if not identity or identity["assignment_branches"] > 1:
+            raise HTTPException(403, "Diagnostic session is invalid or outside your identity scope.")
+        count = db.execute(text("""
+            SELECT count(*) FROM diagnostic_events
+            WHERE session_id=:session AND created_at > now() - interval '1 minute'
+        """), {"session": item.session_id}).scalar_one()
+        if count >= 600:
+            raise HTTPException(429, "Diagnostic event rate limit exceeded.")
+        db.execute(text("""
+            INSERT INTO diagnostic_events(event_id,session_id,organization_id,user_principal_id,branch_id,
+              correlation_id,category,status,sanitized_error,payload)
+            VALUES (:id,:session,:org,:principal,:branch,:corr,:category,:status,:error,CAST(:payload AS jsonb))
+        """), {"id": "evt_" + uuid.uuid4().hex, "session": item.session_id,
+               "org": identity["organization_id"], "principal": identity["user_principal_id"],
+               "branch": identity["branch_id"], **fields})
     return {"accepted": True}
 
 @router.get("/overview")
