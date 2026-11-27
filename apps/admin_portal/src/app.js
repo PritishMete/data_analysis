@@ -111,7 +111,7 @@ function dashboard() {
   };
   toggle.onclick = () => shell.classList.contains('nav-open') ? closeMenu() : openMenu();
   backdrop.onclick = () => closeMenu();
-  document.addEventListener('keydown', event => {
+  document.onkeydown = event => {
     if (!shell.classList.contains('nav-open')) return;
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
     if (event.key !== 'Tab') return;
@@ -123,7 +123,7 @@ function dashboard() {
     } else if (!event.shiftKey && (document.activeElement === last || !sidebar.contains(document.activeElement))) {
       event.preventDefault(); first.focus();
     }
-  });
+  };
   document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => { closeMenu({ restoreFocus: false }); renderPanel(button.dataset.view); }; });
   document.querySelector('#signout').onclick = signOut;
   renderPanel('company-overview');
