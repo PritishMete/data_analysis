@@ -361,9 +361,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       handoffCommitted = true;
       autoRefreshStopped = false;
 
-      // The backend has consumed and rotated the dialog refresh token. Mark
-      // the UI complete before clearing the stale local copy or the channel
-      // can close. This dialog must never refresh/reuse the submitted token.
+      // The backend has consumed and rotated the dialog refresh token.
+      // Mark the UI complete before notifying the parent. The dialog's auth
+      // client is memory-only and must never refresh/reuse the submitted token.
       if (mounted) {
         setState(() {
           _completed = true;
