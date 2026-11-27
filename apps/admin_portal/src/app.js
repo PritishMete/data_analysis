@@ -2,7 +2,43 @@ const config = globalThis.INSIGHTFLOW_ADMIN_CONFIG || {};
 const api = config.apiOrigin || '';
 const supabaseUrl = config.supabaseUrl || '';
 const supabaseAnonKey = config.supabaseAnonKey || '';
+const SESSION_KEY = 'insightflow.admin.session.v1';
 const state = { token: '', q: '', page: 1, pageSize: 25, principal: '', companyPrincipal: '' };
+function readSession() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } }
+function clearSession() { state.token = ''; localStorage.removeItem(SESSION_KEY); }
+function saveSession(session) {
+  if (!session?.access_token || !session?.refresh_token) throw Error('The authentication session was incomplete.');
+  const saved = { access_token: session.access_token, refresh_token: session.refresh_token, token_type: session.token_type || 'bearer', expires_at: Date.now() + Number(session.expires_in || 3600) * 1000 };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(saved)); state.token = saved.access_token;
+}
+let refreshInFlight = null;
+async function refreshSession() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const saved = readSession();
+    if (!saved?.refresh_token || !supabaseUrl || !supabaseAnonKey) { clearSession(); return false; }
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: { apikey: supabaseAnonKey, 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: saved.refresh_token }) });
+      if (!response.ok) { clearSession(); return false; }
+      saveSession(await response.json()); return true;
+    } catch { state.token = saved.access_token || ''; return false; }
+  })();
+  try { return await refreshInFlight; } finally { refreshInFlight = null; }
+}
+async function restoreSession() {
+  const saved = readSession();
+  if (!saved?.access_token || !saved?.refresh_token) { clearSession(); login(); return; }
+  if (Number(saved.expires_at || 0) <= Date.now() + 60_000) {
+    if (!await refreshSession()) { login(); return; }
+  } else state.token = saved.access_token;
+  dashboard();
+}
+async function signOut() {
+  const token = state.token || readSession()?.access_token || '';
+  clearSession();
+  try { if (token && supabaseUrl && supabaseAnonKey) await fetch(`${supabaseUrl}/auth/v1/logout`, { method: 'POST', headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}` } }); } catch { /* Local sign-out still completes offline. */ }
+  login();
+}
 const app = document.querySelector('#app');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -11,11 +47,22 @@ function login() {
   document.querySelector('#login').onsubmit = async event => {
     event.preventDefault(); const error = document.querySelector('#error');
     if (!supabaseUrl || !supabaseAnonKey) { error.textContent = 'Supabase configuration is unavailable.'; return; }
-    try { const form = new FormData(event.target); const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: supabaseAnonKey, 'content-type': 'application/json' }, body: JSON.stringify({ email: form.get('email'), password: form.get('password') }) }); const body = await response.json(); if (!response.ok) throw Error(body.error_description || 'Sign in failed'); state.token = body.access_token; dashboard(); } catch (err) { error.textContent = err.message; }
+    try { const form = new FormData(event.target); const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: supabaseAnonKey, 'content-type': 'application/json' }, body: JSON.stringify({ email: form.get('email'), password: form.get('password') }) }); const body = await response.json(); if (!response.ok) throw Error(body.error_description || 'Sign in failed'); saveSession(body); dashboard(); } catch (err) { error.textContent = err.message; }
   };
 }
-async function load(path) { const response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } }); if (response.status === 401) { state.token = ''; login(); throw Error('expired'); } if (!response.ok) throw Error(await response.text()); return response.json(); }
-async function download(path, filename, type) { const response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } }); if (response.status === 401) { state.token = ''; login(); throw Error('expired'); } if (!response.ok) throw Error(await response.text()); const blob = new Blob([await response.blob()], { type }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
+async function load(path) {
+  let response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } });
+  if (response.status === 401 && await refreshSession()) response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } });
+  if (response.status === 401) { clearSession(); login(); throw Error('expired'); }
+  if (!response.ok) throw Error(await response.text()); return response.json();
+}
+async function download(path, filename, type) {
+  let response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } });
+  if (response.status === 401 && await refreshSession()) response = await fetch(api + path, { headers: { Authorization: `Bearer ${state.token}` } });
+  if (response.status === 401) { clearSession(); login(); throw Error('expired'); }
+  if (!response.ok) throw Error(await response.text());
+  const blob = new Blob([await response.blob()], { type }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+}
 function table(headers, rows) { if (!rows.length) return '<p class="muted" role="status">No records in this authorized scope.</p>'; const cell = value => value && typeof value === 'object' && value.action ? `<td data-action-principal="${esc(value.action)}"></td>` : `<td>${esc(value)}</td>`; return `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell).join('')}</tr>`).join('')}</tbody></table></div>`; }
 async function renderPanel(name) {
   const panel = document.querySelector('#panel'); panel.innerHTML = '<p role="status">Loading authorized data…</p>';
@@ -33,5 +80,5 @@ async function renderPanel(name) {
     else if (name === 'audit') { const data = await load('/v1/admin/audit'); panel.innerHTML = `<h2>Administrator audit history</h2>${table(['Timestamp','Action','Outcome','Metadata'], data.audit.map(item => [item.created_at, item.action, item.outcome, JSON.stringify(item.metadata)]))}`; }
   } catch (error) { if (error.message !== 'expired') panel.innerHTML = '<p class="error" role="alert">Unable to load this authorized view. Try again.</p>'; }
 }
-function dashboard() { app.innerHTML = `<div class="shell"><aside><div class="brand">InsightFlow<span>ADMIN</span></div><nav>${['company-overview:Company-wide overview','company-users:All customer users','company-events:Search all diagnostics','company-audit:Company admin audit','overview:Organization diagnostic overview','users:Organization user directory','timeline:Organization user timeline','support:Support-reference search','export:Organization exports','audit:Organization admin audit'].map(item => { const [id,label] = item.split(':'); return `<button class="nav-link" data-view="${id}">${label}</button>`; }).join('')}</nav><button id="signout" class="ghost">Sign out</button></aside><main class="content"><header><p class="eyebrow">SECURE OPERATIONS</p><h1>Administrator diagnostics</h1><p class="muted">Company-wide views require a separate InsightFlow company-admin authorization. Tenant support views remain organization-scoped.</p></header><section id="panel" class="panel"></section></main></div>`; document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => renderPanel(button.dataset.view); }); document.querySelector('#signout').onclick = () => { state.token = ''; login(); }; renderPanel('overview'); }
-login();
+function dashboard() { app.innerHTML = `<div class="shell"><aside><div class="brand">InsightFlow<span>ADMIN</span></div><nav>${['company-overview:Company-wide overview','company-users:All customer users','company-events:Search all diagnostics','company-audit:Company admin audit','overview:Organization diagnostic overview','users:Organization user directory','timeline:Organization user timeline','support:Support-reference search','export:Organization exports','audit:Organization admin audit'].map(item => { const [id,label] = item.split(':'); return `<button class="nav-link" data-view="${id}">${label}</button>`; }).join('')}</nav><button id="signout" class="ghost">Sign out</button></aside><main class="content"><header><p class="eyebrow">SECURE OPERATIONS</p><h1>Administrator diagnostics</h1><p class="muted">Company-wide views require a separate InsightFlow company-admin authorization. Tenant support views remain organization-scoped.</p></header><section id="panel" class="panel"></section></main></div>`; document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => renderPanel(button.dataset.view); }); document.querySelector('#signout').onclick = signOut; renderPanel('company-overview'); }
+restoreSession();
