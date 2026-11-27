@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import claim, cleanup, complete, create
+from core.excel_handoff_store import (
+    claim, cleanup, complete, create, lock_pending_completion,
+)
 
 
 DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL", "").strip()
@@ -84,8 +86,10 @@ def test_create_complete_claim_is_single_use(engine):
     transaction, claim_secret, completion_secret = uuid4(), "c" * 43, "p" * 43
     with Session.begin() as db:
         assert create(db, transaction, claim_secret, completion_secret)
+        assert lock_pending_completion(db, transaction, completion_secret)
         assert complete(db, transaction, completion_secret, "refresh-token")
     with Session.begin() as db:
+        assert not lock_pending_completion(db, transaction, completion_secret)
         assert claim(db, transaction, claim_secret) == "refresh-token"
     with Session.begin() as db:
         assert claim(db, transaction, claim_secret) is None
@@ -213,6 +217,18 @@ def test_claim_rollback_allows_next_claim(engine):
             raise RuntimeError("claim rollback test")
     with Session.begin() as db:
         assert claim(db, transaction, claim_secret) == "refresh-token"
+
+
+def test_complete_lock_blocks_duplicate_token_rotation(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "d" * 43, "e" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+        assert lock_pending_completion(db, transaction, completion_secret)
+        assert complete(db, transaction, completion_secret, "rotated-refresh-token")
+    with Session.begin() as db:
+        assert not lock_pending_completion(db, transaction, completion_secret)
+        assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
 
 
 def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
