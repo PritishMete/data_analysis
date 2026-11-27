@@ -310,7 +310,7 @@
               }
               if (left <= 0) {
                 claimRunning = false;
-                if (completionReceived) finish(new Error("excel_handoff_unavailable"));
+                finish(new Error("excel_handoff_unavailable"));
                 return;
               }
               global.setTimeout(function () { attempt(left - 1); }, delay);
@@ -374,13 +374,10 @@
             diagnostic("dialog_closed", { result: "received" });
             // A completed backend handoff can still be claimed if the child
             // closes just as its Office message is delayed or lost.
-            claimWithRetries(6, 300);
-            global.setTimeout(function () {
-              if (!settled && !completionReceived) finish(new Error("excel_dialog_closed"));
-              else if (!settled && completionReceived && !claimRunning) {
-                finish(new Error("excel_handoff_unavailable"));
-              }
-            }, 2200);
+            // Dialog close can race an in-flight /complete request. Poll the
+            // one-time claim until it commits or the backend's transaction
+            // expires; never fail early while the backend may still be rotating.
+            claimWithRetries(30, 500);
           });
         });
       });
