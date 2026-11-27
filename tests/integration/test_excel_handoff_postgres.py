@@ -10,7 +10,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from core.excel_handoff_store import (
-    cancel, claim, cleanup, complete, create, lock_pending_completion,
+    cancel,
+    claim,
+    cleanup,
+    complete,
+    completion_finalized,
+    create,
+    lock_pending_completion,
 )
 
 
@@ -90,6 +96,7 @@ def test_create_complete_claim_is_single_use(engine):
         assert complete(db, transaction, completion_secret, "refresh-token")
     with Session.begin() as db:
         assert not lock_pending_completion(db, transaction, completion_secret)
+        assert completion_finalized(db, transaction, completion_secret)
         assert claim(db, transaction, claim_secret) == "refresh-token"
     with Session.begin() as db:
         assert claim(db, transaction, claim_secret) is None
@@ -266,7 +273,9 @@ def test_complete_lock_blocks_duplicate_token_rotation(engine):
         assert complete(db, transaction, completion_secret, "rotated-refresh-token")
     with Session.begin() as db:
         assert not lock_pending_completion(db, transaction, completion_secret)
+        assert completion_finalized(db, transaction, completion_secret)
         cancel(db, transaction, claim_secret)
+        assert completion_finalized(db, transaction, completion_secret)
         assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
 
 
@@ -316,7 +325,7 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
             "access_token": "a" * 20,
             "refresh_token": "b" * 20,
         })
-        assert duplicate.status_code == 409
+        assert duplicate.status_code == 204
         assert refresh_calls == ["b" * 20]
         response = client.post("/v1/excel-auth/handoff/claim", json={
             "transaction_id": transaction,
