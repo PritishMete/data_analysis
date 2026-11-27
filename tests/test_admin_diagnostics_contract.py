@@ -155,3 +155,9 @@ def test_admin_portal_origin_is_allowed_by_cors_and_origin_protection():
     origin = "https://insightflow-admin-portal.onrender.com"
     assert origin in controls
     assert origin in main
+
+
+def test_company_admin_endpoints_have_a_separate_rate_limit():
+    source = (ROOT / "security_hardening.py").read_text(encoding="utf-8")
+    assert 'path.startswith("/v1/company-admin")' in source
+    assert '"company-admin"' in source
