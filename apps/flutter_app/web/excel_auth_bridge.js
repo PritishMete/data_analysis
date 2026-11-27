@@ -314,7 +314,7 @@
         function claimWithRetries(remaining, delay) {
           if (claimRunning || settled) return;
           claimRunning = true;
-          function attempt(left) {
+          function attempt(left, waitMs) {
             post(origin, "/v1/excel-auth/handoff/claim", {
               transaction_id: transactionId, claim_capability: claimCapability
             }).then(function (result) {
@@ -329,13 +329,14 @@
                 finish(new Error("excel_handoff_unavailable"));
                 return;
               }
-              global.setTimeout(function () { attempt(left - 1); }, delay);
+              var nextWait = Math.min(waitMs * 2, 4000);
+              global.setTimeout(function () { attempt(left - 1, nextWait); }, waitMs);
             }).catch(function () {
               claimRunning = false;
               finish(new Error("excel_handoff_unavailable"));
             });
           }
-          attempt(remaining);
+          attempt(remaining, delay);
         }
 
         function onMessage(args) {
@@ -393,7 +394,7 @@
             // Dialog close can race an in-flight /complete request. Poll the
             // one-time claim until it commits or the backend's transaction
             // expires; never fail early while the backend may still be rotating.
-            claimWithRetries(30, 500);
+            claimWithRetries(8, 250);
           });
         });
       });
