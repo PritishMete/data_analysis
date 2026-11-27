@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.db import get_db
-from core.excel_handoff_store import cancel, claim, complete, create
+from core.excel_handoff_store import (
+    cancel, claim, complete, create, lock_pending_completion,
+)
 from firebase_authz.supabase_auth import (
     AuthenticationRequired,
     SupabaseAuthUnavailable,
@@ -95,6 +97,12 @@ def create_handoff(payload: HandoffRequest, db: Session = Depends(get_db)):
 
 @router.post("/complete", status_code=204)
 def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
+    # Reserve the pending transaction before rotating Supabase's refresh token.
+    # Duplicate callbacks must not rotate a token that the first callback has
+    # already replaced and stored.
+    if not lock_pending_completion(db, payload.transaction_id, payload.completion_capability):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
     try:
         original = verify_supabase_access_token(payload.access_token)
         refreshed_access, rotated_refresh = _refresh_pair(payload.refresh_token)
