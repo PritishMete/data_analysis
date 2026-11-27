@@ -463,7 +463,11 @@ _CORS_ORIGINS = [
 # Production retains both the current Cloudflare Pages origin and the legacy
 # GitHub Pages origin while older clients finish migrating.
 if _production_environment:
-    for _origin in ("https://insightflow-3e8.pages.dev", "https://pritishmete.github.io"):
+    for _origin in (
+        "https://insightflow-3e8.pages.dev",
+        "https://pritishmete.github.io",
+        "https://insightflow-admin-portal.onrender.com",
+    ):
         if _origin not in _CORS_ORIGINS:
             _CORS_ORIGINS.append(_origin)
 if _production_environment:
