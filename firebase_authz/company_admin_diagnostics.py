@@ -46,6 +46,8 @@ def company_overview(authorization: str | None = Header(default=None)):
         row = db.execute(text("""
             SELECT
               (SELECT count(*) FROM diagnostic_events) AS total_events,
+              (SELECT count(*) FROM platform_backend_events) AS backend_requests,
+              (SELECT count(*) FROM platform_backend_events WHERE status_code >= 400) AS backend_errors,
               (SELECT count(DISTINCT principal_id) FROM organization_members) AS users,
               (SELECT count(DISTINCT principal_id) FROM organization_members WHERE status='active') AS active_users,
               (SELECT count(*) FROM organizations) AS organizations,
