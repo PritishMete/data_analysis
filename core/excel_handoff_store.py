@@ -39,6 +39,17 @@ def lock_pending_completion(db: Session, transaction: UUID, capability: str) -> 
     return result.scalar_one_or_none() is not None
 
 
+def completion_finalized(db: Session, transaction: UUID, capability: str) -> bool:
+    """Return whether this capability already completed or was claimed."""
+    result = db.execute(text("""
+        SELECT id FROM excel_handoff.transactions
+        WHERE id = :id AND completion_digest = :digest
+          AND status IN ('completed', 'claimed')
+          AND expires_at > clock_timestamp()
+    """), {"id": transaction, "digest": _digest(capability)})
+    return result.scalar_one_or_none() is not None
+
+
 def complete(db: Session, transaction: UUID, capability: str, verified_refresh_token: str) -> bool:
     result = db.execute(text("""
         UPDATE excel_handoff.transactions
