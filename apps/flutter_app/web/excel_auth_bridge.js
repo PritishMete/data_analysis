@@ -166,6 +166,11 @@
     contextPromise = new Promise(function (resolve, reject) {
       contextResolve = resolve;
       contextReject = reject;
+      var contextTimer = global.setTimeout(function () {
+        if (contextReject) contextReject(new Error("excel_dialog_channel_timeout"));
+        contextResolve = null;
+        contextReject = null;
+      }, 60000);
       ui.addHandlerAsync(global.Office.EventType.DialogParentMessageReceived, function (args) {
         if (!args || args.origin !== global.location.origin ||
             typeof args.message !== "string" || args.message.length > 4096) {
@@ -187,12 +192,14 @@
           state: state
         };
         diagnostic("parent_context_received", { result: "validated" });
+        global.clearTimeout(contextTimer);
         if (contextResolve) contextResolve(JSON.stringify(handoffContext));
         contextResolve = null;
         contextReject = null;
       }, function (result) {
         if (result && result.status &&
             result.status !== global.Office.AsyncResultStatus.Succeeded) {
+          global.clearTimeout(contextTimer);
           if (contextReject) contextReject(new Error("excel_dialog_channel_unavailable"));
           contextResolve = null;
           contextReject = null;
@@ -204,11 +211,15 @@
           }), { targetOrigin: global.location.origin });
           diagnostic("dialog_ready_sent", { result: "sent" });
         } catch (_) {
+          global.clearTimeout(contextTimer);
           if (contextReject) contextReject(new Error("excel_dialog_channel_unavailable"));
           contextResolve = null;
           contextReject = null;
         }
       });
+    }).catch(function (error) {
+      contextPromise = null;
+      throw error;
     });
     return contextPromise;
   }
@@ -220,6 +231,9 @@
   }
 
   function openSignInDialog(correlationId, backendOrigin) {
+    if (typeof correlationId === "string" && correlationId.length <= 80) {
+      correlation = correlationId;
+    }
     diagnostic("dialog_open_started");
     var origin, transactionId, claimCapability, completionCapability, state;
     try {
@@ -330,6 +344,7 @@
               diagnostic("dialog_context_sent", { result: "sent" });
             } catch (_) {
               diagnostic("dialog_context_sent", { result: "failed", error_code: "office_message_failed" });
+              finish(new Error("excel_dialog_channel_unavailable"));
             }
             return;
           }
