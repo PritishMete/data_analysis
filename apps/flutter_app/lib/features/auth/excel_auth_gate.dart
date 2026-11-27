@@ -377,14 +377,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         completed: true,
         handoffStarted: true,
       );
-      // UI completion is committed before any Office message can prompt the
-      // parent to close this dialog.
-      final notificationSent = ExcelAuthBridge.notifyDialogComplete();
-      ExcelAuthDiagnostics.record(
-        'completion_notice_sent',
-        result: notificationSent ? 'sent' : 'unavailable_parent_can_claim_on_close',
-        completed: true,
-      );
+      // Clear the now-rotated dialog-local session before notifying the
+      // parent. The parent cannot close the dialog until it receives the
+      // completion notice and successfully claims the independent token.
       try {
         await auth.signOut(scope: SignOutScope.local);
       } catch (error) {
@@ -395,6 +390,14 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
           completed: true,
         );
       }
+      // UI completion was set above, and local cleanup is finished, before
+      // this non-sensitive Office message can cause the parent to close.
+      final notificationSent = ExcelAuthBridge.notifyDialogComplete();
+      ExcelAuthDiagnostics.record(
+        'completion_notice_sent',
+        result: notificationSent ? 'sent' : 'unavailable_parent_can_claim_on_close',
+        completed: true,
+      );
       _logHandoff(correlationId, 'complete_dialog', 'succeeded');
     } catch (error) {
       if (autoRefreshStopped && !handoffCommitted) {
