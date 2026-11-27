@@ -200,6 +200,10 @@ async function run() {
       'https://api.insightflow.test'
     );
     assert.equal(completed, true);
+    assert.equal(h.completed, true);
+    assert.equal(h.messages.map(JSON.parse).some((item) => item.action === 'completed'), false,
+      'parent notification must wait until Flutter marks its dialog UI complete');
+    assert.equal(h.window.InsightFlowExcelAuth.notifyDialogComplete(), true);
     const taskPaneToken = await pending;
     assert.equal(taskPaneToken, 'rotated-refresh-token-from-server');
     assert.notEqual(taskPaneToken, 'original-dialog-refresh-token');
@@ -235,6 +239,7 @@ async function run() {
     assert.equal(first, second, 'duplicate callbacks must share one completion request');
     await Promise.all([first, second]);
     assert.equal(h.requests.filter((item) => item.route.endsWith('/complete')).length, 1);
+    assert.equal(h.window.InsightFlowExcelAuth.notifyDialogComplete(), true);
     assert.equal(await pending, 'rotated-refresh-token-from-server');
   }
 
@@ -252,6 +257,7 @@ async function run() {
     await new Promise((resolve) => setTimeout(resolve, 25));
     h.simulateDialogClose();
     await completing;
+    assert.equal(h.window.InsightFlowExcelAuth.notifyDialogComplete(), false);
     assert.equal(await pending, 'rotated-refresh-token-from-server');
     assert.equal(h.claimed, true);
   }
