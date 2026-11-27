@@ -365,6 +365,14 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         completed: true,
         handoffStarted: true,
       );
+      // UI completion is committed before any Office message can prompt the
+      // parent to close this dialog.
+      final notificationSent = ExcelAuthBridge.notifyDialogComplete();
+      ExcelAuthDiagnostics.record(
+        'completion_notice_sent',
+        result: notificationSent ? 'sent' : 'unavailable_parent_can_claim_on_close',
+        completed: true,
+      );
       try {
         await auth.signOut(scope: SignOutScope.local);
       } catch (error) {
