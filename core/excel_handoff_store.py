@@ -22,6 +22,23 @@ def create(db: Session, transaction: UUID, claim: str, completion: str) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+def lock_pending_completion(db: Session, transaction: UUID, capability: str) -> bool:
+    """Reserve a pending completion while its refresh token is rotated upstream.
+
+    The row lock prevents duplicate completion calls from rotating the same
+    Supabase refresh token a second time before the first result is persisted.
+    The caller must keep this transaction open through complete() and commit.
+    """
+    result = db.execute(text("""
+        SELECT id FROM excel_handoff.transactions
+        WHERE id = :id AND completion_digest = :digest
+          AND ciphertext IS NULL AND status = 'pending'
+          AND expires_at > clock_timestamp()
+        FOR UPDATE
+    """), {"id": transaction, "digest": _digest(capability)})
+    return result.scalar_one_or_none() is not None
+
+
 def complete(db: Session, transaction: UUID, capability: str, verified_refresh_token: str) -> bool:
     result = db.execute(text("""
         UPDATE excel_handoff.transactions
@@ -55,6 +72,7 @@ def cancel(db: Session, transaction: UUID, capability: str) -> None:
     db.execute(text("""
         UPDATE excel_handoff.transactions SET status = 'cancelled', ciphertext = NULL
         WHERE id = :id AND claim_digest = :digest
+          AND status = 'pending' AND ciphertext IS NULL
     """), {"id": transaction, "digest": _digest(capability)})
 
 
