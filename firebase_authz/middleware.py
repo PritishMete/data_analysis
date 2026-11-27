@@ -29,6 +29,11 @@ PUBLIC_PREFIXES = (
     "/openapi.json",
     "/v1/authz",
     "/v1/excel-auth/handoff",
+    # These endpoints enforce their own Supabase identity or one-time claim-secret
+    # checks. They must not inherit tenant workspace/resource authorization.
+    "/v1/admin",
+    "/v1/company-admin",
+    "/v1/diagnostics",
 )
 # Route-level policy is deliberately kept server-side. The client can supply
 # workspace/resource context, but it cannot choose the permission required for
