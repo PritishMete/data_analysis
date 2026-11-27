@@ -7,7 +7,7 @@ import urllib.request
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from core.excel_handoff_store import (
     cancel,
     claim,
     complete,
+    completion_finalized,
     create,
     lock_pending_completion,
 )
@@ -107,6 +108,11 @@ def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
     if not lock_pending_completion(
         db, payload.transaction_id, payload.completion_capability
     ):
+        if completion_finalized(
+            db, payload.transaction_id, payload.completion_capability
+        ):
+            # A retried callback is acknowledged without rotating again.
+            return Response(status_code=204)
         db.rollback()
         raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
     try:
