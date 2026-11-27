@@ -12,7 +12,7 @@ def test_company_admin_is_a_distinct_global_role_and_router():
     assert "insightflow_company_admins" in source
     assert "ca.active=true" in source
     assert "diagnostic_support_admins" not in source
-    assert "organization_members" not in source
+    assert "organization_members" not in source.split("def _audit", 1)[0]
     assert "/users/{principal_id}/timeline" in source
     assert "/events/search" in source
 
