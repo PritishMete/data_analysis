@@ -313,6 +313,21 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
             "completion_capability": completion_secret,
         })
         assert response.status_code == 201
+
+        # A missing encryption key must fail before Supabase rotates the
+        # submitted refresh token, otherwise the replacement could be lost.
+        valid_key = os.environ["INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY"]
+        monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY", "invalid")
+        unavailable = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "a" * 20,
+            "refresh_token": "b" * 20,
+        })
+        assert unavailable.status_code == 503
+        assert refresh_calls == []
+        monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY", valid_key)
+
         response = client.post("/v1/excel-auth/handoff/complete", json={
             "transaction_id": transaction,
             "completion_capability": completion_secret,
