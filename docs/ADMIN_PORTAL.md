@@ -21,5 +21,13 @@ ingestion route `/v1/admin/events` remains included.
 Older control-plane requests may already exist in `platform_backend_events` from
 deployments before the middleware exclusion was introduced. They remain stored for
 history and are excluded from customer metrics and the customer request-log view at
-read time. This correction does not delete or rewrite telemetry records and requires
-no production database migration.
+read time.
+
+The customer backend metric window starts at the first verified Render deployment
+that introduced the shared customer-route filter: **2026-11-27 14:41:58.61723 UTC**.
+Rows created before that timestamp are deliberately outside the new measurement
+window, including previously recorded customer requests, so the next customer test
+starts from zero. The same timestamp applies to the overview totals and Backend
+Request Logs. Historical rows are retained; deleting customer accounts does not reset
+this metric because backend telemetry is stored separately from account records.
+No production database migration or telemetry deletion is required.
