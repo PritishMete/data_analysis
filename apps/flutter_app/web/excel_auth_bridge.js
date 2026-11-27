@@ -17,6 +17,7 @@
   var contextResolve = null;
   var contextReject = null;
   var completionPromise = null;
+  var handoffReadyToNotify = false;
 
   function diagnostic(event, fields) {
     if (!global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
@@ -405,23 +406,11 @@
       access_token: accessToken,
       refresh_token: refreshToken
     }).then(function () {
-      // Backend has rotated and stored a different refresh token. Mark complete
-      // before attempting the Office channel; credentials never cross messageParent.
+      // Backend has rotated and stored a different refresh token. Flutter marks
+      // its UI complete before explicitly notifying the parent dialog.
       global.__INSIGHTFLOW_EXCEL_AUTH_HANDOFF_COMPLETED__ = true;
+      handoffReadyToNotify = true;
       diagnostic("handoff_complete", { result: "succeeded" });
-      try {
-        var ui = global.Office && global.Office.context && global.Office.context.ui;
-        if (!ui || typeof ui.messageParent !== "function") throw new Error("channel_unavailable");
-        ui.messageParent(JSON.stringify({
-          type: TYPE, version: VERSION, action: "completed",
-          state: handoffContext.state,
-          transaction_id: handoffContext.transaction_id
-        }), { targetOrigin: global.location.origin });
-        diagnostic("completion_notice_sent", { result: "sent" });
-      } catch (_) {
-        // Parent makes a final one-time claim attempt when the dialog closes.
-        diagnostic("completion_notice_sent", { result: "failed", error_code: "office_message_failed" });
-      }
       return true;
     }).catch(function () {
       completionPromise = null;
@@ -431,10 +420,31 @@
     return completionPromise;
   }
 
+  function notifyDialogComplete() {
+    if (!handoffReadyToNotify || !handoffContext) return false;
+    try {
+      var ui = global.Office && global.Office.context && global.Office.context.ui;
+      if (!ui || typeof ui.messageParent !== "function") throw new Error("channel_unavailable");
+      ui.messageParent(JSON.stringify({
+        type: TYPE, version: VERSION, action: "completed",
+        state: handoffContext.state,
+        transaction_id: handoffContext.transaction_id
+      }), { targetOrigin: global.location.origin });
+      diagnostic("completion_notice_sent", { result: "sent" });
+      handoffReadyToNotify = false;
+      return true;
+    } catch (_) {
+      // Parent makes a final one-time claim attempt when the dialog closes.
+      diagnostic("completion_notice_sent", { result: "failed", error_code: "office_message_failed" });
+      return false;
+    }
+  }
+
   global.InsightFlowExcelAuth = {
     openSignInDialog: openSignInDialog,
     waitForHandoffContext: waitForHandoffContext,
     completeDialog: completeDialog,
+    notifyDialogComplete: notifyDialogComplete,
     setDiagnosticsEnabled: setDiagnosticsEnabled,
     exportDiagnostics: exportDiagnostics,
     resetDiagnostics: resetDiagnostics,
