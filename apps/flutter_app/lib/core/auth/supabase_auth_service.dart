@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'excel_auth_diagnostics.dart';
+import '../services/diagnostic_telemetry_service.dart';
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
@@ -106,6 +107,15 @@ class InsightFlowSupabaseAuthService {
             state.session?.accessToken == initialSession?.accessToken;
         if (state.event == AuthChangeEvent.initialSession && sameSession) {
           continue;
+        }
+        if (state.event == AuthChangeEvent.signedIn) {
+          InsightFlowDiagnosticTelemetry.record(
+            category: 'authentication',
+            status: 'success',
+            stage: 'supabase_signed_in',
+            component: 'supabase_auth',
+            operation: 'auth_state_change',
+          );
         }
         yield state;
       }
@@ -306,12 +316,42 @@ class InsightFlowSupabaseAuthService {
 
   /// Starts the Supabase-managed Google OAuth flow. The browser callback is
   /// consumed by supabase_flutter using the PKCE options configured above.
-  static Future<bool> signInWithGoogle({String? redirectTo}) {
+  static Future<bool> signInWithGoogle({String? redirectTo}) async {
     ExcelAuthDiagnostics.record('google_oauth_initiated', operation: 'supabase_oauth');
-    return signInWithOAuth(
-      OAuthProvider.google,
-      redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,
+    InsightFlowDiagnosticTelemetry.record(
+      category: 'google_oauth',
+      status: 'started',
+      stage: 'oauth_start_requested',
+      component: 'supabase_auth',
+      operation: 'google_sign_in',
     );
+    try {
+      final started = await signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirectTo ?? InsightFlowSupabaseConfig.authRedirectUrl,
+      );
+      if (!started) {
+        InsightFlowDiagnosticTelemetry.record(
+          category: 'google_oauth',
+          status: 'failed',
+          stage: 'oauth_start_rejected',
+          component: 'supabase_auth',
+          operation: 'google_sign_in',
+          code: 'oauth_start_rejected',
+        );
+      }
+      return started;
+    } catch (_) {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'google_oauth',
+        status: 'failed',
+        stage: 'oauth_start_exception',
+        component: 'supabase_auth',
+        operation: 'google_sign_in',
+        code: 'oauth_start_failed',
+      );
+      rethrow;
+    }
   }
 
   static Future<void> beginPhoneVerification(String phone) async {
