@@ -98,6 +98,7 @@ def test_create_complete_claim_is_single_use(engine):
         assert not lock_pending_completion(db, transaction, completion_secret)
         assert completion_finalized(db, transaction, completion_secret)
         assert claim(db, transaction, claim_secret) == "refresh-token"
+        assert completion_finalized(db, transaction, completion_secret)
     with Session.begin() as db:
         assert claim(db, transaction, claim_secret) is None
 
