@@ -299,7 +299,14 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       sessionAvailable: true,
       handoffStarted: true,
     );
+    final auth = InsightFlowSupabaseAuthService.client.auth;
+    var autoRefreshStopped = false;
+    var handoffCommitted = false;
     try {
+      // Stop the dialog's background refresh before the backend rotates the
+      // current token. Manual authoritative verification below remains safe.
+      auth.stopAutoRefresh();
+      autoRefreshStopped = true;
       await _handoffContextFuture;
       _logHandoff(correlationId, 'verify_session', 'started');
       final user =
@@ -313,6 +320,8 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       );
       if (!mounted) return;
       if (user == null || user.emailConfirmedAt == null) {
+        auth.startAutoRefresh();
+        autoRefreshStopped = false;
         setState(() {
           _needsVerification = true;
           _handoffStarted = false;
@@ -333,18 +342,13 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         throw StateError('excel_session_unavailable');
       }
 
-      final auth = InsightFlowSupabaseAuthService.client.auth;
-      auth.stopAutoRefresh();
-      try {
-        await ExcelAuthBridge.completeDialog(
-          accessToken,
-          refreshToken,
-          _diagnosticsApiOrigin,
-        );
-      } catch (_) {
-        auth.startAutoRefresh();
-        rethrow;
-      }
+      await ExcelAuthBridge.completeDialog(
+        accessToken,
+        refreshToken,
+        _diagnosticsApiOrigin,
+      );
+      handoffCommitted = true;
+      autoRefreshStopped = false;
 
       // The backend has consumed and rotated the dialog refresh token. Mark
       // the UI complete before clearing the stale local copy or the channel
@@ -373,6 +377,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       }
       _logHandoff(correlationId, 'complete_dialog', 'succeeded');
     } catch (error) {
+      if (autoRefreshStopped && !handoffCommitted) {
+        auth.startAutoRefresh();
+      }
       _logHandoff(correlationId, 'handoff', 'failed', error);
       if (!mounted || _completed) return;
       setState(() {
