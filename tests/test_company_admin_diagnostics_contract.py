@@ -81,6 +81,9 @@ def test_backend_observability_redacts_authentication_and_personal_values():
     assert "abc.def" not in value
     assert "test@example.com" not in value
     assert "+1 202-555-0100" not in value
+    credentials = sanitize_error_message("password=hunter2 api_key=sk_live_secret")
+    assert "hunter2" not in credentials
+    assert "sk_live_secret" not in credentials
 
 
 def test_backend_observability_covers_all_api_route_families_without_health_noise():
