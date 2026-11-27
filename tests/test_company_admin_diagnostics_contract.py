@@ -81,3 +81,12 @@ def test_backend_observability_redacts_authentication_and_personal_values():
     assert "abc.def" not in value
     assert "test@example.com" not in value
     assert "+1 202-555-0100" not in value
+
+
+def test_backend_observability_covers_all_api_route_families_without_health_noise():
+    from firebase_authz.observability import should_observe_path
+
+    for path in ("/analyze", "/transform/undo", "/powerbi/dashboard", "/v2/detail-analysis", "/v1/company-admin/overview"):
+        assert should_observe_path(path) is True
+    for path in ("/", "/health", "/ping", "/powerbi/ping", "/openapi.json", "/docs"):
+        assert should_observe_path(path) is False
