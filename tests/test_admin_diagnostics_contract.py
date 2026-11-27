@@ -90,3 +90,37 @@ def test_anonymous_rate_limiter_handles_missing_client_bucket():
     diagnostics._anonymous_rate_buckets.clear()
     diagnostics._anonymous_rate_limit("unknown", 2000.0)
     assert "unknown" in diagnostics._anonymous_rate_buckets
+
+
+
+def test_company_wide_admin_uses_distinct_server_authorization():
+    from firebase_authz import company_admin_diagnostics as company
+
+    source = (ROOT / "firebase_authz" / "company_admin_diagnostics.py").read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0043_insightflow_company_admin.sql").read_text(encoding="utf-8")
+    assert company.router.prefix == "/v1/company-admin"
+    assert "insightflow_company_admins" in source
+    assert "ca.active=true" in source
+    assert "diagnostic_support_admins" not in source
+    assert "organization_members" not in source
+    assert "/users/{principal_id}/timeline" in source
+    assert "/events/search" in source
+    assert "ALTER TABLE insightflow_company_admins ENABLE ROW LEVEL SECURITY" in migration
+    assert "ALTER TABLE insightflow_company_admin_audit ENABLE ROW LEVEL SECURITY" in migration
+    assert "REVOKE ALL ON insightflow_company_admins, insightflow_company_admin_audit FROM anon, authenticated" in migration
+
+
+def test_customer_client_telemetry_is_persistent_and_privacy_filtered():
+    telemetry = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "services" / "diagnostic_telemetry_service.dart").read_text(encoding="utf-8")
+    excel = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "auth" / "excel_auth_diagnostics.dart").read_text(encoding="utf-8")
+    auth = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "auth" / "supabase_auth_service.dart").read_text(encoding="utf-8")
+    managed = (ROOT / "apps" / "flutter_app" / "lib" / "features" / "auth" / "managed_dataset_access_workspace.dart").read_text(encoding="utf-8")
+    assert "/v1/diagnostics/sessions" in telemetry
+    assert "/v1/diagnostics/events" in telemetry
+    assert "claim_secret" in telemetry
+    assert "excel_auth_popup" in excel
+    assert "google_oauth" in auth
+    assert "managed_branch_data" in managed
+    assert "response.body" not in telemetry
+    assert "workbook" not in telemetry.lower()
+    assert "refresh_token" not in telemetry.lower()
