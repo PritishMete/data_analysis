@@ -65,7 +65,7 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
             error_type = type(exc).__name__[:160]
             error_message = sanitize_error_message(exc)
             frames = traceback.extract_tb(exc.__traceback__)[-30:]
-            error_stack = "\\n".join(
+            error_stack = "\n".join(
                 f"{frame.filename}:{frame.lineno} in {frame.name}" for frame in frames
             )[:8000]
             logger.error(
