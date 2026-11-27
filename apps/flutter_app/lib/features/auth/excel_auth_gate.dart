@@ -370,6 +370,11 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
           _error = null;
         });
       }
+      // Wait until the completion state has been rendered before the
+      // parent receives a message that may close this Office dialog.
+      if (mounted) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
       ExcelAuthDiagnostics.record(
         'dialog_completed',
         result: 'backend_handoff_committed',
