@@ -188,7 +188,7 @@ def backend_requests(q: str = Query(default="", max_length=160),
         rows = db.execute(text("""
             SELECT e.event_id, e.created_at, e.request_id, e.method, e.route,
                    e.status_code, e.duration_ms, e.principal_id, au.email,
-                   e.client_version, e.error_type, e.error_message, e.error_fingerprint
+                   e.client_version, e.error_type, e.error_message, e.error_stack, e.error_fingerprint
             FROM platform_backend_events e
             LEFT JOIN principals p ON p.principal_id=e.principal_id
             LEFT JOIN identity_bindings ib ON ib.principal_id=p.principal_id
