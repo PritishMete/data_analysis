@@ -356,7 +356,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       await ExcelAuthBridge.completeDialog(
         accessToken,
         refreshToken,
-        _diagnosticsApiOrigin,
+        insightFlowBackendBaseUrl,
       );
       handoffCommitted = true;
       autoRefreshStopped = false;
@@ -376,21 +376,12 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         completed: true,
         handoffStarted: true,
       );
-      // Clear the now-rotated dialog-local session before notifying the
-      // parent. The parent cannot close the dialog until it receives the
-      // completion notice and successfully claims the independent token.
-      try {
-        await auth.signOut(scope: SignOutScope.local);
-      } catch (error) {
-        ExcelAuthDiagnostics.record(
-          'dialog_local_session_clear',
-          result: 'failed',
-          errorCode: _safeErrorCode(error),
-          completed: true,
-        );
-      }
-      // UI completion was set above, and local cleanup is finished, before
-      // this non-sensitive Office message can cause the parent to close.
+      // The dialog auth client uses persistSession:false, so the rotated
+      // token is not in shared browser storage. Do not call signOut(local):
+      // Supabase would revoke the session family whose replacement token the
+      // task pane is about to claim.
+      // UI completion and non-persistence are committed before this
+      // non-sensitive Office message can cause the parent to close.
       final notificationSent = ExcelAuthBridge.notifyDialogComplete();
       ExcelAuthDiagnostics.record(
         'completion_notice_sent',
