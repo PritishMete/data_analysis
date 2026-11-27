@@ -363,7 +363,7 @@ _rate_limiter = DatabaseRateLimiter(engine)
 _PRODUCTION_READY = False
 
 _REQUIRED_AUTHZ_COLUMNS = {
-    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at"},
+    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at", "branch_id"},
     "diagnostic_events": {"event_id", "session_id", "organization_id", "user_principal_id", "branch_id", "correlation_id", "category", "status", "payload"},
     "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
     "insightflow_company_admins": {"principal_id", "active", "created_at"},
