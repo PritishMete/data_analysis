@@ -60,6 +60,9 @@ def test_global_admin_includes_companies_users_and_backend_request_logs():
     portal = (ROOT / "apps" / "admin_portal" / "src" / "app.js").read_text(encoding="utf-8")
     assert '@router.get("/companies")' in company_source
     assert "FROM organization_members" in company_source
+    assert "LEFT JOIN member_roles" in company_source
+    assert "LEFT JOIN roles" in company_source
+    assert "membership_statuses" in company_source
     assert '@router.get("/backend-requests")' in company_source
     assert "BackendRequestObservabilityMiddleware" in main_source
     assert "CREATE TABLE IF NOT EXISTS platform_backend_events" in migration
