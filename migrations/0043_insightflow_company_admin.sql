@@ -1,3 +1,6 @@
+-- Diagnostic sessions need the branch context used by the claim and ingestion APIs.
+ALTER TABLE diagnostic_sessions ADD COLUMN IF NOT EXISTS branch_id TEXT;
+
 -- Company-wide InsightFlow support authorization is separate from tenant roles.
 -- No customer organization membership is required for this internal role.
 CREATE TABLE IF NOT EXISTS insightflow_company_admins (
