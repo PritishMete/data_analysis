@@ -153,8 +153,7 @@ async function openDialog(harness) {
     'excel-test-correlation',
     'https://api.insightflow.test'
   );
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 5));
   assert.ok(harness.openedUrl, 'Office dialog should open after handoff creation');
   const url = new URL(harness.openedUrl);
   assert.equal(url.searchParams.get('excelAuthDialog'), '1');
