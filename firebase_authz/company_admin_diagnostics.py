@@ -12,6 +12,26 @@ from .admin_diagnostics import _claims, _paging
 router = APIRouter(prefix="/v1/company-admin", tags=["company-admin-diagnostics"])
 
 
+def _customer_backend_route_filter() -> str:
+    """SQL predicate that keeps historical admin/control-plane rows out of customer metrics.
+
+    Earlier deployments persisted admin portal reads before the middleware began
+    excluding them. Keep those immutable records for audit/history, but do not
+    count or display them as customer application requests.
+    """
+    return """
+        e.route <> '/v1/company-admin'
+        AND e.route NOT LIKE '/v1/company-admin/%'
+        AND e.route <> '/v1/admin'
+        AND (e.route NOT LIKE '/v1/admin/%' OR e.route = '/v1/admin/events')
+        AND e.route <> '/v1/diagnostics'
+        AND e.route NOT LIKE '/v1/diagnostics/%'
+        AND e.route NOT IN ('/', '/health', '/ping', '/powerbi/ping', '/openapi.json')
+        AND e.route NOT LIKE '/docs%'
+        AND e.route NOT LIKE '/redoc%'
+    """.strip()
+
+
 def _company_actor(authorization: str | None) -> dict:
     claims = _claims(authorization)
     subject = str(claims.get("sub") or claims.get("uid") or "").strip()
@@ -43,11 +63,11 @@ def _audit(actor: dict, action: str, metadata: dict | None = None) -> None:
 def company_overview(authorization: str | None = Header(default=None)):
     actor = _company_actor(authorization)
     with SessionLocal() as db:
-        row = db.execute(text("""
+        row = db.execute(text(f"""
             SELECT
               (SELECT count(*) FROM diagnostic_events) AS total_events,
-              (SELECT count(*) FROM platform_backend_events) AS backend_requests,
-              (SELECT count(*) FROM platform_backend_events WHERE status_code >= 400) AS backend_errors,
+              (SELECT count(*) FROM platform_backend_events e WHERE {_customer_backend_route_filter()}) AS backend_requests,
+              (SELECT count(*) FROM platform_backend_events e WHERE {_customer_backend_route_filter()} AND e.status_code >= 400) AS backend_errors,
               (SELECT count(DISTINCT principal_id) FROM organization_members) AS users,
               (SELECT count(DISTINCT principal_id) FROM organization_members WHERE status='active') AS active_users,
               (SELECT count(*) FROM organizations) AS organizations,
@@ -196,7 +216,7 @@ def backend_requests(q: str = Query(default="", max_length=160),
     actor = _company_actor(authorization)
     offset, limit = _paging(page, page_size)
     with SessionLocal() as db:
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             SELECT e.event_id, e.created_at, e.request_id, e.method, e.route,
                    e.status_code, e.duration_ms, e.principal_id, au.email,
                    e.client_version, e.error_type, e.error_message, e.error_stack, e.error_fingerprint
@@ -205,7 +225,8 @@ def backend_requests(q: str = Query(default="", max_length=160),
             LEFT JOIN identity_bindings ib ON ib.principal_id=p.principal_id
               AND ib.provider='supabase' AND ib.status='active'
             LEFT JOIN auth.users au ON au.id::text=ib.provider_subject
-            WHERE (NOT :failed_only OR e.status_code >= 400)
+            WHERE {_customer_backend_route_filter()}
+              AND (NOT :failed_only OR e.status_code >= 400)
               AND (:q = '' OR e.route ILIKE :pattern OR e.request_id ILIKE :pattern
                    OR e.error_type ILIKE :pattern OR e.error_message ILIKE :pattern
                    OR au.email ILIKE :pattern)
