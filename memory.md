@@ -97,3 +97,16 @@ Added instruction precedence, nested-file discovery, compatibility pointers, fea
 ## Maintenance protocol
 
 After meaningful implementation, merge, architecture decision, or deployment, update the relevant current-state section and append one concise dated decision entry. Do not add secrets, credentials, or raw user data.
+
+
+### 2026-11-27 — Correct historical customer backend request metrics
+
+The company-wide overview and Backend Request Logs previously queried
+`platform_backend_events` without applying the customer-route policy. That allowed
+historical admin-console/control-plane requests recorded before the middleware
+exclusion to remain in the displayed customer request total. The fix applies one
+shared SQL route predicate to the request total, error total, and request-log list;
+the customer diagnostic event ingestion route remains included. Existing records are
+preserved. No production database writes, migrations, Oracle VM changes, or main-site
+frontend changes are part of this fix. At implementation time, the PR and Render
+deployment are pending validation.
