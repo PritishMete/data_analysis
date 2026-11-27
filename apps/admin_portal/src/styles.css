@@ -16,3 +16,16 @@
   .cards{grid-template-columns:1fr}
 }
 @media(prefers-reduced-motion:reduce){.shell aside,.sidebar-backdrop{transition:none}}
+
+@media(max-width:800px){
+  .sidebar-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;width:100%}
+  .sidebar-heading .brand{padding-top:.35rem}
+  .sidebar-close{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;background:#ffffff18;color:#fff;border:1px solid #ffffff35;border-radius:8px;font-size:1.8rem;line-height:1}
+  .sidebar-close:hover{background:#ffffff2b}
+  .sidebar-close:focus-visible,.menu-toggle:focus-visible{outline:3px solid #91d7cf;outline-offset:3px}
+  .sidebar-backdrop:focus{outline:none}
+}
+@media(min-width:801px){
+  .sidebar-heading{display:contents}
+  .sidebar-close{display:none}
+}
