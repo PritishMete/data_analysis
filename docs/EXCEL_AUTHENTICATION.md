@@ -56,6 +56,10 @@ The Flutter web publication workflow builds the app and updates the `gh-pages` s
 - Flutter analysis for the Excel auth gate and JS interop
 - The production Flutter web build and Cloudflare Pages source publication
 
+## Backend deployment boundary
+
+The `/v1/excel-auth/handoff/*` endpoints are served by the FastAPI backend deployed as the Render `data_analysis` web service. Cloudflare Pages continues to host the Flutter web/add-in assets; separate Cloudflare Workers build triggers do not publish these FastAPI endpoints and are not part of this Excel authentication release.
+
 ## Manual Excel verification
 
 1. Open the add-in in Excel with an existing valid task-pane session. Confirm the workspace opens directly.
