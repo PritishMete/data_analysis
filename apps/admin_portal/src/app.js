@@ -112,6 +112,7 @@ function dashboard() {
   };
   toggle.onclick = () => shell.classList.contains('nav-open') ? closeMenu() : openMenu();
   closeButton.onclick = () => closeMenu();
+  backdrop.addEventListener('pointerdown', event => event.preventDefault());
   backdrop.onclick = event => { event.preventDefault(); closeMenu({ restoreFocus: false }); backdrop.blur(); };
   document.onkeydown = event => {
     if (!shell.classList.contains('nav-open')) return;
