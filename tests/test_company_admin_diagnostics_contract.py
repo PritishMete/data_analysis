@@ -63,6 +63,9 @@ def test_global_admin_includes_companies_users_and_backend_request_logs():
     assert '@router.get("/backend-requests")' in company_source
     assert "BackendRequestObservabilityMiddleware" in main_source
     assert "CREATE TABLE IF NOT EXISTS platform_backend_events" in migration
+    stack_migration = (ROOT / "migrations" / "0045_backend_error_stack.sql").read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS error_stack TEXT" in stack_migration
+    assert "error_stack" in company_source
     assert "backend-requests:Backend request logs" in portal
 
 
