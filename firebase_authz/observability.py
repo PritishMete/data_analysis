@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _BEARER = re.compile(r"(?i)bearer\s+[^\s,;]+")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 _SECRET = re.compile(r"(?i)(?:sb_secret|sb_publishable)_[A-Za-z0-9_-]+")
+_SECRET_ASSIGNMENT = re.compile(r"(?i)\\b(?:password|passphrase|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|cookie)\\b\\s*[:=]\\s*[^,\\s;]+")
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d .()\-]{7,}\d)(?!\w)")
 
@@ -29,6 +30,7 @@ def sanitize_error_message(value: object, limit: int = 1200) -> str:
     message = _BEARER.sub("Bearer [REDACTED]", message)
     message = _JWT.sub("[JWT_REDACTED]", message)
     message = _SECRET.sub("[SUPABASE_KEY_REDACTED]", message)
+    message = _SECRET_ASSIGNMENT.sub("[SECRET_REDACTED]", message)
     message = _EMAIL.sub("[EMAIL_REDACTED]", message)
     message = _PHONE.sub("[PHONE_REDACTED]", message)
     return message[:limit]
@@ -48,9 +50,9 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         started = time.perf_counter()
-        request_id = request.headers.get("x-request-id", "").strip()
-        if not request_id or len(request_id) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
-            request_id = "req_" + uuid.uuid4().hex
+        # Always generate the correlation ID server-side; never persist an untrusted
+        # caller-supplied header that could contain a credential or personal value.
+        request_id = "req_" + uuid.uuid4().hex
         status_code = 500
         error_type = None
         error_message = None
@@ -84,7 +86,10 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
             route = getattr(request.scope.get("route"), "path", None) or "/unmatched"
             route = str(route)[:240]
             subject = getattr(request.state, "firebase_uid", None)
-            client_version = request.headers.get("x-insightflow-client-version", "")[:80]
+            raw_client_version = request.headers.get("x-insightflow-client-version", "").strip()
+            client_version = raw_client_version if re.fullmatch(
+                r"\\d+\\.\\d+(?:\\.\\d+){0,2}(?:[-+][A-Za-z0-9.-]+)?", raw_client_version
+            ) else None
             fingerprint = hashlib.sha256(
                 f"{error_type or ''}:{error_message or ''}".encode("utf-8", "replace")
             ).hexdigest() if error_type else None
