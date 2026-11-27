@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from core.db import get_db
 from core.excel_handoff_store import (
-    cancel, claim, complete, create, lock_pending_completion,
+    cancel,
+    claim,
+    complete,
+    create,
+    lock_pending_completion,
 )
 from firebase_authz.supabase_auth import (
     AuthenticationRequired,
@@ -100,7 +104,9 @@ def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
     # Reserve the pending transaction before rotating Supabase's refresh token.
     # Duplicate callbacks must not rotate a token that the first callback has
     # already replaced and stored.
-    if not lock_pending_completion(db, payload.transaction_id, payload.completion_capability):
+    if not lock_pending_completion(
+        db, payload.transaction_id, payload.completion_capability
+    ):
         db.rollback()
         raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
     try:
