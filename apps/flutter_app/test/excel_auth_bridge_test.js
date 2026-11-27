@@ -267,6 +267,19 @@ async function run() {
   }
 
   {
+    const h = createHarness({ supportDialogApi: false });
+    await assert.rejects(
+      h.window.InsightFlowExcelAuth.openSignInDialog(
+        'excel-test-correlation',
+        'https://api.insightflow.test'
+      ),
+      /excel_dialog_api_unsupported/
+    );
+    assert.equal(h.requests.length, 0,
+      'unsupported Office hosts must not create a stranded handoff transaction');
+  }
+
+  {
     const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1');
     assert.equal(h.window.InsightFlowExcelAuth.setDiagnosticsEnabled(true), true);
     assert.equal(h.window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__, true);
