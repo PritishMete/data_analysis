@@ -124,3 +124,15 @@ def test_customer_client_telemetry_is_persistent_and_privacy_filtered():
     assert "workbook_contents" not in telemetry.lower()
     assert "refresh_token" not in telemetry.lower()
     assert "oauth_state" not in telemetry.lower()
+
+
+
+def test_customer_event_ingestion_is_bound_to_claimed_user_session():
+    source = (ROOT / "firebase_authz" / "admin_diagnostics.py").read_text(encoding="utf-8")
+    event_handler = source.split('@router.post("/events")', 1)[1].split('@router.get("/overview")', 1)[0]
+    assert "claims = _claims(authorization)" in event_handler
+    assert "ds.user_principal_id=p.principal_id" in event_handler
+    assert "ds.claimed_at IS NOT NULL" in event_handler
+    assert "om.organization_id=ds.organization_id AND om.status='active'" in event_handler
+    assert "_actor(authorization)" not in event_handler
+    assert "diagnostic.event.ingested" not in event_handler
