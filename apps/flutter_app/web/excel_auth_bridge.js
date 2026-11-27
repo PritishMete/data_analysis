@@ -238,8 +238,8 @@
           contextReject = null;
           return;
         }
-        sendReady();
         readyTimer = global.setInterval(sendReady, 500);
+        sendReady();
       });
     }).catch(function (error) {
       contextPromise = null;
