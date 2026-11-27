@@ -37,6 +37,16 @@ def sanitize_error_message(value: object, limit: int = 1200) -> str:
 
 
 def should_observe_path(path: str) -> bool:
+    # Admin-console traffic is control-plane activity, not customer application
+    # usage. Exclude it so refreshing or navigating the admin portal cannot
+    # inflate the customer backend request metrics. Keep /v1/admin/events:
+    # that endpoint receives customer diagnostic events from the client apps.
+    if path == "/v1/company-admin" or path.startswith("/v1/company-admin/"):
+        return False
+    if path == "/v1/admin" or path.startswith("/v1/admin/"):
+        return path == "/v1/admin/events"
+    if path == "/v1/diagnostics" or path.startswith("/v1/diagnostics/"):
+        return False
     if path in {"/", "/health", "/ping", "/powerbi/ping", "/openapi.json"}:
         return False
     return not path.startswith(("/docs", "/redoc"))
