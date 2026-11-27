@@ -369,7 +369,7 @@ _REQUIRED_AUTHZ_COLUMNS = {
     "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
     "insightflow_company_admins": {"principal_id", "active", "created_at"},
     "insightflow_company_admin_audit": {"audit_id", "actor_principal_id", "action", "metadata", "created_at"},
-    "platform_backend_events": {"event_id", "request_id", "method", "route", "status_code", "duration_ms", "error_type", "error_message", "created_at"},
+    "platform_backend_events": {"event_id", "request_id", "method", "route", "status_code", "duration_ms", "error_type", "error_message", "error_stack", "created_at"},
 }
 
 
