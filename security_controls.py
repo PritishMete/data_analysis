@@ -19,7 +19,10 @@ def configured_origins() -> set[str]:
         else "https://insightflow-3e8.pages.dev,https://pritishmete.github.io,http://localhost:3000,http://localhost:5000,http://127.0.0.1:3000"
     )
     raw = os.getenv("INSIGHTFLOW_CORS_ORIGINS", default)
-    return {item.strip().rstrip("/") for item in raw.split(",") if item.strip()}
+    origins = {item.strip().rstrip("/") for item in raw.split(",") if item.strip()}
+    if os.getenv("INSIGHTFLOW_ENV", "production").strip().lower() == "production":
+        origins.add("https://insightflow-admin-portal.onrender.com")
+    return origins
 
 
 def validate_upload_filename(filename: str | None) -> str:
