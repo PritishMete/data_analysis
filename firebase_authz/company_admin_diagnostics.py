@@ -92,11 +92,10 @@ def company_user_timeline(principal_id: str, page: int = Query(1, ge=1),
     offset, limit = _paging(page, page_size)
     with SessionLocal() as db:
         rows = db.execute(text("""
-            SELECT e.event_id, e.event_at, e.organization_id, o.name AS organization_name,
+            SELECT e.event_id, e.event_at, e.organization_id,
                    e.branch_id, e.correlation_id, e.category, e.status,
                    e.sanitized_error, e.payload
             FROM diagnostic_events e
-            LEFT JOIN organizations o ON o.organization_id=e.organization_id
             WHERE e.user_principal_id=:principal
             ORDER BY e.event_at DESC OFFSET :offset LIMIT :limit
         """), {"principal": principal_id, "offset": offset, "limit": limit}).mappings().all()
@@ -113,11 +112,10 @@ def company_event_search(q: str = Query(..., min_length=2, max_length=160),
     offset, limit = _paging(page, page_size)
     with SessionLocal() as db:
         rows = db.execute(text("""
-            SELECT e.event_id, e.event_at, e.organization_id, o.name AS organization_name,
+            SELECT e.event_id, e.event_at, e.organization_id,
                    e.user_principal_id, au.email, e.branch_id, e.correlation_id,
                    e.category, e.status, e.sanitized_error
             FROM diagnostic_events e
-            LEFT JOIN organizations o ON o.organization_id=e.organization_id
             LEFT JOIN principals p ON p.principal_id=e.user_principal_id
             LEFT JOIN identity_bindings ib ON ib.principal_id=p.principal_id AND ib.provider='supabase'
             LEFT JOIN auth.users au ON au.id::text=ib.provider_subject
