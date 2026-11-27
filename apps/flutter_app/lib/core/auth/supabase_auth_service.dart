@@ -120,6 +120,14 @@ class InsightFlowSupabaseAuthService {
         yield state;
       }
     } catch (error, stackTrace) {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'authentication',
+        status: 'failed',
+        stage: 'auth_state_stream_error',
+        component: 'supabase_auth',
+        operation: 'auth_state_change',
+        code: 'auth_state_stream_error',
+      );
       debugPrint('[supabase-auth] auth-state stream error: ${error.runtimeType}');
       debugPrintStack(stackTrace: stackTrace);
       yield AuthState(AuthChangeEvent.initialSession, currentSession);
