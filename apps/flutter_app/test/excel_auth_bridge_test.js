@@ -329,8 +329,11 @@ async function run() {
       })
     });
     assert.equal(h.claimed, false);
-    h.simulateDialogClose();
-    await assert.rejects(pending);
+    assert.equal(
+      h.requests.filter((item) => item.route.endsWith('/claim')).length,
+      0,
+      'an untrusted origin must not trigger a one-time claim'
+    );
   }
 
   console.log('Excel authentication one-time handoff tests passed.');
