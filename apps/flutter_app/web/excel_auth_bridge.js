@@ -7,6 +7,7 @@
   var DIALOG_KEY = "insightflow.excel.auth.dialog";
   var STATE_PARAM = "excelAuthState";
   var STATE_KEY = "insightflow.excel.auth.state";
+  var CORRELATION_KEY = "insightflow.excel.auth.correlation";
   var DIAGNOSTIC_KEY = "insightflow.excel.auth.diagnostics";
   var DIAGNOSTIC_TTL = 15 * 60 * 1000;
   var events = [];
@@ -121,6 +122,7 @@
         if (id) {
           correlation = id;
           global.__insightFlowExcelAuthCorrelation = id;
+          global.sessionStorage.setItem(CORRELATION_KEY, id);
         }
         if (state && /^[a-f0-9]{48}$/.test(state)) global.sessionStorage.setItem(STATE_KEY, state);
         return;
@@ -130,8 +132,11 @@
         params.set(DIALOG_FLAG, "1");
         var saved = global.sessionStorage.getItem(STATE_KEY);
         if (saved) params.set(STATE_PARAM, saved);
-        if (global.__insightFlowExcelAuthCorrelation) {
-          params.set("excelAuthCorrelation", global.__insightFlowExcelAuthCorrelation);
+        var savedCorrelation = global.sessionStorage.getItem(CORRELATION_KEY);
+        if (savedCorrelation) {
+          correlation = savedCorrelation;
+          global.__insightFlowExcelAuthCorrelation = savedCorrelation;
+          params.set("excelAuthCorrelation", savedCorrelation);
         }
         var query = params.toString();
         global.history.replaceState(global.history.state, "", global.location.pathname +
