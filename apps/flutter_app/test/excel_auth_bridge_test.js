@@ -69,11 +69,21 @@ function createHarness(search = '?excelAuthDialog=1') {
 
 async function run() {
   {
-    const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1');
+    const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1&code=test-code');
     assert.equal(h.window.InsightFlowExcelAuth.setDiagnosticsEnabled(true), true);
     assert.equal(h.window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__, true);
+    h.window.InsightFlowExcelAuth.restoreDialogFlag();
+    assert.match(h.window.InsightFlowExcelAuth.exportDiagnostics(), /oauth_callback_detected/);
     h.window.InsightFlowExcelAuth.resetDiagnostics();
     assert.equal(h.window.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__, false);
+  }
+
+  {
+    const h = createHarness('?excelAuthDialog=1&excelAuthDiagnostics=1&code=test-code');
+    assert.equal(h.window.InsightFlowExcelAuth.setDiagnosticsEnabled(true), true);
+    const diagnostics = h.window.InsightFlowExcelAuth.exportDiagnostics();
+    assert.match(diagnostics, /oauth_callback_detected/);
+    assert.doesNotMatch(diagnostics, /test-code/);
   }
 
   {

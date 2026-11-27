@@ -29,6 +29,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     super.initState();
     ExcelAuthBridge.setDiagnosticsEnabled(ExcelAuthDiagnostics.buildSupported);
     ExcelAuthDiagnostics.activateSession(ExcelAuthBridge.diagnosticsActive);
+    ExcelAuthDiagnostics.record('dialog_started');
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkSession());
   }
 
@@ -181,9 +182,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     Object? error,
   ]) {
     final code = error is AuthException ? error.code : null;
+    final safeCode = ExcelAuthDiagnostics.sanitizeErrorCode(code);
     debugPrint(
       '[excel-auth-handoff] correlation=$correlationId operation=$operation '
-      'result=$result error_code=${code ?? error?.runtimeType ?? 'none'}',
+        'result=$result error_code=$safeCode',
     );
     ExcelAuthDiagnostics.record(
       'dialog_$operation',
@@ -202,6 +204,20 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     ExcelAuthDiagnostics.activateSession(ExcelAuthBridge.diagnosticsActive);
     _subscription = InsightFlowSupabaseAuthService.authStateChanges.listen(
       (state) {
+        if (state.event == AuthChangeEvent.signedIn) {
+          ExcelAuthDiagnostics.record(
+            'oauth_callback_detected',
+            authEvent: state.event.name,
+            sessionAvailable: state.session != null,
+          );
+        } else if (state.event == AuthChangeEvent.initialSession &&
+            state.session != null) {
+          ExcelAuthDiagnostics.record(
+            'session_restored',
+            authEvent: state.event.name,
+            sessionAvailable: true,
+          );
+        }
         ExcelAuthDiagnostics.record(
           'auth_state_event',
           authEvent: state.event.name,
@@ -237,7 +253,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       return;
     }
     final session = InsightFlowSupabaseAuthService.currentSession;
-    if (session == null) return;
+    if (session == null) {
+      ExcelAuthDiagnostics.record('session_missing', result: 'missing');
+      return;
+    }
     final refreshToken = session.refreshToken;
     if (refreshToken == null || refreshToken.isEmpty) return;
 
@@ -250,6 +269,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       handoffStarted: true,
     );
     try {
+      ExcelAuthDiagnostics.record(
+        'user_verification_started',
+        sessionAvailable: true,
+      );
       _logHandoff(correlationId, 'verify_session', 'started');
       final user =
           await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
@@ -260,12 +283,18 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         'verify_session',
         user == null ? 'missing' : 'succeeded',
       );
+      ExcelAuthDiagnostics.record(
+        user == null ? 'user_verification_failed' : 'user_verification_succeeded',
+        result: user == null ? 'failed' : 'succeeded',
+        sessionAvailable: user != null,
+      );
       if (!mounted) return;
       if (user == null || user.emailConfirmedAt == null) {
         setState(() {
           _needsVerification = true;
           _handoffStarted = false;
         });
+        ExcelAuthDiagnostics.record('email_verification_failed', result: 'failed');
         return;
       }
 
@@ -277,8 +306,10 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         throw StateError('InsightFlow did not return a refresh token.');
       }
       _logHandoff(correlationId, 'complete_dialog', 'started');
+      ExcelAuthDiagnostics.record('handoff_started', result: 'started');
       ExcelAuthBridge.completeDialog(handoffToken);
       _logHandoff(correlationId, 'complete_dialog', 'succeeded');
+      ExcelAuthDiagnostics.record('handoff_succeeded', result: 'succeeded');
       if (mounted) setState(() => _completed = true);
       ExcelAuthDiagnostics.record(
         'dialog_completed',
@@ -300,6 +331,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         completed: _completed,
         handoffStarted: _handoffStarted,
       );
+      ExcelAuthDiagnostics.record('handoff_failed', result: 'failed');
     }
   }
 

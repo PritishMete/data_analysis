@@ -11,6 +11,18 @@
   var DIAGNOSTIC_EXPIRY_MS = 15 * 60 * 1000;
   var bridgeEvents = [];
   var bridgeCorrelation = null;
+  var callbackDiagnosticRecorded = false;
+
+  function recordCallbackDiagnosticIfActive() {
+    if (callbackDiagnosticRecorded || !global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
+    try {
+      var params = new URLSearchParams(global.location.search || "");
+      if (params.has("code") || params.has("error")) {
+        callbackDiagnosticRecorded = true;
+        diagnostic("oauth_callback_detected");
+      }
+    } catch (_) {}
+  }
 
   function diagnostic(event, fields) {
     if (!global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__) return;
@@ -40,6 +52,7 @@
       if (!active && expiry) global.sessionStorage.removeItem(DIAGNOSTIC_SESSION_KEY);
     } catch (_) {}
     global.__INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS__ = active;
+    recordCallbackDiagnosticIfActive();
     return active;
   }
 
@@ -64,6 +77,7 @@
   function restoreDialogFlag() {
     try {
       var params = new URLSearchParams(global.location.search || "");
+      recordCallbackDiagnosticIfActive();
       if (params.get(DIALOG_FLAG) === "1") {
         global.__isInsightFlowExcelAuthDialog = true;
         global.sessionStorage.setItem(DIALOG_SESSION_KEY, "1");
