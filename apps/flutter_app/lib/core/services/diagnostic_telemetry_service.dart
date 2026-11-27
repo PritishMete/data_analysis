@@ -19,6 +19,7 @@ class InsightFlowDiagnosticTelemetry {
   static String? _claimSecret;
   static bool _claimed = false;
   static bool _creatingSession = false;
+  static DateTime? _expiresAt;
   static Future<void> _serial = Future<void>.value();
   static String? _correlationId;
 
@@ -64,7 +65,16 @@ class InsightFlowDiagnosticTelemetry {
   }
 
   static Future<void> _ensureSession() async {
-    if (_sessionId != null || _creatingSession) return;
+    if (_sessionId != null &&
+        _expiresAt != null &&
+        DateTime.now().isBefore(_expiresAt!.subtract(const Duration(seconds: 20)))) {
+      return;
+    }
+    if (_creatingSession) return;
+    _sessionId = null;
+    _claimSecret = null;
+    _claimed = false;
+    _expiresAt = null;
     _creatingSession = true;
     try {
       final response = await _client
@@ -75,6 +85,7 @@ class InsightFlowDiagnosticTelemetry {
       if (decoded is Map) {
         _sessionId = decoded['support_reference']?.toString();
         _claimSecret = decoded['claim_secret']?.toString();
+        _expiresAt = DateTime.tryParse(decoded['expires_at']?.toString() ?? '');
       }
     } catch (_) {
       // Telemetry is best-effort only.
