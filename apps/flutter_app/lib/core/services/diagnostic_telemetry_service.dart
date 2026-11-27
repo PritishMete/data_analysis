@@ -133,11 +133,8 @@ class InsightFlowDiagnosticTelemetry {
           ? Supabase.instance.client.auth.currentSession?.accessToken
           : null;
       final authenticated = token != null && token.isNotEmpty;
-      final uri = Uri.parse(
-        authenticated
-            ? '$_apiOrigin/v1/diagnostics/events'
-            : '$_apiOrigin/v1/diagnostics/events',
-      );
+      if (_claimed && !authenticated) return;
+      final uri = Uri.parse('$_apiOrigin/v1/diagnostics/events');
       final body = <String, dynamic>{
         'session_id': _sessionId,
         'correlation_id': event['correlation_id'],
