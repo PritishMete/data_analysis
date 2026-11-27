@@ -23,6 +23,7 @@ class ExcelAuthDiagnostics {
   static bool _testEnabled = false;
   static bool _sessionActive = false;
   static String? _correlationId;
+  static final Set<String> _uploadedBridgeEvents = <String>{};
 
   static String? get correlationId => _correlationId;
   static bool get isEnabled => (enabled && _sessionActive) || _testEnabled;
@@ -69,6 +70,7 @@ class ExcelAuthDiagnostics {
         if (completed != null) 'completed': completed,
         if (handoffStarted != null) 'handoff_started': handoffStarted,
       };
+      _flushBridgeEvents();
       InsightFlowDiagnosticTelemetry.record(
         category: 'excel_google_auth',
         status: errorCode != null
@@ -93,6 +95,35 @@ class ExcelAuthDiagnostics {
       debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
     } catch (_) {
       // Diagnostics must never affect authentication.
+    }
+  }
+
+  static void _flushBridgeEvents() {
+    try {
+      final decoded = jsonDecode(ExcelAuthBridge.bridgeDiagnosticsJson());
+      if (decoded is! List) return;
+      for (final raw in decoded.whereType<Map>()) {
+        final event = Map<String, dynamic>.from(raw);
+        final name = event['event']?.toString() ?? 'bridge_event';
+        final timestamp = event['timestamp']?.toString() ?? '';
+        final fingerprint = '$timestamp|$name';
+        if (!_uploadedBridgeEvents.add(fingerprint)) continue;
+        final code = event['error_code']?.toString();
+        final result = event['result']?.toString();
+        InsightFlowDiagnosticTelemetry.record(
+          category: 'excel_google_auth',
+          status: code != null
+              ? 'failed'
+              : (result == 'failed' ? 'failed' : (result == 'validated' ? 'success' : 'info')),
+          stage: name,
+          component: 'excel_auth_popup',
+          operation: event['operation']?.toString(),
+          code: code,
+          correlation: event['correlation_id']?.toString() ?? _correlationId,
+        );
+      }
+    } catch (_) {
+      // Bridge diagnostics are optional and never affect authentication.
     }
   }
 
@@ -125,6 +156,7 @@ class ExcelAuthDiagnostics {
   static void resetForTest() {
     _events.clear();
     _correlationId = null;
+    _uploadedBridgeEvents.clear();
     _sessionActive = false;
     ExcelAuthBridge.resetDiagnostics();
   }
