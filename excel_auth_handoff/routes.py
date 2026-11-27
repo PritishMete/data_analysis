@@ -112,6 +112,7 @@ def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
             db, payload.transaction_id, payload.completion_capability
         ):
             # A retried callback is acknowledged without rotating again.
+            db.rollback()
             return Response(status_code=204)
         db.rollback()
         raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
