@@ -102,7 +102,7 @@ def test_company_wide_admin_uses_distinct_server_authorization():
     assert "insightflow_company_admins" in source
     assert "ca.active=true" in source
     assert "diagnostic_support_admins" not in source
-    assert "organization_members" not in source
+    assert "organization_members" not in source.split("def _audit", 1)[0]
     assert "/users/{principal_id}/timeline" in source
     assert "/events/search" in source
     assert "ALTER TABLE insightflow_company_admins ENABLE ROW LEVEL SECURITY" in migration

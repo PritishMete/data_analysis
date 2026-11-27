@@ -294,6 +294,7 @@ from firebase_authz.company_admin_diagnostics import router as company_admin_dia
 from dataset_storage.routes import router as managed_dataset_router
 from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
+from firebase_authz.observability import BackendRequestObservabilityMiddleware
 from firebase_authz.service import authorization as authorize_workspace_action, PermissionDenied as FirebasePermissionDenied
 from secure_excel.service import list_supported_transforms
 from security_hardening import (
@@ -368,6 +369,7 @@ _REQUIRED_AUTHZ_COLUMNS = {
     "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
     "insightflow_company_admins": {"principal_id", "active", "created_at"},
     "insightflow_company_admin_audit": {"audit_id", "actor_principal_id", "action", "metadata", "created_at"},
+    "platform_backend_events": {"event_id", "request_id", "method", "route", "status_code", "duration_ms", "error_type", "error_message", "error_stack", "created_at"},
 }
 
 
@@ -414,6 +416,8 @@ app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(OriginProtectionMiddleware)
 app.add_middleware(FirebaseAuthorizationMiddleware)
+# Outer middleware records the final outcome after route-specific authorization.
+app.add_middleware(BackendRequestObservabilityMiddleware)
 
 
 @app.get("/health")
