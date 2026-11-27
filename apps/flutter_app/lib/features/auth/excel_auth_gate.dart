@@ -107,7 +107,7 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
 
     try {
       final correlationId =
-          'excel-\${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+          'excel-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
       ExcelAuthDiagnostics.start(correlationId);
       ExcelAuthDiagnostics.record('task_pane_dialog_open_started');
       final refreshToken = await ExcelAuthBridge.openSignInDialog(
@@ -214,7 +214,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   static int _nextCorrelationId = 0;
 
   String _correlationId() =>
-      'excel-\${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-\${++_nextCorrelationId}';
+      'excel-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}-${++_nextCorrelationId}';
 
   void _logHandoff(
     String correlationId,
@@ -225,7 +225,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     final code = error is AuthException ? error.code : null;
     debugPrint(
       '[excel-auth-handoff] correlation=$correlationId operation=$operation '
-      'result=$result error_code=\${code ?? error?.runtimeType ?? 'none'}',
+      'result=$result error_code=${code ?? error?.runtimeType ?? 'none'}',
     );
     ExcelAuthDiagnostics.record(
       'dialog_$operation',
