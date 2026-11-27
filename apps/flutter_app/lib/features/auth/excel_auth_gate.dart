@@ -284,6 +284,9 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     // context is returned immediately; a failed wait gets a fresh listener.
     _handoffContextFuture = ExcelAuthBridge.prepareDialogHandoff();
     _handoffContextFuture!.catchError((Object _) {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handoffAuthenticatedSession();
+    });
   }
 
   Future<void> _handoffAuthenticatedSession() async {
