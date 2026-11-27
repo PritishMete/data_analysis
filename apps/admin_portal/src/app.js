@@ -89,11 +89,12 @@ function dashboard() {
       <div class="mobile-brand">InsightFlow <span>ADMIN</span></div>
     </header>
     <button type="button" id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close navigation menu" tabindex="-1"></button>
-    <aside id="admin-sidebar" aria-label="Main navigation"><div class="brand">InsightFlow<span>ADMIN</span></div><nav>${['company-overview:Company-wide overview','companies:All companies','company-users:All customer users','backend-requests:Backend request logs','company-events:Search all diagnostics','company-audit:Company admin audit','overview:Organization diagnostic overview','users:Organization user directory','timeline:Organization user timeline','support:Support-reference search','export:Organization exports','audit:Organization admin audit'].map(item => { const [id,label] = item.split(':'); return `<button class="nav-link" data-view="${id}">${label}</button>`; }).join('')}</nav><button id="signout" class="ghost">Sign out</button></aside>
+    <aside id="admin-sidebar" aria-label="Main navigation"><div class="sidebar-heading"><div class="brand">InsightFlow<span>ADMIN</span></div><button type="button" id="sidebar-close" class="sidebar-close" aria-label="Close navigation menu"><span aria-hidden="true">×</span></button></div><nav>${['company-overview:Company-wide overview','companies:All companies','company-users:All customer users','backend-requests:Backend request logs','company-events:Search all diagnostics','company-audit:Company admin audit','overview:Organization diagnostic overview','users:Organization user directory','timeline:Organization user timeline','support:Support-reference search','export:Organization exports','audit:Organization admin audit'].map(item => { const [id,label] = item.split(':'); return `<button class="nav-link" data-view="${id}">${label}</button>`; }).join('')}</nav><button id="signout" class="ghost">Sign out</button></aside>
     <main class="content"><header><p class="eyebrow">SECURE OPERATIONS</p><h1>Administrator diagnostics</h1><p class="muted">Company-wide views require a separate InsightFlow company-admin authorization. Tenant support views remain organization-scoped.</p></header><section id="panel" class="panel"></section></main>
   </div>`;
   const shell = document.querySelector('#admin-shell');
   const toggle = document.querySelector('#menu-toggle');
+  const closeButton = document.querySelector('#sidebar-close');
   const backdrop = document.querySelector('#sidebar-backdrop');
   const sidebar = document.querySelector('#admin-sidebar');
   const focusableInSidebar = () => [...sidebar.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
@@ -110,7 +111,8 @@ function dashboard() {
     focusableInSidebar()[0]?.focus();
   };
   toggle.onclick = () => shell.classList.contains('nav-open') ? closeMenu() : openMenu();
-  backdrop.onclick = () => closeMenu();
+  closeButton.onclick = () => closeMenu();
+  backdrop.onclick = event => { event.preventDefault(); closeMenu({ restoreFocus: false }); backdrop.blur(); };
   document.onkeydown = event => {
     if (!shell.classList.contains('nav-open')) return;
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
