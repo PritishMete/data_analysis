@@ -1,7 +1,7 @@
 name: InsightFlow Admin Portal CI
 on:
   pull_request:
-    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "firebase_authz/company_admin_diagnostics.py", "firebase_authz/middleware.py", "firebase_authz/observability.py", "tests/test_admin_diagnostics_contract.py", "tests/test_company_admin_diagnostics_contract.py", "tests/test_authz_assignment_index_postgres.py", "migrations/0042_diagnostic_admin.sql", "migrations/0044_platform_backend_events.sql", "main.py", "tools/run_authz_migrations.py"]
+    paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "firebase_authz/company_admin_diagnostics.py", "firebase_authz/middleware.py", "firebase_authz/observability.py", "tests/test_admin_diagnostics_contract.py", "tests/test_company_admin_diagnostics_contract.py", "tests/test_authz_assignment_index_postgres.py", "migrations/0042_diagnostic_admin.sql", "migrations/0044_platform_backend_events.sql", "migrations/0045_backend_error_stack.sql", "main.py", "tools/run_authz_migrations.py"]
   push:
     branches: [main, codex/user-diagnostics-admin-panel]
     paths: ["apps/admin_portal/**", "firebase_authz/admin_diagnostics.py", "tests/test_admin_diagnostics_contract.py", "tests/test_authz_assignment_index_postgres.py", "migrations/0042_diagnostic_admin.sql", "main.py", "tools/run_authz_migrations.py"]
