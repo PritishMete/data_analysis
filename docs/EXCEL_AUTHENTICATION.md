@@ -5,14 +5,19 @@ InsightFlow's Excel task pane uses the same Supabase Auth identity as the websit
 ## Runtime flow
 
 1. Office.js resolves the Office host before Flutter starts.
-2. The task pane restores and validates its own persisted Supabase session.
-3. A valid session opens the authenticated InsightFlow workspace without another login.
-4. If no valid session exists, the task pane opens an Office Dialog API window on the same HTTPS origin.
-5. The dialog hosts the normal InsightFlow sign-in UI. Email/password and configured Supabase OAuth providers use the existing Supabase PKCE flow.
-6. After Supabase confirms the user, the dialog sends a versioned authentication message to the task pane using `Office.context.ui.messageParent`.
-7. The task pane consumes the one-time refresh token with `supabase.auth.setSession`, validates the user with Supabase Auth, and lets the normal AuthGate open the workspace.
+2. The task pane restores and authoritatively validates its own persisted Supabase session.
+3. If the task pane has no valid session, it creates a short-lived one-time handoff transaction through the existing backend /v1/excel-auth/handoff/create endpoint. The task-pane runtime retains the claim capability; the dialog receives only the transaction ID and completion capability.
+4. The task pane opens an Office Dialog API window on the same HTTPS origin. A random 192-bit state nonce is included in the dialog URL and restored through dialog-scoped session storage after the Supabase OAuth redirect.
+5. The dialog registers DialogParentMessageReceived and sends a state-bound ready message. The task pane validates the same origin and state before sending the handoff context through Dialog.messageChild. The context is sent again after OAuth redirects reload the dialog document. Capabilities are not placed in callback URLs or diagnostics.
+6. The dialog hosts the normal InsightFlow sign-in UI. Email/password and configured Supabase OAuth providers use the existing Supabase PKCE flow.
+7. After Supabase confirms the user, the dialog stops its automatic refresh timer and submits the authenticated access/refresh-token pair to the backend /complete endpoint over HTTPS. The backend validates the access-token identity, rotates the refresh token once with Supabase, verifies that the rotated identity matches, and encrypts the replacement token in the short-lived transaction.
+8. The dialog marks its backend completion before sending a state- and transaction-bound completion notification through Office.context.ui.messageParent. The Office message contains no access token or refresh token. The dialog clears its local copy of the now-rotated session.
+9. The task pane claims the encrypted replacement token once through /claim. The claim capability never leaves the task-pane runtime. It passes the returned rotated token to its own supabase.auth.setSession, which establishes an independently refreshed task-pane session.
+10. The task pane authoritatively verifies its own session before opening the workspace. If another callback has already established a valid task-pane session, a late dialog result or close event cannot overwrite it or turn it into a sign-in error.
+11. State, origin, transaction capability, three-minute expiry, encrypted storage, and atomic one-time claim checks are enforced throughout the flow. Duplicate completion requests are serialized by a database row lock so they cannot rotate the same submitted token twice.
 
-The refresh token is never placed in a URL or written to application logs. Supabase refresh-token rotation means the task pane obtains its own refreshed session. The dialog closes after the handoff.
+The Supabase refresh token is never sent through messageParent, placed in a URL, or written to application diagnostics. The only refresh token returned to the task pane is the backend-rotated token from the one-time claim.
+
 
 ## Website behavior
 
@@ -57,4 +62,6 @@ The Flutter web publication workflow builds the app and updates the `gh-pages` s
 4. Repeat with the configured Google OAuth provider. Confirm the callback returns to the dialog and completes the handoff.
 5. Close and reopen Excel. Confirm the saved task-pane session is restored.
 6. Sign out locally and reopen the add-in. Confirm it asks for sign-in again.
-7. Open the website directly in Chrome. Confirm website login still opens the normal management page and does not trigger Excel routing.
+7. Repeat Google OAuth after the dialog document reloads. Confirm the parent resends the state-bound handoff context and the task pane claims the replacement token.
+8. Confirm that repeated auth callbacks cannot complete or claim the transaction twice, and that a late dialog-close event does not replace a verified task-pane session.
+9. Open the website directly in Chrome. Confirm website login still opens the normal management page and does not trigger Excel routing.
