@@ -268,10 +268,13 @@ async function run() {
     const h = createHarness('');
     h.storage.set('insightflow.excel.auth.dialog', '1');
     h.storage.set('insightflow.excel.auth.state', 'a'.repeat(48));
+    h.storage.set('insightflow.excel.auth.correlation', 'excel-correlation-after-oauth');
     h.window.InsightFlowExcelAuth.restoreDialogFlag();
     assert.equal(h.historyCalls.length, 1);
     assert.match(h.historyCalls[0][2], /excelAuthDialog=1/);
     assert.match(h.historyCalls[0][2], /excelAuthState=/);
+    assert.match(h.historyCalls[0][2], /excelAuthCorrelation=excel-correlation-after-oauth/);
+    assert.equal(h.window.__insightFlowExcelAuthCorrelation, 'excel-correlation-after-oauth');
   }
 
   {
