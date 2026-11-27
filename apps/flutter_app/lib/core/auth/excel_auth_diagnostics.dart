@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import '../interop/excel_auth_bridge.dart';
 import '../services/diagnostic_telemetry_service.dart';
 
-/// Development-only, in-memory diagnostics for one Excel authentication run.
+/// Privacy-filtered Excel authentication diagnostics with optional local inspection.
 ///
 /// The allowlist is intentional: no tokens, state/nonce values, credentials,
 /// cookies, headers, user data, or workbook data may enter this buffer.
