@@ -241,6 +241,12 @@
       correlation = correlationId;
     }
     diagnostic("dialog_open_started");
+    var requirements = global.Office && global.Office.context &&
+      global.Office.context.requirements;
+    if (!requirements || typeof requirements.isSetSupported !== "function" ||
+        !requirements.isSetSupported("DialogApi", "1.2")) {
+      return Promise.reject(new Error("excel_dialog_api_unsupported"));
+    }
     var origin, transactionId, claimCapability, completionCapability, state;
     try {
       origin = apiOrigin(backendOrigin);
