@@ -14,6 +14,9 @@ external JSPromise<JSString> _openSignInDialog(
 @JS('window.InsightFlowExcelAuth.waitForHandoffContext')
 external JSPromise<JSString> _waitForHandoffContext();
 
+@JS('window.InsightFlowExcelAuth.notifyDialogComplete')
+external JSBoolean _notifyDialogComplete();
+
 @JS('window.InsightFlowExcelAuth.completeDialog')
 external JSPromise<JSBoolean> _completeDialog(
   JSString accessToken,
@@ -60,6 +63,8 @@ class ExcelAuthBridge {
     ).toDart;
     if (!completed.toDart) throw StateError('excel_handoff_unavailable');
   }
+
+  static bool notifyDialogComplete() => _notifyDialogComplete().toDart;
 
   static void setDiagnosticsEnabled(bool enabled) {
     _setDiagnosticsEnabled(enabled.toJS);
