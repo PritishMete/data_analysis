@@ -46,7 +46,7 @@ class InsightFlowDiagnosticTelemetry {
     final event = <String, dynamic>{
       'category': category,
       'status': status,
-      'correlation_id': correlation ?? _correlationId ?? correlationId('diag'),
+      'correlation_id': correlation ?? correlationId('diag'),
       'payload': <String, Object?>{
         'stage': stage,
         'component': component,
