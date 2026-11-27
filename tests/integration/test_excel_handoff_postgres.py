@@ -334,6 +334,14 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
         })
         assert response.status_code == 200
         assert response.json() == {"refresh_token": "rotated-refresh"}
+        duplicate_after_claim = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "c" * 20,
+            "refresh_token": "d" * 20,
+        })
+        assert duplicate_after_claim.status_code == 204
+        assert refresh_calls == ["b" * 20]
         assert client.post("/v1/excel-auth/handoff/claim", json={
             "transaction_id": transaction,
             "claim_capability": claim_secret,
