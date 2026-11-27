@@ -19,6 +19,7 @@ function createHarness(options = {}) {
   let closed = false;
   let completed = false;
   let claimed = false;
+  let readyMessagesToDrop = options.dropReadyMessages || 0;
 
   const dialog = {
     addEventHandler: (name, handler) => { parentHandlers[name] = handler; },
@@ -91,6 +92,10 @@ function createHarness(options = {}) {
             if (parsed.action === 'completed' && options.dropCompletionMessage) {
               throw new Error('simulated late Office message');
             }
+            if (parsed.action === 'ready' && readyMessagesToDrop > 0) {
+              readyMessagesToDrop--;
+              return;
+            }
             if (parentHandlers.message) {
               parentHandlers.message({
                 origin: window.location.origin,
@@ -131,6 +136,8 @@ function createHarness(options = {}) {
     },
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
     console: { debug: () => {} }
   };
 
@@ -185,7 +192,7 @@ async function prepareDialog(harness, url) {
 
 async function run() {
   {
-    const h = createHarness();
+    const h = createHarness({ dropReadyMessages: 2 });
     const { pending, url } = await openDialog(h);
     const context = await prepareDialog(h, url);
 
