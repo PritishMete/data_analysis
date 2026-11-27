@@ -62,6 +62,6 @@ The Flutter web publication workflow builds the app and updates the `gh-pages` s
 4. Repeat with the configured Google OAuth provider. Confirm the callback returns to the dialog and completes the handoff.
 5. Close and reopen Excel. Confirm the saved task-pane session is restored.
 6. Sign out locally and reopen the add-in. Confirm it asks for sign-in again.
-7. Repeat Google OAuth after the dialog document reloads. Confirm the parent resends the state-bound handoff context and the task pane claims the replacement token.
+7. Repeat Google OAuth after the dialog document reloads. Confirm the parent resends the state- and correlation-bound handoff context and the task pane claims the replacement token.
 8. Confirm that repeated auth callbacks cannot complete or claim the transaction twice, and that a late dialog-close event does not replace a verified task-pane session.
 9. Open the website directly in Chrome. Confirm website login still opens the normal management page and does not trigger Excel routing.
