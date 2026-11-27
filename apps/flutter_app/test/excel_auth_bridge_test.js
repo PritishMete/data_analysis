@@ -122,6 +122,7 @@ function createHarness(options = {}) {
       }
     },
     setTimeout,
+    clearTimeout,
     console: { debug: () => {} }
   };
 
