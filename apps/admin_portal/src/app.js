@@ -95,12 +95,36 @@ function dashboard() {
   const shell = document.querySelector('#admin-shell');
   const toggle = document.querySelector('#menu-toggle');
   const backdrop = document.querySelector('#sidebar-backdrop');
-  const closeMenu = () => { shell.classList.remove('nav-open'); toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', 'Open navigation menu'); };
-  const openMenu = () => { shell.classList.add('nav-open'); toggle.setAttribute('aria-expanded', 'true'); toggle.setAttribute('aria-label', 'Close navigation menu'); };
+  const sidebar = document.querySelector('#admin-sidebar');
+  const focusableInSidebar = () => [...sidebar.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  const closeMenu = ({ restoreFocus = true } = {}) => {
+    shell.classList.remove('nav-open');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Open navigation menu');
+    if (restoreFocus) toggle.focus();
+  };
+  const openMenu = () => {
+    shell.classList.add('nav-open');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Close navigation menu');
+    focusableInSidebar()[0]?.focus();
+  };
   toggle.onclick = () => shell.classList.contains('nav-open') ? closeMenu() : openMenu();
-  backdrop.onclick = closeMenu;
-  document.onkeydown = event => { if (event.key === 'Escape') closeMenu(); };
-  document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => { closeMenu(); renderPanel(button.dataset.view); }; });
+  backdrop.onclick = () => closeMenu();
+  document.addEventListener('keydown', event => {
+    if (!shell.classList.contains('nav-open')) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = focusableInSidebar();
+    if (!focusable.length) { event.preventDefault(); return; }
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !sidebar.contains(document.activeElement))) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !sidebar.contains(document.activeElement))) {
+      event.preventDefault(); first.focus();
+    }
+  });
+  document.querySelectorAll('[data-view]').forEach(button => { button.onclick = () => { closeMenu({ restoreFocus: false }); renderPanel(button.dataset.view); }; });
   document.querySelector('#signout').onclick = signOut;
   renderPanel('company-overview');
 }
