@@ -90,3 +90,90 @@ def test_anonymous_rate_limiter_handles_missing_client_bucket():
     diagnostics._anonymous_rate_buckets.clear()
     diagnostics._anonymous_rate_limit("unknown", 2000.0)
     assert "unknown" in diagnostics._anonymous_rate_buckets
+
+
+
+def test_company_wide_admin_uses_distinct_server_authorization():
+    from firebase_authz import company_admin_diagnostics as company
+
+    source = (ROOT / "firebase_authz" / "company_admin_diagnostics.py").read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0043_insightflow_company_admin.sql").read_text(encoding="utf-8")
+    assert company.router.prefix == "/v1/company-admin"
+    assert "insightflow_company_admins" in source
+    assert "ca.active=true" in source
+    assert "diagnostic_support_admins" not in source
+    assert "organization_members" not in source
+    assert "/users/{principal_id}/timeline" in source
+    assert "/events/search" in source
+    assert "ALTER TABLE insightflow_company_admins ENABLE ROW LEVEL SECURITY" in migration
+    assert "ALTER TABLE insightflow_company_admin_audit ENABLE ROW LEVEL SECURITY" in migration
+    assert "REVOKE ALL ON insightflow_company_admins, insightflow_company_admin_audit FROM anon, authenticated" in migration
+
+
+def test_customer_client_telemetry_is_persistent_and_privacy_filtered():
+    telemetry = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "services" / "diagnostic_telemetry_service.dart").read_text(encoding="utf-8")
+    excel = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "auth" / "excel_auth_diagnostics.dart").read_text(encoding="utf-8")
+    auth = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "auth" / "supabase_auth_service.dart").read_text(encoding="utf-8")
+    managed = (ROOT / "apps" / "flutter_app" / "lib" / "features" / "auth" / "managed_dataset_access_workspace.dart").read_text(encoding="utf-8")
+    assert "/v1/diagnostics/sessions" in telemetry
+    assert "/v1/diagnostics/events" in telemetry
+    assert "claim_secret" in telemetry
+    assert "excel_auth_popup" in excel
+    assert "google_oauth" in auth
+    assert "managed_branch_data" in managed
+    assert "workbook_contents" not in telemetry.lower()
+    assert "refresh_token" not in telemetry.lower()
+    assert "oauth_state" not in telemetry.lower()
+
+
+
+def test_customer_event_ingestion_is_bound_to_claimed_user_session():
+    source = (ROOT / "firebase_authz" / "admin_diagnostics.py").read_text(encoding="utf-8")
+    event_handler = source.split('@router.post("/events")', 1)[1].split('@router.get("/overview")', 1)[0]
+    assert "claims = _claims(authorization)" in event_handler
+    assert "ds.user_principal_id=p.principal_id" in event_handler
+    assert "ds.claimed_at IS NOT NULL" in event_handler
+    assert "om.organization_id=ds.organization_id AND om.status='active'" in event_handler
+    assert "_actor(authorization)" not in event_handler
+    assert "diagnostic.event.ingested" not in event_handler
+
+
+
+def test_safe_telemetry_metadata_and_branch_context_are_persisted():
+    source = (ROOT / "firebase_authz" / "admin_diagnostics.py").read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0043_insightflow_company_admin.sql").read_text(encoding="utf-8")
+    assert '"auth_event"' in source
+    assert '"session_available"' in source
+    assert '"http_status"' in source
+    assert "ADD COLUMN IF NOT EXISTS branch_id TEXT" in migration
+    assert '"branch_id"' in (ROOT / "main.py").read_text(encoding="utf-8")
+
+
+def test_admin_portal_origin_is_allowed_by_cors_and_origin_protection():
+    controls = (ROOT / "security_controls.py").read_text(encoding="utf-8")
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+    origin = "https://insightflow-admin-portal.onrender.com"
+    assert origin in controls
+    assert origin in main
+
+
+def test_company_admin_endpoints_have_a_separate_rate_limit():
+    source = (ROOT / "security_hardening.py").read_text(encoding="utf-8")
+    assert 'path.startswith("/v1/company-admin")' in source
+    assert '"company-admin"' in source
+
+
+def test_global_flutter_error_hooks_report_only_safe_runtime_types():
+    source = (ROOT / "apps" / "flutter_app" / "lib" / "main.dart").read_text(encoding="utf-8")
+    assert "PlatformDispatcher.instance.onError" in source
+    assert "FlutterError.onError" in source
+    assert "error.runtimeType.toString()" in source
+    assert "stackTrace" not in source.split("InsightFlowDiagnosticTelemetry.record(", 1)[1].split(");", 1)[0]
+
+
+def test_client_telemetry_isolated_when_account_changes_on_shared_device():
+    source = (ROOT / "apps" / "flutter_app" / "lib" / "core" / "services" / "diagnostic_telemetry_service.dart").read_text(encoding="utf-8")
+    assert "_claimedSubject" in source
+    assert "currentSubject != _claimedSubject" in source
+    assert "_pending.clear()" in source
+    assert "Never attach one customer's queued events to another account" in source

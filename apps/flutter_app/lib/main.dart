@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'core/interop/office_host.dart';
 import 'core/services/backend_heartbeat.dart';
+import 'core/services/diagnostic_telemetry_service.dart';
 import 'core/auth/excel_auth_diagnostics.dart';
 
 @pragma('vm:entry-point')
@@ -19,6 +21,32 @@ void alarmDispatcher() {}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Report unhandled application errors centrally using only safe error types.
+  // Never upload exception text, stack traces, user data, or request contents.
+  final previousFlutterErrorHandler = FlutterError.onError;
+  FlutterError.onError = (details) {
+    InsightFlowDiagnosticTelemetry.record(
+      category: 'application_error',
+      status: 'failed',
+      stage: 'flutter_framework_error',
+      component: 'flutter_app',
+      code: details.exception.runtimeType.toString(),
+    );
+    previousFlutterErrorHandler?.call(details);
+  };
+  final previousPlatformErrorHandler = PlatformDispatcher.instance.onError;
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    InsightFlowDiagnosticTelemetry.record(
+      category: 'application_error',
+      status: 'failed',
+      stage: 'uncaught_async_error',
+      component: 'flutter_app',
+      code: error.runtimeType.toString(),
+    );
+    return previousPlatformErrorHandler?.call(error, stackTrace) ?? false;
+  };
+
   await LiquidGlassWidgets.initialize();
 
   // Supabase Auth is the only supported authentication provider.
@@ -28,6 +56,13 @@ void main() async {
     await InsightFlowSupabaseAuthService.initialize();
     InsightFlowSupabaseAuthService.logSafeStatus();
   } catch (error, stackTrace) {
+    InsightFlowDiagnosticTelemetry.record(
+      category: 'authentication',
+      status: 'failed',
+      stage: 'supabase_initialization_failed',
+      component: 'supabase_auth',
+      code: error.runtimeType.toString(),
+    );
     debugPrint('[supabase-auth] initialization failed: ${error.runtimeType}');
     debugPrintStack(stackTrace: stackTrace);
   }

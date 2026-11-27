@@ -290,6 +290,7 @@ from secure_excel.routes import router as secure_excel_router
 from firebase_authz.routes import router as authz_router
 from firebase_authz.management_routes import router as management_router
 from firebase_authz.admin_diagnostics import router as admin_diagnostics_router, diagnostic_router
+from firebase_authz.company_admin_diagnostics import router as company_admin_diagnostics_router
 from dataset_storage.routes import router as managed_dataset_router
 from dataset_storage.service import load_managed_dataset_dataframe
 from firebase_authz.middleware import FirebaseAuthorizationMiddleware
@@ -362,9 +363,11 @@ _rate_limiter = DatabaseRateLimiter(engine)
 _PRODUCTION_READY = False
 
 _REQUIRED_AUTHZ_COLUMNS = {
-    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at"},
+    "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at", "branch_id"},
     "diagnostic_events": {"event_id", "session_id", "organization_id", "user_principal_id", "branch_id", "correlation_id", "category", "status", "payload"},
     "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
+    "insightflow_company_admins": {"principal_id", "active", "created_at"},
+    "insightflow_company_admin_audit": {"audit_id", "actor_principal_id", "action", "metadata", "created_at"},
 }
 
 
@@ -460,7 +463,11 @@ _CORS_ORIGINS = [
 # Production retains both the current Cloudflare Pages origin and the legacy
 # GitHub Pages origin while older clients finish migrating.
 if _production_environment:
-    for _origin in ("https://insightflow-3e8.pages.dev", "https://pritishmete.github.io"):
+    for _origin in (
+        "https://insightflow-3e8.pages.dev",
+        "https://pritishmete.github.io",
+        "https://insightflow-admin-portal.onrender.com",
+    ):
         if _origin not in _CORS_ORIGINS:
             _CORS_ORIGINS.append(_origin)
 if _production_environment:
@@ -2749,6 +2756,7 @@ from excel_auth_handoff.routes import router as excel_auth_handoff_router
 app.include_router(excel_auth_handoff_router)
 app.include_router(management_router)
 app.include_router(admin_diagnostics_router)
+app.include_router(company_admin_diagnostics_router)
 app.include_router(diagnostic_router)
 app.include_router(managed_dataset_router)
 
