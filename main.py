@@ -366,6 +366,8 @@ _REQUIRED_AUTHZ_COLUMNS = {
     "diagnostic_sessions": {"session_id", "claim_token_hash", "claimed_at", "expires_at"},
     "diagnostic_events": {"event_id", "session_id", "organization_id", "user_principal_id", "branch_id", "correlation_id", "category", "status", "payload"},
     "diagnostic_support_admins": {"principal_id", "organization_id", "branch_id", "active"},
+    "insightflow_company_admins": {"principal_id", "active", "created_at"},
+    "insightflow_company_admin_audit": {"audit_id", "actor_principal_id", "action", "metadata", "created_at"},
 }
 
 
