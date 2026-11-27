@@ -263,6 +263,38 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
+      - name: Set up Node for Excel auth bridge tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test Excel one-time authentication bridge
+        run: node test/excel_auth_bridge_test.js
+
+      - name: Check Excel auth Dart formatting
+        run: >-
+          dart format
+          --output=none
+          lib/features/auth/excel_auth_gate.dart
+          lib/core/interop/excel_auth_bridge_web.dart
+          lib/core/interop/excel_auth_bridge_stub.dart
+          test/excel_auth_gate_recovery_test.dart
+
+      - name: Analyze Excel auth Flutter sources
+        run: >-
+          flutter analyze --no-fatal-infos
+          lib/features/auth/excel_auth_gate.dart
+          lib/core/interop/excel_auth_bridge.dart
+          lib/core/interop/excel_auth_bridge_web.dart
+          lib/core/interop/excel_auth_bridge_stub.dart
+          test/excel_auth_gate_recovery_test.dart
+
+      - name: Run Excel auth recovery tests
+        run: >-
+          flutter test
+          test/excel_auth_gate_recovery_test.dart
+          test/excel_auth_diagnostics_test.dart
+
       - name: Analyze Supabase Auth Flutter sources
         run: >-
           dart analyze

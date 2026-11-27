@@ -2,17 +2,32 @@ class ExcelAuthBridge {
   static bool get isAuthDialog => false;
   static String? get correlationId => null;
 
-  static Future<String> openSignInDialog(String correlationId) async {
+  static Future<String> openSignInDialog(
+    String correlationId,
+    String backendOrigin,
+  ) async {
     throw UnsupportedError(
       'Excel sign-in is available only in the Office web host.',
     );
   }
 
-  static void completeDialog(String refreshToken) {
+  static Future<void> prepareDialogHandoff() async {
     throw UnsupportedError(
       'Excel sign-in is available only in the Office web host.',
     );
   }
+
+  static Future<void> completeDialog(
+    String accessToken,
+    String refreshToken,
+    String backendOrigin,
+  ) async {
+    throw UnsupportedError(
+      'Excel sign-in is available only in the Office web host.',
+    );
+  }
+
+  static bool notifyDialogComplete() => false;
 
   static void setDiagnosticsEnabled(bool enabled) {}
   static bool get diagnosticsActive => false;

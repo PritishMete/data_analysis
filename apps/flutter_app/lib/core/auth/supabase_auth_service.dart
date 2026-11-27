@@ -5,7 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'excel_auth_diagnostics.dart';
+import '../interop/excel_auth_bridge.dart';
 import '../services/diagnostic_telemetry_service.dart';
+
+/// Persist the task pane's independent session, but keep an Office
+/// sign-in dialog session in memory only. Its PKCE verifier is still stored
+/// by the auth client so Google OAuth can complete after a redirect.
+bool shouldPersistSupabaseSession({required bool isExcelAuthDialog}) =>
+    !isExcelAuthDialog;
 
 class InsightFlowSupabaseConfig {
   static const url = String.fromEnvironment('INSIGHTFLOW_SUPABASE_URL');
@@ -58,7 +65,9 @@ class InsightFlowSupabaseAuthService {
       FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
         detectSessionInUri: true,
-        persistSession: true,
+        persistSession: shouldPersistSupabaseSession(
+          isExcelAuthDialog: ExcelAuthBridge.isAuthDialog,
+        ),
         autoRefreshToken: true,
       );
 

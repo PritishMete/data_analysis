@@ -4,10 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/auth/authenticated_http.dart' show insightFlowBackendBaseUrl;
 import '../../core/auth/excel_auth_diagnostics.dart';
 import '../../core/interop/excel_auth_bridge.dart';
 import 'auth_glass_widgets.dart';
 import 'sign_in_screen.dart';
+
+/// Shared decision helper so late dialog failures cannot displace an
+/// independently verified task-pane session.
+Future<bool> isAuthoritativeExcelSessionAvailable(
+  Future<bool> Function() verify,
+) async {
+  try {
+    return await verify();
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Task-pane gate. It restores the add-in's own Supabase session first, then
 /// opens an Office dialog for sign-in only when the task pane has no valid one.
@@ -71,6 +84,15 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
     await _openDialog();
   }
 
+  Future<bool> _hasVerifiedTaskPaneSession() =>
+      isAuthoritativeExcelSessionAvailable(() async {
+        final user =
+            await InsightFlowSupabaseAuthService.fetchAuthoritativeUser(
+          timeout: const Duration(seconds: 6),
+        );
+        return user != null && user.emailConfirmedAt != null;
+      });
+
   Future<void> _openDialog() async {
     if (_openingDialog || _attempted || !mounted) return;
     _attempted = true;
@@ -86,33 +108,51 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       ExcelAuthDiagnostics.record('task_pane_dialog_open_started');
       final refreshToken = await ExcelAuthBridge.openSignInDialog(
         correlationId,
+        insightFlowBackendBaseUrl,
       );
       ExcelAuthDiagnostics.record(
         'task_pane_dialog_message_received',
         result: 'validated',
       );
-      if (refreshToken.isEmpty) {
-        throw StateError('InsightFlow did not return a session to Excel.');
+
+      // A different auth callback may already have established this pane's
+      // own authoritative session while the Office dialog was open. Never
+      // overwrite that valid session with a late handoff.
+      if (await _hasVerifiedTaskPaneSession()) {
+        ExcelAuthDiagnostics.record(
+          'task_pane_existing_session_preserved',
+          result: 'verified',
+          sessionAvailable: true,
+        );
+        return;
       }
 
-      // Supabase refresh tokens are rotated. The host consumes the one-time
-      // handoff token and stores its own independently refreshed session.
       ExcelAuthDiagnostics.record('task_pane_set_session', result: 'started');
-      await InsightFlowSupabaseAuthService.client.auth.setSession(refreshToken);
+      await InsightFlowSupabaseAuthService.client.auth
+          .setSession(refreshToken)
+          .timeout(const Duration(seconds: 10));
       ExcelAuthDiagnostics.record('task_pane_set_session', result: 'succeeded');
-      final user = await InsightFlowSupabaseAuthService.fetchAuthoritativeUser(
-        timeout: const Duration(seconds: 8),
-      );
-      if (user == null || user.emailConfirmedAt == null) {
-        throw StateError('The InsightFlow account could not be verified.');
+      if (!await _hasVerifiedTaskPaneSession()) {
+        throw StateError('task_pane_session_not_verified');
       }
       ExcelAuthDiagnostics.record(
         'task_pane_session_verified',
         result: 'succeeded',
         sessionAvailable: true,
       );
-      // AuthGate observes the new Supabase session and opens the workspace.
     } catch (error) {
+      // Treat a late dialog-close/message failure as harmless when this pane
+      // already has a valid session. This is deliberately an authoritative
+      // getUser check, not a cached-session or UI-state check.
+      if (await _hasVerifiedTaskPaneSession()) {
+        ExcelAuthDiagnostics.record(
+          'task_pane_late_dialog_failure_ignored',
+          result: 'existing_session_verified',
+          sessionAvailable: true,
+          errorCode: _safeErrorCode(error),
+        );
+        return;
+      }
       ExcelAuthDiagnostics.record(
         'task_pane_authentication',
         result: 'failed',
@@ -120,15 +160,12 @@ class _ExcelAuthGateState extends State<ExcelAuthGate> {
       );
       if (!mounted) return;
       setState(() {
-        _error = error is StateError
-            ? error.message.toString()
-            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        _error = 'InsightFlow could not complete sign-in. Please try again.';
       });
     } finally {
       if (mounted) setState(() => _openingDialog = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     if (_checking || _openingDialog) {
@@ -165,6 +202,7 @@ class ExcelAuthDialogGate extends StatefulWidget {
 
 class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
   StreamSubscription<AuthState>? _subscription;
+  Future<void>? _handoffContextFuture;
   bool _handoffStarted = false;
   bool _completed = false;
   bool _needsVerification = false;
@@ -200,6 +238,11 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     super.initState();
     ExcelAuthBridge.setDiagnosticsEnabled(ExcelAuthDiagnostics.buildSupported);
     ExcelAuthDiagnostics.activateSession(ExcelAuthBridge.diagnosticsActive);
+    // The parent sends transaction capabilities over the Office dialog
+    // channel, never in the callback URL. A new document requests this again
+    // after Google OAuth redirects and reloads the dialog.
+    _handoffContextFuture = ExcelAuthBridge.prepareDialogHandoff();
+    _handoffContextFuture!.catchError((Object _) {});
     _subscription = InsightFlowSupabaseAuthService.authStateChanges.listen(
       (state) {
         ExcelAuthDiagnostics.record(
@@ -217,10 +260,26 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
           completed: _completed,
           handoffStarted: _handoffStarted,
         );
-        if (mounted)
+        if (mounted && !_completed) {
           setState(() => _error = 'Sign-in could not be verified. Try again.');
+        }
       },
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handoffAuthenticatedSession();
+    });
+  }
+
+  void _retrySignIn() {
+    setState(() {
+      _needsVerification = false;
+      _error = null;
+      _handoffStarted = false;
+    });
+    // Re-register after a transient Office channel/context failure. A valid
+    // context is returned immediately; a failed wait gets a fresh listener.
+    _handoffContextFuture = ExcelAuthBridge.prepareDialogHandoff();
+    _handoffContextFuture!.catchError((Object _) {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handoffAuthenticatedSession();
     });
@@ -236,10 +295,12 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       );
       return;
     }
-    final session = InsightFlowSupabaseAuthService.currentSession;
-    if (session == null) return;
-    final refreshToken = session.refreshToken;
-    if (refreshToken == null || refreshToken.isEmpty) return;
+    final initialSession = InsightFlowSupabaseAuthService.currentSession;
+    if (initialSession == null) return;
+    if (initialSession.refreshToken == null ||
+        initialSession.refreshToken!.isEmpty) {
+      return;
+    }
 
     _handoffStarted = true;
     final correlationId = ExcelAuthBridge.correlationId ?? _correlationId();
@@ -249,12 +310,20 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       sessionAvailable: true,
       handoffStarted: true,
     );
+    final auth = InsightFlowSupabaseAuthService.client.auth;
+    var autoRefreshStopped = false;
+    var handoffCommitted = false;
     try {
+      // Stop the dialog's background refresh before the backend rotates the
+      // current token. Manual authoritative verification below remains safe.
+      auth.stopAutoRefresh();
+      autoRefreshStopped = true;
+      await _handoffContextFuture;
       _logHandoff(correlationId, 'verify_session', 'started');
       final user =
           await InsightFlowSupabaseAuthService.refreshAuthenticatedUser(
-            timeout: const Duration(seconds: 8),
-          );
+        timeout: const Duration(seconds: 8),
+      );
       _logHandoff(
         correlationId,
         'verify_session',
@@ -262,6 +331,8 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
       );
       if (!mounted) return;
       if (user == null || user.emailConfirmedAt == null) {
+        auth.startAutoRefresh();
+        autoRefreshStopped = false;
         setState(() {
           _needsVerification = true;
           _handoffStarted = false;
@@ -269,26 +340,66 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
         return;
       }
 
-      // Refresh before handoff so a token left behind by a previously closed
-      // dialog cannot be replayed into the task pane.
-      final handoffToken =
-          InsightFlowSupabaseAuthService.currentSession?.refreshToken;
-      if (handoffToken == null || handoffToken.isEmpty) {
-        throw StateError('InsightFlow did not return a refresh token.');
+      // Read the current pair only after the authoritative user check. The
+      // backend rotates this refresh token once and stores the replacement;
+      // the task pane receives only the claimed replacement token.
+      final session = InsightFlowSupabaseAuthService.currentSession;
+      final accessToken = session?.accessToken;
+      final refreshToken = session?.refreshToken;
+      if (accessToken == null ||
+          accessToken.isEmpty ||
+          refreshToken == null ||
+          refreshToken.isEmpty) {
+        throw StateError('excel_session_unavailable');
       }
-      _logHandoff(correlationId, 'complete_dialog', 'started');
-      ExcelAuthBridge.completeDialog(handoffToken);
-      _logHandoff(correlationId, 'complete_dialog', 'succeeded');
-      if (mounted) setState(() => _completed = true);
+
+      await ExcelAuthBridge.completeDialog(
+        accessToken,
+        refreshToken,
+        insightFlowBackendBaseUrl,
+      );
+      handoffCommitted = true;
+      autoRefreshStopped = false;
+
+      // The backend has consumed and rotated the dialog refresh token.
+      // Mark the UI complete before notifying the parent. The dialog's auth
+      // client is memory-only and must never refresh/reuse the submitted token.
+      if (mounted) {
+        setState(() {
+          _completed = true;
+          _error = null;
+        });
+      }
+      // Wait until the completion state has been rendered before the
+      // parent receives a message that may close this Office dialog.
+      if (mounted) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
       ExcelAuthDiagnostics.record(
         'dialog_completed',
-        result: 'state_set',
+        result: 'backend_handoff_committed',
         completed: true,
-        handoffStarted: _handoffStarted,
+        handoffStarted: true,
       );
+      // The dialog auth client uses persistSession:false, so the rotated
+      // token is not in shared browser storage. Do not call signOut(local):
+      // Supabase would revoke the session family whose replacement token the
+      // task pane is about to claim.
+      // UI completion and non-persistence are committed before this
+      // non-sensitive Office message can cause the parent to close.
+      final notificationSent = ExcelAuthBridge.notifyDialogComplete();
+      ExcelAuthDiagnostics.record(
+        'completion_notice_sent',
+        result: notificationSent ? 'sent' : 'unavailable_parent_can_claim_on_close',
+        completed: true,
+      );
+      _logHandoff(correlationId, 'complete_dialog', 'succeeded');
     } catch (error) {
+      if (autoRefreshStopped && !handoffCommitted) {
+        auth.startAutoRefresh();
+      }
       _logHandoff(correlationId, 'handoff', 'failed', error);
-      if (!mounted) return;
+      if (!mounted || _completed) return;
       setState(() {
         _error = 'InsightFlow could not verify this sign-in. Please try again.';
         _handoffStarted = false;
@@ -330,16 +441,12 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
             'Confirm your InsightFlow email address, then return here and sign in again.',
         messageIsError: _error != null,
         actionLabel: 'Back to sign in',
-        onAction: () => setState(() {
-          _needsVerification = false;
-          _error = null;
-        }),
+        onAction: _retrySignIn,
       );
     }
     return const SignInScreen();
   }
 }
-
 String _safeErrorCode(Object error) {
   if (error is AuthException) return error.code ?? error.runtimeType.toString();
   if (error is StateError) return 'state_error';

@@ -9,7 +9,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.excel_handoff_store import claim, cleanup, complete, create
+from core.excel_handoff_store import (
+    cancel,
+    claim,
+    cleanup,
+    complete,
+    completion_finalized,
+    create,
+    lock_pending_completion,
+)
 
 
 DATABASE_URL = os.environ.get("EXCEL_HANDOFF_TEST_DATABASE_URL", "").strip()
@@ -84,9 +92,13 @@ def test_create_complete_claim_is_single_use(engine):
     transaction, claim_secret, completion_secret = uuid4(), "c" * 43, "p" * 43
     with Session.begin() as db:
         assert create(db, transaction, claim_secret, completion_secret)
+        assert lock_pending_completion(db, transaction, completion_secret)
         assert complete(db, transaction, completion_secret, "refresh-token")
     with Session.begin() as db:
+        assert not lock_pending_completion(db, transaction, completion_secret)
+        assert completion_finalized(db, transaction, completion_secret)
         assert claim(db, transaction, claim_secret) == "refresh-token"
+        assert completion_finalized(db, transaction, completion_secret)
     with Session.begin() as db:
         assert claim(db, transaction, claim_secret) is None
 
@@ -215,6 +227,59 @@ def test_claim_rollback_allows_next_claim(engine):
         assert claim(db, transaction, claim_secret) == "refresh-token"
 
 
+def test_concurrent_completion_rotates_refresh_token_once(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "n" * 43, "o" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+
+    barrier = threading.Barrier(2)
+    results = []
+    rotations = []
+
+    def worker():
+        with Session.begin() as db:
+            barrier.wait()
+            if not lock_pending_completion(db, transaction, completion_secret):
+                results.append(False)
+                return
+            rotations.append("original-refresh-token")
+            # Keep the transaction lock open long enough for the competing
+            # completion request to reach the same row.
+            import time
+            time.sleep(0.2)
+            results.append(
+                complete(db, transaction, completion_secret, "rotated-refresh-token")
+            )
+
+    first = threading.Thread(target=worker)
+    second = threading.Thread(target=worker)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert sorted(results) == [False, True]
+    assert rotations == ["original-refresh-token"]
+    with Session.begin() as db:
+        assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
+
+
+def test_complete_lock_blocks_duplicate_token_rotation(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "d" * 43, "e" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+        assert lock_pending_completion(db, transaction, completion_secret)
+        assert complete(db, transaction, completion_secret, "rotated-refresh-token")
+    with Session.begin() as db:
+        assert not lock_pending_completion(db, transaction, completion_secret)
+        assert completion_finalized(db, transaction, completion_secret)
+        cancel(db, transaction, claim_secret)
+        assert completion_finalized(db, transaction, completion_secret)
+        assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
+
+
 def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
     from core.db import get_db
     from excel_auth_handoff import routes
@@ -229,8 +294,14 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
         finally:
             db.close()
 
+    refresh_calls = []
+
+    def rotate_refresh_token(token):
+        refresh_calls.append(token)
+        return "rotated-access", "rotated-refresh"
+
     monkeypatch.setattr(routes, "verify_supabase_access_token", lambda token: {"uid": "user-1"})
-    monkeypatch.setattr(routes, "_refresh_pair", lambda token: ("rotated-access", "rotated-refresh"))
+    monkeypatch.setattr(routes, "_refresh_pair", rotate_refresh_token)
     app.dependency_overrides[get_db] = override_db
     try:
         client = TestClient(app)
@@ -242,6 +313,21 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
             "completion_capability": completion_secret,
         })
         assert response.status_code == 201
+
+        # A missing encryption key must fail before Supabase rotates the
+        # submitted refresh token, otherwise the replacement could be lost.
+        valid_key = os.environ["INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY"]
+        monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY", "invalid")
+        unavailable = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "a" * 20,
+            "refresh_token": "b" * 20,
+        })
+        assert unavailable.status_code == 503
+        assert refresh_calls == []
+        monkeypatch.setenv("INSIGHTFLOW_EXCEL_HANDOFF_ENCRYPTION_KEY", valid_key)
+
         response = client.post("/v1/excel-auth/handoff/complete", json={
             "transaction_id": transaction,
             "completion_capability": completion_secret,
@@ -249,12 +335,28 @@ def test_fastapi_http_flow_uses_postgres(engine, monkeypatch):
             "refresh_token": "b" * 20,
         })
         assert response.status_code == 204
+        duplicate = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "a" * 20,
+            "refresh_token": "b" * 20,
+        })
+        assert duplicate.status_code == 204
+        assert refresh_calls == ["b" * 20]
         response = client.post("/v1/excel-auth/handoff/claim", json={
             "transaction_id": transaction,
             "claim_capability": claim_secret,
         })
         assert response.status_code == 200
         assert response.json() == {"refresh_token": "rotated-refresh"}
+        duplicate_after_claim = client.post("/v1/excel-auth/handoff/complete", json={
+            "transaction_id": transaction,
+            "completion_capability": completion_secret,
+            "access_token": "c" * 20,
+            "refresh_token": "d" * 20,
+        })
+        assert duplicate_after_claim.status_code == 204
+        assert refresh_calls == ["b" * 20]
         assert client.post("/v1/excel-auth/handoff/claim", json={
             "transaction_id": transaction,
             "claim_capability": claim_secret,
