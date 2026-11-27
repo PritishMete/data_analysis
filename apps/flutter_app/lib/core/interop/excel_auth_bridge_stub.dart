@@ -27,6 +27,8 @@ class ExcelAuthBridge {
     );
   }
 
+  static bool notifyDialogComplete() => false;
+
   static void setDiagnosticsEnabled(bool enabled) {}
   static bool get diagnosticsActive => false;
   static String bridgeDiagnosticsJson() => '[]';
