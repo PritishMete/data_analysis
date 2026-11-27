@@ -11,6 +11,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../../app_colors.dart';
 import '../../core/auth/authenticated_http.dart';
 import '../../core/auth/supabase_auth_service.dart';
+import '../../core/services/diagnostic_telemetry_service.dart';
 import 'management_navigation.dart';
 
 String _managedDatasetSha256(Uint8List bytes) => sha256.convert(bytes).toString();
@@ -286,32 +287,73 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
   Future<dynamic> _get(String path) async {
     final headers = await _headers();
     const retryableStatuses = {429, 500, 502, 503, 504};
-    for (var attempt = 0; attempt < 3; attempt++) {
-      final response = await http
-          .get(Uri.parse(insightFlowBackendBaseUrl + path), headers: headers)
-          .timeout(const Duration(seconds: 45));
-      if (retryableStatuses.contains(response.statusCode) && attempt < 2) {
-        final retryAfterSeconds =
-            int.tryParse(response.headers['retry-after'] ?? '');
-        final delayMs = retryAfterSeconds == null
-            ? 350 * (attempt + 1)
-            : (retryAfterSeconds * 1000).clamp(250, 2000).toInt();
-        await Future.delayed(Duration(milliseconds: delayMs));
-        continue;
-      }
-      dynamic decoded;
-      try {
-        decoded = jsonDecode(response.body);
-      } catch (_) {}
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw _ManagedDatasetRequestException(
-          response.statusCode,
-          _httpFailureMessage(response.statusCode, decoded),
+    try {
+      for (var attempt = 0; attempt < 3; attempt++) {
+        final response = await http
+            .get(Uri.parse(insightFlowBackendBaseUrl + path), headers: headers)
+            .timeout(const Duration(seconds: 45));
+        if (retryableStatuses.contains(response.statusCode) && attempt < 2) {
+          final retryAfterSeconds =
+              int.tryParse(response.headers['retry-after'] ?? '');
+          final delayMs = retryAfterSeconds == null
+              ? 350 * (attempt + 1)
+              : (retryAfterSeconds * 1000).clamp(250, 2000).toInt();
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        dynamic decoded;
+        try {
+          decoded = jsonDecode(response.body);
+        } catch (_) {}
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          InsightFlowDiagnosticTelemetry.record(
+            category: 'managed_branch_data',
+            status: 'failed',
+            stage: 'http_${response.statusCode}',
+            component: 'managed_dataset_access',
+            operation: 'branch_data_get',
+            code: 'http_${response.statusCode}',
+            metadata: {'http_status': response.statusCode},
+          );
+          throw _ManagedDatasetRequestException(
+            response.statusCode,
+            _httpFailureMessage(response.statusCode, decoded),
+          );
+        }
+        InsightFlowDiagnosticTelemetry.record(
+          category: 'managed_branch_data',
+          status: 'success',
+          stage: 'http_success',
+          component: 'managed_dataset_access',
+          operation: 'branch_data_get',
+          metadata: {'http_status': response.statusCode},
         );
+        return decoded;
       }
-      return decoded;
+      throw StateError('Managed dataset request failed after retrying.');
+    } on _ManagedDatasetRequestException {
+      rethrow;
+    } on TimeoutException {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'managed_branch_data',
+        status: 'failed',
+        stage: 'timeout',
+        component: 'managed_dataset_access',
+        operation: 'branch_data_get',
+        code: 'request_timeout',
+      );
+      rethrow;
+    } on http.ClientException {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'managed_branch_data',
+        status: 'failed',
+        stage: 'network_error',
+        component: 'managed_dataset_access',
+        operation: 'branch_data_get',
+        code: 'network_error',
+      );
+      rethrow;
     }
-    throw StateError('Managed dataset request failed after retrying.');
   }
 
   Future<dynamic> _loadAllAuthorizedDatasets() async {
@@ -443,21 +485,60 @@ class _ManagedDatasetAccessWorkspaceState extends State<ManagedDatasetAccessWork
         : Map<String,String>.from(headersOverride);
     h['Content-Type'] = 'application/json';
     if (extraHeaders != null) h.addAll(extraHeaders);
-    final r = await http.post(
-      Uri.parse(insightFlowBackendBaseUrl + path),
-      headers: h,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 45));
-    dynamic d;
-    try { d = jsonDecode(r.body); } catch (_) {}
-    if (r.statusCode < 200 || r.statusCode >= 300) {
-      throw StateError(_httpFailureMessage(
-        r.statusCode,
-        d,
-        fallback: 'The authorization change was rejected. Refresh the page and retry.',
-      ));
+    try {
+      final r = await http.post(
+        Uri.parse(insightFlowBackendBaseUrl + path),
+        headers: h,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 45));
+      dynamic d;
+      try { d = jsonDecode(r.body); } catch (_) {}
+      if (r.statusCode < 200 || r.statusCode >= 300) {
+        InsightFlowDiagnosticTelemetry.record(
+          category: 'managed_branch_data',
+          status: 'failed',
+          stage: 'http_${r.statusCode}',
+          component: 'managed_dataset_access',
+          operation: 'branch_data_post',
+          code: 'http_${r.statusCode}',
+          metadata: {'http_status': r.statusCode},
+        );
+        throw StateError(_httpFailureMessage(
+          r.statusCode,
+          d,
+          fallback: 'The authorization change was rejected. Refresh the page and retry.',
+        ));
+      }
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'managed_branch_data',
+        status: 'success',
+        stage: 'http_success',
+        component: 'managed_dataset_access',
+        operation: 'branch_data_post',
+        metadata: {'http_status': r.statusCode},
+      );
+      return d;
+    } on TimeoutException {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'managed_branch_data',
+        status: 'failed',
+        stage: 'timeout',
+        component: 'managed_dataset_access',
+        operation: 'branch_data_post',
+        code: 'request_timeout',
+      );
+      rethrow;
+    } on http.ClientException {
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'managed_branch_data',
+        status: 'failed',
+        stage: 'network_error',
+        component: 'managed_dataset_access',
+        operation: 'branch_data_post',
+        code: 'network_error',
+      );
+      rethrow;
     }
-    return d;
   }
 
   @override void initState() { super.initState(); _load(); }
