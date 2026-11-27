@@ -7,7 +7,7 @@
   .mobile-brand{font-weight:800;color:#102b35}
   .mobile-brand span{margin-left:.35rem;color:#2f7e78;font-size:.68rem;letter-spacing:.16em}
   .menu-toggle{display:grid;place-items:center;width:42px;height:42px;padding:0;background:#102b35;color:#fff;font-size:1.35rem;border-radius:8px}
-  .shell aside{position:fixed;inset:0 auto 0 0;width:min(290px,86vw);height:100dvh;overflow-y:auto;z-index:40;padding:1.25rem;background:#102b35;box-shadow:12px 0 35px #07151f35;transform:translateX(-105%);transition:transform .24s ease;visibility:hidden}
+  .shell aside{position:fixed;inset:0 auto 0 0;width:min(280px,68vw);height:100dvh;overflow-y:auto;z-index:40;padding:1.25rem;background:#102b35;box-shadow:12px 0 35px #07151f35;transform:translateX(-105%);transition:transform .24s ease;visibility:hidden}
   .shell.nav-open aside{transform:translateX(0);visibility:visible}
   .sidebar-backdrop{position:fixed;inset:0;z-index:30;border:0;border-radius:0;padding:0;background:#07151f80;opacity:0;pointer-events:none;display:block;transition:opacity .24s ease}
   .shell.nav-open .sidebar-backdrop{opacity:1;pointer-events:auto}
@@ -22,8 +22,10 @@
   .sidebar-heading .brand{padding-top:.35rem}
   .sidebar-close{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;background:#ffffff18;color:#fff;border:1px solid #ffffff35;border-radius:8px;font-size:1.8rem;line-height:1}
   .sidebar-close:hover{background:#ffffff2b}
-  .sidebar-close:focus-visible,.menu-toggle:focus-visible{outline:3px solid #91d7cf;outline-offset:3px}
-  .sidebar-backdrop:focus{outline:none}
+  .sidebar-close:focus-visible,.menu-toggle:focus-visible{outline:2px solid #91d7cf;outline-offset:2px}
+  .sidebar-close:focus:not(:focus-visible),.menu-toggle:focus:not(:focus-visible),.sidebar-backdrop:focus{outline:none;box-shadow:none}
+  .sidebar-close,.menu-toggle,.sidebar-backdrop{-webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none}
+  .sidebar-backdrop{touch-action:manipulation}
 }
 @media(min-width:801px){
   .sidebar-heading{display:contents}
