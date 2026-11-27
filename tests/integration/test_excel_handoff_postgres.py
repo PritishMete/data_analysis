@@ -219,6 +219,44 @@ def test_claim_rollback_allows_next_claim(engine):
         assert claim(db, transaction, claim_secret) == "refresh-token"
 
 
+def test_concurrent_completion_rotates_refresh_token_once(engine):
+    Session = session_factory(engine)
+    transaction, claim_secret, completion_secret = uuid4(), "n" * 43, "o" * 43
+    with Session.begin() as db:
+        assert create(db, transaction, claim_secret, completion_secret)
+
+    barrier = threading.Barrier(2)
+    results = []
+    rotations = []
+
+    def worker():
+        with Session.begin() as db:
+            barrier.wait()
+            if not lock_pending_completion(db, transaction, completion_secret):
+                results.append(False)
+                return
+            rotations.append("original-refresh-token")
+            # Keep the transaction lock open long enough for the competing
+            # completion request to reach the same row.
+            import time
+            time.sleep(0.2)
+            results.append(
+                complete(db, transaction, completion_secret, "rotated-refresh-token")
+            )
+
+    first = threading.Thread(target=worker)
+    second = threading.Thread(target=worker)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert sorted(results) == [False, True]
+    assert rotations == ["original-refresh-token"]
+    with Session.begin() as db:
+        assert claim(db, transaction, claim_secret) == "rotated-refresh-token"
+
+
 def test_complete_lock_blocks_duplicate_token_rotation(engine):
     Session = session_factory(engine)
     transaction, claim_secret, completion_secret = uuid4(), "d" * 43, "e" * 43
