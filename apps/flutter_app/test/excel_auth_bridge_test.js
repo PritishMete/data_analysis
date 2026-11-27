@@ -204,7 +204,7 @@ async function run() {
       action: 'ready',
       state: url.searchParams.get('excelAuthState')
     }), { targetOrigin: h.window.location.origin });
-    assert.equal(h.parentHandlers.message instanceof Function, true);
+    assert.equal(typeof h.parentHandlers.message, 'function');
 
     const completed = await h.window.InsightFlowExcelAuth.completeDialog(
       'access-token-for-test-only-123456',
