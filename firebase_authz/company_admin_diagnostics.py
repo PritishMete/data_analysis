@@ -11,6 +11,11 @@ from .admin_diagnostics import _claims, _paging
 
 router = APIRouter(prefix="/v1/company-admin", tags=["company-admin-diagnostics"])
 
+# Start the customer request metric at the first verified deployment that
+# excludes admin/control-plane traffic. Earlier rows remain stored for audit,
+# but the fresh metric window begins at this UTC timestamp.
+CUSTOMER_BACKEND_METRICS_START_AT = "2026-11-27T14:41:58.61723+00:00"
+
 
 def _customer_backend_route_filter() -> str:
     """SQL predicate that keeps historical admin/control-plane rows out of customer metrics.
@@ -20,7 +25,8 @@ def _customer_backend_route_filter() -> str:
     count or display them as customer application requests.
     """
     return """
-        e.route <> '/v1/company-admin'
+        e.created_at >= CAST(:metrics_start_at AS timestamptz)
+        AND e.route <> '/v1/company-admin'
         AND e.route NOT LIKE '/v1/company-admin/%'
         AND e.route <> '/v1/admin'
         AND (e.route NOT LIKE '/v1/admin/%' OR e.route = '/v1/admin/events')
@@ -74,7 +80,7 @@ def company_overview(authorization: str | None = Header(default=None)):
               (SELECT count(*) FROM diagnostic_events WHERE status IN ('failed','error')) AS failures,
               (SELECT max(event_at) FROM diagnostic_events) AS latest_event,
               (SELECT count(*) FROM organizations WHERE status='active') AS active_organizations
-        """)).mappings().one()
+        """), {"metrics_start_at": CUSTOMER_BACKEND_METRICS_START_AT}).mappings().one()
     _audit(actor, "company_diagnostics.overview.viewed")
     return dict(row)
 
@@ -231,7 +237,8 @@ def backend_requests(q: str = Query(default="", max_length=160),
                    OR e.error_type ILIKE :pattern OR e.error_message ILIKE :pattern
                    OR au.email ILIKE :pattern)
             ORDER BY e.created_at DESC OFFSET :offset LIMIT :limit
-        """), {"failed_only": failed_only, "q": q.strip(),
+        """), {"metrics_start_at": CUSTOMER_BACKEND_METRICS_START_AT,
+               "failed_only": failed_only, "q": q.strip(),
                "pattern": f"%{q.strip()}%", "offset": offset, "limit": limit}).mappings().all()
     _audit(actor, "company_diagnostics.backend_requests.searched",
            {"failed_only": failed_only, "query_present": bool(q.strip())})

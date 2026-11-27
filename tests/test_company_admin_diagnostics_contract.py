@@ -105,6 +105,7 @@ def test_backend_observability_covers_all_api_route_families_without_health_nois
 def test_customer_backend_route_filter_excludes_admin_control_plane_routes():
     clause = _customer_backend_route_filter()
 
+    assert "e.created_at >= CAST(:metrics_start_at AS timestamptz)" in clause
     assert "e.route <> '/v1/company-admin'" in clause
     assert "e.route NOT LIKE '/v1/company-admin/%'" in clause
     assert "e.route <> '/v1/admin'" in clause
@@ -123,12 +124,18 @@ def test_customer_backend_route_filter_keeps_health_and_docs_out_of_metrics():
     assert "e.route NOT LIKE '/redoc%'" in clause
 
 
+def test_company_backend_metrics_start_at_current_live_deployment():
+    assert company.CUSTOMER_BACKEND_METRICS_START_AT == "2026-11-27T14:41:58.61723+00:00"
+
+
 def test_overview_and_backend_request_list_share_the_same_customer_scope():
     source = (ROOT / "firebase_authz" / "company_admin_diagnostics.py").read_text(encoding="utf-8")
     overview = source.split('@router.get("/overview")', 1)[1].split('@router.get("/users")', 1)[0]
     request_list = source.split('@router.get("/backend-requests")', 1)[1].split('@router.get("/audit")', 1)[0]
 
     assert overview.count("_customer_backend_route_filter()") == 2
+    assert '{"metrics_start_at": CUSTOMER_BACKEND_METRICS_START_AT}' in overview
     assert "backend_requests" in overview
     assert "backend_errors" in overview
     assert "WHERE {_customer_backend_route_filter()}" in request_list
+    assert '"metrics_start_at": CUSTOMER_BACKEND_METRICS_START_AT' in request_list
