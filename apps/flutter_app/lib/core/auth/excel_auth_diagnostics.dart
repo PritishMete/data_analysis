@@ -26,14 +26,15 @@ class ExcelAuthDiagnostics {
 
   static String? get correlationId => _correlationId;
   static bool get isEnabled => (enabled && _sessionActive) || _testEnabled;
-  static bool get buildSupported => enabled || _testEnabled;
+  // Bridge events are collected in every customer build; the local overlay
+  // remains separately controlled by the developer-only flag.
+  static bool get buildSupported => true;
 
   static void activateSession(bool active) {
     _sessionActive = active;
   }
 
   static void start(String correlationId) {
-    if (!isEnabled) return;
     try {
       _correlationId = correlationId;
       for (final event in _events) {
@@ -55,7 +56,6 @@ class ExcelAuthDiagnostics {
     bool? completed,
     bool? handoffStarted,
   }) {
-    if (!isEnabled) return;
     try {
       final fields = <String, Object?>{
         'timestamp': DateTime.now().toUtc().toIso8601String(),
@@ -69,10 +69,6 @@ class ExcelAuthDiagnostics {
         if (completed != null) 'completed': completed,
         if (handoffStarted != null) 'handoff_started': handoffStarted,
       };
-      _events.add(fields);
-      if (_events.length > 200) _events.removeAt(0);
-      // Keep the existing searchable prefix for WebView2 console collection.
-      debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
       InsightFlowDiagnosticTelemetry.record(
         category: 'excel_google_auth',
         status: errorCode != null
@@ -90,6 +86,11 @@ class ExcelAuthDiagnostics {
           if (handoffStarted != null) 'handoff_started': handoffStarted,
         },
       );
+      if (!isEnabled) return;
+      _events.add(fields);
+      if (_events.length > 200) _events.removeAt(0);
+      // Keep the existing searchable prefix for WebView2 console collection.
+      debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
     } catch (_) {
       // Diagnostics must never affect authentication.
     }
