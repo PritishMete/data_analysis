@@ -201,7 +201,7 @@
         try {
           ui.messageParent(JSON.stringify({
             type: TYPE, version: VERSION, action: "ready", state: state
-          }));
+          }), { targetOrigin: global.location.origin });
           diagnostic("dialog_ready_sent", { result: "sent" });
         } catch (_) {
           if (contextReject) contextReject(new Error("excel_dialog_channel_unavailable"));
@@ -326,7 +326,7 @@
                 type: TYPE, version: VERSION, action: "context", state: state,
                 transaction_id: transactionId,
                 completion_capability: completionCapability
-              }));
+              }), { targetOrigin: global.location.origin });
               diagnostic("dialog_context_sent", { result: "sent" });
             } catch (_) {
               diagnostic("dialog_context_sent", { result: "failed", error_code: "office_message_failed" });
@@ -347,6 +347,11 @@
             return;
           }
           dialog = result.value;
+          if (typeof dialog.messageChild !== "function") {
+            cancel(origin, transactionId, claimCapability);
+            reject(new Error("excel_dialog_unavailable"));
+            return;
+          }
           diagnostic("dialog_open_succeeded");
           dialog.addEventHandler(global.Office.EventType.DialogMessageReceived, onMessage);
           dialog.addEventHandler(global.Office.EventType.DialogEventReceived, function () {
@@ -394,7 +399,7 @@
           type: TYPE, version: VERSION, action: "completed",
           state: handoffContext.state,
           transaction_id: handoffContext.transaction_id
-        }));
+        }), { targetOrigin: global.location.origin });
         diagnostic("completion_notice_sent", { result: "sent" });
       } catch (_) {
         // Parent makes a final one-time claim attempt when the dialog closes.
