@@ -51,3 +51,27 @@ def test_global_admin_and_diagnostic_routes_bypass_tenant_workspace_policy():
         "/v1/diagnostics/events",
     ):
         assert route_policy(path) is None
+
+
+def test_global_admin_includes_companies_users_and_backend_request_logs():
+    company_source = (ROOT / "firebase_authz" / "company_admin_diagnostics.py").read_text(encoding="utf-8")
+    main_source = (ROOT / "main.py").read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0044_platform_backend_events.sql").read_text(encoding="utf-8")
+    portal = (ROOT / "apps" / "admin_portal" / "src" / "app.js").read_text(encoding="utf-8")
+    assert '@router.get("/companies")' in company_source
+    assert "FROM organization_members" in company_source
+    assert '@router.get("/backend-requests")' in company_source
+    assert "BackendRequestObservabilityMiddleware" in main_source
+    assert "CREATE TABLE IF NOT EXISTS platform_backend_events" in migration
+    assert "backend-requests:Backend request logs" in portal
+
+
+def test_backend_observability_redacts_authentication_and_personal_values():
+    from firebase_authz.observability import sanitize_error_message
+
+    value = sanitize_error_message(
+        "Bearer abc.def token eyJabc.def.ghi user test@example.com phone +1 202-555-0100"
+    )
+    assert "abc.def" not in value
+    assert "test@example.com" not in value
+    assert "+1 202-555-0100" not in value
