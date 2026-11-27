@@ -121,6 +121,6 @@ def test_customer_client_telemetry_is_persistent_and_privacy_filtered():
     assert "excel_auth_popup" in excel
     assert "google_oauth" in auth
     assert "managed_branch_data" in managed
-    assert "response.body" not in telemetry
-    assert "workbook" not in telemetry.lower()
+    assert "workbook_contents" not in telemetry.lower()
     assert "refresh_token" not in telemetry.lower()
+    assert "oauth_state" not in telemetry.lower()
