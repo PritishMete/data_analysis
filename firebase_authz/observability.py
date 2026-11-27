@@ -34,11 +34,17 @@ def sanitize_error_message(value: object, limit: int = 1200) -> str:
     return message[:limit]
 
 
+def should_observe_path(path: str) -> bool:
+    if path in {"/", "/health", "/ping", "/powerbi/ping", "/openapi.json"}:
+        return False
+    return not path.startswith(("/docs", "/redoc"))
+
+
 class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
     """Persist request outcomes without recording bodies, query strings, or secrets."""
 
     async def dispatch(self, request: Request, call_next: Callable):
-        if not request.url.path.startswith("/v1/"):
+        if not should_observe_path(request.url.path):
             return await call_next(request)
 
         started = time.perf_counter()
