@@ -104,6 +104,9 @@ function createHarness(options = {}) {
         return response(201, { transaction_id: body.transaction_id, expires_in: 180 });
       }
       if (route.endsWith('/complete')) {
+        if (options.completeDelayMs) {
+          await new Promise((resolve) => setTimeout(resolve, options.completeDelayMs));
+        }
         completed = true;
         return response(204, {});
       }
@@ -236,16 +239,19 @@ async function run() {
   }
 
   {
-    const h = createHarness({ dropCompletionMessage: true });
+    const h = createHarness({ dropCompletionMessage: true, completeDelayMs: 650 });
     const { pending, url } = await openDialog(h);
     await prepareDialog(h, url);
-    await h.window.InsightFlowExcelAuth.completeDialog(
+    const completing = h.window.InsightFlowExcelAuth.completeDialog(
       'access-token-for-test-only-123456',
       'original-refresh-token-late-close',
       'https://api.insightflow.test'
     );
-    // The backend completed, but the Office message channel lost the callback.
+    // Office closes while the backend is still rotating and persisting the
+    // replacement token. Parent keeps polling the one-time claim.
+    await new Promise((resolve) => setTimeout(resolve, 25));
     h.simulateDialogClose();
+    await completing;
     assert.equal(await pending, 'rotated-refresh-token-from-server');
     assert.equal(h.claimed, true);
   }
