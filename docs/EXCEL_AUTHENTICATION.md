@@ -18,7 +18,7 @@ InsightFlow's Excel task pane uses the same Supabase Auth identity as the websit
 
 The Supabase refresh token is never sent through messageParent, placed in a URL, or written to application diagnostics. The only refresh token returned to the task pane is the backend-rotated token from the one-time claim.
 
-The bridge checks DialogApi 1.2 support at runtime before creating a transaction, because Office does not allow this requirement set to be declared in the add-in-only manifest. Unsupported hosts fail closed rather than falling back to a token-bearing message or URL.
+The bridge checks DialogApi 1.2 and DialogOrigin 1.1 support at runtime before creating a transaction. DialogApi 1.2 provides parent-to-dialog messaging, while DialogOrigin 1.1 provides origin metadata and target-origin pinning. These requirement sets cannot be declared in the add-in-only manifest, so unsupported hosts fail closed rather than falling back to a token-bearing message or URL.
 
 
 ## Website behavior
