@@ -172,11 +172,36 @@
     contextPromise = new Promise(function (resolve, reject) {
       contextResolve = resolve;
       contextReject = reject;
+      var readyTimer = null;
+      var readyNoticeLogged = false;
       var contextTimer = global.setTimeout(function () {
+        if (readyTimer !== null) global.clearInterval(readyTimer);
         if (contextReject) contextReject(new Error("excel_dialog_channel_timeout"));
         contextResolve = null;
         contextReject = null;
       }, 60000);
+
+      function sendReady() {
+        if (!contextResolve || handoffContext) {
+          if (readyTimer !== null) global.clearInterval(readyTimer);
+          readyTimer = null;
+          return;
+        }
+        try {
+          ui.messageParent(JSON.stringify({
+            type: TYPE, version: VERSION, action: "ready", state: state
+          }), { targetOrigin: global.location.origin });
+          if (!readyNoticeLogged) {
+            diagnostic("dialog_ready_sent", { result: "sent" });
+            readyNoticeLogged = true;
+          }
+        } catch (_) {
+          if (!readyNoticeLogged) {
+            diagnostic("dialog_ready_sent", { result: "failed", error_code: "office_message_failed" });
+            readyNoticeLogged = true;
+          }
+        }
+      }
       ui.addHandlerAsync(global.Office.EventType.DialogParentMessageReceived, function (args) {
         if (!args || args.origin !== global.location.origin ||
             typeof args.message !== "string" || args.message.length > 4096) {
@@ -199,6 +224,8 @@
         };
         diagnostic("parent_context_received", { result: "validated" });
         global.clearTimeout(contextTimer);
+        if (readyTimer !== null) global.clearInterval(readyTimer);
+        readyTimer = null;
         if (contextResolve) contextResolve(JSON.stringify(handoffContext));
         contextResolve = null;
         contextReject = null;
@@ -211,17 +238,8 @@
           contextReject = null;
           return;
         }
-        try {
-          ui.messageParent(JSON.stringify({
-            type: TYPE, version: VERSION, action: "ready", state: state
-          }), { targetOrigin: global.location.origin });
-          diagnostic("dialog_ready_sent", { result: "sent" });
-        } catch (_) {
-          global.clearTimeout(contextTimer);
-          if (contextReject) contextReject(new Error("excel_dialog_channel_unavailable"));
-          contextResolve = null;
-          contextReject = null;
-        }
+        sendReady();
+        readyTimer = global.setInterval(sendReady, 500);
       });
     }).catch(function (error) {
       contextPromise = null;
