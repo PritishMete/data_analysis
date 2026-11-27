@@ -18,6 +18,7 @@ class InsightFlowDiagnosticTelemetry {
   static String? _sessionId;
   static String? _claimSecret;
   static bool _claimed = false;
+  static String? _claimedSubject;
   static bool _creatingSession = false;
   static DateTime? _expiresAt;
   static Future<void> _serial = Future<void>.value();
@@ -115,6 +116,7 @@ class InsightFlowDiagnosticTelemetry {
           .timeout(const Duration(seconds: 8));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         _claimed = true;
+        _claimedSubject = Supabase.instance.client.auth.currentUser?.id;
         _claimSecret = null;
       }
     } catch (_) {
@@ -123,6 +125,21 @@ class InsightFlowDiagnosticTelemetry {
   }
 
   static Future<void> _flush() async {
+    final currentSubject = Supabase.instance.isInitialized
+        ? Supabase.instance.client.auth.currentUser?.id
+        : null;
+    if (_claimedSubject != null &&
+        currentSubject != null &&
+        currentSubject != _claimedSubject) {
+      // Never attach one customer's queued events to another account on a
+      // shared device. Drop the old in-memory batch and start a fresh session.
+      _pending.clear();
+      _sessionId = null;
+      _claimSecret = null;
+      _claimed = false;
+      _claimedSubject = null;
+      _expiresAt = null;
+    }
     await _ensureSession();
     if (_sessionId == null) return;
     await _tryClaim();
