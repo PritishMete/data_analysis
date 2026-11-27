@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .service import (
     AuthenticationRequired,
     PermissionDenied,
+    authorization,  # noqa: F401 - retained for middleware compatibility tests.
 )
 from .schema import validate_id
 from .supabase_auth import SupabaseAuthUnavailable, verify_supabase_access_token
