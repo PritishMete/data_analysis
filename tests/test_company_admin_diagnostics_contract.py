@@ -37,3 +37,17 @@ def test_company_admin_routes_are_registered_without_replacing_existing_admin():
 def test_company_admin_authorization_fails_closed():
     assert company.router.prefix == "/v1/company-admin"
     assert callable(company._company_actor)
+
+
+
+def test_global_admin_and_diagnostic_routes_bypass_tenant_workspace_policy():
+    from firebase_authz.middleware import route_policy
+
+    for path in (
+        "/v1/admin/overview",
+        "/v1/company-admin/overview",
+        "/v1/diagnostics/sessions",
+        "/v1/diagnostics/sessions/claim",
+        "/v1/diagnostics/events",
+    ):
+        assert route_policy(path) is None
