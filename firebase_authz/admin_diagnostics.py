@@ -25,7 +25,7 @@ MAX_EXPORT_ROWS = 10_000
 MAX_PAYLOAD_BYTES = 4096
 SENSITIVE_NAME = re.compile(r"(?:access|refresh|id|claim|api)[_-]?(?:token|secret|key)|password|authorization|cookie|oauth[_-]?code", re.I)
 SENSITIVE_VALUE = re.compile(r"(?:bearer\s+eyj|-----BEGIN|sk-[A-Za-z0-9]|oauth[_-]?(?:code|state|token)|refresh[_-]?token|access[_-]?token)", re.I)
-ALLOWED_PAYLOAD_KEYS = {"stage", "component", "operation", "detail", "duration_ms", "code", "metadata"}
+ALLOWED_PAYLOAD_KEYS = {"stage", "component", "operation", "detail", "duration_ms", "code", "metadata", "auth_event", "session_available", "completed", "handoff_started", "http_status", "attempt", "retryable"}
 
 def _claims(authorization: str | None) -> dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -216,7 +216,7 @@ def claim_session(item: SessionClaim, authorization: str | None = Header(default
 
         identities = db.execute(text("""SELECT p.principal_id, om.organization_id,
                 COUNT(DISTINCT oa.location_id) AS assignment_branches,
-                MIN(oa.location_id) AS location_id
+                CASE WHEN COUNT(DISTINCT oa.location_id)=1 THEN MIN(oa.location_id) ELSE NULL END AS location_id
             FROM identity_bindings ib
             JOIN principals p ON p.principal_id=ib.principal_id
             JOIN organization_members om ON om.principal_id=p.principal_id AND om.status='active'
@@ -224,7 +224,7 @@ def claim_session(item: SessionClaim, authorization: str | None = Header(default
               AND oa.organization_id=om.organization_id AND oa.status='active'
             WHERE ib.provider='supabase' AND ib.provider_subject=:subject
             GROUP BY p.principal_id, om.organization_id"""), {"subject": subject}).mappings().all()
-        if len(identities) != 1 or identities[0]["assignment_branches"] > 1:
+        if len(identities) != 1:
             raise HTTPException(403, "Diagnostic session identity scope is ambiguous or invalid.")
         identity = identities[0]
         updated = db.execute(text("""UPDATE diagnostic_sessions
@@ -266,7 +266,7 @@ def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = 
         identity = db.execute(text("""
             SELECT ds.organization_id, ds.user_principal_id,
                    COUNT(DISTINCT oa.location_id) AS assignment_branches,
-                   MIN(oa.location_id) AS branch_id
+                   CASE WHEN COUNT(DISTINCT oa.location_id)=1 THEN MIN(oa.location_id) ELSE NULL END AS branch_id
             FROM diagnostic_sessions ds
             JOIN identity_bindings ib ON ib.provider='supabase'
               AND ib.provider_subject=:subject
@@ -281,7 +281,7 @@ def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = 
               AND ds.expires_at > now()
             GROUP BY ds.organization_id, ds.user_principal_id
         """), {"subject": subject, "session": item.session_id}).mappings().first()
-        if not identity or identity["assignment_branches"] > 1:
+        if not identity:
             raise HTTPException(403, "Diagnostic session is invalid or outside your identity scope.")
         count = db.execute(text("""
             SELECT count(*) FROM diagnostic_events
