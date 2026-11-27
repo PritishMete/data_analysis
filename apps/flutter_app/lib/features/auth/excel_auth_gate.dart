@@ -274,6 +274,18 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
     });
   }
 
+  void _retrySignIn() {
+    setState(() {
+      _needsVerification = false;
+      _error = null;
+      _handoffStarted = false;
+    });
+    // Re-register after a transient Office channel/context failure. A valid
+    // context is returned immediately; a failed wait gets a fresh listener.
+    _handoffContextFuture = ExcelAuthBridge.prepareDialogHandoff();
+    _handoffContextFuture!.catchError((Object _) {});
+  }
+
   Future<void> _handoffAuthenticatedSession() async {
     if (_handoffStarted || _completed || !mounted) {
       ExcelAuthDiagnostics.record(
@@ -431,10 +443,7 @@ class _ExcelAuthDialogGateState extends State<ExcelAuthDialogGate> {
             'Confirm your InsightFlow email address, then return here and sign in again.',
         messageIsError: _error != null,
         actionLabel: 'Back to sign in',
-        onAction: () => setState(() {
-          _needsVerification = false;
-          _error = null;
-        }),
+        onAction: _retrySignIn,
       );
     }
     return const SignInScreen();
