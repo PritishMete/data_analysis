@@ -280,7 +280,6 @@ def authenticated_event(item: AuthenticatedEventIn, authorization: str | None = 
               AND ds.claimed_at IS NOT NULL
               AND ds.expires_at > now()
             GROUP BY ds.organization_id, ds.user_principal_id
-            FOR UPDATE OF ds
         """), {"subject": subject, "session": item.session_id}).mappings().first()
         if not identity or identity["assignment_branches"] > 1:
             raise HTTPException(403, "Diagnostic session is invalid or outside your identity scope.")
