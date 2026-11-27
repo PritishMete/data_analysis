@@ -46,7 +46,8 @@ def company_overview(authorization: str | None = Header(default=None)):
         row = db.execute(text("""
             SELECT
               (SELECT count(*) FROM diagnostic_events) AS total_events,
-              (SELECT count(DISTINCT principal_id) FROM organization_members WHERE status='active') AS users,
+              (SELECT count(DISTINCT principal_id) FROM organization_members) AS users,
+              (SELECT count(DISTINCT principal_id) FROM organization_members WHERE status='active') AS active_users,
               (SELECT count(*) FROM organizations) AS organizations,
               (SELECT count(*) FROM diagnostic_events WHERE status IN ('failed','error')) AS failures,
               (SELECT max(event_at) FROM diagnostic_events) AS latest_event,
@@ -68,10 +69,14 @@ def company_users(q: str = Query(default="", max_length=160),
             WITH member_directory AS (
               SELECT om.principal_id,
                      count(DISTINCT om.organization_id) AS organization_count,
-                     string_agg(DISTINCT o.name, ', ' ORDER BY o.name) AS organizations
+                     string_agg(DISTINCT o.name, ', ' ORDER BY o.name) AS organizations,
+                     string_agg(DISTINCT om.status, ', ' ORDER BY om.status) AS membership_statuses,
+                     string_agg(DISTINCT coalesce(r.name, mr.role_id), ', ' ORDER BY coalesce(r.name, mr.role_id)) AS roles
               FROM organization_members om
               JOIN organizations o ON o.organization_id=om.organization_id
-              WHERE om.status='active'
+              LEFT JOIN member_roles mr ON mr.organization_id=om.organization_id
+                AND mr.principal_id=om.principal_id
+              LEFT JOIN roles r ON r.role_id=mr.role_id
               GROUP BY om.principal_id
             ), event_rollup AS (
               SELECT user_principal_id,
@@ -85,6 +90,8 @@ def company_users(q: str = Query(default="", max_length=160),
             SELECT p.principal_id, ib.provider_subject AS user_id, au.email,
                    coalesce(md.organization_count, 0) AS organization_count,
                    coalesce(md.organizations, '') AS organizations,
+                   coalesce(md.membership_statuses, '') AS membership_statuses,
+                   coalesce(md.roles, '') AS roles,
                    coalesce(er.event_count, 0) AS event_count,
                    coalesce(er.failures, 0) AS failures,
                    er.last_seen
@@ -110,8 +117,9 @@ def company_directory(authorization: str | None = Header(default=None)):
     with SessionLocal() as db:
         rows = db.execute(text("""
             WITH member_counts AS (
-              SELECT organization_id, count(DISTINCT principal_id) AS users
-              FROM organization_members WHERE status='active' GROUP BY organization_id
+              SELECT organization_id, count(DISTINCT principal_id) AS members,
+                     count(DISTINCT principal_id) FILTER (WHERE status='active') AS active_users
+              FROM organization_members GROUP BY organization_id
             ), event_counts AS (
               SELECT organization_id, count(*) AS events,
                      count(*) FILTER (WHERE status IN ('failed','error')) AS failures,
@@ -119,7 +127,8 @@ def company_directory(authorization: str | None = Header(default=None)):
               FROM diagnostic_events GROUP BY organization_id
             )
             SELECT o.organization_id, o.name, o.status, o.created_at,
-                   coalesce(mc.users, 0) AS users,
+                   coalesce(mc.members, 0) AS members,
+                   coalesce(mc.active_users, 0) AS active_users,
                    coalesce(ec.events, 0) AS events,
                    coalesce(ec.failures, 0) AS failures,
                    ec.last_activity
