@@ -208,6 +208,8 @@ class DatabaseRateLimiter:
 
 
 def rate_limit_policy(path: str, method: str) -> tuple[str, int] | None:
+    if path.startswith("/v1/company-admin"):
+        return "company-admin", _positive_int("INSIGHTFLOW_RATE_COMPANY_ADMIN_PER_MINUTE", 120, 1200)
     if path.startswith("/v1/excel-auth/handoff"):
         return "excel-auth-handoff", _positive_int("INSIGHTFLOW_RATE_EXCEL_HANDOFF_PER_MINUTE", 12, 60)
     if path.startswith("/v1/authz"):
