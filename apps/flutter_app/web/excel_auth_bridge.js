@@ -244,7 +244,11 @@
     var requirements = global.Office && global.Office.context &&
       global.Office.context.requirements;
     if (!requirements || typeof requirements.isSetSupported !== "function" ||
-        !requirements.isSetSupported("DialogApi", "1.2")) {
+        !requirements.isSetSupported("DialogApi", "1.2") ||
+        !requirements.isSetSupported("DialogOrigin", "1.1")) {
+      // DialogApi 1.2 supplies parent-to-dialog messaging; DialogOrigin 1.1
+      // supplies the origin metadata and targetOrigin pinning used to protect
+      // the capability exchange. Fail closed if either contract is missing.
       return Promise.reject(new Error("excel_dialog_api_unsupported"));
     }
     var origin, transactionId, claimCapability, completionCapability, state;
