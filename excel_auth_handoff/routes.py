@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.db import get_db
+from core.excel_handoff_crypto import handoff_cipher
 from core.excel_handoff_store import (
     cancel,
     claim,
@@ -117,6 +118,9 @@ def complete_handoff(payload: CompleteRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=409, detail="Authentication handoff unavailable.")
     try:
+        # Fail before consuming the Supabase refresh token if the encryption
+        # key needed to persist its replacement is missing or malformed.
+        handoff_cipher()
         original = verify_supabase_access_token(payload.access_token)
         refreshed_access, rotated_refresh = _refresh_pair(payload.refresh_token)
         refreshed = verify_supabase_access_token(refreshed_access)
