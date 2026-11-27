@@ -168,6 +168,36 @@ def company_event_search(q: str = Query(..., min_length=2, max_length=160),
     return {"events": [dict(row) for row in rows], "page": page, "page_size": page_size}
 
 
+@router.get("/backend-requests")
+def backend_requests(q: str = Query(default="", max_length=160),
+                     failed_only: bool = False,
+                     page: int = Query(1, ge=1),
+                     page_size: int = Query(50, ge=1, le=100),
+                     authorization: str | None = Header(default=None)):
+    actor = _company_actor(authorization)
+    offset, limit = _paging(page, page_size)
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            SELECT e.event_id, e.created_at, e.request_id, e.method, e.route,
+                   e.status_code, e.duration_ms, e.principal_id, au.email,
+                   e.client_version, e.error_type, e.error_message, e.error_fingerprint
+            FROM platform_backend_events e
+            LEFT JOIN principals p ON p.principal_id=e.principal_id
+            LEFT JOIN identity_bindings ib ON ib.principal_id=p.principal_id
+              AND ib.provider='supabase' AND ib.status='active'
+            LEFT JOIN auth.users au ON au.id::text=ib.provider_subject
+            WHERE (NOT :failed_only OR e.status_code >= 400)
+              AND (:q = '' OR e.route ILIKE :pattern OR e.request_id ILIKE :pattern
+                   OR e.error_type ILIKE :pattern OR e.error_message ILIKE :pattern
+                   OR au.email ILIKE :pattern)
+            ORDER BY e.created_at DESC OFFSET :offset LIMIT :limit
+        """), {"failed_only": failed_only, "q": q.strip(),
+               "pattern": f"%{q.strip()}%", "offset": offset, "limit": limit}).mappings().all()
+    _audit(actor, "company_diagnostics.backend_requests.searched",
+           {"failed_only": failed_only, "query_present": bool(q.strip())})
+    return {"requests": [dict(row) for row in rows], "page": page, "page_size": page_size}
+
+
 @router.get("/audit")
 def company_audit(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100),
                   authorization: str | None = Header(default=None)):
