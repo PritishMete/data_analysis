@@ -109,15 +109,23 @@ def company_directory(authorization: str | None = Header(default=None)):
     actor = _company_actor(authorization)
     with SessionLocal() as db:
         rows = db.execute(text("""
+            WITH member_counts AS (
+              SELECT organization_id, count(DISTINCT principal_id) AS users
+              FROM organization_members WHERE status='active' GROUP BY organization_id
+            ), event_counts AS (
+              SELECT organization_id, count(*) AS events,
+                     count(*) FILTER (WHERE status IN ('failed','error')) AS failures,
+                     max(event_at) AS last_activity
+              FROM diagnostic_events GROUP BY organization_id
+            )
             SELECT o.organization_id, o.name, o.status, o.created_at,
-                   count(DISTINCT om.principal_id) FILTER (WHERE om.status='active') AS users,
-                   count(e.event_id) AS events,
-                   count(e.event_id) FILTER (WHERE e.status IN ('failed','error')) AS failures,
-                   max(e.event_at) AS last_activity
+                   coalesce(mc.users, 0) AS users,
+                   coalesce(ec.events, 0) AS events,
+                   coalesce(ec.failures, 0) AS failures,
+                   ec.last_activity
             FROM organizations o
-            LEFT JOIN organization_members om ON om.organization_id=o.organization_id
-            LEFT JOIN diagnostic_events e ON e.organization_id=o.organization_id
-            GROUP BY o.organization_id, o.name, o.status, o.created_at
+            LEFT JOIN member_counts mc ON mc.organization_id=o.organization_id
+            LEFT JOIN event_counts ec ON ec.organization_id=o.organization_id
             ORDER BY o.created_at DESC
         """)).mappings().all()
     _audit(actor, "company_diagnostics.companies.viewed")
