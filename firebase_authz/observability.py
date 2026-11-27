@@ -5,6 +5,7 @@ import hashlib
 import logging
 import re
 import time
+import traceback
 import uuid
 from typing import Callable
 
@@ -47,6 +48,7 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
         status_code = 500
         error_type = None
         error_message = None
+        error_stack = None
         response = None
         try:
             response = await call_next(request)
@@ -62,7 +64,14 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
         except Exception as exc:
             error_type = type(exc).__name__[:160]
             error_message = sanitize_error_message(exc)
-            logger.exception("backend_request_failed request_id=%s route=%s", request_id, getattr(request.scope.get("route"), "path", "/unmatched"))
+            frames = traceback.extract_tb(exc.__traceback__)[-30:]
+            error_stack = "\\n".join(
+                f"{frame.filename}:{frame.lineno} in {frame.name}" for frame in frames
+            )[:8000]
+            logger.error(
+                "backend_request_failed request_id=%s exception=%s message=%s",
+                request_id, error_type, error_message
+            )
             raise
         finally:
             duration_ms = max(0, round((time.perf_counter() - started) * 1000))
@@ -78,13 +87,13 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
                     db.execute(text("""
                         INSERT INTO platform_backend_events
                           (event_id, request_id, method, route, status_code, duration_ms,
-                           principal_id, client_version, error_type, error_message, error_fingerprint)
+                           principal_id, client_version, error_type, error_message, error_stack, error_fingerprint)
                         VALUES
                           (:id, :request_id, :method, :route, :status, :duration,
                            (SELECT principal_id FROM identity_bindings
                             WHERE provider='supabase' AND provider_subject=:subject
                               AND status='active' LIMIT 1),
-                           :client_version, :error_type, :error_message, :fingerprint)
+                           :client_version, :error_type, :error_message, :error_stack, :fingerprint)
                     """), {
                         "id": "bevt_" + uuid.uuid4().hex,
                         "request_id": request_id,
@@ -96,6 +105,7 @@ class BackendRequestObservabilityMiddleware(BaseHTTPMiddleware):
                         "client_version": client_version or None,
                         "error_type": error_type,
                         "error_message": error_message,
+                        "error_stack": error_stack,
                         "fingerprint": fingerprint,
                     })
             except Exception:
