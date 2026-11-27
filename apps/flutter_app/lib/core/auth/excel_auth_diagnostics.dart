@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../interop/excel_auth_bridge.dart';
+import '../services/diagnostic_telemetry_service.dart';
 
 /// Development-only, in-memory diagnostics for one Excel authentication run.
 ///
@@ -72,6 +73,23 @@ class ExcelAuthDiagnostics {
       if (_events.length > 200) _events.removeAt(0);
       // Keep the existing searchable prefix for WebView2 console collection.
       debugPrint('[excel-auth-diagnostic] ${jsonEncode(fields)}');
+      InsightFlowDiagnosticTelemetry.record(
+        category: 'excel_google_auth',
+        status: errorCode != null
+            ? 'failed'
+            : (completed == true || result == 'validated' ? 'success' : 'info'),
+        stage: event,
+        component: 'excel_auth',
+        operation: operation,
+        code: errorCode,
+        correlation: _correlationId,
+        metadata: <String, Object?>{
+          if (authEvent != null) 'auth_event': authEvent,
+          if (sessionAvailable != null) 'session_available': sessionAvailable,
+          if (completed != null) 'completed': completed,
+          if (handoffStarted != null) 'handoff_started': handoffStarted,
+        },
+      );
     } catch (_) {
       // Diagnostics must never affect authentication.
     }
