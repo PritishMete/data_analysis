@@ -63,12 +63,19 @@ function createHarness(options = {}) {
     },
     Office: {
       AsyncResultStatus: { Succeeded: 'succeeded' },
+      context: {
+        requirements: {
+          isSetSupported: (name, version) =>
+            name === 'DialogApi' && version === '1.2' && options.supportDialogApi !== false
+        }
+      },
       EventType: {
         DialogMessageReceived: 'message',
         DialogEventReceived: 'event',
         DialogParentMessageReceived: 'parent-message'
       },
       context: {
+        ...window.Office.context,
         ui: {
           displayDialogAsync: (url, dialogOptions, callback) => {
             openedUrl = url;
