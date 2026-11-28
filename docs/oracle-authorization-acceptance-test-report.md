@@ -34,6 +34,16 @@ commit the middleware passes a supplied `X-InsightFlow-Resource-ID` through
 before the route dataset ID. This PR records the gap only; it intentionally
 does not modify production authorization code.
 
+## Verification run
+
+Focused matrix: `15 passed, 1 xfailed`.
+
+Repository suite: `1028 passed, 69 skipped, 30 failed, 10 errors, 1 xfailed`.
+The failures are existing environment/authz cutover interactions (including
+requests that now correctly receive `401`) and the errors require the absent
+`AUTHZ_TEST_DATABASE_URL`; this isolated test does not create or touch another
+database.
+
 ## Scope guard
 
 No production authorization code, Flutter/privacy/Pages/Worker/infrastructure/
