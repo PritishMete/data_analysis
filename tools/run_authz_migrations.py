@@ -8,6 +8,7 @@ requires --confirm-production and INSIGHTFLOW_ENV=production.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -546,8 +547,19 @@ def verify_employee_id_allocator(engine) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inspect", action="store_true", help="read schema only")
+    parser.add_argument("--dry-run-history", type=Path, help="reconcile sanitized QA history without connecting to a database")
     parser.add_argument("--confirm-production", action="store_true", help="authorize applying migrations when INSIGHTFLOW_ENV=production")
     args = parser.parse_args()
+    if args.dry_run_history:
+        from tools.migration_reconciliation import load_fixture, reconcile, repository_manifest
+        fixture = load_fixture(args.dry_run_history)
+        result = reconcile(
+            repository_manifest(MIGRATIONS),
+            fixture["external_history"],
+            fixture["prerequisites"],
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["plan_executable"] else 2
     environment = os.environ.get("INSIGHTFLOW_ENV", "development").strip().lower()
     if environment == "production" and not args.inspect and not args.confirm_production:
         print("REFUSED: production migration requires --confirm-production.", file=sys.stderr)
