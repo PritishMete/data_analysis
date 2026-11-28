@@ -196,9 +196,11 @@ jobs:
           assert_file "Flutter bootstrap" build/web/flutter_bootstrap.js
           assert_file "compiled Dart bundle" build/web/main.dart.js
           assert_text "exact source commit marker" "${GITHUB_SHA}" build/web/index.html
+          assert_text "root web base href" '<base href="/">' build/web/index.html
           assert_text "SPA fallback source commit marker" "${GITHUB_SHA}" build/web/404.html
           cmp -s build/web/index.html build/web/404.html
           assert_text "configured Google OAuth client ID" "$INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID" build/web/index.html
+          assert_text "root Pages base href" '<base href="/">' build/web/index.html
           if grep -Fq -- "__INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID__" build/web/index.html; then
             echo "FAIL: Google OAuth client ID placeholder remains in index.html"
             exit 1
@@ -207,8 +209,8 @@ jobs:
           assert_text "membership status auth marker" "membership_status" build/web/main.dart.js
           assert_text "authorization API integration" "/v1/authz/me" build/web/main.dart.js
           assert_text "Oracle-backed API gateway origin" "https://insightflow-api.jaiphotoshoot.workers.dev" build/web/main.dart.js
-          if grep -Fq -- "https://data-analysis-oajs.onrender.com" build/web/main.dart.js; then
-            echo "::error::Render backend URL remains in the generated production bundle"
+          if grep -REiq -- 'https://[^"[:space:]]*\.onrender\.com' build/web; then
+            echo "::error::Render backend hostname remains in the generated production bundle"
             exit 1
           fi
 
