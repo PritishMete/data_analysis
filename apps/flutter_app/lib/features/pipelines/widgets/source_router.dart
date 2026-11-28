@@ -259,7 +259,7 @@ class SourceRouter extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'This uses the local Detail Analysis backend. It does not replace the active-selection scan.',
+          'This sends selected files to the Oracle-backed Detail Analysis service. It does not replace the active-selection scan.',
           style: TextStyle(fontSize: 11),
         ),
         const SizedBox(height: 12),
