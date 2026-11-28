@@ -88,4 +88,3 @@ def test_diagnostics_is_reached_through_real_application(client):
     _record("diagnostics", response)
     assert response.status_code == 200
     assert "token" not in response.text.lower()
-
