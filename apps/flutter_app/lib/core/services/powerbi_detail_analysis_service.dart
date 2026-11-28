@@ -3,29 +3,25 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import '../config/backend_origin.dart';
+import '../security/outbound_privacy_guard.dart';
 
 /// Sends Power BI-exported tables to the local, read-only profiling endpoint.
 class PowerBiDetailAnalysisService {
-  static Uri get endpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/detail-analysis',
-  );
-  static Uri get customerCleanEndpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/customer-clean',
-  );
-  static Uri get productCleanEndpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/product-clean',
-  );
-  static Uri get orderCleanEndpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/order-clean',
-  );
-  static Uri get dateDimensionEndpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/date-dimension',
-  );
-  static Uri get businessAnalysisEndpoint => Uri.parse(
-    '$insightFlowBackendOrigin/powerbi/business-analysis',
-  );
+  static Uri get endpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/detail-analysis');
+  static Uri get customerCleanEndpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/customer-clean');
+  static Uri get productCleanEndpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/product-clean');
+  static Uri get orderCleanEndpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/order-clean');
+  static Uri get dateDimensionEndpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/date-dimension');
+  static Uri get businessAnalysisEndpoint =>
+      Uri.parse('$insightFlowBackendOrigin/powerbi/business-analysis');
 
   Future<Map<String, dynamic>> analyze(List<PlatformFile> files) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException('Select at least one dataset to analyze.');
     }
@@ -58,6 +54,7 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanCustomer(List<PlatformFile> files) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for customer cleaning.',
@@ -86,6 +83,7 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanProduct(List<PlatformFile> files) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for product cleaning.',
@@ -114,6 +112,7 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanOrders(List<PlatformFile> files) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for order cleaning.',
@@ -144,6 +143,7 @@ class PowerBiDetailAnalysisService {
   Future<Map<String, dynamic>> buildDateDimension(
     List<PlatformFile> files,
   ) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for date dimension creation.',
@@ -178,6 +178,7 @@ class PowerBiDetailAnalysisService {
     Map<String, dynamic> context = const <String, dynamic>{},
     Map<String, dynamic>? predicate,
   }) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for business analysis.',
@@ -225,6 +226,7 @@ class PowerBiDetailAnalysisService {
     String? region,
     String? category,
   }) async {
+    OutboundPrivacyGuard.requirePowerBiConsent();
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for the dashboard.',

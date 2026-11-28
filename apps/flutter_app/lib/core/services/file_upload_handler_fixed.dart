@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import '../security/privacy_mode.dart';
+import '../security/outbound_privacy_guard.dart';
 import '../config/backend_origin.dart';
 
 final String backendUrl = insightFlowBackendOrigin;
@@ -22,7 +23,7 @@ class FileUploadHandler {
   );
 
   /// Upload a file via streaming to avoid OutOfMemory errors
-  /// 
+  ///
   /// Instead of loading the entire file into memory (which triggers file_picker's
   /// MethodChannel serialization and hits DirectByteBuffer allocation limits on
   /// Android), this streams the file in chunks to the backend.
@@ -30,19 +31,24 @@ class FileUploadHandler {
     String filePath, {
     required Function(int, int) onProgress,
   }) async {
-    if (secureLocalOnly) {
-      return {"success": false, "error": "Remote file upload is disabled in secure local mode."};
+    if (secureLocalOnly ||
+        !PrivacyConsent.has(PrivacyOperation.remoteFileUpload)) {
+      return {
+        "success": false,
+        "error": "Remote file upload is disabled in secure local mode.",
+      };
     }
+    OutboundPrivacyGuard.requireFileUploadConsent();
     try {
       final file = File(filePath);
-      
+
       // Validate file size upfront (prevent massive uploads)
       final fileSizeBytes = await file.length();
       const maxSizeBytes = 500 * 1024 * 1024; // 500MB limit
       if (fileSizeBytes > maxSizeBytes) {
         throw Exception(
           'File too large (${(fileSizeBytes / 1024 / 1024).toStringAsFixed(2)}MB). '
-          'Maximum allowed: ${(maxSizeBytes / 1024 / 1024).toInt()}MB'
+          'Maximum allowed: ${(maxSizeBytes / 1024 / 1024).toInt()}MB',
         );
       }
 
@@ -82,7 +88,7 @@ class FileUploadHandler {
   }
 
   /// Parse CSV data in chunks without loading entire file into memory
-  /// 
+  ///
   /// Useful for data preview without parsing the entire matrix upfront.
   /// Use this for showing the first N rows while backend processes full dataset.
   Future<List<List<String>>> previewCsvChunk(
@@ -92,19 +98,19 @@ class FileUploadHandler {
     try {
       final file = File(filePath);
       final lines = <List<String>>[];
-      
+
       final input = file.openRead();
       final stream = input
           .transform(const Utf8Decoder())
           .transform(const LineSplitter());
-      
+
       int rowCount = 0;
       await for (final line in stream) {
         if (rowCount >= maxRows) break;
         lines.add(line.split(',').map((s) => s.trim()).toList());
         rowCount++;
       }
-      
+
       return lines;
     } catch (e) {
       throw Exception('CSV preview failed: $e');
@@ -112,14 +118,12 @@ class FileUploadHandler {
   }
 
   /// Select file with safety checks (DO NOT load into memory via withData)
-  /// 
+  ///
   /// Key: setting withData=false prevents file_picker from encoding the
   /// entire file through MethodChannel's StandardMethodCodec, which would
   /// trigger a DirectByteBuffer allocation and likely OutOfMemoryError on
   /// Android with large files.
-  Future<PlatformFile?> selectFile({
-    required List<String> extensions,
-  }) async {
+  Future<PlatformFile?> selectFile({required List<String> extensions}) async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -127,7 +131,7 @@ class FileUploadHandler {
         withData: false, // CRITICAL: Don't load file into MethodChannel
         lockParentWindow: true,
       );
-      
+
       return result?.files.singleOrNull;
     } catch (e) {
       throw Exception('File selection failed: $e');

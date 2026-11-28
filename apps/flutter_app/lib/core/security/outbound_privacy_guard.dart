@@ -1,6 +1,22 @@
 import 'dart:convert';
+import 'privacy_mode.dart';
 
 class OutboundPrivacyGuard {
+  static void requireConsent(PrivacyOperation operation) {
+    if (!PrivacyConsent.has(operation)) {
+      throw PrivacyConsentDenied(operation);
+    }
+  }
+
+  static void requireFileUploadConsent() =>
+      requireConsent(PrivacyOperation.remoteFileUpload);
+
+  static void requirePowerBiConsent() =>
+      requireConsent(PrivacyOperation.powerBiDetailAnalysis);
+
+  static void requireTelemetryConsent() =>
+      requireConsent(PrivacyOperation.telemetry);
+
   static const Set<String> forbiddenKeys = {
     'rows',
     'row_data',
@@ -36,15 +52,23 @@ class OutboundPrivacyGuard {
     'raw_columns',
   };
 
-  static final RegExp _safeAliasPattern = RegExp(r'^(?:column|field|entity)_[0-9]{3}$', caseSensitive: false);
+  static final RegExp _safeAliasPattern = RegExp(
+    r'^(?:column|field|entity)_[0-9]{3}$',
+    caseSensitive: false,
+  );
 
-  static void validateMetadataOnlyPayload(Object? payload, {String path = 'payload'}) {
+  static void validateMetadataOnlyPayload(
+    Object? payload, {
+    String path = 'payload',
+  }) {
     void scan(dynamic value, String currentPath) {
       if (value is Map) {
         for (final entry in value.entries) {
           final key = entry.key.toString();
           if (forbiddenKeys.contains(key.toLowerCase())) {
-            throw StateError('Forbidden outbound workbook content at $currentPath.$key');
+            throw StateError(
+              'Forbidden outbound workbook content at $currentPath.$key',
+            );
           }
           scan(entry.value, '$currentPath.$key');
         }
@@ -77,7 +101,8 @@ class OutboundPrivacyGuard {
     }
   }
 
-  static bool isSafeAlias(String value) => _safeAliasPattern.hasMatch(value.trim());
+  static bool isSafeAlias(String value) =>
+      _safeAliasPattern.hasMatch(value.trim());
 
   static Map<String, String> buildSequentialAliases(
     List<String> values, {
@@ -98,7 +123,10 @@ class OutboundPrivacyGuard {
     for (final source in sources) {
       final replacement = replacements[source] ?? source;
       if (source.trim().isEmpty) continue;
-      final pattern = RegExp(r'(?<!\w)' + RegExp.escape(source) + r'(?!\w)', caseSensitive: false);
+      final pattern = RegExp(
+        r'(?<!\w)' + RegExp.escape(source) + r'(?!\w)',
+        caseSensitive: false,
+      );
       output = output.replaceAll(pattern, replacement);
     }
     return output;

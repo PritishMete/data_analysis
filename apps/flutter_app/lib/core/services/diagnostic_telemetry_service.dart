@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/backend_origin.dart';
+import '../security/privacy_mode.dart';
 
 /// Best-effort, privacy-filtered diagnostics delivery. Failures here never
 /// interrupt sign-in, data access, or a user's requested operation.
@@ -23,7 +24,8 @@ class InsightFlowDiagnosticTelemetry {
   static String? _correlationId;
 
   static String correlationId(String prefix) {
-    final value = '$prefix-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final value =
+        '$prefix-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
     _correlationId = value;
     return value;
   }
@@ -38,6 +40,7 @@ class InsightFlowDiagnosticTelemetry {
     String? correlation,
     Map<String, Object?> metadata = const {},
   }) {
+    if (!PrivacyConsent.has(PrivacyOperation.telemetry)) return;
     // Only fixed labels, status codes and explicitly allowlisted metadata
     // should be passed here. Never pass response bodies, tokens, user content,
     // workbook data, cookies, or request headers.
@@ -66,7 +69,9 @@ class InsightFlowDiagnosticTelemetry {
   static Future<void> _ensureSession() async {
     if (_sessionId != null &&
         _expiresAt != null &&
-        DateTime.now().isBefore(_expiresAt!.subtract(const Duration(seconds: 20)))) {
+        DateTime.now().isBefore(
+          _expiresAt!.subtract(const Duration(seconds: 20)),
+        )) {
       return;
     }
     if (_creatingSession) return;
