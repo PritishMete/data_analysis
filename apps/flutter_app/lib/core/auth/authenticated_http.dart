@@ -73,7 +73,7 @@ class InsightFlowOnboardingResolution {
 }
 
 Future<InsightFlowOnboardingResolution?>
-    reconcileInsightFlowOnboardingWithRetry({
+reconcileInsightFlowOnboardingWithRetry({
   required Future<InsightFlowOnboardingResolution> Function() resolve,
   int maxAttempts = 4,
   Duration initialDelay = const Duration(seconds: 1),
@@ -134,8 +134,12 @@ class _TransientAuthorizationFailure implements Exception {}
 /// Branch Head role created during organization registration.
 String? resolveInsightFlowLandingRole(Iterable<String> roleIds) {
   const supported = <String>{
-    'organization_owner', 'branch_head', 'manager', 'team_lead',
-    'employee', 'external_viewer',
+    'organization_owner',
+    'branch_head',
+    'manager',
+    'team_lead',
+    'employee',
+    'external_viewer',
   };
   final roles = roleIds
       .map((role) => role.trim().toLowerCase())
@@ -163,7 +167,7 @@ List<String> _roleIdsFromAuthorization(Map<String, dynamic> decoded) {
 }
 
 Future<InsightFlowOnboardingResolution>
-    resolveInsightFlowOnboardingStateFromBackend(String uid) async {
+resolveInsightFlowOnboardingStateFromBackend(String uid) async {
   final session = await InsightFlowSupabaseAuthService.ensureSession();
   if (session == null || session.accessToken.isEmpty) {
     return const InsightFlowOnboardingResolution(
@@ -216,8 +220,10 @@ Future<InsightFlowOnboardingResolution>
 
     // The top-level /v1/authz/me contract is the sole authorization source
     // for post-auth routing. Workspace cache is continuity only.
-    final membershipStatus =
-        decoded['membership_status']?.toString().trim().toLowerCase();
+    final membershipStatus = decoded['membership_status']
+        ?.toString()
+        .trim()
+        .toLowerCase();
     final profileComplete = decoded['profile_complete'];
     final authoritativeWorkspaceId =
         decoded['workspace_id']?.toString().trim() ?? '';
@@ -280,15 +286,13 @@ Future<InsightFlowOnboardingResolution>
         );
       }
 
-      final activeWorkspaceMatches = workspaces
-          .whereType<Map>()
-          .any(
-            (item) =>
-                item['workspace_id']?.toString().trim() ==
-                    authoritativeWorkspaceId &&
-                item['membership_status']?.toString().trim().toLowerCase() ==
-                    'active',
-          );
+      final activeWorkspaceMatches = workspaces.whereType<Map>().any(
+        (item) =>
+            item['workspace_id']?.toString().trim() ==
+                authoritativeWorkspaceId &&
+            item['membership_status']?.toString().trim().toLowerCase() ==
+                'active',
+      );
       if (!activeWorkspaceMatches) {
         return const InsightFlowOnboardingResolution(
           InsightFlowOnboardingState.transientFailure,
@@ -485,7 +489,8 @@ String? organizationServiceBusinessErrorMessage(http.Response response) {
     final decoded = jsonDecode(response.body);
     if (decoded is Map) {
       final detail = decoded['detail']?.toString().trim();
-      if (detail == 'Branch identifier is already in use by an active branch.') {
+      if (detail ==
+          'Branch identifier is already in use by an active branch.') {
         return detail;
       }
     }
@@ -629,7 +634,8 @@ class AuthenticatedHttpTransport {
     Future<dynamic> Function()? sessionProvider,
     String? Function()? workspaceProvider,
   }) : _client = client ?? http.Client(),
-       _sessionProvider = sessionProvider ??
+       _sessionProvider =
+           sessionProvider ??
            (() => InsightFlowSupabaseAuthService.ensureSession()),
        _workspaceProvider = workspaceProvider ?? (() => insightFlowWorkspaceId);
 
@@ -637,7 +643,18 @@ class AuthenticatedHttpTransport {
   final Future<dynamic> Function() _sessionProvider;
   final String? Function() _workspaceProvider;
 
-  Future<http.Response> postJson(Uri uri, {
+  /// Returns the protected headers for a Dio request without owning a Dio
+  /// instance. The caller must still provide the canonical resource ID.
+  Future<Map<String, String>> dioHeaders({required String resourceId}) {
+    return _headers(resourceId);
+  }
+
+  Future<http.Response> getJson(Uri uri, {required String resourceId}) async {
+    return _client.get(uri, headers: await _headers(resourceId));
+  }
+
+  Future<http.Response> postJson(
+    Uri uri, {
     required String resourceId,
     Map<String, dynamic>? body,
   }) async {
@@ -646,7 +663,8 @@ class AuthenticatedHttpTransport {
     return _client.post(uri, headers: headers, body: jsonEncode(body ?? {}));
   }
 
-  Future<http.Response> postMultipart(Uri uri, {
+  Future<http.Response> postMultipart(
+    Uri uri, {
     required String resourceId,
     Map<String, String> fields = const <String, String>{},
     List<http.MultipartFile> files = const <http.MultipartFile>[],
@@ -665,7 +683,9 @@ class AuthenticatedHttpTransport {
     final workspaceId = _workspaceProvider()?.trim() ?? '';
     final canonicalResourceId = resourceId.trim();
     if (workspaceId.isEmpty || canonicalResourceId.isEmpty) {
-      throw StateError('Authenticated workspace and resource context required.');
+      throw StateError(
+        'Authenticated workspace and resource context required.',
+      );
     }
     return <String, String>{
       'Authorization': 'Bearer $token',

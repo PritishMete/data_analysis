@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,9 @@ import 'package:liquid_glass_widgets/core/auth/authenticated_http.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class _CaptureClient extends http.BaseClient {
+  _CaptureClient({this.statusCode = 200});
+
+  final int statusCode;
   http.BaseRequest? request;
   List<int>? body;
 
@@ -15,7 +19,7 @@ class _CaptureClient extends http.BaseClient {
     body = await request.finalize().toBytes();
     return http.StreamedResponse(
       Stream<List<int>>.value(utf8.encode('{}')),
-      200,
+      statusCode,
     );
   }
 }
@@ -35,6 +39,27 @@ Session? _session() => Session.fromJson({
 });
 
 void main() {
+  test('refresh/session provider supplies the current bearer only', () async {
+    final client = _CaptureClient();
+    var calls = 0;
+    final response =
+        await AuthenticatedHttpTransport(
+          client: client,
+          sessionProvider: () async {
+            calls++;
+            return _session();
+          },
+          workspaceProvider: () => 'workspace-1',
+        ).getJson(
+          Uri.parse('https://example.test/v1/resource'),
+          resourceId: 'dataset-1',
+        );
+
+    expect(response.statusCode, 200);
+    expect(calls, 1);
+    expect(client.request!.headers['authorization'], 'Bearer access-token');
+  });
+
   test(
     'captures authenticated JSON request with authoritative context',
     () async {
@@ -74,6 +99,38 @@ void main() {
       throwsA(isA<StateError>()),
     );
     expect(client.request, isNull);
+  });
+
+  test('fails closed when an expired session cannot be refreshed', () async {
+    final client = _CaptureClient();
+    expect(
+      () =>
+          AuthenticatedHttpTransport(
+            client: client,
+            sessionProvider: () async => null,
+            workspaceProvider: () => 'workspace-1',
+          ).getJson(
+            Uri.parse('https://example.test/v1/resource'),
+            resourceId: 'dataset-1',
+          ),
+      throwsA(isA<StateError>()),
+    );
+    expect(client.request, isNull);
+  });
+
+  test('returns denied responses without weakening authorization', () async {
+    final client = _CaptureClient(statusCode: 403);
+    final response =
+        await AuthenticatedHttpTransport(
+          client: client,
+          sessionProvider: () async => _session(),
+          workspaceProvider: () => 'workspace-1',
+        ).getJson(
+          Uri.parse('https://example.test/v1/resource'),
+          resourceId: 'dataset-1',
+        );
+    expect(response.statusCode, 403);
+    expect(client.request!.headers['authorization'], 'Bearer access-token');
   });
 
   test(
@@ -132,4 +189,11 @@ void main() {
       expect(utf8.decode(client.body!), contains('data.csv'));
     },
   );
+
+  test('does not expose bearer material in transport source', () async {
+    final source = await File('lib/core/auth/authenticated_http.dart')
+        .readAsString();
+    expect(source, isNot(contains('print(token')));
+    expect(source, isNot(contains('debugPrint(token')));
+  });
 }
