@@ -14,6 +14,7 @@ import '../config/backend_origin.dart';
 import 'package:http/http.dart' as http;
 import 'data_cleaning_service.dart'; // reuse CleaningResult, writeCleanedDataToSheet
 import '../security/privacy_mode.dart';
+import '../security/outbound_privacy_guard.dart';
 
 final String _agenticCleaningBackendUrl = insightFlowBackendOrigin;
 
@@ -24,23 +25,34 @@ class AgenticCleaningService {
     required String text,
     required List<String> availableColumns,
   }) async {
+    OutboundPrivacyGuard.requireDatasetCleaningConsent(
+      destination: '$_agenticCleaningBackendUrl/agentic_clean_preview',
+    );
     if (secureLocalOnly) {
-      return {"steps": [], "message": "Remote cleaning preview is disabled in secure local mode.", "step_count": 0};
+      return {
+        "steps": [],
+        "message": "Remote cleaning preview is disabled in secure local mode.",
+        "step_count": 0,
+      };
     }
     try {
       final res = await http
           .post(
-        Uri.parse("$_agenticCleaningBackendUrl/agentic_clean_preview"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "text": text,
-          "available_columns": availableColumns,
-        }),
-      )
+            Uri.parse("$_agenticCleaningBackendUrl/agentic_clean_preview"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({
+              "text": text,
+              "available_columns": availableColumns,
+            }),
+          )
           .timeout(const Duration(seconds: 15));
       return jsonDecode(res.body) as Map<String, dynamic>;
     } catch (e) {
-      return {"steps": [], "message": "⚠️ Could not reach AI server: $e", "step_count": 0};
+      return {
+        "steps": [],
+        "message": "⚠️ Could not reach AI server: $e",
+        "step_count": 0,
+      };
     }
   }
 
@@ -53,11 +65,18 @@ class AgenticCleaningService {
     required String query,
     String outputSheetName = "Cleaned_Data",
   }) async {
+    OutboundPrivacyGuard.requireDatasetCleaningConsent(
+      destination: '$_agenticCleaningBackendUrl/agentic_clean_data',
+    );
     if (secureLocalOnly) {
       return CleaningResult(
         success: false,
         message: "Remote AI cleaning is disabled in secure local mode.",
-        before: {}, after: {}, comparison: {}, cleaningReport: {}, export: {},
+        before: {},
+        after: {},
+        comparison: {},
+        cleaningReport: {},
+        export: {},
         error: "SECURE_LOCAL_ONLY",
       );
     }
@@ -82,14 +101,22 @@ class AgenticCleaningService {
       return CleaningResult(
         success: false,
         message: "Server error: ${response.statusCode}",
-        before: {}, after: {}, comparison: {}, cleaningReport: {}, export: {},
+        before: {},
+        after: {},
+        comparison: {},
+        cleaningReport: {},
+        export: {},
         error: response.body,
       );
     } catch (e) {
       return CleaningResult(
         success: false,
         message: "⚠️ Could not reach AI server. Check your connection.",
-        before: {}, after: {}, comparison: {}, cleaningReport: {}, export: {},
+        before: {},
+        after: {},
+        comparison: {},
+        cleaningReport: {},
+        export: {},
         error: e.toString(),
       );
     }
@@ -112,7 +139,9 @@ class AgenticCleaningService {
       return "❌ Cleaning failed: ${result.error ?? result.message}";
     }
 
-    final writeResult = await DataCleaningService.writeCleanedDataToSheet(result);
+    final writeResult = await DataCleaningService.writeCleanedDataToSheet(
+      result,
+    );
     if (writeResult['success'] != true) {
       return "⚠️ Data cleaned but failed to write to sheet: ${writeResult['error']}";
     }
