@@ -73,8 +73,8 @@ status codes, and response headers while forwarding to the Oracle VPC binding.
 The Oracle VM runs `uvicorn main:app --host 127.0.0.1 --port 8000` behind its
 HTTPS reverse proxy and systemd service, and uses Supabase for authentication and
 PostgreSQL persistence. Render is not part of the main website runtime path.
-The public API origin is supplied through the `INSIGHTFLOW_BACKEND_URL`
-repository variable.
+The production Flutter Web workflow pins `INSIGHTFLOW_BACKEND_URL` to the verified
+Oracle-backed Worker origin. Non-production builds may use a controlled override.
 
 ## Limitations
 
