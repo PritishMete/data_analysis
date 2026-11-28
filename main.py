@@ -395,6 +395,10 @@ def _initialize_production_database() -> None:
     global _PRODUCTION_READY
     _PRODUCTION_READY = False
     startup_started = time.monotonic()
+    if os.environ.get("INSIGHTFLOW_ENV", "").strip().lower() == "qa":
+        from core.qa_environment import validate_qa_environment
+
+        validate_qa_environment()
     logger.info("[startup] Beginning required production database initialization.")
     provider = os.environ.get("AUTHZ_PERSISTENCE_PROVIDER", "supabase").strip().lower()
     if provider == "supabase" and not os.environ.get("DATABASE_URL", "").strip():
