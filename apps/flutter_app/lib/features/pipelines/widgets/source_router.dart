@@ -259,7 +259,7 @@ class SourceRouter extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'This uses the local Detail Analysis backend. It does not replace the active-selection scan.',
+          'Selected files are sent to the configured InsightFlow backend for Detail Analysis. This does not replace the active-selection scan.',
           style: TextStyle(fontSize: 11),
         ),
         const SizedBox(height: 12),

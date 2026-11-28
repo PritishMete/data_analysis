@@ -51,4 +51,25 @@ void main() {
     expect(upload, contains('MultipartFile.fromFile'));
     expect(upload, contains('/upload'));
   });
+
+  test('Power BI byte workflows stay on the authorized backend boundary', () {
+    final service =
+        File('lib/core/services/powerbi_detail_analysis_service.dart')
+            .readAsStringSync();
+    expect(service, contains('insightFlowBackendOrigin'));
+    expect(service, contains('MultipartRequest'));
+    expect(service, isNot(contains('127.0.0.1:8000')));
+    expect(service, isNot(contains('localhost:8000')));
+  });
+
+  test('user-facing Power BI copy does not claim remote uploads are local', () {
+    final router =
+        File('lib/features/pipelines/widgets/source_router.dart')
+            .readAsStringSync();
+    final detail = File('lib/detail_analysis_main.dart').readAsStringSync();
+    expect(router, contains('Selected files are sent to the configured InsightFlow backend'));
+    expect(detail, contains('without changing the source files'));
+    expect(detail, isNot(contains('Customer cleaning completed locally.')));
+    expect(detail, isNot(contains('The date dimension was created locally.')));
+  });
 }
