@@ -55,6 +55,10 @@ jobs:
         working-directory: apps/flutter_app
         run: node test/excel_auth_bridge_test.js
 
+      - name: Run backend origin configuration tests
+        working-directory: apps/flutter_app
+        run: flutter test test/backend_origin_test.dart
+
       - name: Run auth and onboarding regression tests
         working-directory: apps/flutter_app
         run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart test/google_oauth_entrypoint_test.dart test/main_auth_gate_entrypoint_test.dart
