@@ -1,5 +1,7 @@
+// The public Flutter web app must use the Cloudflare API gateway backed by Oracle.
+// Keep this origin configurable for controlled non-production builds.
 const String insightFlowDefaultBackendOrigin =
-    'https://data-analysis-oajs.onrender.com';
+    'https://insightflow-api.jaiphotoshoot.workers.dev';
 
 const String _configuredBackendOrigin = String.fromEnvironment(
   'INSIGHTFLOW_BACKEND_URL',
