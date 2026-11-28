@@ -4,7 +4,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import '../config/backend_origin.dart';
 
-/// Sends Power BI-exported tables to the local, read-only profiling endpoint.
+/// Sends Power BI-exported tables to the configured, authorized analysis backend.
+///
+/// This service is intentionally remote-capable: the Power BI workflows do not
+/// have the authenticated workspace/resource context required by the local
+/// FastAPI endpoint, so silently switching these multipart uploads to loopback
+/// would either fail closed or weaken the authorization boundary.
 class PowerBiDetailAnalysisService {
   static Uri get endpoint => Uri.parse(
     '$insightFlowBackendOrigin/powerbi/detail-analysis',

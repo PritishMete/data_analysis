@@ -1010,12 +1010,13 @@ class _DetailAnalysisPageState extends State<DetailAnalysisPage> {
           ? 'Here are the ${route.subIntent!.split(':').last} data-quality findings from Detail Analysis.'
           : 'Here is the complete Detail Analysis result.',
     DetailAnalysisIntent.customerCleaning =>
-      'Customer cleaning completed locally.',
+      'Customer cleaning completed without changing the source files.',
     DetailAnalysisIntent.productCleaning =>
-      'Product cleaning completed locally.',
-    DetailAnalysisIntent.orderCleaning => 'Order cleaning completed locally.',
+      'Product cleaning completed without changing the source files.',
+    DetailAnalysisIntent.orderCleaning =>
+      'Order cleaning completed without changing the source files.',
     DetailAnalysisIntent.dateDimension =>
-      'The date dimension was created locally.',
+      'The date dimension was created without changing the source files.',
     DetailAnalysisIntent.businessAnalysis =>
       route.subIntent == 'regional_profit'
           ? 'Here is the regional profit analysis.'
@@ -1421,12 +1422,13 @@ window.addEventListener('wheel', event => {
     DetailAnalysisIntent.detailAnalysis =>
       'Here is the complete Detail Analysis result.',
     DetailAnalysisIntent.customerCleaning =>
-      'Customer cleaning completed locally.',
+      'Customer cleaning completed without changing the source files.',
     DetailAnalysisIntent.productCleaning =>
-      'Product cleaning completed locally.',
-    DetailAnalysisIntent.orderCleaning => 'Order cleaning completed locally.',
+      'Product cleaning completed without changing the source files.',
+    DetailAnalysisIntent.orderCleaning =>
+      'Order cleaning completed without changing the source files.',
     DetailAnalysisIntent.dateDimension =>
-      'The date dimension was created locally.',
+      'The date dimension was created without changing the source files.',
     DetailAnalysisIntent.businessAnalysis =>
       route.subIntent == 'regional_profit'
           ? 'Here is the regional profit analysis.'
