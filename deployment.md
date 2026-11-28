@@ -1,10 +1,25 @@
 # InsightFlow Deployment
 
-## Render backend
+## Production service boundaries
+
+The main website uses this path:
+
+`Cloudflare Pages (Flutter frontend) -> Cloudflare Worker API gateway -> Oracle Cloud VM (FastAPI) -> Supabase`
+
+Cloudflare Pages hosts the public static frontend at `https://insightflow-3e8.pages.dev/`.
+The public API origin embedded in the Flutter web build is
+`https://insightflow-api.jaiphotoshoot.workers.dev`. The Worker forwards requests
+to the Oracle VPC binding; the Oracle VM runs the FastAPI application and uses
+Supabase for authentication and PostgreSQL persistence.
+
+## Render backend (excluded from the main website)
 
 `render.yaml` defines a Python web service named `data_analysis`, branch `main`, manual deploy trigger, build command `pip install -r requirements.txt`, start command `uvicorn main:app --host 0.0.0.0 --port $PORT`, and health check `/health`.
 
 The service depends on PostgreSQL/Supabase configuration. Secret values must be supplied through Render, not committed. Named variables include `DATABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PROJECT_REF`, authentication/provider modes, privacy mode, and environment mode.
+
+Render remains a legacy/alternate deployment record only. The main website must
+not embed or call `https://data-analysis-oajs.onrender.com`.
 
 ## Oracle Cloud VM backend
 
@@ -14,7 +29,7 @@ The backend can run on the Ubuntu Oracle VM without an application-code change. 
 
 Use the templates in `deploy/oracle/` for the systemd service and deployment starting point. Keep Supabase as the authentication and database provider. Store production values in the VM environment or a protected secrets file; never commit them.
 
-The Flutter Pages workflow reads the public API origin from the GitHub Actions repository variable `INSIGHTFLOW_BACKEND_URL`. Set it to the verified Oracle HTTPS origin only after health, authentication, authorization, CORS, upload, and TLS checks pass. Until then, Pages builds fail closed if the variable is missing.
+The Flutter Pages workflow reads the public API origin from the GitHub Actions repository variable `INSIGHTFLOW_BACKEND_URL`. Production builds fail closed if it is missing, and source tests reject the legacy Render origin. Set it to the verified Worker origin only after health, authentication, authorization, CORS, upload, and TLS checks pass.
 
 ## GitHub Pages Flutter Web
 
@@ -27,7 +42,7 @@ The Flutter Pages workflow reads the public API origin from the GitHub Actions r
 3. Review migration and secret/configuration impact.
 4. Obtain explicit deployment approval.
 5. Deploy the verified commit through the configured provider workflow.
-6. Verify the deployed commit, `/health`, logs, auth boundary, and critical user flow.
+6. Verify the deployed commit, Worker `/health`, Oracle logs, auth boundary, CORS, and critical user flow.
 7. Record result and rollback target in `memory.md`.
 
 ## Migrations
