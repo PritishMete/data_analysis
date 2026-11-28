@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'supabase_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
@@ -618,6 +619,295 @@ Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
     headers['X-InsightFlow-Resource-ID'] = _safeResourceId(resourceId);
   }
   return headers;
+}
+
+enum AuthenticatedTransportFailure {
+  sessionUnavailable,
+  authorizationUnavailable,
+  workspaceUnavailable,
+  resourceRequired,
+  workspaceMismatch,
+}
+
+class AuthenticatedTransportException implements Exception {
+  const AuthenticatedTransportException(this.failure);
+
+  final AuthenticatedTransportFailure failure;
+
+  @override
+  String toString() => 'Authenticated transport failed: ${failure.name}.';
+}
+
+/// A workspace selected from an authenticated server authorization response.
+class AuthenticatedWorkspace {
+  const AuthenticatedWorkspace._(this.id);
+
+  final String id;
+}
+
+/// A resource identifier accepted only from a server-shaped resource record.
+/// The transport still verifies that it belongs to the current server workspace
+/// before sending a protected request.
+class CanonicalResource {
+  const CanonicalResource._(this.id, this.workspaceId);
+
+  final String id;
+  final String workspaceId;
+
+  static CanonicalResource? fromServerJson(Object? value) {
+    if (value is! Map) return null;
+
+    final resourceIds = <String>{
+      for (final key in const ['resource_id', 'dataset_id', 'working_copy_id'])
+        if ((value[key]?.toString().trim() ?? '').isNotEmpty)
+          value[key].toString().trim(),
+    };
+    final workspaceId = value['workspace_id']?.toString().trim() ?? '';
+    final status = value['status']?.toString().trim().toLowerCase() ?? '';
+    if (resourceIds.length != 1 || workspaceId.isEmpty) return null;
+    if (const {
+      'deleted',
+      'deleting',
+      'disabled',
+      'failed',
+      'inactive',
+      'removed',
+      'revoked',
+    }.contains(status)) {
+      return null;
+    }
+    return CanonicalResource._(resourceIds.single, workspaceId);
+  }
+}
+
+/// Reusable authenticated boundary for protected requests that already have
+/// a canonical resource from a server response. Existing callers remain on
+/// their current paths until they can supply this resource context.
+class AuthenticatedHttpTransport {
+  AuthenticatedHttpTransport({
+    http.Client? client,
+    Future<Session?> Function()? sessionProvider,
+    String? Function()? workspaceHintProvider,
+    Future<void> Function(String workspaceId)? workspaceHintWriter,
+    Uri? authzMeUri,
+    Duration requestTimeout = const Duration(seconds: 8),
+  }) : _client = client ?? http.Client(),
+       _sessionProvider =
+           sessionProvider ??
+           (() => InsightFlowSupabaseAuthService.ensureSession()),
+       _workspaceHintProvider =
+           workspaceHintProvider ?? (() => insightFlowWorkspaceId),
+       _workspaceHintWriter = workspaceHintWriter,
+       _authzMeUri =
+           authzMeUri ?? Uri.parse('$insightFlowBackendBaseUrl/v1/authz/me'),
+       _requestTimeout = requestTimeout;
+
+  final http.Client _client;
+  final Future<Session?> Function() _sessionProvider;
+  final String? Function() _workspaceHintProvider;
+  final Future<void> Function(String workspaceId)? _workspaceHintWriter;
+  final Uri _authzMeUri;
+  final Duration _requestTimeout;
+
+  Future<AuthenticatedWorkspace> resolveWorkspace() async {
+    final session = await _requireSession();
+    return _resolveWorkspace(session);
+  }
+
+  Future<Map<String, String>> headers({CanonicalResource? resource}) async {
+    return (await _requestContext(resource)).headers;
+  }
+
+  Future<Map<String, dynamic>> dioHeaders({CanonicalResource? resource}) async {
+    return Map<String, dynamic>.from(await headers(resource: resource));
+  }
+
+  Future<http.Response> getJson(Uri uri, {CanonicalResource? resource}) async {
+    final requestContext = await _requestContext(resource);
+    return _client
+        .get(uri, headers: requestContext.headers)
+        .timeout(_requestTimeout);
+  }
+
+  Future<http.Response> postJson(
+    Uri uri, {
+    CanonicalResource? resource,
+    Object? body,
+  }) async {
+    final headers = await this.headers(resource: resource);
+    headers['Content-Type'] = 'application/json';
+    return _client
+        .post(uri, headers: headers, body: jsonEncode(body ?? const {}))
+        .timeout(_requestTimeout);
+  }
+
+  Future<http.Response> postMultipart(
+    Uri uri, {
+    CanonicalResource? resource,
+    Map<String, String> fields = const <String, String>{},
+    List<http.MultipartFile> files = const <http.MultipartFile>[],
+  }) async {
+    final request = http.MultipartRequest('POST', uri)
+      ..fields.addAll(fields)
+      ..files.addAll(files);
+    request.headers.addAll(await headers(resource: resource));
+    final response = await _client.send(request).timeout(_requestTimeout);
+    return http.Response.fromStream(response);
+  }
+
+  Future<Session> _requireSession() async {
+    try {
+      final session = await _sessionProvider().timeout(_requestTimeout);
+      if (session == null || session.accessToken.trim().isEmpty) {
+        throw const AuthenticatedTransportException(
+          AuthenticatedTransportFailure.sessionUnavailable,
+        );
+      }
+      return session;
+    } on AuthenticatedTransportException {
+      rethrow;
+    } catch (_) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.sessionUnavailable,
+      );
+    }
+  }
+
+  Future<_AuthenticatedRequestContext> _requestContext(
+    CanonicalResource? resource,
+  ) async {
+    if (resource == null ||
+        resource.id.trim().isEmpty ||
+        resource.workspaceId.trim().isEmpty) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.resourceRequired,
+      );
+    }
+
+    final session = await _requireSession();
+    final workspace = await _resolveWorkspace(session);
+    if (resource.workspaceId != workspace.id) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.workspaceMismatch,
+      );
+    }
+    return _AuthenticatedRequestContext(
+      token: session.accessToken,
+      workspaceId: workspace.id,
+      resourceId: resource.id,
+    );
+  }
+
+  Future<AuthenticatedWorkspace> _resolveWorkspace(Session session) async {
+    String? hint;
+    try {
+      hint = _workspaceHintProvider()?.trim();
+    } catch (_) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.workspaceUnavailable,
+      );
+    }
+    final hintedWorkspace = await _fetchWorkspace(session.accessToken, hint);
+    final workspace =
+        hintedWorkspace ??
+        (hint == null || hint.isEmpty
+            ? null
+            : await _fetchWorkspace(session.accessToken, null));
+    if (workspace == null) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.workspaceUnavailable,
+      );
+    }
+
+    final workspaceHintWriter = _workspaceHintWriter;
+    if (workspaceHintWriter != null) {
+      try {
+        await workspaceHintWriter(workspace.id);
+      } catch (_) {
+        // Cache persistence is continuity only; the server response remains
+        // the authorization source for this request.
+      }
+    } else {
+      insightFlowWorkspaceId = workspace.id;
+    }
+    return workspace;
+  }
+
+  Future<AuthenticatedWorkspace?> _fetchWorkspace(
+    String token,
+    String? hint,
+  ) async {
+    final headers = <String, String>{'Authorization': 'Bearer $token'};
+    if (hint != null && hint.isNotEmpty) {
+      headers['X-InsightFlow-Workspace-ID'] = hint;
+    }
+
+    late final http.Response response;
+    try {
+      response = await _client
+          .get(_authzMeUri, headers: headers)
+          .timeout(_requestTimeout);
+    } catch (_) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.authorizationUnavailable,
+      );
+    }
+    if (response.statusCode != 200) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.authorizationUnavailable,
+      );
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.authorizationUnavailable,
+      );
+    }
+    if (decoded is! Map) {
+      throw const AuthenticatedTransportException(
+        AuthenticatedTransportFailure.authorizationUnavailable,
+      );
+    }
+
+    final membershipStatus =
+        decoded['membership_status']?.toString().trim().toLowerCase() ?? '';
+    final workspaceId = decoded['workspace_id']?.toString().trim() ?? '';
+    final workspaces = decoded['workspaces'];
+    if (membershipStatus != 'active' ||
+        decoded['workspace_authorized'] != true ||
+        workspaceId.isEmpty ||
+        workspaces is! List) {
+      return null;
+    }
+
+    final activeMatches = workspaces.whereType<Map>().where((item) {
+      final itemWorkspaceId = item['workspace_id']?.toString().trim() ?? '';
+      final itemMembership =
+          item['membership_status']?.toString().trim().toLowerCase() ?? '';
+      return itemWorkspaceId == workspaceId && itemMembership == 'active';
+    }).length;
+    if (activeMatches != 1) return null;
+    return AuthenticatedWorkspace._(workspaceId);
+  }
+}
+
+class _AuthenticatedRequestContext {
+  _AuthenticatedRequestContext({
+    required String token,
+    required this.workspaceId,
+    required this.resourceId,
+  }) : headers = <String, String>{
+         'Authorization': 'Bearer $token',
+         'X-InsightFlow-Workspace-ID': workspaceId,
+         'X-InsightFlow-Resource-ID': resourceId,
+       };
+
+  final String workspaceId;
+  final String resourceId;
+  final Map<String, String> headers;
 }
 
 Future<String?> _resolveDatasetId(String sourceSheetName) async {
