@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
-import '../auth/authenticated_http.dart';
+import '../config/backend_origin.dart';
 
 const Duration backendHeartbeatInterval = Duration(minutes: 5);
 const Duration _heartbeatTimeout = Duration(seconds: 8);
@@ -12,9 +12,9 @@ const Duration _resumeDebounce = Duration(seconds: 20);
 
 Future<void> sendBackendHeartbeat({
   http.Client? client,
-  String backendBaseUrl = insightFlowBackendBaseUrl,
+  String? backendBaseUrl,
 }) async {
-  final uri = Uri.parse('$backendBaseUrl/ping');
+  final uri = Uri.parse('${backendBaseUrl ?? insightFlowBackendOrigin}/ping');
   if (client == null) {
     await http.get(uri).timeout(_heartbeatTimeout);
   } else {

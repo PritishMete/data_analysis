@@ -117,7 +117,7 @@ jobs:
           INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
           INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
           INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
-          INSIGHTFLOW_BACKEND_URL: https://data-analysis-oajs.onrender.com
+          INSIGHTFLOW_BACKEND_URL: ${{ vars.INSIGHTFLOW_BACKEND_URL }}
         run: |
           set -euo pipefail
           required=(
@@ -129,6 +129,7 @@ jobs:
             INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID
             INSIGHTFLOW_SUPABASE_URL
             INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY
+            INSIGHTFLOW_BACKEND_URL
           )
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then

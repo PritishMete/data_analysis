@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'package:http/http.dart' as http;
 import '../auth/authenticated_http.dart';
+import '../config/backend_origin.dart';
 import '../security/privacy_mode.dart';
 
 // ── JS Bindings ──────────────────────────────────────────────────────────────
@@ -450,7 +451,7 @@ Future<Map<String, dynamic>> backtrackFillMissing(String optionsJson) async {
 
     // 4. Send data to the actual Python backend (same host as every other
     // route in this file — see _cleanDataUrl's counterpart in data_screen.dart).
-    final Uri apiUrl = Uri.parse('https://data-analysis-oajs.onrender.com/api/clean/dynamic_backtrack');
+    final Uri apiUrl = Uri.parse('$insightFlowBackendOrigin/api/clean/dynamic_backtrack');
 
     final requestHeaders = await authHeaders(resourceId: sheetName ?? 'active-sheet');
     final response = await http.post(

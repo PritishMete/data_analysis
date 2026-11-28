@@ -10,13 +10,14 @@
 // functions expect already lives (runTransformationPipeline, etc.).
 
 import 'dart:convert';
+import '../config/backend_origin.dart';
 import 'package:http/http.dart' as http;
 import '../security/outbound_privacy_guard.dart';
 import '../security/privacy_mode.dart';
 import 'currency_registry.dart';
 import 'local_categorization_service.dart';
 
-const String _agenticBackendUrl = "https://data-analysis-oajs.onrender.com";
+final String _agenticBackendUrl = insightFlowBackendOrigin;
 
 String _normalize(String value) => value
     .toLowerCase()

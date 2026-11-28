@@ -7,8 +7,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import '../security/privacy_mode.dart';
+import '../config/backend_origin.dart';
 
-const String backendUrl = 'https://data-analysis-oajs.onrender.com';
+final String backendUrl = insightFlowBackendOrigin;
 const int chunkSizeBytes = 1024 * 1024; // 1MB chunks for streaming
 
 class FileUploadHandler {

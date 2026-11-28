@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'supabase_auth_service.dart';
 import '../interop/excel_mutation_authorization.dart';
+import '../config/backend_origin.dart';
 
 String insightFlowWorkspaceId = String.fromEnvironment(
   'INSIGHTFLOW_WORKSPACE_ID',
@@ -555,7 +556,7 @@ Future<OrganizationServiceResponse> organizationServiceRequest({
   }
 }
 
-const String insightFlowBackendBaseUrl = 'https://data-analysis-oajs.onrender.com';
+String get insightFlowBackendBaseUrl => insightFlowBackendOrigin;
 
 String _safeResourceId(String raw) {
   final normalized = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');

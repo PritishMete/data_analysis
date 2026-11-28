@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../interop/excel_interop.dart';
 import '../security/privacy_mode.dart';
+import '../config/backend_origin.dart';
 
-const String _backendUrl = "https://data-analysis-oajs.onrender.com";
+final String _backendUrl = insightFlowBackendOrigin;
 
 class CleaningConfig {
   final bool standardizeCols;
