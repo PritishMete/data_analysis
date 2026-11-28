@@ -100,15 +100,14 @@ class _SignInScreenState extends State<SignInScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      final unverified =
-          InsightFlowSupabaseAuthService.isEmailVerificationError(error);
       setState(() {
         _loading = false;
-        _emailVerificationRequired = unverified;
-        _messageIsError = !unverified;
-        _error = unverified
-            ? 'Email not verified. Please verify your email first. Check your inbox and spam/junk folder for the verification email.'
-            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        // Offer the same recovery action after every failed password attempt.
+        // The provider's email_not_confirmed response must not reveal an
+        // existing account through different UI state or message content.
+        _emailVerificationRequired = true;
+        _messageIsError = true;
+        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
     }
@@ -185,9 +184,12 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      final enumerationSafe =
+          InsightFlowSupabaseAuthService.isSignupEnumerationSafeResponse(error);
       setState(() {
         _loading = false;
-        _messageIsError = true;
+        // Match the successful signup presentation as well as its text.
+        _messageIsError = !enumerationSafe;
         _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
       return;
@@ -197,8 +199,7 @@ class _SignInScreenState extends State<SignInScreen> {
       setState(() {
         _loading = false;
         _messageIsError = false;
-        _error =
-            'Account created. Check your email for the Supabase confirmation link, then return to InsightFlow and sign in.';
+        _error = InsightFlowSupabaseAuthService.signupResultMessage;
       });
     }
   }
@@ -224,14 +225,19 @@ class _SignInScreenState extends State<SignInScreen> {
       await InsightFlowSupabaseAuthService.resetPassword(email);
       if (!mounted) return;
       setState(() {
-        _error = 'Password reset email sent. Check your inbox.';
+        _error =
+            InsightFlowSupabaseAuthService.passwordResetRequestMessage;
         _messageIsError = false;
       });
     } catch (error) {
       if (!mounted) return;
+      final enumerationSafe =
+          InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(error);
       setState(() {
-        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
-        _messageIsError = true;
+        _error = enumerationSafe
+            ? InsightFlowSupabaseAuthService.passwordResetRequestMessage
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        _messageIsError = !enumerationSafe;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -251,14 +257,18 @@ class _SignInScreenState extends State<SignInScreen> {
         _emailVerificationRequired = true;
         _messageIsError = false;
         _error =
-            'Verification email sent again. Check your inbox and spam/junk folder.';
+            InsightFlowSupabaseAuthService.verificationLinkRequestMessage;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _messageIsError = true;
-        _error = InsightFlowSupabaseAuthService.userFacingAuthError(error);
+        final enumerationSafe =
+            InsightFlowSupabaseAuthService.isRecoveryEnumerationSafeResponse(error);
+        _messageIsError = !enumerationSafe;
+        _error = enumerationSafe
+            ? InsightFlowSupabaseAuthService.verificationLinkRequestMessage
+            : InsightFlowSupabaseAuthService.userFacingAuthError(error);
       });
     }
   }
@@ -285,12 +295,17 @@ class _SignInScreenState extends State<SignInScreen> {
           else
             Icon(icon, size: 17, color: TechColors.borderActive),
           const SizedBox(width: 9),
-          Text(
-            busy ? 'Please wait…' : label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              busy ? 'Please wait…' : label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],

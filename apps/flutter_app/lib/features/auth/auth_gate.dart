@@ -18,6 +18,7 @@ import 'company_registration_screen.dart';
 import 'organization_onboarding_screen.dart';
 import 'employee_profile_onboarding_screen.dart';
 import 'sign_in_screen.dart';
+import 'password_recovery_screen.dart';
 import 'excel_auth_gate.dart';
 import '../../widgets/insightflow_floating_brand.dart';
 
@@ -67,6 +68,9 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _AuthLoading();
+        }
+        if (InsightFlowSupabaseAuthService.isPasswordRecoveryPending) {
+          return const SupabasePasswordRecoveryScreen();
         }
         if (snapshot.hasError) {
           return isRunningInsideOffice

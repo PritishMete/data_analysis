@@ -50,6 +50,53 @@ class InsightFlowSupabaseConfig {
 }
 
 class InsightFlowSupabaseAuthService {
+  static bool _passwordRecoveryPending = false;
+
+  static bool get isPasswordRecoveryPending => _passwordRecoveryPending;
+
+  /// Clear recovery mode only after the user has successfully chosen a new password.
+  static void clearPasswordRecoveryPending() {
+    _passwordRecoveryPending = false;
+  }
+
+  /// The same response is used for successful and duplicate-address signups so
+  /// the UI does not reveal whether an email is already registered.
+  static const String signupResultMessage =
+      'If this email address can be registered, check your inbox for next steps.';
+  static const String loginFailureMessage =
+      'Email or password is incorrect. If your email needs verification, request a new verification link.';
+  static const String verificationLinkRequestMessage =
+      'If this email can receive a verification link, check your inbox and spam folder.';
+  static const String passwordResetRequestMessage =
+      'If an account can be recovered with this email, reset instructions will be sent.';
+
+  static bool isSignupEnumerationSafeResponse(Object error) {
+    if (error is! AuthException) return false;
+    final code = error.code?.toLowerCase().trim() ?? '';
+    final message = error.message.toLowerCase();
+    return code == 'user_already_exists' ||
+        message.contains('user already registered') ||
+        message.contains('user already exists');
+  }
+
+  static bool isRecoveryEnumerationSafeResponse(Object error) {
+    if (error is! AuthException) return false;
+    final code = error.code?.toLowerCase().trim() ?? '';
+    final message = error.message.toLowerCase();
+    return const {
+          'user_not_found',
+          'user_not_exists',
+          'email_not_found',
+          'email_not_exists',
+          'user_already_exists',
+        }.contains(code) ||
+        message.contains('user not found') ||
+        message.contains('no user found') ||
+        message.contains('email not found') ||
+        message.contains('user already registered') ||
+        message.contains('user already exists');
+  }
+
   static String? _sessionOnlyEmail;
   InsightFlowSupabaseAuthService._();
 
@@ -112,6 +159,11 @@ class InsightFlowSupabaseAuthService {
       final initialSession = currentSession;
       yield AuthState(AuthChangeEvent.initialSession, initialSession);
       await for (final state in client.auth.onAuthStateChange) {
+        if (state.event == AuthChangeEvent.passwordRecovery) {
+          _passwordRecoveryPending = true;
+        } else if (state.event == AuthChangeEvent.signedOut) {
+          _passwordRecoveryPending = false;
+        }
         final sameSession = state.session?.accessToken != null &&
             state.session?.accessToken == initialSession?.accessToken;
         if (state.event == AuthChangeEvent.initialSession && sameSession) {
@@ -188,11 +240,10 @@ class InsightFlowSupabaseAuthService {
       switch (code) {
         case 'invalid_credentials':
         case 'invalid_grant':
-          return 'Email or password is incorrect.';
         case 'email_not_confirmed':
-          return 'Please verify your email before signing in.';
+          return loginFailureMessage;
         case 'user_already_exists':
-          return 'An account already exists for this email.';
+          return signupResultMessage;
         case 'weak_password':
           return 'Choose a stronger password and try again.';
         case 'over_request_rate_limit':
@@ -209,6 +260,16 @@ class InsightFlowSupabaseAuthService {
           return 'Google sign-in is not enabled for this InsightFlow project.';
       }
       final message = error.message.toLowerCase();
+      if (message.contains('user already registered') ||
+          message.contains('user already exists')) {
+        return signupResultMessage;
+      }
+      if (message.contains('email not confirmed') ||
+          message.contains('email not verified') ||
+          message.contains('email_not_confirmed') ||
+          message.contains('email_not_verified')) {
+        return loginFailureMessage;
+      }
       if (message.contains('network') || message.contains('failed to fetch')) {
         return 'Network connection failed. Check your connection and try again.';
       }
@@ -287,12 +348,18 @@ class InsightFlowSupabaseAuthService {
     return client.auth.signInWithPassword(email: email, password: password);
   }
 
+  /// Sends the current password to Supabase so a project-level
+  /// require-current-password policy can be enforced by Auth itself.
+  /// Password-recovery sessions intentionally omit this value.
   static Future<void> setPassword(
     String password, {
+    String? currentPassword,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     await client.auth
-        .updateUser(UserAttributes(password: password))
+        .updateUser(
+          UserAttributes(password: password, currentPassword: currentPassword),
+        )
         .timeout(timeout);
   }
 

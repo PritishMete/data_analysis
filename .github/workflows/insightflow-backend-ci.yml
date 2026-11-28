@@ -309,6 +309,7 @@ jobs:
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
           lib/features/auth/auth_gate.dart
+          lib/features/auth/password_recovery_screen.dart
           lib/features/auth/employee_invitation_password_setup_screen.dart
           lib/features/auth/organization_onboarding_screen.dart
           lib/features/auth/account_management_screen.dart
@@ -322,6 +323,8 @@ jobs:
           lib/core/interop/excel_mutation_authorization.dart
           test/auth_screens_test.dart
           test/supabase_multi_device_session_test.dart
+          test/supabase_auth_error_handling_test.dart
+          test/google_oauth_entrypoint_test.dart
           test/onboarding_auth_flow_contract_test.dart
           test/management_shell_contract_test.dart
           test/management_skeleton_responsive_test.dart
@@ -338,6 +341,7 @@ jobs:
           lib/features/auth/sign_in_screen.dart
           lib/features/auth/sign_up_screen.dart
           lib/features/auth/auth_gate.dart
+          lib/features/auth/password_recovery_screen.dart
           lib/features/auth/employee_invitation_password_setup_screen.dart
           lib/features/auth/organization_onboarding_screen.dart
           lib/features/auth/account_management_screen.dart
@@ -360,6 +364,9 @@ jobs:
         run: >-
           flutter test
           test/supabase_only_auth_contract_test.dart
+          test/supabase_auth_error_handling_test.dart
+          test/auth_screens_test.dart
+          test/google_oauth_entrypoint_test.dart
           test/management_shell_contract_test.dart
           test/managed_dataset_upload_contract_test.dart
           test/supabase_multi_device_session_test.dart

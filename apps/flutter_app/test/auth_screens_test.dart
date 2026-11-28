@@ -2,12 +2,30 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:liquid_glass_widgets/features/auth/sign_in_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/sign_up_screen.dart';
 import 'package:liquid_glass_widgets/features/auth/account_management_screen.dart';
+import 'package:liquid_glass_widgets/features/auth/password_recovery_screen.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await Supabase.initialize(
+      url: 'https://test-project.supabase.co',
+      anonKey: 'test-anon-key',
+      authOptions: FlutterAuthClientOptions(
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUri: false,
+      ),
+    );
+  });
+
   Future<void> pumpAuthApp(
     WidgetTester tester,
     Widget child, {
@@ -152,6 +170,25 @@ void main() {
     expect(find.text('Save profile'), findsOneWidget);
     expect(find.text('Change password'), findsOneWidget);
     expect(find.text('Delete account'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('password recovery screen requests a new password', (tester) async {
+    await pumpAuthApp(tester, const SupabasePasswordRecoveryScreen());
+
+    expect(find.text('RESET PASSWORD'), findsOneWidget);
+    expect(find.text('NEW PASSWORD'), findsOneWidget);
+    expect(find.text('CONFIRM NEW PASSWORD'), findsOneWidget);
+    expect(find.byType(GlassPasswordField), findsNWidgets(2));
+    expect(find.text('Update password'), findsOneWidget);
+
+    await tester.tap(find.text('Update password'));
+    await tester.pump();
+
+    expect(
+      find.text('Choose a password with at least 8 characters.'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
