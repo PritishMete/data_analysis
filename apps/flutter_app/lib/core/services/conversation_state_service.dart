@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import '../config/backend_origin.dart';
 
 /// Local-only client for InsightFlow's structured conversation-state APIs.
 ///
@@ -10,7 +11,7 @@ import 'package:http/http.dart' as http;
 class ConversationStateService {
   ConversationStateService({http.Client? client, Uri? baseUri})
       : _client = client ?? http.Client(),
-        _baseUri = baseUri ?? Uri.parse('http://127.0.0.1:8000');
+        _baseUri = baseUri ?? Uri.parse(insightFlowBackendOrigin);
 
   final http.Client _client;
   final Uri _baseUri;

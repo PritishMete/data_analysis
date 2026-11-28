@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/config/backend_origin.dart';
 
 import '../../../core/services/powerbi_detail_analysis_service.dart';
 import '../../dashboard/data_screen.dart';
@@ -324,7 +325,7 @@ class SourceRouter extends StatelessWidget {
         GlassButton(
           onTap: () async {
             await launchUrl(
-              Uri.parse('http://127.0.0.1:8000/ui'),
+              Uri.parse('$insightFlowBackendOrigin/ui'),
               webOnlyWindowName: '_blank',
             );
           },

@@ -11,6 +11,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:web/web.dart' as web;
 
 import 'app_colors.dart';
+import 'core/config/backend_origin.dart';
 import 'core/services/powerbi_detail_analysis_service.dart';
 import 'core/services/business_analysis_context.dart';
 import 'core/services/chat_reasoning_service.dart';
@@ -2623,7 +2624,7 @@ class _ReportSummary extends StatelessWidget {
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () => web.window.open(
-              Uri.parse('http://127.0.0.1:8000$url').toString(),
+              Uri.parse('$insightFlowBackendOrigin$url').toString(),
               '_blank',
             ),
             icon: const Icon(Icons.open_in_new),

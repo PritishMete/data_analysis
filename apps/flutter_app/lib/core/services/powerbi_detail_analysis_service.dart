@@ -2,26 +2,27 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import '../config/backend_origin.dart';
 
 /// Sends Power BI-exported tables to the local, read-only profiling endpoint.
 class PowerBiDetailAnalysisService {
-  static final Uri endpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/detail-analysis',
+  static Uri get endpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/detail-analysis',
   );
-  static final Uri customerCleanEndpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/customer-clean',
+  static Uri get customerCleanEndpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/customer-clean',
   );
-  static final Uri productCleanEndpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/product-clean',
+  static Uri get productCleanEndpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/product-clean',
   );
-  static final Uri orderCleanEndpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/order-clean',
+  static Uri get orderCleanEndpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/order-clean',
   );
-  static final Uri dateDimensionEndpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/date-dimension',
+  static Uri get dateDimensionEndpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/date-dimension',
   );
-  static final Uri businessAnalysisEndpoint = Uri.parse(
-    'http://127.0.0.1:8000/powerbi/business-analysis',
+  static Uri get businessAnalysisEndpoint => Uri.parse(
+    '$insightFlowBackendOrigin/powerbi/business-analysis',
   );
 
   Future<Map<String, dynamic>> analyze(List<PlatformFile> files) async {
@@ -231,7 +232,7 @@ class PowerBiDetailAnalysisService {
     }
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('http://127.0.0.1:8000/powerbi/dashboard'),
+      Uri.parse('$insightFlowBackendOrigin/powerbi/dashboard'),
     );
     if (year != null) request.fields['year'] = year.toString();
     if (region != null) request.fields['region'] = region;
