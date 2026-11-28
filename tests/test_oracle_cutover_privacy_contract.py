@@ -24,6 +24,9 @@ def test_worker_allows_only_pages_origin_and_forwards_originless_requests():
 
 def test_flutter_privacy_boundary_is_documented_without_claiming_uploads_are_local():
     document = (ROOT / "docs" / "ORACLE_CUTOVER_PRIVACY_SECURITY.md").read_text()
+    source_router = (ROOT / "apps" / "flutter_app" / "lib" / "features" / "pipelines" / "widgets" / "source_router.dart").read_text()
     assert "Raw bytes cross the client-to-Oracle boundary" in document
     assert "CORS controls browser permission" in document
     assert "Missing `Origin` is therefore not authentication" in document
+    assert "Oracle-backed Detail Analysis service" in source_router
+    assert "local Detail Analysis backend" not in source_router
