@@ -1,7 +1,7 @@
 # Oracle authorization acceptance report
 
-Date: 2026-11-28  
-Branch: `codex/oracle-authorization-acceptance-tests-v2-20261128`  
+Date: 2026-11-28
+Branch: `codex/oracle-authorization-acceptance-tests-v2-20261128`
 Required HEAD: `df8c0da510c7bcb93d51d92cca16e0a9034c4c95`
 
 ## Result
