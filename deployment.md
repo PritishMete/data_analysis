@@ -29,11 +29,11 @@ The backend can run on the Ubuntu Oracle VM without an application-code change. 
 
 Use the templates in `deploy/oracle/` for the systemd service and deployment starting point. Keep Supabase as the authentication and database provider. Store production values in the VM environment or a protected secrets file; never commit them.
 
-The Flutter Pages workflow reads the public API origin from the GitHub Actions repository variable `INSIGHTFLOW_BACKEND_URL`. Production builds fail closed if it is missing, and source tests reject the legacy Render origin. Set it to the verified Worker origin only after health, authentication, authorization, CORS, upload, and TLS checks pass.
+The production Flutter Web workflow explicitly builds against the Oracle-backed Worker origin and verifies that the generated bundle contains that origin and does not contain the legacy Render hostname. Do not reintroduce an unreviewed repository-variable override for production. Non-production builds may use a controlled override.
 
-## GitHub Pages Flutter Web
+## Cloudflare Pages Flutter Web
 
-`.github/workflows/flutter-web-pages.yml` installs Flutter, runs bridge/auth/onboarding tests, analyzes changed auth files, validates required build configuration, builds with `/data_analysis/` base href, stamps the commit and OAuth client metadata, creates `404.html`, publishes `gh-pages`, deploys Pages, and verifies the live index, bundle, and fallback.
+`.github/workflows/flutter-web-pages.yml` installs Flutter, runs bridge/auth/onboarding and backend-origin regression tests, analyzes the relevant auth files, validates required build configuration, builds Flutter Web with a root `/` base href, stamps the commit and OAuth client metadata, creates the SPA `404.html` fallback, publishes the generated bundle to the configured Pages source branch, and verifies the generated index, bundle, and fallback. A branch-preview deployment is not a production cutover.
 
 ## Required release process
 
@@ -51,7 +51,7 @@ Use versioned files in `migrations/` and the repository migration runner. Review
 
 ## Rollback
 
-Redeploy the last independently verified commit through Render, the Oracle VM, or the Pages workflow. Application rollback and database rollback are separate decisions; do not assume reverting code safely reverses schema changes.
+Restore the last independently verified Cloudflare Pages frontend artifact and the matching known-good Oracle backend release. Render is not an approved main-site rollback target; any emergency reactivation would require a separate explicit decision. Application rollback and database rollback are separate decisions; do not assume reverting code safely reverses schema changes.
 
 ## Health and incident handling
 
