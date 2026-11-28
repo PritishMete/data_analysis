@@ -620,6 +620,61 @@ Future<Map<String, String>> supabaseAuthHeaders({String? resourceId}) async {
   return headers;
 }
 
+/// Sends protected JSON and multipart requests with one authoritative context.
+/// Callers must provide the canonical resource identifier; this layer never
+/// invents or normalizes identifiers.
+class AuthenticatedHttpTransport {
+  AuthenticatedHttpTransport({
+    http.Client? client,
+    Future<dynamic> Function()? sessionProvider,
+    String? Function()? workspaceProvider,
+  }) : _client = client ?? http.Client(),
+       _sessionProvider = sessionProvider ??
+           (() => InsightFlowSupabaseAuthService.ensureSession()),
+       _workspaceProvider = workspaceProvider ?? (() => insightFlowWorkspaceId);
+
+  final http.Client _client;
+  final Future<dynamic> Function() _sessionProvider;
+  final String? Function() _workspaceProvider;
+
+  Future<http.Response> postJson(Uri uri, {
+    required String resourceId,
+    Map<String, dynamic>? body,
+  }) async {
+    final headers = await _headers(resourceId);
+    headers['Content-Type'] = 'application/json';
+    return _client.post(uri, headers: headers, body: jsonEncode(body ?? {}));
+  }
+
+  Future<http.Response> postMultipart(Uri uri, {
+    required String resourceId,
+    Map<String, String> fields = const <String, String>{},
+    List<http.MultipartFile> files = const <http.MultipartFile>[],
+  }) async {
+    final request = http.MultipartRequest('POST', uri)
+      ..fields.addAll(fields)
+      ..files.addAll(files);
+    request.headers.addAll(await _headers(resourceId));
+    return _client.send(request).then(http.Response.fromStream);
+  }
+
+  Future<Map<String, String>> _headers(String resourceId) async {
+    final session = await _sessionProvider();
+    final token = (session as dynamic)?.accessToken?.toString() ?? '';
+    if (token.isEmpty) throw StateError('Supabase authentication required.');
+    final workspaceId = _workspaceProvider()?.trim() ?? '';
+    final canonicalResourceId = resourceId.trim();
+    if (workspaceId.isEmpty || canonicalResourceId.isEmpty) {
+      throw StateError('Authenticated workspace and resource context required.');
+    }
+    return <String, String>{
+      'Authorization': 'Bearer $token',
+      'X-InsightFlow-Workspace-ID': workspaceId,
+      'X-InsightFlow-Resource-ID': canonicalResourceId,
+    };
+  }
+}
+
 Future<String?> _resolveDatasetId(String sourceSheetName) async {
   final id = await getWorkbookDatasetId(sourceSheetName);
   if (id == null || id.isEmpty) return null;
