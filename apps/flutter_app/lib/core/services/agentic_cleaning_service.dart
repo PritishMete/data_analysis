@@ -10,11 +10,12 @@
 // /clean_data, so it plugs straight into the existing CleaningResult model.
 
 import 'dart:convert';
+import '../config/backend_origin.dart';
 import 'package:http/http.dart' as http;
 import 'data_cleaning_service.dart'; // reuse CleaningResult, writeCleanedDataToSheet
 import '../security/privacy_mode.dart';
 
-const String _agenticCleaningBackendUrl = "https://data-analysis-oajs.onrender.com";
+final String _agenticCleaningBackendUrl = insightFlowBackendOrigin;
 
 class AgenticCleaningService {
   /// Preview-only: shows the user what steps the agent understood, WITHOUT

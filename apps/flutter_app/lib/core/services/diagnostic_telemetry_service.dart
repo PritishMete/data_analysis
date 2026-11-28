@@ -3,16 +3,14 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/backend_origin.dart';
 
 /// Best-effort, privacy-filtered diagnostics delivery. Failures here never
 /// interrupt sign-in, data access, or a user's requested operation.
 class InsightFlowDiagnosticTelemetry {
   InsightFlowDiagnosticTelemetry._();
 
-  static const String _apiOrigin = String.fromEnvironment(
-    'INSIGHTFLOW_DIAGNOSTICS_API_ORIGIN',
-    defaultValue: 'https://data-analysis-oajs.onrender.com',
-  );
+  static final String _apiOrigin = insightFlowBackendOrigin;
   static final http.Client _client = http.Client();
   static final List<Map<String, dynamic>> _pending = [];
   static String? _sessionId;

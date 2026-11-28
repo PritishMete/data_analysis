@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../security/privacy_mode.dart';
+import '../config/backend_origin.dart';
 
-const String _locationBackendUrl = "https://data-analysis-oajs.onrender.com";
+final String _locationBackendUrl = insightFlowBackendOrigin;
 
 Future<Map<String, dynamic>> detectMissingLocations({
   required List<String> columns,

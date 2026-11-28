@@ -7,8 +7,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'currency_registry.dart';
 import 'local_llm_service.dart';
+import '../config/backend_origin.dart';
 
-const String _backend = 'https://data-analysis-oajs.onrender.com';
+final String _backend = insightFlowBackendOrigin;
 
 class LocalCategorizationResult {
   final List<List<dynamic>> rows;

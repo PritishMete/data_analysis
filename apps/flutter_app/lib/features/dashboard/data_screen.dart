@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/auth/authenticated_http.dart';
+import '../../core/config/backend_origin.dart';
 import '../../core/interop/excel_mutation_authorization.dart';
 import '../../core/auth/supabase_auth_service.dart';
 import '../auth/account_management_screen.dart';
@@ -335,7 +336,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   // ── Animations ────────────────────────────────────────────────────────────
   late AnimationController pulseController;
-  final String apiUrl = "https://data-analysis-oajs.onrender.com/analyze";
+  final String apiUrl = "$insightFlowBackendOrigin/analyze";
 
   // ── Pivot editor ──────────────────────────────────────────────────────────
   String? activePivotSheetName;
@@ -1244,11 +1245,10 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
 
   // Base URL for /smart_query — same backend as /agentic_command and
   // /parse_command, just a different route (see main.py + query_router.py).
-  static const String _backendBaseUrl =
-      "https://data-analysis-oajs.onrender.com";
-  static const String _smartQueryUrl = "$_backendBaseUrl/smart_query";
-  static const String _sentimentUrl =
-      "https://data-analysis-oajs.onrender.com/sentiment_analysis";
+  static final String _backendBaseUrl = insightFlowBackendOrigin;
+  static final String _smartQueryUrl = "$_backendBaseUrl/smart_query";
+  static final String _sentimentUrl =
+      "$_backendBaseUrl/sentiment_analysis";
   static const Duration _sentimentRequestTimeout = Duration(minutes: 4);
 
   Map<String, dynamic>? _buildResilientFilterPlan(String text) {
@@ -4762,8 +4762,8 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
   // op dicts to the existing /clean_data route, then writes the ONE final
   // result to a single new sheet. No intermediate sheet is created per step,
   // and no separate "report" sheet is created — only the one result sheet.
-  static const String _cleanDataUrl =
-      "https://data-analysis-oajs.onrender.com/clean_data";
+  static final String _cleanDataUrl =
+      "$_backendBaseUrl/clean_data";
 
   Future<Map<String, dynamic>> _runCleaningSteps(
     List<Map<String, dynamic>> steps,
@@ -6109,7 +6109,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
           .join('\n');
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse("https://data-analysis-oajs.onrender.com/analyze-report"),
+        Uri.parse("$_backendBaseUrl/analyze-report"),
       );
       await attachSupabaseAuth(request, resourceId: activeSheetName);
       request.files.add(
@@ -6226,7 +6226,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       final response = await http
           .post(
             Uri.parse(
-              "https://data-analysis-oajs.onrender.com/analysis_business_context",
+              "$_backendBaseUrl/analysis_business_context",
             ),
             headers: {"Content-Type": "application/json"},
             body: json.encode({
@@ -6321,7 +6321,7 @@ class DataScreenState extends State<DataScreen> with TickerProviderStateMixin {
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(
-          "https://data-analysis-oajs.onrender.com/analyze-report-focused",
+          "$_backendBaseUrl/analyze-report-focused",
         ),
       );
       await attachSupabaseAuth(request, resourceId: activeSheetName);
