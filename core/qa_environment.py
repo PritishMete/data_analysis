@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 QA_PROJECT_REF = "xcnjauxmofqkwnpdazpj"
 PRODUCTION_PROJECT_REF = "zfdgwnipdyrpbardqoql"
 QA_SUPABASE_HOST = f"{QA_PROJECT_REF}.supabase.co"
+QA_DATABASE_HOST = f"db.{QA_PROJECT_REF}.supabase.co"
+PRODUCTION_DATABASE_HOST = f"db.{PRODUCTION_PROJECT_REF}.supabase.co"
 
 
 class QAEnvironmentError(RuntimeError):
@@ -27,9 +29,9 @@ def validate_qa_environment(environ: dict[str, str] | None = None) -> QAEnvironm
     """Validate QA-only identity before any startup DDL can run.
 
     Production startup is intentionally unaffected: this function is a no-op
-    unless ``INSIGHTFLOW_ENV=qa``. QA requires an exact project identity and an
-    explicit database-host allowlist entry so a copied production URL cannot be
-    accepted accidentally.
+    unless ``INSIGHTFLOW_ENV=qa``. The project and database hosts are pinned
+    independently to Supabase control-plane metadata, not trusted from a
+    self-declared environment allowlist.
     """
     env = os.environ if environ is None else environ
     if env.get("INSIGHTFLOW_ENV", "").strip().lower() != "qa":
@@ -61,16 +63,17 @@ def validate_qa_environment(environ: dict[str, str] | None = None) -> QAEnvironm
     db_host = (parsed_db.hostname or "").lower()
     if parsed_db.scheme not in {"postgresql", "postgresql+psycopg", "postgresql+psycopg2"}:
         raise QAEnvironmentError("QA DATABASE_URL must use PostgreSQL.")
+    if db_host == PRODUCTION_DATABASE_HOST:
+        raise QAEnvironmentError("QA database target is the production database.")
     if (
-        not db_host
-        or not allowed_db_host
-        or db_host != allowed_db_host
+        db_host != QA_DATABASE_HOST
+        or allowed_db_host != QA_DATABASE_HOST
         or not parsed_db.username
         or not parsed_db.password
         or not parsed_db.path.strip("/")
     ):
-        raise QAEnvironmentError("QA database host is missing or not explicitly allowlisted.")
-    if PRODUCTION_PROJECT_REF in database_url.lower() or PRODUCTION_PROJECT_REF in db_host:
+        raise QAEnvironmentError("QA database host is missing or not the independently pinned QA database.")
+    if PRODUCTION_PROJECT_REF in database_url.lower():
         raise QAEnvironmentError("QA database target matches the production project.")
     if authn_mode != "supabase" or persistence_mode != "supabase":
         raise QAEnvironmentError("QA authentication and persistence providers must be Supabase.")
