@@ -1,5 +1,5 @@
 param(
-  [string]$BaseHref = '/data_analysis/',
+  [string]$BaseHref = '/',
   [string]$GhPagesBranch = 'gh-pages',
   [string]$FirebaseWebApiKey = $env:INSIGHTFLOW_FIREBASE_WEB_API_KEY,
   [string]$FirebaseWebAppId = $env:INSIGHTFLOW_FIREBASE_WEB_APP_ID,
@@ -7,7 +7,8 @@ param(
   [string]$FirebaseWebProjectId = $env:INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID,
   [string]$FirebaseWebAuthDomain = $env:INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN,
   [string]$GoogleWebClientId = $env:INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID,
-  [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID
+  [string]$WorkspaceId = $env:INSIGHTFLOW_WORKSPACE_ID,
+  [string]$BackendUrl = $env:INSIGHTFLOW_BACKEND_URL
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,7 @@ try {
     'INSIGHTFLOW_FIREBASE_WEB_AUTH_DOMAIN' = $FirebaseWebAuthDomain
     'INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID' = $GoogleWebClientId
     'INSIGHTFLOW_WORKSPACE_ID' = $WorkspaceId
+    'INSIGHTFLOW_BACKEND_URL' = $BackendUrl
   }
   $missingDefines = @(
     $requiredDefines.GetEnumerator() |
@@ -37,7 +39,10 @@ try {
       ForEach-Object { $_.Key }
   )
   if ($missingDefines.Count -gt 0) {
-    throw "Missing Firebase/Workspace build configuration: $($missingDefines -join ', ')"
+    throw "Missing production web build configuration: $($missingDefines -join ', ')"
+  }
+  if ($BackendUrl -ne 'https://insightflow-api.jaiphotoshoot.workers.dev') {
+    throw 'Production Pages builds must target the Oracle-backed Cloudflare Worker gateway.'
   }
 
   $buildArgs = @('build', 'web', '--release', '--no-wasm-dry-run', '--base-href', $BaseHref)
