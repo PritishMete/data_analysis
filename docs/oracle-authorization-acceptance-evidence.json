@@ -1,0 +1,11 @@
+{
+  "database": {
+    "status": "UNAVAILABLE",
+    "url_variable": "AUTHZ_TEST_DATABASE_URL",
+    "required_database": "insightflow_authz_test",
+    "allowed_hosts": ["localhost", "127.0.0.1", "::1", "postgres"],
+    "contacted": false
+  },
+  "observations": {},
+  "status": "UNVERIFIED"
+}
