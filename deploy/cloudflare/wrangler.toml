@@ -1,0 +1,11 @@
+name = "insightflow-api"
+main = "insightflow-api.js"
+compatibility_date = "2026-11-28"
+workers_dev = true
+
+[previews]
+
+[[vpc_networks]]
+binding = "ORACLE_VPC"
+tunnel_id = "42e7b5c6-9176-4ace-ba3d-eb892f212b7f"
+remote = true
