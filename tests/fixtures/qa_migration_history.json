@@ -1,0 +1,14 @@
+{
+  "target": {
+    "project_ref": "xcnjauxmofqkwnpdazpj",
+    "database_host": "db.xcnjauxmofqkwnpdazpj.supabase.co"
+  },
+  "external_history": [
+    "excel_auth_handoff_0037",
+    "excel_auth_pairing_0038"
+  ],
+  "prerequisites": {
+    "storage:managed-datasets": false,
+    "key:INSIGHTFLOW_PROFILE_PII_KEY": false
+  }
+}
