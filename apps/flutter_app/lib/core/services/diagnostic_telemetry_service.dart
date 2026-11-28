@@ -40,7 +40,7 @@ class InsightFlowDiagnosticTelemetry {
     String? correlation,
     Map<String, Object?> metadata = const {},
   }) {
-    if (!PrivacyConsent.has(PrivacyOperation.telemetry)) return;
+    if (!PrivacyConsent.has(PrivacyOperation.telemetry, _apiOrigin)) return;
     // Only fixed labels, status codes and explicitly allowlisted metadata
     // should be passed here. Never pass response bodies, tokens, user content,
     // workbook data, cookies, or request headers.

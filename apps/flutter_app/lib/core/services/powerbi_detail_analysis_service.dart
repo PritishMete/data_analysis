@@ -21,7 +21,9 @@ class PowerBiDetailAnalysisService {
       Uri.parse('$insightFlowBackendOrigin/powerbi/business-analysis');
 
   Future<Map<String, dynamic>> analyze(List<PlatformFile> files) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: endpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException('Select at least one dataset to analyze.');
     }
@@ -54,7 +56,9 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanCustomer(List<PlatformFile> files) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: customerCleanEndpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for customer cleaning.',
@@ -83,7 +87,9 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanProduct(List<PlatformFile> files) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: productCleanEndpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for product cleaning.',
@@ -112,7 +118,9 @@ class PowerBiDetailAnalysisService {
   }
 
   Future<Map<String, dynamic>> cleanOrders(List<PlatformFile> files) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: orderCleanEndpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for order cleaning.',
@@ -143,7 +151,9 @@ class PowerBiDetailAnalysisService {
   Future<Map<String, dynamic>> buildDateDimension(
     List<PlatformFile> files,
   ) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: dateDimensionEndpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for date dimension creation.',
@@ -178,7 +188,9 @@ class PowerBiDetailAnalysisService {
     Map<String, dynamic> context = const <String, dynamic>{},
     Map<String, dynamic>? predicate,
   }) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: businessAnalysisEndpoint.toString(),
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for business analysis.',
@@ -226,7 +238,9 @@ class PowerBiDetailAnalysisService {
     String? region,
     String? category,
   }) async {
-    OutboundPrivacyGuard.requirePowerBiConsent();
+    OutboundPrivacyGuard.requirePowerBiConsent(
+      destination: '$insightFlowBackendOrigin/powerbi/dashboard',
+    );
     if (files.isEmpty) {
       throw const FormatException(
         'Select at least one dataset for the dashboard.',

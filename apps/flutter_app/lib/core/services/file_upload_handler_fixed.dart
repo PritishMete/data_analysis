@@ -31,14 +31,13 @@ class FileUploadHandler {
     String filePath, {
     required Function(int, int) onProgress,
   }) async {
-    if (secureLocalOnly ||
-        !PrivacyConsent.has(PrivacyOperation.remoteFileUpload)) {
+    OutboundPrivacyGuard.requireFileUploadConsent(destination: backendUrl);
+    if (secureLocalOnly) {
       return {
         "success": false,
         "error": "Remote file upload is disabled in secure local mode.",
       };
     }
-    OutboundPrivacyGuard.requireFileUploadConsent();
     try {
       final file = File(filePath);
 

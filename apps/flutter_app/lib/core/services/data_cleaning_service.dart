@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../interop/excel_interop.dart';
 import '../security/privacy_mode.dart';
+import '../security/outbound_privacy_guard.dart';
 import '../config/backend_origin.dart';
 
 final String _backendUrl = insightFlowBackendOrigin;
@@ -12,7 +13,8 @@ class CleaningConfig {
   final bool removeDuplicates;
   final bool removeEmptyRows;
   final bool handleMissingValues;
-  final String nullStrategy; // 'smart', 'mean', 'median', 'mode', 'forward_fill', 'drop'
+  final String
+  nullStrategy; // 'smart', 'mean', 'median', 'mode', 'forward_fill', 'drop'
   final bool normalizeText;
   final bool inferTypes;
   final bool handleOutliers;
@@ -109,11 +111,18 @@ class DataCleaningService {
     required String fileName,
     CleaningConfig? config,
   }) async {
+    OutboundPrivacyGuard.requireDatasetCleaningConsent(
+      destination: '$_backendUrl/clean_data',
+    );
     if (secureLocalOnly) {
       return CleaningResult(
         success: false,
         message: "Remote data cleaning is disabled in secure local mode.",
-        before: {}, after: {}, comparison: {}, cleaningReport: {}, export: {},
+        before: {},
+        after: {},
+        comparison: {},
+        cleaningReport: {},
+        export: {},
         error: "SECURE_LOCAL_ONLY",
       );
     }
@@ -125,11 +134,7 @@ class DataCleaningService {
 
       // Add file
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          fileBytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes('file', fileBytes, filename: fileName),
       );
 
       // Add config as JSON string
@@ -171,13 +176,10 @@ class DataCleaningService {
 
   /// Writes the cleaned data to a new Excel sheet using the Excel interop
   static Future<Map<String, dynamic>> writeCleanedDataToSheet(
-      CleaningResult result,
-      ) async {
+    CleaningResult result,
+  ) async {
     if (!result.success || result.export.isEmpty) {
-      return {
-        "success": false,
-        "error": "No cleaned data to write",
-      };
+      return {"success": false, "error": "No cleaned data to write"};
     }
 
     try {
@@ -194,10 +196,7 @@ class DataCleaningService {
       final response = await writeQueryResultToSheet(optionsJson);
       return response;
     } catch (e) {
-      return {
-        "success": false,
-        "error": e.toString(),
-      };
+      return {"success": false, "error": e.toString()};
     }
   }
 
@@ -235,7 +234,8 @@ class DataCleaningService {
   /// Get a description of what the null_strategy does
   static String describeNullStrategy(String strategy) {
     const strategies = {
-      "smart": "Auto-detects best strategy per column (median for numbers, mode for categories)",
+      "smart":
+          "Auto-detects best strategy per column (median for numbers, mode for categories)",
       "mean": "Uses average value for numeric columns, 'Unknown' for text",
       "median": "Uses middle value for numeric columns, 'Unknown' for text",
       "mode": "Uses most frequent value, 'Unknown' if no mode found",

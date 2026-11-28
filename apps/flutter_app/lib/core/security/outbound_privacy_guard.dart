@@ -2,20 +2,38 @@ import 'dart:convert';
 import 'privacy_mode.dart';
 
 class OutboundPrivacyGuard {
-  static void requireConsent(PrivacyOperation operation) {
-    if (!PrivacyConsent.has(operation)) {
-      throw PrivacyConsentDenied(operation);
+  static void requireConsent(
+    PrivacyOperation operation, {
+    required String destination,
+  }) {
+    if (!PrivacyConsent.has(operation, destination)) {
+      throw PrivacyConsentDenied(operation, destination: destination);
     }
   }
 
-  static void requireFileUploadConsent() =>
-      requireConsent(PrivacyOperation.remoteFileUpload);
+  static void requireFileUploadConsent({required String destination}) =>
+      requireConsent(
+        PrivacyOperation.remoteFileUpload,
+        destination: destination,
+      );
 
-  static void requirePowerBiConsent() =>
-      requireConsent(PrivacyOperation.powerBiDetailAnalysis);
+  static void requirePowerBiConsent({required String destination}) =>
+      requireConsent(
+        PrivacyOperation.powerBiDetailAnalysis,
+        destination: destination,
+      );
 
-  static void requireTelemetryConsent() =>
-      requireConsent(PrivacyOperation.telemetry);
+  static void requireDatasetCleaningConsent({required String destination}) =>
+      requireConsent(
+        PrivacyOperation.datasetCleaning,
+        destination: destination,
+      );
+
+  static void requireChatPlanningConsent({required String destination}) =>
+      requireConsent(PrivacyOperation.chatPlanning, destination: destination);
+
+  static void requireTelemetryConsent({required String destination}) =>
+      requireConsent(PrivacyOperation.telemetry, destination: destination);
 
   static const Set<String> forbiddenKeys = {
     'rows',

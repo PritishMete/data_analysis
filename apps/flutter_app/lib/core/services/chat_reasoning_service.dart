@@ -5,17 +5,22 @@ import 'package:http/http.dart' as http;
 
 import '../../detail_analysis_router.dart';
 import '../config/backend_origin.dart';
+import '../security/outbound_privacy_guard.dart';
 
 /// Requests a privacy-safe intent plan. No file bytes, schemas, or values are
 /// included; only abstract roles derived from the selected file extensions.
 class ChatReasoningService {
-  static Uri get endpoint => Uri.parse('$insightFlowBackendOrigin/v1/chat/plan');
+  static Uri get endpoint =>
+      Uri.parse('$insightFlowBackendOrigin/v1/chat/plan');
 
   Future<DetailAnalysisRoute?> plan(
     String query,
     List<PlatformFile> files, {
     DetailAnalysisRoute? previousRoute,
   }) async {
+    OutboundPrivacyGuard.requireChatPlanningConsent(
+      destination: endpoint.toString(),
+    );
     final roles = <String>{};
     for (final file in files) {
       final name = file.name.toLowerCase();
