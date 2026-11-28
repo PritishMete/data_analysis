@@ -484,6 +484,17 @@ _cors_regex = None if _production_environment else (
     r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$"
 )
 
+_INSIGHTFLOW_CORS_HEADERS = [
+    "Authorization",
+    "Content-Type",
+    "X-InsightFlow-Workspace-ID",
+    "X-InsightFlow-Resource-ID",
+    "X-InsightFlow-Location-ID",
+    "X-InsightFlow-Dataset-ID",
+    "X-InsightFlow-Version",
+    "X-InsightFlow-Branch-ID",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -491,13 +502,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_origin_regex=_cors_regex,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "X-InsightFlow-Workspace-ID",
-        "X-InsightFlow-Resource-ID",
-        "X-InsightFlow-Location-ID",
-    ],
+    allow_headers=_INSIGHTFLOW_CORS_HEADERS,
 )
 
 # ── Centralized Transformation Engine (new, additive) ────────────────────
