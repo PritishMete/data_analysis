@@ -6,6 +6,13 @@ import '../config/backend_origin.dart';
 
 /// Sends Power BI-exported tables to the local, read-only profiling endpoint.
 class PowerBiDetailAnalysisService {
+  static const _localOnlyMessage =
+      'Power BI analysis is local-only until an authenticated local processor '
+      'is supported. No dataset was uploaded.';
+
+  Never _rejectRemoteDatasetProcessing() =>
+      throw const FormatException(_localOnlyMessage);
+
   static Uri get endpoint => Uri.parse(
     '$insightFlowBackendOrigin/powerbi/detail-analysis',
   );
@@ -29,6 +36,7 @@ class PowerBiDetailAnalysisService {
     if (files.isEmpty) {
       throw const FormatException('Select at least one dataset to analyze.');
     }
+    _rejectRemoteDatasetProcessing();
 
     final request = http.MultipartRequest('POST', endpoint);
     for (final file in files) {
@@ -63,6 +71,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for customer cleaning.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest('POST', customerCleanEndpoint);
     for (final file in files) {
       final bytes = file.bytes;
@@ -91,6 +100,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for product cleaning.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest('POST', productCleanEndpoint);
     for (final file in files) {
       final bytes = file.bytes;
@@ -119,6 +129,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for order cleaning.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest('POST', orderCleanEndpoint);
     for (final file in files) {
       final bytes = file.bytes;
@@ -149,6 +160,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for date dimension creation.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest('POST', dateDimensionEndpoint);
     for (final file in files) {
       final bytes = file.bytes;
@@ -183,6 +195,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for business analysis.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest('POST', businessAnalysisEndpoint);
     for (final entry in filters.entries) {
       if (entry.value != null && entry.value.toString().isNotEmpty) {
@@ -230,6 +243,7 @@ class PowerBiDetailAnalysisService {
         'Select at least one dataset for the dashboard.',
       );
     }
+    _rejectRemoteDatasetProcessing();
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$insightFlowBackendOrigin/powerbi/dashboard'),
