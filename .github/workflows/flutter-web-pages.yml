@@ -55,6 +55,10 @@ jobs:
         working-directory: apps/flutter_app
         run: node test/excel_auth_bridge_test.js
 
+      - name: Run backend origin configuration tests
+        working-directory: apps/flutter_app
+        run: flutter test test/backend_origin_test.dart
+
       - name: Run auth and onboarding regression tests
         working-directory: apps/flutter_app
         run: flutter test test/onboarding_auth_flow_contract_test.dart test/auth_gate_management_landing_test.dart test/management_navigation_context_test.dart test/management_shell_contract_test.dart test/google_oauth_entrypoint_test.dart test/main_auth_gate_entrypoint_test.dart
@@ -74,7 +78,7 @@ jobs:
           INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID: ${{ vars.INSIGHTFLOW_GOOGLE_WEB_CLIENT_ID }}
           INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
           INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
-          INSIGHTFLOW_BACKEND_URL: ${{ vars.INSIGHTFLOW_BACKEND_URL }}
+          INSIGHTFLOW_BACKEND_URL: https://insightflow-api.jaiphotoshoot.workers.dev
           INSIGHTFLOW_EXCEL_AUTH_DIAGNOSTICS: ${{ inputs.diagnostic_build || 'false' }}
         run: |
           set -euo pipefail
@@ -96,6 +100,10 @@ jobs:
             fi
           done
           test "${INSIGHTFLOW_FIREBASE_WEB_PROJECT_ID}" = "insightflow-5a23d"
+          test "${INSIGHTFLOW_BACKEND_URL}" = "https://insightflow-api.jaiphotoshoot.workers.dev" || {
+            echo "::error::Production web builds must target the Oracle-backed Cloudflare API gateway."
+            exit 1
+          }
 
       - name: Build Flutter web
         working-directory: apps/flutter_app
@@ -109,7 +117,7 @@ jobs:
           INSIGHTFLOW_WORKSPACE_ID: ${{ vars.INSIGHTFLOW_WORKSPACE_ID }}
           INSIGHTFLOW_SUPABASE_URL: ${{ secrets.INSIGHTFLOW_SUPABASE_URL }}
           INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.INSIGHTFLOW_SUPABASE_PUBLISHABLE_KEY }}
-          INSIGHTFLOW_BACKEND_URL: ${{ vars.INSIGHTFLOW_BACKEND_URL }}
+          INSIGHTFLOW_BACKEND_URL: https://insightflow-api.jaiphotoshoot.workers.dev
         run: |
           set -euo pipefail
           clean_env() { printf '%s' "${!1:-}" | tr -d '\r\n'; }
@@ -198,6 +206,11 @@ jobs:
           assert_text "profile completion auth marker" "profile_complete" build/web/main.dart.js
           assert_text "membership status auth marker" "membership_status" build/web/main.dart.js
           assert_text "authorization API integration" "/v1/authz/me" build/web/main.dart.js
+          assert_text "Oracle-backed API gateway origin" "https://insightflow-api.jaiphotoshoot.workers.dev" build/web/main.dart.js
+          if grep -Fq -- "https://data-analysis-oajs.onrender.com" build/web/main.dart.js; then
+            echo "::error::Render backend URL remains in the generated production bundle"
+            exit 1
+          fi
 
       - name: Checkout Cloudflare Pages source branch
         uses: actions/checkout@v4

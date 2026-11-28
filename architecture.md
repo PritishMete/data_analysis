@@ -7,7 +7,7 @@
 - Persistence: PostgreSQL/Supabase with SQL migrations in `migrations/`.
 - Identity: Firebase/Supabase provider adapters in `firebase_authz/` and Flutter auth services.
 - CI/CD: GitHub Actions in `.github/workflows/`.
-- Hosting: Render or an HTTPS-fronted Oracle Cloud VM for the FastAPI service; GitHub Pages Flutter publication.
+- Hosting: Cloudflare Pages for the public Flutter frontend, a Cloudflare Worker API gateway, and an Oracle Cloud VM for the production FastAPI service. Supabase provides authentication and PostgreSQL persistence. Render is excluded from the main website backend path.
 
 ## Repository structure
 
@@ -66,7 +66,15 @@ Workbook content is intended to remain local by default. The outbound privacy gu
 
 ## Deployment architecture
 
-Render runs `uvicorn main:app --host 0.0.0.0 --port $PORT`; the Oracle VM runs the same application behind an HTTPS reverse proxy and systemd. Both providers must expose `/health`. GitHub Pages builds `apps/flutter_app` with `flutter build web --release --base-href=/data_analysis/`, stamps build identity, publishes the SPA fallback, and verifies the live bundle. The public API origin is supplied through the `INSIGHTFLOW_BACKEND_URL` repository variable.
+Cloudflare Pages builds and serves `apps/flutter_app` as the public frontend. The
+frontend calls `https://insightflow-api.jaiphotoshoot.workers.dev`; the Worker
+preserves methods, paths, query strings, request bodies, authorization headers,
+status codes, and response headers while forwarding to the Oracle VPC binding.
+The Oracle VM runs `uvicorn main:app --host 127.0.0.1 --port 8000` behind its
+HTTPS reverse proxy and systemd service, and uses Supabase for authentication and
+PostgreSQL persistence. Render is not part of the main website runtime path.
+The public API origin is supplied through the `INSIGHTFLOW_BACKEND_URL`
+repository variable.
 
 ## Limitations
 

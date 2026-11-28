@@ -1,19 +1,19 @@
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:liquid_glass_widgets/core/config/backend_origin.dart';
 
 void main() {
+  test('defaults to the Oracle-backed Cloudflare API gateway', () {
+    expect(
+      insightFlowDefaultBackendOrigin,
+      'https://insightflow-api.jaiphotoshoot.workers.dev',
+    );
+    expect(insightFlowBackendOrigin, insightFlowDefaultBackendOrigin);
+  });
+
   test('uses a supplied origin and removes trailing slash', () {
     expect(
       normalizeInsightFlowBackendOrigin('https://api.example.test///'),
       'https://api.example.test',
-    );
-  });
-
-  test('empty configuration uses the Render rollback fallback', () {
-    expect(
-      normalizeInsightFlowBackendOrigin(''),
-      insightFlowDefaultBackendOrigin,
     );
   });
 
@@ -23,6 +23,7 @@ void main() {
       'https://api.example.test?x=1',
       'https://api.example.test/#fragment',
       'https://user:password@api.example.test',
+      'not-a-url',
     ]) {
       expect(
         normalizeInsightFlowBackendOrigin(value),
